@@ -1,9 +1,3 @@
-"""A selected integration test must fail, not skip, when the services are down.
-
-Skipping here used to report success while proving nothing, so this runs the
-real pytest entry point against unreachable services in a subprocess.
-"""
-
 from __future__ import annotations
 
 import os

@@ -1,9 +1,3 @@
-"""The moderator sign-off publishes `acceptance` on the reviewed commit only.
-
-Every case drives the CLI entry point with the one subprocess boundary
-replaced, so a test can never reach the real `gh`.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -44,7 +38,7 @@ class FakeGh:
 
 
 @pytest.fixture
-def gh(monkeypatch: pytest.MonkeyPatch) -> FakeGh:
+def gh(monkeypatch: pytest.MonkeyPatch):
     def install(fake: FakeGh) -> FakeGh:
         monkeypatch.setattr(acceptance.subprocess, "run", fake)
         return fake
