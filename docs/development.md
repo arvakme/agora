@@ -22,11 +22,11 @@ Issue 的原生依赖关系决定可开工顺序；Project 的 Status 只是 Iss
 
 | 职责 | 指定执行环境 |
 | --- | --- |
-| 并行实现与交叉审查 | Seedmux 真实 pane 中的 Kimi K3-256K（`--yolo`）、Cursor Grok 4.6 high fast、Claude Code Opus 5 medium |
-| 浏览器实测 | 本地 agy Gemini 3.8 Flash high，通过 ego-browser 操作实际产品 |
+| 并行实现与交叉审查 | Seedmux 真实 pane 中的 Claude Code Opus 5 medium、Codex、Grok；实际执行环境记入工单 |
+| 浏览器实测 | 出现产品 UI 时，本地 agy Gemini 3.8 Flash high 通过 ego-browser 操作实际产品 |
 | 派发、边界冻结、最终裁决 | 主持人 |
 
-派发前以安装版本的帮助、模型清单和实际握手核对精确配置；模型不可用或启动器不支持参数就报告阻塞，不替换供应商、模型或权限模式冒名继续。Kimi 的 `--yolo` 不自动等于完全无人值守，不能改为 `--auto`；也不能因启动器默认值而扩大其他 CLI 的权限。
+派发前以安装版本的帮助、本机配置和实际握手核对模型、权限及 cwd；未另行指定的配置沿用用户当前默认，不为派发修改全局设置。某个 CLI 不可用只阻塞该执行环境；主持人可改派给已授权且已验证的环境，更新工单实际执行者，不冒名继续，也不因启动器默认值扩大权限。
 
 先用 seedmux-team 查看现场，复用空闲且上下文相关的 pane；不向权限弹窗或其他 waiting 状态注入任务。需要修改 Seedmux 或用户全局配置时另行取得授权，不在 Agora 复制另一套开发团队启动器。开发 pane 留给用户查看，不能作为产品自带 Worker 运行时交付。
 
