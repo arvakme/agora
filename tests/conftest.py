@@ -2,15 +2,11 @@ from __future__ import annotations
 
 import os
 import socket
-import subprocess
-import time
 from collections.abc import AsyncIterator
-from pathlib import Path
 from urllib.parse import urlparse
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
 os.environ.setdefault("AGORA_DATABASE_URL", "postgresql://agora:agora@127.0.0.1:5433/agora")
 os.environ.setdefault("AGORA_REDIS_URL", "redis://127.0.0.1:6379/0")
 
@@ -33,50 +29,30 @@ def _port_open(host: str, port: int) -> bool:
         return False
 
 
-def _reachable() -> bool:
-    pg_host, pg_port = _host_port(DSN, 5432)
-    rd_host, rd_port = _host_port(REDIS_URL, 6379)
-    return _port_open(pg_host, pg_port) and _port_open(rd_host, rd_port)
-
-
-def _try_compose() -> None:
-    subprocess.run(
-        ["docker", "compose", "-f", str(ROOT / "docker-compose.yml"), "up", "-d", "--wait"],
-        cwd=ROOT,
-        check=False,
-        timeout=120,
-    )
-
-
-def _ensure_services() -> bool:
-    if _reachable():
-        return True
-    try:
-        _try_compose()
-    except (FileNotFoundError, subprocess.SubprocessError, OSError):
-        return False
-    deadline = time.monotonic() + 30
-    while time.monotonic() < deadline:
-        if _reachable():
-            return True
-        time.sleep(1)
-    return False
-
-
 @pytest.fixture(scope="session")
 def require_services() -> None:
-    if not _ensure_services():
-        pytest.skip(
-            "Postgres/Redis unreachable and docker compose could not start them"
+    """Fail every integration test at once when Postgres or Redis is missing.
+
+    Starting the services belongs to docker compose, not to the test run: a
+    suite that quietly skips here reports success while proving nothing.
+    """
+    services = {"Postgres": _host_port(DSN, 5432), "Redis": _host_port(REDIS_URL, 6379)}
+    unreachable = [
+        f"{name} {host}:{port}"
+        for name, (host, port) in services.items()
+        if not _port_open(host, port)
+    ]
+    if unreachable:
+        pytest.fail(
+            f"services unreachable: {', '.join(unreachable)}; start them with "
+            "`docker compose up -d`",
+            pytrace=False,
         )
 
 
 @pytest.fixture
 async def app_client(require_services: None) -> AsyncIterator[tuple]:
-    from collections.abc import AsyncIterator as _AI
-
     import httpx
-    from fastapi import FastAPI
 
     from server import db
     from server.main import create_app
