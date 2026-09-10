@@ -6,17 +6,28 @@ delivery state machine that the local host (`daemon/`), the Agora backend
 documentation states ordering, ownership and reasons. Non-Python consumers read
 ``python -m native_protocol`` instead of re-typing the fields.
 
-What this module deliberately does not own:
+Two facts about one request are kept apart on purpose:
+
+* ``DeliveryRecord.withdrawn`` is a decision by the request authority. Once
+  taken it is never undone by anything the host later learns.
+* ``DeliveryRecord.turn_state`` is what the host has observed about the
+  physical turn. The turn can still bind, finish, fail or be interrupted after
+  a withdrawal, because cancelling a request does not stop a running model.
+
+A physically finished turn therefore releases the session's input channel, and
+its result is recorded as evidence, but ``publishable_result`` refuses to hand
+a withdrawn request's result to Agora.
+
+What this module does not own:
 
 * Agora/Postgres owns rooms, membership, requests, published results and Master
-  acceptance. ``master_accepted`` is not a state here; a completed delivery is
-  an input to that decision, not the decision.
-* The host owns live sessions, the input right and the transmission log. The
-  serial input channel, the takeover lock and the tmux plumbing are the host's
-  to implement; this module only says what they must guarantee and takes their
-  answer as input (see ``SessionGate``).
+  acceptance. ``master_accepted`` is not a state here.
+* Authority to control a session comes from an authenticated Agora connection
+  and the server-side binding of that connection to a Room member and a
+  Computer. Nothing in this file is a credential or a proof: every identifier
+  here is an address the host can also write down for itself.
 * Each CLI owns its own conversation record. Correlation is expressed in the
-  CLI's own identifiers (``NativeTurn``), never in text the host wrote.
+  CLI's identifiers, never in text the host wrote.
 """
 
 from __future__ import annotations
@@ -40,7 +51,7 @@ EvidenceKind = Literal[
 """How a fact about a native session became known.
 
 Terminal bytes are deliberately absent. A quiet pane, an ANSI redraw, a model
-that types "done" and a successful ``tmux send-keys`` are transports or
+that types "done" and a successful ``tmux`` command are transports or
 renderings, never evidence about a turn.
 """
 
@@ -52,7 +63,7 @@ ACCEPT_EVIDENCE: frozenset[str] = frozenset(
 OUTCOME_EVIDENCE: frozenset[str] = frozenset(
     {"native_hook", "native_notify", "native_record"}
 )
-"""Evidence that can end a turn, for success and for failure alike.
+"""Evidence that can end a turn, for success and failure alike.
 
 ``process_exit`` is excluded from both. A CLI that exits has not thereby
 finished or failed the model's work, and one that keeps running has not
@@ -63,46 +74,56 @@ EventKind = Literal[
     "input_accepted",
     "execution_completed",
     "execution_failed",
-    "interrupt_confirmed",
     "permission_wait",
     "session_exit",
 ]
+"""There is deliberately no "interrupt confirmed" kind.
 
-DeliveryState = Literal[
+Neither installed CLI reports anything when a turn is stopped: the stop key is
+accepted, the turn ends, and no hook, notification or record follows. Adding a
+kind no signal can produce would be a protocol shape pretending to be a
+capability. See docs/native-control.md for what this leaves unresolved.
+"""
+
+TURN_SCOPED_EVENTS: frozenset[str] = frozenset(
+    {"input_accepted", "execution_completed", "execution_failed"}
+)
+"""Kinds that must name a turn. The rest are session observations.
+
+A session can be starting up, waiting or exiting before any turn exists, and
+that has to be expressible without inventing a turn identifier.
+"""
+
+TurnState = Literal[
     "pending",
     "in_flight",
     "accepted",
     "completed",
     "failed",
     "uncertain",
-    "withdrawn",
-    "interrupt_pending",
-    "cancelled",
 ]
 
-TERMINAL_STATES: frozenset[str] = frozenset(
-    {"completed", "failed", "withdrawn", "cancelled"}
-)
-"""Once reached, nothing later moves the record. Late facts stay late."""
+SETTLED_TURN_STATES: frozenset[str] = frozenset({"completed", "failed"})
+"""The physical turn is over. Nothing later moves it and the channel is free."""
 
 Effect = Literal[
     "bound",
     "completed",
     "failed",
-    "interrupted",
     "permission_wait",
     "uncertain",
+    "deferred",
     "reacked",
     "late",
     "foreign",
-    "unbound",
     "unsupported_evidence",
     "ignored",
 ]
 """What the caller should do about an event, instead of counting it.
 
-``reacked`` means acknowledge again and post nothing; ``late``, ``foreign`` and
-``unbound`` mean the event is not a fact about this request.
+``deferred`` means the event is real but not yet attributable, so the sender
+keeps it for catch-up; ``reacked`` means acknowledge again and publish nothing;
+``late`` means recorded as evidence but not a valid result.
 """
 
 
@@ -110,10 +131,9 @@ class NativeTurn(BaseModel, frozen=True):
     """The CLI's own coordinates for one turn.
 
     ``session`` is the CLI-native session identifier (Claude Code
-    ``session_id``, Codex ``thread_id``) and must equal the controlled
-    session's ``native_locator``. ``turn`` is the CLI-native turn identifier
-    (Claude Code ``prompt_id``, Codex ``turn_id``). Both come from official
-    payloads; neither is minted by the host.
+    ``session_id``, Codex ``thread_id``); ``turn`` is the CLI-native turn
+    identifier (Claude Code ``prompt_id``, Codex ``turn_id``). Both come from
+    official payloads; neither is minted by the host.
     """
 
     session: str = Field(min_length=1)
@@ -121,12 +141,12 @@ class NativeTurn(BaseModel, frozen=True):
 
 
 class NativeSession(BaseModel, frozen=True):
-    """One controlled native CLI session, bound to an Agora identity.
+    """One controlled native CLI session and the Agora identity it maps to.
 
-    Authority to control the session comes from ``participant_id`` and
-    ``computer_id`` as issued by Agora. ``tmux_target``, the working directory
-    and ``native_locator`` are addresses, not credentials: matching them proves
-    nothing.
+    ``participant_id`` and ``computer_id`` say which Room member and which
+    paired Computer this session stands for. They are the mapping, not the
+    authorisation: permission is decided by the authenticated connection the
+    request arrived on, server side.
     """
 
     deployment: str = Field(min_length=1)
@@ -138,15 +158,14 @@ class NativeSession(BaseModel, frozen=True):
 
 
 class RequestOrigin(BaseModel, frozen=True):
-    """Proof that Agora persisted the request before anyone was notified.
+    """Where the request sits in the room's order.
 
-    ``request_seq`` is Agora's monotonic sequence for the room, so it is also
-    the cursor a reconnecting reader catches up from. The host cannot invent
-    it, which is why there is no self-reported "persisted" flag.
+    ``request_seq`` is Agora's monotonic sequence, used to order requests and
+    to catch up after a reconnect. It is not proof of anything on its own.
     """
 
     room_id: UUID
-    request_seq: int = Field(ge=1)
+    request_seq: int
     requested_by: UUID
 
 
@@ -168,18 +187,24 @@ class DeliveryRequest(BaseModel, frozen=True):
 
 
 class NativeEvent(BaseModel, frozen=True):
-    """One official observation, carrying the CLI's own turn coordinates."""
+    """One official observation about a controlled session.
+
+    ``session`` is always the CLI-native session identifier. ``turn_id`` is
+    present only for the kinds in ``TURN_SCOPED_EVENTS``; a startup wait or an
+    exit before the first turn carries none.
+    """
 
     event_id: UUID
     kind: EventKind
     evidence: EvidenceKind
-    turn: NativeTurn
+    session: str = Field(min_length=1)
+    turn_id: str | None = None
     summary: str = ""
     usage: Usage | None = None
 
 
 class TurnResult(BaseModel, frozen=True):
-    """What the host may submit to Agora once a bound turn ended."""
+    """What one bound turn produced."""
 
     request_id: UUID
     turn: NativeTurn
@@ -190,16 +215,14 @@ class TurnResult(BaseModel, frozen=True):
 
 @dataclass(frozen=True)
 class DeliveryRecord:
-    """The host's transmission log entry for one request.
-
-    ``bound`` is the correlation: until the CLI has named the turn this request
-    became, no outcome can be attributed to it.
-    """
+    """The host's transmission log entry for one request."""
 
     request: DeliveryRequest
-    state: DeliveryState = "pending"
+    turn_state: TurnState = "pending"
+    withdrawn: bool = False
     bound: NativeTurn | None = None
     applied_events: frozenset[UUID] = frozenset()
+    deferred_events: tuple[NativeEvent, ...] = ()
     result: TurnResult | None = None
     awaiting_permission: bool = False
     note: str = ""
@@ -209,13 +232,13 @@ class DeliveryRecord:
 class SessionGate:
     """What the host must tell this module before it may deliver.
 
-    The host implements the guarantees; this module only refuses to deliver
-    when they do not hold. Read-only attach is the default entry and takes no
-    input right. A takeover is exclusive and sets ``input_right='human'``;
-    detaching does not hand it back and a lost control connection keeps
-    ``paused`` set, both of which are the host's obligation, not a function
-    call here. ``unmanaged_writers`` counts writable clients the deployment did
-    not hand out; they pause delivery rather than being forced off.
+    The host implements the guarantees; this module refuses to deliver when
+    they do not hold. Read-only attach is the default entry and takes no input
+    right. A takeover is exclusive and sets ``input_right='human'``; detaching
+    does not hand it back and a lost control connection keeps ``paused`` set,
+    both of which are the host's obligation, not a function call here.
+    ``unmanaged_writers`` counts writable clients the deployment did not hand
+    out; they pause delivery rather than being forced off.
     """
 
     input_right: Literal["host", "human", "none"] = "host"
@@ -234,25 +257,27 @@ class Applied:
 
 
 def binding_marker(request_id: UUID) -> str:
-    """The token the adapter embeds so the CLI's own record names our turn.
+    """The token an adapter embeds so the CLI's own record names our turn.
 
-    It is a correlation primitive, not evidence: it is matched against the
+    A correlation primitive, not evidence: it is matched once against the
     CLI's durable record of that one message item, which yields the native
-    turn. Everything afterwards is correlated by native identifiers. It is
-    needed only for CLIs that expose no turn identity at delivery time.
+    turn; everything afterwards is correlated by native identifiers. Needed
+    only for CLIs that expose no turn identity at delivery time.
     """
     return f"agora-req-{request_id}"
 
 
 def start(request: DeliveryRequest) -> DeliveryRecord:
-    """Open a transmission log entry for an already-persisted request."""
+    """Open a transmission log entry for a request Agora already accepted."""
     return DeliveryRecord(request=request)
 
 
 def blocked_reason(record: DeliveryRecord, gate: SessionGate) -> str | None:
     """Why the host may not hand this request over yet, or None."""
-    if record.state != "pending":
-        return f"request is {record.state}"
+    if record.withdrawn:
+        return "the request was withdrawn"
+    if record.turn_state != "pending":
+        return f"the turn is {record.turn_state}"
     if gate.input_right != "host":
         return "input right held by a human takeover"
     if gate.paused:
@@ -268,97 +293,134 @@ def blocked_reason(record: DeliveryRecord, gate: SessionGate) -> str | None:
 
 def hand_off(record: DeliveryRecord) -> DeliveryRecord:
     """Open the injection window: delivered, no native acknowledgement yet."""
-    if record.state != "pending":
+    if record.turn_state != "pending":
         return record
-    return replace(record, state="in_flight")
+    return replace(record, turn_state="in_flight")
 
 
-def withdraw(record: DeliveryRecord) -> DeliveryRecord:
-    """Agora cancelled the request. This stops delivery, not a running turn.
+def withdraw(record: DeliveryRecord, why: str = "withdrawn by the request authority") -> DeliveryRecord:
+    """Record the authority's decision to cancel. This never expires.
 
-    Before hand-off nothing was injected, so the request is simply withdrawn.
-    After hand-off the physical turn may still be running, so the record waits
-    for a native interrupt confirmation and treats any result as late.
+    It stops delivery and makes any result unpublishable. It does not claim the
+    physical turn stopped: that stays whatever the CLI reports, so the input
+    channel is released by a real terminal turn rather than by waiting forever
+    for an interrupt acknowledgement that a naturally finished turn will never
+    send.
     """
-    if record.state in TERMINAL_STATES:
+    if record.withdrawn:
         return record
-    if record.state == "pending":
-        return replace(record, state="withdrawn", note="withdrawn before delivery")
-    return replace(
-        record, state="interrupt_pending", note="cancelled; physical turn not confirmed stopped"
+    return replace(record, withdrawn=True, note=why)
+
+
+def _fold_outcome(record: DeliveryRecord, event: NativeEvent, state: TurnState) -> Applied:
+    seen = replace(record, applied_events=record.applied_events | {event.event_id})
+    assert record.bound is not None
+    result = TurnResult(
+        request_id=record.request.request_id,
+        turn=record.bound,
+        outcome=state,
+        summary=event.summary,
+        usage=event.usage,
     )
+    folded = replace(seen, turn_state=state, result=result, awaiting_permission=False)
+    return Applied(folded, "late" if record.withdrawn else state)
 
 
 def apply(record: DeliveryRecord, event: NativeEvent) -> Applied:
     """Fold one official observation into the record.
 
-    Refuses anything it cannot attribute: an event from another native session,
-    an event from a different turn than the one this request is bound to, an
-    outcome for a request that was never bound, and evidence that cannot carry
-    the claim. Replays are acknowledged, never re-folded.
+    Refuses anything it cannot attribute, and only marks an event applied once
+    it really was: an outcome that arrives before the request is bound is kept
+    in ``deferred_events`` and folded exactly once when the binding appears, so
+    a lost acknowledgement can still be replayed with the same event id.
     """
+    if event.session != record.request.session.native_locator:
+        return Applied(record, "foreign")
+    if event.kind in TURN_SCOPED_EVENTS and event.turn_id is None:
+        return Applied(record, "foreign")
+    if record.bound is not None and event.turn_id is not None and event.turn_id != record.bound.turn:
+        return Applied(record, "foreign")
     if event.event_id in record.applied_events:
         return Applied(record, "reacked")
-    if event.turn.session != record.request.session.native_locator:
-        return Applied(record, "foreign")
-    if record.bound is not None and event.turn != record.bound:
-        return Applied(record, "foreign")
 
-    seen = replace(record, applied_events=record.applied_events | {event.event_id})
-    terminal = record.state in TERMINAL_STATES
+    settled = record.turn_state in SETTLED_TURN_STATES
 
     if event.kind == "input_accepted":
         if event.evidence not in ACCEPT_EVIDENCE:
             return Applied(record, "unsupported_evidence")
-        if terminal or record.state == "interrupt_pending":
-            return Applied(seen, "late")
-        return Applied(replace(seen, bound=event.turn, state="accepted"), "bound")
+        if settled:
+            return Applied(replace(record, applied_events=record.applied_events | {event.event_id}), "late")
+        bound = NativeTurn(session=event.session, turn=event.turn_id)
+        opened = replace(
+            record,
+            applied_events=record.applied_events | {event.event_id},
+            bound=bound,
+            turn_state="accepted",
+            deferred_events=(),
+        )
+        for deferred in record.deferred_events:
+            if deferred.turn_id == bound.turn:
+                opened = apply(opened, deferred).record
+        return Applied(opened, "bound")
 
     if event.kind in ("execution_completed", "execution_failed"):
         if event.evidence not in OUTCOME_EVIDENCE:
             return Applied(record, "unsupported_evidence")
         if record.bound is None:
-            return Applied(seen, "unbound")
-        outcome = "completed" if event.kind == "execution_completed" else "failed"
-        if terminal:
-            same = record.result is not None and record.result.outcome == outcome
-            return Applied(seen, "reacked" if same else "late")
-        if record.state == "interrupt_pending":
-            return Applied(seen, "late")
-        result = TurnResult(
-            request_id=record.request.request_id,
-            turn=event.turn,
-            outcome=outcome,
-            summary=event.summary,
-            usage=event.usage,
-        )
-        return Applied(replace(seen, state=outcome, result=result, awaiting_permission=False), outcome)
+            if any(d.event_id == event.event_id for d in record.deferred_events):
+                return Applied(record, "deferred")
+            return Applied(replace(record, deferred_events=record.deferred_events + (event,)), "deferred")
+        if settled:
+            return Applied(replace(record, applied_events=record.applied_events | {event.event_id}), "late")
+        state: TurnState = "completed" if event.kind == "execution_completed" else "failed"
+        return _fold_outcome(record, event, state)
 
-    if event.kind == "interrupt_confirmed":
-        if event.evidence not in OUTCOME_EVIDENCE:
-            return Applied(record, "unsupported_evidence")
-        if terminal:
-            return Applied(seen, "late")
-        return Applied(replace(seen, state="cancelled", note=event.summary), "interrupted")
-
+    seen = replace(record, applied_events=record.applied_events | {event.event_id})
     if event.kind == "permission_wait":
-        if terminal:
+        if settled:
             return Applied(seen, "late")
         return Applied(replace(seen, awaiting_permission=True, note=event.summary), "permission_wait")
 
-    if record.state in ("in_flight", "accepted", "interrupt_pending"):
+    if record.turn_state in ("in_flight", "accepted"):
         return Applied(
-            replace(seen, state="uncertain", note="CLI exited before a native outcome"),
+            replace(seen, turn_state="uncertain", note="CLI exited before a native outcome"),
             "uncertain",
         )
     return Applied(seen, "ignored")
 
 
 def mark_uncertain(record: DeliveryRecord, why: str) -> DeliveryRecord:
-    """The host lost track inside the injection window."""
-    if record.state in TERMINAL_STATES:
+    """The host lost track of the physical turn. Decisions are untouched."""
+    if record.turn_state in SETTLED_TURN_STATES:
         return record
-    return replace(record, state="uncertain", note=why)
+    return replace(record, turn_state="uncertain", note=why)
+
+
+def publishable_result(record: DeliveryRecord) -> TurnResult | None:
+    """The result Agora may accept, or None.
+
+    A withdrawn request has no valid result even when the physical turn ran to
+    completion; the outcome stays in the record as evidence.
+    """
+    if record.withdrawn:
+        return None
+    return record.result
+
+
+def channel_released(record: DeliveryRecord) -> bool:
+    """Whether the session may take the next request.
+
+    A settled turn releases it. So does a withdrawal that happened before
+    anything was injected. Nothing else does: while a turn may still be
+    running, the serial channel stays occupied.
+
+    A stopped turn therefore does not release it, because neither installed
+    CLI reports that a stop happened. That is a real gap, not a rule: the host
+    cannot honestly free the channel on evidence it does not have.
+    """
+    if record.turn_state in SETTLED_TURN_STATES:
+        return True
+    return record.withdrawn and record.turn_state == "pending"
 
 
 RecoveryAction = Literal["deliver", "reconcile_first", "await_native", "settled"]
@@ -367,15 +429,18 @@ RecoveryAction = Literal["deliver", "reconcile_first", "await_native", "settled"
 def plan_recovery(record: DeliveryRecord) -> RecoveryAction:
     """What a restarted host may do, given only its own durable log.
 
-    A missing acknowledgement is never permission to run a side-effecting
-    request again; the CLI's own record is checked first. Nothing here promises
-    the model ran exactly once.
+    A withdrawn request is never delivered again, whatever the host does or
+    does not know about the physical turn. A missing acknowledgement is never
+    permission to run a side-effecting request again. Nothing here promises the
+    model ran exactly once.
     """
-    if record.state in TERMINAL_STATES:
+    if record.withdrawn:
+        return "settled" if channel_released(record) else "await_native"
+    if record.turn_state in SETTLED_TURN_STATES:
         return "settled"
-    if record.state == "pending":
+    if record.turn_state == "pending":
         return "deliver"
-    if record.state in ("in_flight", "uncertain"):
+    if record.turn_state in ("in_flight", "uncertain"):
         return "reconcile_first" if record.request.side_effecting else "deliver"
     return "await_native"
 
@@ -383,10 +448,9 @@ def plan_recovery(record: DeliveryRecord) -> RecoveryAction:
 def schema() -> dict:
     """Contract schema for non-Python consumers.
 
-    Only the identities and the event vocabulary crossing the host/backend
-    seam are exported. ``DeliveryRecord`` and ``SessionGate`` are host-private
-    on purpose: nobody should re-implement the state machine in another
-    language.
+    Only what crosses the host/backend seam is exported. ``DeliveryRecord`` and
+    ``SessionGate`` stay host-private: nobody should re-implement the state
+    machine in another language.
     """
     return {
         "models": {
@@ -402,10 +466,11 @@ def schema() -> dict:
             )
         },
         "event_kinds": list(EventKind.__args__),
+        "turn_scoped_events": sorted(TURN_SCOPED_EVENTS),
         "evidence_kinds": list(EvidenceKind.__args__),
         "accept_evidence": sorted(ACCEPT_EVIDENCE),
         "outcome_evidence": sorted(OUTCOME_EVIDENCE),
-        "host_private": ["DeliveryRecord", "SessionGate", "DeliveryState", "Effect"],
+        "host_private": ["DeliveryRecord", "SessionGate", "TurnState", "Effect"],
     }
 
 
