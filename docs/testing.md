@@ -15,9 +15,16 @@
 
 ### 环境要求
 
-- PostgreSQL（测试 DSN 默认 `postgresql://agora:agora@127.0.0.1:5433/agora`）
-- Redis（默认 `redis://127.0.0.1:6379/0`；并行 worktree 用 `/1` 隔离）
-- 真模型层：OpenAI 兼容端点，例如
+集成用例会清空数据库表与 Redis 测试库。只连接专用测试实例；并行 worktree 必须各用独立 PostgreSQL 数据库和 Redis 库，不能只换 Redis 库而共用 PostgreSQL。
+
+- PostgreSQL：`AGORA_DATABASE_URL`，默认 `postgresql://agora:agora@127.0.0.1:5433/agora`。
+- Redis：`AGORA_REDIS_URL`，默认 `redis://127.0.0.1:6379/0`。
+
+显式执行 `docker compose up -d --wait`，健康检查成功后再跑集成用例。测试入口不启动或等待服务；服务不可达会使已选中的集成用例失败，本地与 CI 一致。GitHub Actions 使用该次运行独有的服务容器。
+
+免服务验证可运行 `uv run pytest tests/test_coalesce.py tests/test_daemon_lane.py tests/test_daemon_args.py -q`。按改动选择窄测，不用这个子集代替需要数据库的验收。
+
+真模型层还需要 OpenAI 兼容端点；未配置 `OPENAI_BASE_URL` 或中继不可达时，标为 `llm` 的可选用例会跳过，必须在实测记录中注明，不能算模型验证通过。例如：
 
 ```bash
 export OPENAI_API_KEY=<key>
@@ -236,12 +243,12 @@ Phase 7d 改完同日重跑（同一对模型）：`-m llm` 7 passed in 98.36s�
 ## 5. 复现指引
 
 ```bash
-# 全量确定性测试（不花 token）
-pytest -m "not llm" -q
+# 先按 §1 准备专用服务和环境，再跑确定性测试（不花 token）
+uv run pytest -m "not llm" -q
 
 # 真模型 + 对抗角色 + moderated 点名/@ 直通（花 token，约 7 分钟）
-source .env 或手动 export（见 §1）
-pytest tests/test_coordination_llm.py -m llm -q
+# 按 §1 配置环境变量
+uv run pytest tests/test_coordination_llm.py -m llm -q
 
 # moderated 房间现场叙事（进程内拉起应用，同样要中继）
 # 主持点名、@ 直通；模型拒答时落地 "{name} passes."，主持换 trigger 再点名

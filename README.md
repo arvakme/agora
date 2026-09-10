@@ -49,7 +49,7 @@ Inspired by Cumora (github.com/yetone/cumora); independently designed and implem
 
 ```bash
 cd agora
-docker compose up -d
+docker compose up -d --wait
 uv sync
 # 变量说明见仓库根目录 .env.example
 export AGORA_DATABASE_URL=postgresql://agora:agora@127.0.0.1:5433/agora
@@ -121,14 +121,16 @@ uv run python scripts/demo_byoa.py
 
 ## 测试
 
+先确认数据库和 Redis 专用于测试，集成用例会清空其中的数据。服务准备成功后再运行测试：
+
 ```bash
-docker compose up -d
+docker compose up -d --wait
 uv sync
-uv run pytest -m "not llm"    # mock 模型，不打中继（GitHub Actions 也跑这一条）
-uv run pytest -m llm          # 真中继：计数游戏 + one-of-us + moderated 点名/@ 直通（需要上面的 OPENAI_*）
+uv run pytest -m "not llm"    # mock 模型，不打中继；也是 CI 入口
+uv run pytest -m llm          # 可选真模型协调测试，需要上面的 OPENAI_*
 ```
 
-`test_coalesce`、Job manifest / launcher 和模型策略测试不需要外部服务。`test_seq` 需要 Postgres；`test_wake` / `test_brain` / `test_k8s` 的 runtime 用例 / `test_hardening`（hold token、verbatim-dup、循环上限、digest）需要 Postgres + Redis。`-m "not llm"` 全部 mock 模型；push 到 `main` 和 pull_request 上 GitHub Actions 也跑这一条（服务容器里的 Postgres 16 / Redis 7，DSN 走环境变量）。`-m llm` 打真实中继，未设置 `OPENAI_BASE_URL` 或中继不可达时会 skip。conftest 在连不上时会尝试 `docker compose up`；若 Docker 也不可用，集成测试会被 skip。
+测试不会自行启动 Docker；被选中的集成用例在服务不可达时失败，不以跳过代替通过。无外部服务时只运行免服务用例。环境隔离、选择方式和真模型测试限制见[测试文档](docs/testing.md)。
 
 ## 房间 digest
 
