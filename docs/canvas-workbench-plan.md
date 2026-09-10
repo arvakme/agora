@@ -68,9 +68,9 @@ Docker 无法自行启动用户主机上的 tmux。仅启动 Compose 时，后�
 
 本机宿主用一个深模块封装会话发现、输入投递、事件订阅和受控 attach；调用方不需要知道各 CLI 的按键、启动参数或记录格式。优先重构现有宿主职责并使用标准库、tmux 与 CLI 官方能力，不先建设供应商插件平台。
 
-P0 已用真实 CLI 验证接缝，最小请求、事件和身份模型冻结在 [`native_protocol.py`](../native_protocol.py)，顺序与权限见[行为契约](native-control.md)；本文不复制其字段与状态名。各 CLI 的差异限制在启动/恢复命令、可输入信号和完成回执中。Pi Master 的扩展只是这个接口的调用方，不拥有第二个 Worker Pool。
+P0 用真实 CLI 验证接缝，最小请求、事件和身份模型定义在 [`native_protocol.py`](../native_protocol.py)，顺序、权限与实测结论见[行为契约](native-control.md)；是否冻结由主持人裁决，本文不复制其字段与状态名。各 CLI 的差异限制在启动/恢复命令、可输入信号和完成回执中。Pi Master 的扩展只是这个接口的调用方，不拥有第二个 Worker Pool。
 
-首轮纳管 Claude Code 与 Codex：两者都有官方的接收与完成回执。Codex 的 thread id 在第一回合之后才存在，宿主对新会话先走终端、再改用原生队列。Grok 尚未找到可靠的接收/完成信号，明确阻塞其自动派发。
+首轮纳管 Claude Code 与 Codex：两者都有官方的接收与完成回执，且回执带 CLI 自己的会话与回合标识。Codex 在首个回合之前不写任何记录，新会话要先用一次引导回合认领身份。取消的原生确认两种 CLI 都还没有实测来源，Grok 也尚未找到可靠信号，两者都明确阻塞。
 
 - 每个 Agent 有独立、默认 detached 的 tmux session。只接纳本部署内明确选定的会话；不扫描后自动接管用户其他终端。
 - 输入经过同一会话的串行通道，先核对输入权和 CLI 可接收状态，再使用安全的原生输入方式；任务正文不能拼成 shell 命令。
@@ -156,7 +156,7 @@ P2 必测：重复启动不创建第二 Master；后端和宿主重启不杀存�
 - Agora 当前实现：[设计说明](design.md)、[测试入口](testing.md)、`server/scheduler.py`、`server/db.py`、`server/auth.py`、`daemon/main.py`、`brain/world.py` 与 Compose。原有文档描述现状，不构成保留旧执行路径的要求。
 - canvas-agent：检查提交 `119ee5124408264424f3c1ce96ab9fdb8bd473e4` 的[内部契约](https://github.com/arvakme/canvas-agent/blob/119ee5124408264424f3c1ce96ab9fdb8bd473e4/docs/api-contract.md)和实际 runner/同步实现；再次复用时核对差异与授权。
 - tmux：[官方手册](https://man.openbsd.org/tmux.1)、[Control Mode](https://github.com/tmux/tmux/wiki/Control-Mode)。本机 Seedmux 配置仅作为隔离和事件实现的只读参考。
-- Pi：[扩展接口](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md)；以本机安装版本自带的 `docs/extensions.md` 为准。各 CLI 的安装版本、hooks、精确模型与恢复能力已在 P0 实测，不把命令名称视为能力保证。
+- Pi：[扩展接口](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md)；以本机安装版本自带的 `docs/extensions.md` 为准。各 CLI 的安装版本、hooks、精确模型与恢复能力在 P0 实测，未实测到的能力按未证实记录，不把命令名称视为能力保证。
 
 [L1]: https://github.com/tldraw/tldraw/blob/v5.4.0/LICENSE.md
 [L2]: https://tldraw.dev/community/license
