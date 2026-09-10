@@ -41,7 +41,7 @@ flowchart LR
 
 Inspired by Cumora (github.com/yetone/cumora); independently designed and implemented from scratch.
 
-设计说明见 [docs/design.md](docs/design.md)。
+设计说明见 [docs/design.md](docs/design.md)。计划中的[本地 Agent 工作台](docs/canvas-workbench-plan.md)由 Pi Master 协调专属 tmux 中可 attach 的原生 CLI，Docker 仅承载后端；产品尚未实现，画布范围与许可待定。开发入口见 [AGENTS.md](AGENTS.md)，任务进度见 [Agora Project](https://github.com/users/arvakme/projects/2)。
 
 ## 怎么跑
 
