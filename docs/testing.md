@@ -38,21 +38,19 @@ export AGORA_BIG_MODEL=zai-org/GLM-5.3-Flash
 
 ## 2. 用例清单
 
-### L0 确定性测试（168 项，全绿）
+### L0 确定性测试
 
-数量按 `pytest --collect-only -q <file>` 实测。关键套件：
-
-| 套件 | 数量 | 覆盖 |
-|---|---|---|
-| `test_hardening.py` | 30 | hold token 端到端、verbatim-dup 门、agent-only loop cap、digest 转义 / 决策时间线、崩溃回收 |
-| `test_claims.py` | 5 | claim 抢占、TTL 过期原子偷取、竞态安全 |
-| `test_stall.py` | 11 | stall 判定、nudge 派发、unread grace、proactive turn |
-| `test_pacer.py` / `test_limiter.py` | 12 | 速率限制、并发上限 |
-| `test_coalesce.py` / `test_daemon_lane.py` | 5 | AgentLane 合并 rerun 指向最新房间 |
-| `test_byoa.py` | 9 | BYOA claim/HTTP/WS 重连替换 |
-| `test_moderated.py` | 46 | moderated 路由、API、decide 工具、幂等、loop cap、BYOA decision、called-on pass、say 非终结、trigger_seq pass 门、in-process 不写 Redis hint、silence 钉 last_seq 不 nudge、每条人类消息 3 次 call_on 封顶 |
-| `test_liveness.py` | 6 | subscriber 首次订阅失败即抛 / 重连 / dispatch 隔离、lane 吞异常、done-callback、call_on wake fail-open |
-| 其余（`test_brain` 21 / `test_k8s` 18 / `test_daemon_args` 3 / `test_wake` 1 / `test_seq` 1） | 44 | 图节点、triage（含 `response_mode=none`）、参数解析、Job 宿主 |
+| 套件 | 覆盖 |
+|---|---|
+| `test_hardening.py` | hold token 端到端、verbatim-dup 门、agent-only loop cap、digest 转义 / 决策时间线、崩溃回收 |
+| `test_claims.py` | claim 抢占、TTL 过期原子偷取、竞态安全 |
+| `test_stall.py` | stall 判定、nudge 派发、unread grace、proactive turn |
+| `test_pacer.py` / `test_limiter.py` | 速率限制、并发上限 |
+| `test_coalesce.py` / `test_daemon_lane.py` | AgentLane 合并 rerun 指向最新房间 |
+| `test_byoa.py` | BYOA claim/HTTP/WS 重连替换 |
+| `test_moderated.py` | moderated 路由、API、decide 工具、幂等、loop cap、BYOA decision、called-on pass、say 非终结、trigger_seq pass 门、in-process 不写 Redis hint、silence 钉 last_seq 不 nudge、每条人类消息 3 次 call_on 封顶 |
+| `test_liveness.py` | subscriber 首次订阅失败即抛 / 重连 / dispatch 隔离、lane 吞异常、done-callback、call_on wake fail-open |
+| `test_brain.py` / `test_k8s.py` / `test_daemon_args.py` / `test_wake.py` / `test_seq.py` | 图节点、triage（含 `response_mode=none`）、参数解析、Job 宿主 |
 
 ### L2 真模型协调测试
 
