@@ -15,9 +15,16 @@
 
 ### 环境要求
 
-- PostgreSQL（测试 DSN 默认 `postgresql://agora:agora@127.0.0.1:5433/agora`）
-- Redis（默认 `redis://127.0.0.1:6379/0`；并行 worktree 用 `/1` 隔离）
-- 真模型层：OpenAI 兼容端点，例如
+集成用例会清空数据库表与 Redis 测试库。只连接专用测试实例；并行 worktree 必须各用独立 PostgreSQL 数据库和 Redis 库，不能只换 Redis 库而共用 PostgreSQL。
+
+- PostgreSQL：`AGORA_DATABASE_URL`，默认 `postgresql://agora:agora@127.0.0.1:5433/agora`。
+- Redis：`AGORA_REDIS_URL`，默认 `redis://127.0.0.1:6379/0`。
+
+显式执行 `docker compose up -d --wait`，健康检查成功后再跑集成用例。测试入口不启动或等待服务；服务不可达会使已选中的集成用例失败，本地与 CI 一致。GitHub Actions 使用该次运行独有的服务容器。
+
+免服务验证可运行 `uv run pytest tests/test_coalesce.py tests/test_daemon_lane.py tests/test_daemon_args.py -q`。按改动选择窄测，不用这个子集代替需要数据库的验收。
+
+真模型层还需要 OpenAI 兼容端点；未配置 `OPENAI_BASE_URL` 或中继不可达时，标为 `llm` 的可选用例会跳过，必须在实测记录中注明，不能算模型验证通过。例如：
 
 ```bash
 export OPENAI_API_KEY=<key>
@@ -31,21 +38,19 @@ export AGORA_BIG_MODEL=zai-org/GLM-5.3-Flash
 
 ## 2. 用例清单
 
-### L0 确定性测试（168 项，全绿）
+### L0 确定性测试
 
-数量按 `pytest --collect-only -q <file>` 实测。关键套件：
-
-| 套件 | 数量 | 覆盖 |
-|---|---|---|
-| `test_hardening.py` | 30 | hold token 端到端、verbatim-dup 门、agent-only loop cap、digest 转义 / 决策时间线、崩溃回收 |
-| `test_claims.py` | 5 | claim 抢占、TTL 过期原子偷取、竞态安全 |
-| `test_stall.py` | 11 | stall 判定、nudge 派发、unread grace、proactive turn |
-| `test_pacer.py` / `test_limiter.py` | 12 | 速率限制、并发上限 |
-| `test_coalesce.py` / `test_daemon_lane.py` | 5 | AgentLane 合并 rerun 指向最新房间 |
-| `test_byoa.py` | 9 | BYOA claim/HTTP/WS 重连替换 |
-| `test_moderated.py` | 46 | moderated 路由、API、decide 工具、幂等、loop cap、BYOA decision、called-on pass、say 非终结、trigger_seq pass 门、in-process 不写 Redis hint、silence 钉 last_seq 不 nudge、每条人类消息 3 次 call_on 封顶 |
-| `test_liveness.py` | 6 | subscriber 首次订阅失败即抛 / 重连 / dispatch 隔离、lane 吞异常、done-callback、call_on wake fail-open |
-| 其余（`test_brain` 21 / `test_k8s` 18 / `test_daemon_args` 3 / `test_wake` 1 / `test_seq` 1） | 44 | 图节点、triage（含 `response_mode=none`）、参数解析、Job 宿主 |
+| 套件 | 覆盖 |
+|---|---|
+| `test_hardening.py` | hold token 端到端、verbatim-dup 门、agent-only loop cap、digest 转义 / 决策时间线、崩溃回收 |
+| `test_claims.py` | claim 抢占、TTL 过期原子偷取、竞态安全 |
+| `test_stall.py` | stall 判定、nudge 派发、unread grace、proactive turn |
+| `test_pacer.py` / `test_limiter.py` | 速率限制、并发上限 |
+| `test_coalesce.py` / `test_daemon_lane.py` | AgentLane 合并 rerun 指向最新房间 |
+| `test_byoa.py` | BYOA claim/HTTP/WS 重连替换 |
+| `test_moderated.py` | moderated 路由、API、decide 工具、幂等、loop cap、BYOA decision、called-on pass、say 非终结、trigger_seq pass 门、in-process 不写 Redis hint、silence 钉 last_seq 不 nudge、每条人类消息 3 次 call_on 封顶 |
+| `test_liveness.py` | subscriber 首次订阅失败即抛 / 重连 / dispatch 隔离、lane 吞异常、done-callback、call_on wake fail-open |
+| `test_brain.py` / `test_k8s.py` / `test_daemon_args.py` / `test_wake.py` / `test_seq.py` | 图节点、triage（含 `response_mode=none`）、参数解析、Job 宿主 |
 
 ### L2 真模型协调测试
 
@@ -236,12 +241,12 @@ Phase 7d 改完同日重跑（同一对模型）：`-m llm` 7 passed in 98.36s�
 ## 5. 复现指引
 
 ```bash
-# 全量确定性测试（不花 token）
-pytest -m "not llm" -q
+# 先按 §1 准备专用服务和环境，再跑确定性测试（不花 token）
+uv run pytest -m "not llm" -q
 
 # 真模型 + 对抗角色 + moderated 点名/@ 直通（花 token，约 7 分钟）
-source .env 或手动 export（见 §1）
-pytest tests/test_coordination_llm.py -m llm -q
+# 按 §1 配置环境变量
+uv run pytest tests/test_coordination_llm.py -m llm -q
 
 # moderated 房间现场叙事（进程内拉起应用，同样要中继）
 # 主持点名、@ 直通；模型拒答时落地 "{name} passes."，主持换 trigger 再点名
