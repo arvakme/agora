@@ -11,8 +11,8 @@ Two facts about one request are kept apart on purpose:
 * ``DeliveryRecord.withdrawn`` is a decision by the request authority. Once
   taken it is never undone by anything the host later learns.
 * ``DeliveryRecord.turn_state`` is what the host has observed about the
-  physical turn. The turn can still bind, finish, fail or be interrupted after
-  a withdrawal, because cancelling a request does not stop a running model.
+  physical turn. The turn can still bind, finish or fail after a withdrawal,
+  because cancelling a request does not stop a running model.
 
 A physically finished turn therefore releases the session's input channel, and
 its result is recorded as evidence, but ``publishable_result`` refuses to hand
@@ -77,13 +77,6 @@ EventKind = Literal[
     "permission_wait",
     "session_exit",
 ]
-"""There is deliberately no "interrupt confirmed" kind.
-
-Neither installed CLI reports anything when a turn is stopped: the stop key is
-accepted, the turn ends, and no hook, notification or record follows. Adding a
-kind no signal can produce would be a protocol shape pretending to be a
-capability. See docs/native-control.md for what this leaves unresolved.
-"""
 
 TURN_SCOPED_EVENTS: frozenset[str] = frozenset(
     {"input_accepted", "execution_completed", "execution_failed"}
@@ -119,7 +112,7 @@ Effect = Literal[
     "unsupported_evidence",
     "ignored",
 ]
-"""What the caller should do about an event, instead of counting it.
+"""The effect of an event, including outcomes deferred until its binding.
 
 ``deferred`` means the event is real but not yet attributable, so the sender
 keeps it for catch-up; ``reacked`` means acknowledge again and publish nothing;
@@ -133,7 +126,7 @@ class NativeTurn(BaseModel, frozen=True):
     ``session`` is the CLI-native session identifier (Claude Code
     ``session_id``, Codex ``thread_id``); ``turn`` is the CLI-native turn
     identifier (Claude Code ``prompt_id``, Codex ``turn_id``). Both come from
-    official payloads; neither is minted by the host.
+    official payloads; a host-generated correlation marker is not a turn id.
     """
 
     session: str = Field(min_length=1)
@@ -293,7 +286,7 @@ def blocked_reason(record: DeliveryRecord, gate: SessionGate) -> str | None:
 
 def hand_off(record: DeliveryRecord) -> DeliveryRecord:
     """Open the injection window: delivered, no native acknowledgement yet."""
-    if record.turn_state != "pending":
+    if record.withdrawn or record.turn_state != "pending":
         return record
     return replace(record, turn_state="in_flight")
 
@@ -361,6 +354,8 @@ def apply(record: DeliveryRecord, event: NativeEvent) -> Applied:
         for deferred in record.deferred_events:
             if deferred.turn_id == bound.turn:
                 opened = apply(opened, deferred).record
+        if opened.result is not None:
+            return Applied(opened, "late" if opened.withdrawn else opened.result.outcome)
         return Applied(opened, "bound")
 
     if event.kind in ("execution_completed", "execution_failed"):
@@ -414,9 +409,8 @@ def channel_released(record: DeliveryRecord) -> bool:
     anything was injected. Nothing else does: while a turn may still be
     running, the serial channel stays occupied.
 
-    A stopped turn therefore does not release it, because neither installed
-    CLI reports that a stop happened. That is a real gap, not a rule: the host
-    cannot honestly free the channel on evidence it does not have.
+    A stop command alone cannot release it: transport acknowledgement does
+    not establish that the native turn stopped.
     """
     if record.turn_state in SETTLED_TURN_STATES:
         return True

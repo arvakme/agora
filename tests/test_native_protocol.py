@@ -98,12 +98,22 @@ def test_an_outcome_that_arrives_before_the_binding_is_kept_not_acknowledged() -
     assert eid not in early.record.applied_events
 
     bound = np.apply(early.record, event("input_accepted", "native_hook"))
+    assert bound.effect == "completed"
     assert bound.record.turn_state == "completed"
     assert bound.record.result is not None and bound.record.result.summary == "RESULT"
 
     replay = np.apply(bound.record, event("execution_completed", "native_notify", event_id=eid, summary="RESULT"))
     assert replay.effect == "reacked"
     assert replay.record.result == bound.record.result
+
+
+def test_a_deferred_completion_remains_late_after_withdrawal() -> None:
+    record = np.withdraw(np.hand_off(np.start(make_request())))
+    early = np.apply(record, event("execution_completed", "native_record", summary="LATE"))
+    bound = np.apply(early.record, event("input_accepted", "native_record"))
+    assert bound.effect == "late"
+    assert np.publishable_result(bound.record) is None
+    assert np.channel_released(bound.record)
 
 
 def test_a_deferred_outcome_replayed_before_binding_is_kept_once() -> None:
@@ -169,13 +179,13 @@ def test_a_naturally_finished_turn_releases_the_channel_after_a_withdrawal() -> 
 
 def test_withdrawing_before_delivery_injects_nothing_and_frees_the_channel() -> None:
     record = np.withdraw(np.start(make_request()))
+    assert np.hand_off(record) == record
     assert record.turn_state == "pending"
     assert np.channel_released(record)
     assert np.plan_recovery(record) == "settled"
 
 
-def test_a_stopped_turn_stays_unknown_because_no_cli_reports_one() -> None:
-    """Both installed CLIs go silent after a stop; nothing may be inferred."""
+def test_withdrawal_does_not_claim_the_native_turn_has_stopped() -> None:
     record = np.withdraw(bound_record())
     assert record.turn_state == "accepted"
     assert not np.channel_released(record)
