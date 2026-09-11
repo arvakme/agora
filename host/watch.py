@@ -58,11 +58,11 @@ def parse_rollout_line(
     turn = payload.get("turn_id")
     if isinstance(turn, str) and turn:
         last_turn = turn
-    elif inner == "task_started":
-        return None, last_turn
     kind = None
     summary = ""
-    if inner == "user_message":
+    if inner in {"task_started", "user_message"}:
+        # Codex records no user message of its own; starting a turn is its
+        # own statement that the input was taken.
         kind = "input_accepted"
         message = payload.get("message")
         summary = message if isinstance(message, str) else ""
