@@ -221,7 +221,10 @@ class Host:
             state = self._require(name)
             locator = state.native_locator
             log = state.native_log
-            start_at = state.visible_from if state.record is not None else _log_end(log)
+            # A settled record stays on the session; only an unreleased
+            # channel means the delivery whose start this marks is still live.
+            live = state.record is not None and not channel_released(state.record)
+            start_at = state.visible_from if live else _log_end(log)
         queue: asyncio.Queue[object] = asyncio.Queue()
         loop = asyncio.get_running_loop()
         watcher = JsonlWatcher(log, session=locator, start_at=start_at)
