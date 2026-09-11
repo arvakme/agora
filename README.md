@@ -43,6 +43,16 @@ Inspired by Cumora (github.com/yetone/cumora); independently designed and implem
 
 设计说明见 [docs/design.md](docs/design.md)。计划中的[本地 Agent 工作台](docs/canvas-workbench-plan.md)由 Pi Master 协调专属 tmux 中可 attach 的原生 CLI，Docker 仅承载后端；产品尚未实现，画布范围与许可待定。开发入口见 [AGENTS.md](AGENTS.md)，任务进度见 [Agora Project](https://github.com/users/arvakme/projects/2)。
 
+## 本地原生问答（agora_ask）
+
+在专属 tmux 里向 Codex CLI 问一个问题，等原生 JSONL 终态，回答打印到终端并写入 Postgres。这是当前第一条端到端原生控制链路，不是 HTTP API，也不做多会话并发。用法、环境变量与限制见 [docs/agora-ask.md](docs/agora-ask.md)。
+
+```bash
+docker compose up -d --wait
+export AGORA_DATABASE_URL=postgresql://agora:agora@127.0.0.1:5433/agora
+uv run python -m agora_ask "帮我看看这段代码有没有问题"
+```
+
 ## 怎么跑
 
 本机若 5432 已被占用，compose 把 Postgres 映到 **5433**（容器内仍是 5432）。Redis 用 6379。

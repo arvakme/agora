@@ -185,7 +185,13 @@ class Host:
             self._save_index()
             return name
 
-    def deliver(self, name: str, body: str) -> None:
+    def deliver(
+        self,
+        name: str,
+        body: str,
+        *,
+        request: DeliveryRequest | None = None,
+    ) -> DeliveryRecord:
         if not body:
             raise ValueError("body is required")
         encoded = body.encode()
@@ -193,7 +199,10 @@ class Host:
             raise ValueError("body carries a bracketed-paste terminator and cannot be delivered")
         with self._lock:
             state = self._require(name)
-            record = start(self._request(state, body))
+            opened = request if request is not None else self._request(state, body)
+            if request is not None and request.body != body:
+                raise ValueError("request body does not match the delivered text")
+            record = start(opened)
             reason = blocked_reason(record, self._gate(state))
             if reason:
                 raise DeliveryBlocked(reason)
@@ -211,6 +220,22 @@ class Host:
                 raise SessionGone(f"session {name} has no managed client")
             self._tmux("send-keys", "-c", state.client, "-t", name, "Enter")
             state.record = hand_off(record)
+            return state.record
+
+    def build_request(self, name: str, body: str) -> DeliveryRequest:
+        with self._lock:
+            return self._request(self._require(name), body)
+
+    def native_target(self, name: str) -> tuple[Path, str] | None:
+        with self._lock:
+            state = self._sessions.get(name)
+            if state is None:
+                return None
+            return state.native_log, state.native_locator
+
+    def tmux_session_names(self) -> set[str]:
+        with self._lock:
+            return self._tmux_sessions()
 
     def gate(self, name: str) -> SessionGate:
         with self._lock:
