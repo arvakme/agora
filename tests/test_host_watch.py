@@ -13,7 +13,7 @@ from uuid import uuid4
 
 import pytest
 
-from host import Host
+from host import DeliveryBlocked, Host, NativeLogReplaced
 from tests.fake_native_cli import wait_file
 
 FAKE = Path(__file__).resolve().parent / "fake_native_cli.py"
@@ -130,6 +130,76 @@ async def test_the_fake_cli_writes_rollout_records_on_command(deploy: tuple[Host
     assert accepted.kind == "input_accepted"
     assert done.kind == "execution_completed"
     assert accepted.turn_id == done.turn_id == "cmd-1"
+
+
+@pytest.mark.asyncio
+async def test_an_older_finished_turn_cannot_settle_the_delivery_sent_after_it(
+    deploy: tuple[Host, Path],
+) -> None:
+    """Reusing a session must not let its previous turn end the new request.
+
+    The log already holds a complete turn. Folding those records into the
+    request just sent would bind it to the old turn, mark it completed and
+    free the channel while the CLI has only just received the new body.
+    """
+    host, tmp = deploy
+    log = tmp / "history.jsonl"
+    log.write_text(
+        _record("user_message", turn="old", message="before")
+        + _record("task_complete", turn="old", message="done")
+    )
+    name, _ = _idle_session(host, tmp, log=log)
+
+    host.deliver(name, "BODY-AFTER-HISTORY")
+    sub = await host.subscribe(name)
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(anext(sub), 0.3)
+    await sub.aclose()
+
+    assert host.gate(name).outstanding_requests == 1
+    with pytest.raises(DeliveryBlocked):
+        host.deliver(name, "SHOULD-NOT-PASS")
+
+
+@pytest.mark.asyncio
+async def test_history_is_not_replayed_when_the_subscription_opens_first(
+    deploy: tuple[Host, Path],
+) -> None:
+    host, tmp = deploy
+    log = tmp / "history-first.jsonl"
+    log.write_text(
+        _record("user_message", turn="old", message="before")
+        + _record("task_complete", turn="old", message="done")
+    )
+    name, _ = _idle_session(host, tmp, log=log)
+
+    sub = await host.subscribe(name)
+    host.deliver(name, "BODY-AFTER-SUBSCRIBE")
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(anext(sub), 0.3)
+
+    with log.open("a") as handle:
+        handle.write(_record("user_message", turn="new", message="live"))
+    fresh = await asyncio.wait_for(anext(sub), 2)
+    await sub.aclose()
+    assert fresh.turn_id == "new"
+
+
+@pytest.mark.asyncio
+async def test_a_log_that_shrank_ends_the_subscription_loudly(deploy: tuple[Host, Path]) -> None:
+    host, tmp = deploy
+    log = tmp / "replaced.jsonl"
+    log.write_text(
+        _record("user_message", turn="t1", message="one")
+        + _record("task_complete", turn="t1", message="done")
+    )
+    name, _ = _idle_session(host, tmp, log=log)
+    sub = await host.subscribe(name)
+
+    log.write_text(_record("user_message", turn="t2", message="x"))
+    with pytest.raises(NativeLogReplaced):
+        await asyncio.wait_for(anext(sub), 2)
+    await sub.aclose()
 
 
 def _idle_session(host: Host, tmp: Path, *, log: Path) -> tuple[str, Path]:

@@ -18,7 +18,7 @@ from uuid import uuid4
 
 import pytest
 
-from host import DeliveryBlocked, Host, SessionGone
+from host import DeliveryBlocked, Host, HostBusy, SessionGone
 from host.runtime import _control_identity
 from tests.fake_native_cli import wait_bytes, wait_file
 
@@ -289,3 +289,22 @@ def test_a_closed_control_pipe_is_reported_not_waited_out() -> None:
         host_input.close()
         proc.stdin.close()
         proc.stdout.close()
+
+
+def test_a_second_host_on_the_same_root_is_refused_not_blocked(
+    deploy: tuple[Host, Path], tmux_bin: str
+) -> None:
+    host, _ = deploy
+    with pytest.raises(HostBusy):
+        Host(host.root, deployment="test", tmux=tmux_bin)
+
+
+def test_a_body_carrying_a_paste_terminator_is_refused(deploy: tuple[Host, Path]) -> None:
+    """A terminator inside the body would make the rest arrive as real keys."""
+    host, tmp = deploy
+    name, recv, ready = _start_fake(host, tmp)
+    wait_file(ready)
+    with pytest.raises(ValueError):
+        host.deliver(name, "before\x1b[201~after")
+    host.deliver(name, "CLEAN-BODY")
+    assert wait_bytes(recv, b"CLEAN-BODY") == b"\x1b[200~CLEAN-BODY\x1b[201~\r"
