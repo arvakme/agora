@@ -810,7 +810,7 @@ async def set_last_read(
 
 
 async def truncate_all(pool: asyncpg.Pool) -> None:
-    await pool.execute("TRUNCATE rooms, computers CASCADE")
+    await pool.execute("TRUNCATE rooms, computers, delivery_records CASCADE")
 
 
 async def room_digest(
