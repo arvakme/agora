@@ -14,9 +14,9 @@ from uuid import uuid4
 import pytest
 
 from host import Host
-from tests.test_host_fake_cli import wait_file
+from tests.fake_native_cli import wait_file
 
-FAKE = Path(__file__).resolve().parent / "test_host_fake_cli.py"
+FAKE = Path(__file__).resolve().parent / "fake_native_cli.py"
 
 
 @pytest.fixture
