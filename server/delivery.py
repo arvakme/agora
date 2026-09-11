@@ -9,7 +9,6 @@ after reload; the stored action is only an index.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
 from uuid import UUID
 
 import asyncpg
@@ -31,10 +30,8 @@ def _dump(record: DeliveryRecord) -> str:
     return _RECORD.dump_json(record).decode()
 
 
-def _load(payload: Any) -> DeliveryRecord:
-    if isinstance(payload, (bytes, bytearray, str)):
-        return _RECORD.validate_json(payload)
-    return _RECORD.validate_python(payload)
+def _load(payload: str) -> DeliveryRecord:
+    return _RECORD.validate_json(payload)
 
 
 async def _lock(conn: asyncpg.Connection, request_id: UUID) -> DeliveryRecord:
