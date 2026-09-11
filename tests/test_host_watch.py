@@ -202,6 +202,65 @@ async def test_a_log_that_shrank_ends_the_subscription_loudly(deploy: tuple[Host
     await sub.aclose()
 
 
+@pytest.mark.asyncio
+async def test_a_second_delivery_is_not_settled_by_the_turn_before_it(
+    deploy: tuple[Host, Path],
+) -> None:
+    """A settled record still sits on the session; it must not pin the start.
+
+    Once the first turn finishes the channel is free, so a subscription
+    opened for the next turn has to start at the log's current end. Keeping
+    the finished turn's start would replay it into the second delivery and
+    settle that one too.
+    """
+    host, tmp = deploy
+    log = tmp / "second-turn.jsonl"
+    log.touch()
+    name, _ = _idle_session(host, tmp, log=log)
+
+    host.deliver(name, "FIRST-BODY")
+    first = await host.subscribe(name)
+    with log.open("a") as handle:
+        handle.write(
+            _record("user_message", turn="one", message="in")
+            + _record("task_complete", turn="one", message="done")
+        )
+    assert (await asyncio.wait_for(anext(first), 2)).turn_id == "one"
+    assert (await asyncio.wait_for(anext(first), 2)).kind == "execution_completed"
+    await first.aclose()
+    assert host.gate(name).outstanding_requests == 0
+
+    second = await host.subscribe(name)
+    host.deliver(name, "SECOND-BODY")
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(anext(second), 0.3)
+    await second.aclose()
+    assert host.gate(name).outstanding_requests == 1
+
+
+@pytest.mark.asyncio
+async def test_a_shrunk_log_still_releases_the_watch_resources(
+    deploy: tuple[Host, Path],
+) -> None:
+    host, tmp = deploy
+    log = tmp / "shrunk-cleanup.jsonl"
+    log.write_text(
+        _record("user_message", turn="t1", message="one")
+        + _record("task_complete", turn="t1", message="done")
+    )
+    name, _ = _idle_session(host, tmp, log=log)
+    sub = await host.subscribe(name)
+    watcher = host._sessions[name].watchers[-1]
+
+    log.write_text(_record("user_message", turn="t2", message="x"))
+    with pytest.raises(NativeLogReplaced):
+        await asyncio.wait_for(anext(sub), 2)
+    await sub.aclose()
+
+    assert watcher._thread is not None and not watcher._thread.is_alive()
+    assert watcher._fds == {} and watcher._wake_r == -1
+
+
 def _idle_session(host: Host, tmp: Path, *, log: Path) -> tuple[str, Path]:
     name = f"w-{uuid4().hex[:8]}"
     host.ensure_session(

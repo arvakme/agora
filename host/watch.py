@@ -131,6 +131,7 @@ class JsonlWatcher:
         self._kq: select.kqueue | None = None
         self._inotify = -1
         self._wds: dict[int, Path] = {}
+        self._failed = False
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._queue: asyncio.Queue[object] | None = None
@@ -203,7 +204,10 @@ class JsonlWatcher:
             return
         with self._path.open("rb") as handle:
             if handle.seek(0, os.SEEK_END) < self._cursor:
-                self._stop.set()
+                # Not _stop: that flag also means "already torn down", and
+                # setting it here would turn the caller's close into a no-op
+                # and leak the watch descriptors.
+                self._failed = True
                 self._emit(NativeLogReplaced(f"{self._path} shrank below the confirmed cursor"))
                 return
             handle.seek(self._cursor)
@@ -228,7 +232,7 @@ class JsonlWatcher:
         self._tail = data[start:]
 
     def _run(self) -> None:
-        while not self._stop.is_set():
+        while not self._stop.is_set() and not self._failed:
             try:
                 if self._kq is not None:
                     self._wait_kqueue()
