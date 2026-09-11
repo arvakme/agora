@@ -35,9 +35,19 @@ uv run python -m agora_ask "帮我看看这段代码有没有问题"
 
 ## Codex 原生日志怎么发现
 
-Codex 把每个会话写在 `~/.codex/sessions/**/rollout-<thread-id>.jsonl`。新会话的 thread id 事先不知道，因此 `host/codex.py` 在 tmux pane 起来之后，从**该 pane 进程自己打开的文件**里找 rollout 路径（macOS 用 `lsof`，Linux 读 `/proc/<pid>/fd`），不扫描目录、不按修改时间猜。
+Codex 把每个会话写在 `~/.codex/sessions/**/rollout-<thread-id>.jsonl`。新会话的文件名事先不知道，因此 `host/codex.py` 从**该 pane 进程自己打开的文件**里找它（macOS 用 `lsof`，Linux 读 `/proc/<pid>/fd`），不扫描目录、不按修改时间猜。
 
-发现后把路径和 thread id 记入宿主 `sessions.json`，后续复用同一会话时直接读回。
+发现只能发生在投递之后：**Codex 在第一个回合真正开始前不创建这个文件**，刚起的会话里找不到任何 rollout。所以流程是先起会话、先投问题，再等文件出现，然后从头订阅它。
+
+会话标识始终是 tmux 会话名，不是 Codex 的 thread id。请求必须在投递前就带上会话标识，而 thread id 要等回合开始才知道；区分回合靠的是记录里的 turn id，不是会话标识。
+
+## 已知的真实坑
+
+这几条都是实测撞到的，不是推测：
+
+- **Codex 不写 `user_message` 记录。** 它表示"输入已收下"的原生信号是 `task_started`，回合结束是 `task_complete`。宿主按这两个信号绑定和结算。
+- **粘贴和提交键之间需要一点间隔。** 紧跟粘贴发出的回车会被 TUI 并进粘贴内容，问题停在输入框里不提交，回合永远不开始。`Host` 默认在两者之间留 0.4 秒（`paste_settle_s` 可调）。
+- **启动可能被 CLI 自己的对话框挡住。** 例如 Codex 的版本更新提示会停在那里，界面没进入就绪状态，也就没有任何日志。这时 `agora_ask` 会超时退出，并把该会话当前的屏幕内容一并打印出来，好让人一眼看出卡在哪；先手动处理掉那个对话框再重试。
 
 ## 现在能做什么 / 不能做什么
 

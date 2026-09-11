@@ -11,8 +11,15 @@ import native_protocol as np
 from native_protocol import SETTLED_TURN_STATES, publishable_result
 
 from agora_ask.config import AskSettings
-from host import DeliveryBlocked, Host, SessionGone, pane_pid, wait_rollout
+from host import DeliveryBlocked, Host, SessionGone, pane_pid, pane_screen, wait_rollout
 from server import db, delivery
+
+
+_PLACEHOLDER_LOG = Path.home() / ".codex" / "sessions" / ".agora-pending" / "rollout-pending.jsonl"
+
+
+def _is_placeholder(log: Path) -> bool:
+    return log == _PLACEHOLDER_LOG
 
 
 class AskError(Exception):
@@ -50,23 +57,27 @@ async def _ask(
     name = settings.session_name
     command = settings.codex_argv()
     cwd = settings.cwd
-    log, locator = _initial_native_target(settings, host, name)
+    log, locator, needs_discovery = _initial_native_target(settings, host, name)
     if host.native_target(name) is not None and name not in host.tmux_session_names():
         raise AskError(f"session gone: session {name} is gone")
     host.ensure_session(name, command, cwd=cwd, native_log=log, native_locator=locator)
-    _discover_native_log(host, settings, name, command, cwd, log, locator)
 
     request = host.build_request(name, question)
     await delivery.start(pool, request)
+    try:
+        host.deliver(name, question, request=request)
+    except DeliveryBlocked as exc:
+        raise AskError(f"delivery blocked: {exc}") from exc
+    except SessionGone as exc:
+        raise AskError(f"session gone: {exc}") from exc
+    await delivery.hand_off(pool, request.request_id)
+
+    # Codex writes no rollout until a turn actually starts, so its log can
+    # only be discovered after the question went in.
+    if needs_discovery:
+        _discover_native_log(host, settings, name, command, cwd, locator)
     sub = await host.subscribe(name)
     try:
-        try:
-            host.deliver(name, question, request=request)
-        except DeliveryBlocked as exc:
-            raise AskError(f"delivery blocked: {exc}") from exc
-        except SessionGone as exc:
-            raise AskError(f"session gone: {exc}") from exc
-        await delivery.hand_off(pool, request.request_id)
         record = await _wait_for_terminal(pool, sub, request.request_id, settings.timeout_s)
     finally:
         await sub.aclose()
@@ -102,15 +113,21 @@ async def _wait_for_terminal(
 
 def _initial_native_target(
     settings: AskSettings, host: Host, name: str
-) -> tuple[Path, str]:
+) -> tuple[Path, str, bool]:
+    """Where this session's native records are, and whether we must find out.
+
+    The locator identifies the session and stays the tmux session name: the
+    request has to carry it before delivery, while the CLI only reveals which
+    file it writes once a turn starts. Which turn a record belongs to is
+    carried by the turn id, not by this.
+    """
+    locator = settings.native_locator or name
     if settings.native_log is not None:
-        locator = settings.native_locator or name
-        return settings.native_log, locator
+        return settings.native_log, locator, False
     saved = host.native_target(name)
-    if saved is not None and saved[1] != "pending":
-        return saved
-    pending = Path.home() / ".codex" / "sessions" / ".agora-pending" / "rollout-pending.jsonl"
-    return pending, "pending"
+    if saved is not None and not _is_placeholder(saved[0]):
+        return saved[0], locator, False
+    return _PLACEHOLDER_LOG, locator, True
 
 
 def _discover_native_log(
@@ -119,19 +136,22 @@ def _discover_native_log(
     name: str,
     command: list[str],
     cwd: Path,
-    log: Path,
     locator: str,
 ) -> None:
-    if settings.native_log is not None or locator != "pending":
-        return
-    pid = pane_pid(host._bin, host.socket_path, name)
-    discovered_log, discovered_locator = wait_rollout(pid, timeout=settings.discovery_timeout_s)
+    pid = pane_pid(host.tmux_bin, host.socket_path, name)
+    try:
+        discovered_log, _thread_id = wait_rollout(pid, timeout=settings.discovery_timeout_s)
+    except TimeoutError as exc:
+        screen = pane_screen(host.tmux_bin, host.socket_path, name)
+        raise AskError(
+            f"{exc}\nThe CLI never started a turn. Its screen now shows:\n{screen}"
+        ) from exc
     host.ensure_session(
         name,
         command,
         cwd=cwd,
         native_log=discovered_log,
-        native_locator=discovered_locator,
+        native_locator=locator,
     )
 
 
