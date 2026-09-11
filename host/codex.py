@@ -55,6 +55,18 @@ def pane_pid(tmux: str, socket: Path, session: str) -> int:
     return int(result.stdout.strip())
 
 
+def pane_screen(tmux: str, socket: Path, session: str) -> str:
+    """Return what the CLI is currently showing, for diagnosing a stuck start."""
+    result = subprocess.run(
+        [tmux, "-S", str(socket), "capture-pane", "-p", "-t", session],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    return "\n".join(lines[-12:]) if lines else "(no screen output)"
+
+
 def _open_paths(pid: int) -> list[str]:
     proc = Path(f"/proc/{pid}/fd")
     if proc.is_dir():

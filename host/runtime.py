@@ -44,6 +44,10 @@ _CLIENT_FMT = "#{client_name}|#{client_readonly}|#{client_session}"
 # An attach over a local socket answers in milliseconds; this only bounds a
 # server that stopped answering, so it never decides a healthy attach failed.
 _HANDSHAKE_TIMEOUT_S = 10.0
+# A TUI merges keys that arrive while it is still consuming a paste, so a
+# submit sent immediately after one is swallowed into the pasted text. This
+# is the interval the CLI needs to settle, not a guess about our own state.
+_PASTE_SETTLE_S = 0.4
 
 _BASELINE = """set -g destroy-unattached off
 set -g exit-unattached off
@@ -90,8 +94,10 @@ class Host:
         deployment: str,
         user_conf: Path | None = None,
         tmux: str | None = None,
+        paste_settle_s: float = _PASTE_SETTLE_S,
     ) -> None:
         self.root = root
+        self._paste_settle_s = paste_settle_s
         self.deployment = deployment
         self.socket_path = _short_socket(root, deployment)
         self._conf = root / "tmux.conf"
@@ -218,6 +224,7 @@ class Host:
                 paste.unlink(missing_ok=True)
             if not state.client:
                 raise SessionGone(f"session {name} has no managed client")
+            time.sleep(self._paste_settle_s)
             self._tmux("send-keys", "-c", state.client, "-t", name, "Enter")
             state.record = hand_off(record)
             return state.record
@@ -236,6 +243,10 @@ class Host:
     def tmux_session_names(self) -> set[str]:
         with self._lock:
             return self._tmux_sessions()
+
+    @property
+    def tmux_bin(self) -> str:
+        return self._bin
 
     def gate(self, name: str) -> SessionGate:
         with self._lock:
