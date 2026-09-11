@@ -11,6 +11,7 @@ import struct
 import subprocess
 import sys
 import termios
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 from uuid import uuid4
@@ -18,9 +19,10 @@ from uuid import uuid4
 import pytest
 
 from host import DeliveryBlocked, Host, SessionGone
-from tests.test_host_fake_cli import wait_bytes, wait_file
+from host.runtime import _control_identity
+from tests.fake_native_cli import wait_bytes, wait_file
 
-FAKE = Path(__file__).resolve().parent / "test_host_fake_cli.py"
+FAKE = Path(__file__).resolve().parent / "fake_native_cli.py"
 
 
 @pytest.fixture
@@ -225,3 +227,65 @@ def _clean_env() -> dict[str, str]:
     env.pop("TMUX_PANE", None)
     env["TERM"] = "xterm-256color"
     return env
+
+
+class _ControlPipes:
+    """Stand-in for the control-mode process, wired to plain pipes."""
+
+    def __init__(self, stdin: object, stdout: object) -> None:
+        self.stdin = stdin
+        self.stdout = stdout
+
+
+def test_the_handshake_completes_on_the_reply_block_not_on_elapsed_time() -> None:
+    """Readiness is tmux's own reply block, not the arrival of bytes.
+
+    Attaching emits notifications immediately; treating those as readiness
+    races against the client actually serving commands. The negative half
+    needs a real interval: the call must still be waiting while only
+    notifications have arrived.
+    """
+    to_host_read, to_host_write = os.pipe()
+    from_host_read, from_host_write = os.pipe()
+    proc = _ControlPipes(os.fdopen(from_host_write, "wb"), os.fdopen(to_host_read, "rb"))
+    tmux = os.fdopen(to_host_write, "wb")
+    host_input = os.fdopen(from_host_read, "rb")
+    named: list[str] = []
+    handshake = threading.Thread(target=lambda: named.append(_control_identity(proc)))
+    handshake.start()
+    try:
+        tmux.write(b"%session-changed $0 native\n%output %1 booting\n")
+        tmux.flush()
+        handshake.join(0.3)
+        assert handshake.is_alive() and named == []
+
+        tmux.write(b"%begin 1 1 0\n%end 1 1 0\n")
+        tmux.flush()
+        assert host_input.readline() == b"display-message -p '#{client_name}'\n"
+
+        tmux.write(b"%begin 1 2 1\ncontrol-7\n%end 1 2 1\n")
+        tmux.flush()
+        handshake.join(5)
+        assert not handshake.is_alive()
+        assert named == ["control-7"]
+    finally:
+        tmux.close()
+        handshake.join(5)
+        host_input.close()
+        proc.stdin.close()
+        proc.stdout.close()
+
+
+def test_a_closed_control_pipe_is_reported_not_waited_out() -> None:
+    to_host_read, to_host_write = os.pipe()
+    from_host_read, from_host_write = os.pipe()
+    proc = _ControlPipes(os.fdopen(from_host_write, "wb"), os.fdopen(to_host_read, "rb"))
+    os.close(to_host_write)
+    host_input = os.fdopen(from_host_read, "rb")
+    try:
+        with pytest.raises(SessionGone):
+            _control_identity(proc)
+    finally:
+        host_input.close()
+        proc.stdin.close()
+        proc.stdout.close()

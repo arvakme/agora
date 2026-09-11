@@ -11,7 +11,8 @@ import select
 import shutil
 import subprocess
 import threading
-from collections.abc import Callable, Sequence
+import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from io import TextIOWrapper
 from pathlib import Path
@@ -36,6 +37,9 @@ from host.watch import JsonlWatcher, Subscription
 _NS = UUID("a3e1c4d2-7b90-4f16-8e2a-5d6c9b0f1a24")
 _PASTE_BUFFER = "agora-host-paste"
 _CLIENT_FMT = "#{client_name}|#{client_readonly}|#{client_session}"
+# An attach over a local socket answers in milliseconds; this only bounds a
+# server that stopped answering, so it never decides a healthy attach failed.
+_HANDSHAKE_TIMEOUT_S = 10.0
 
 _BASELINE = """set -g destroy-unattached off
 set -g exit-unattached off
@@ -263,7 +267,6 @@ class Host:
             if state.client in names:
                 return
         _stop_control(state)
-        before = {c.name for c in self._clients()}
         proc = subprocess.Popen(
             [
                 self._bin,
@@ -282,15 +285,12 @@ class Host:
             env=self._env,
         )
         state.control = proc
-        assert proc.stdout is not None
-        if not _new_writable(self._clients, before, state.name):
-            select.select([proc.stdout], [], [], 2)
-        threading.Thread(target=_drain, args=(proc.stdout,), daemon=True).start()
-        client = _new_writable(self._clients, before, state.name)
-        if client is None or proc.poll() is not None:
+        try:
+            state.client = _control_identity(proc)
+        except SessionGone:
             _stop_control(state)
-            raise SessionGone(f"could not attach a managed client to {state.name}")
-        state.client = client
+            raise
+        threading.Thread(target=_drain, args=(proc.stdout,), daemon=True).start()
 
     def _clients(self) -> list[_Client]:
         raw = self._tmux("list-clients", "-F", _CLIENT_FMT, check=False)
@@ -431,15 +431,66 @@ def _stop_control(state: _Session) -> None:
         proc.wait(timeout=1)
 
 
-def _new_writable(
-    list_clients: Callable[[], list[_Client]], before: set[str], session: str
-) -> str | None:
-    names = {
-        item.name
-        for item in list_clients()
-        if item.session == session and not item.readonly and item.name not in before
-    }
-    return sorted(names)[0] if names else None
+def _read_block(fd: int, pending: bytearray, deadline: float) -> list[str]:
+    """Return the body of tmux's next %begin/%end reply block.
+
+    Control mode wraps every reply in such a block and emits notifications
+    outside them, so a complete block is tmux's own statement that it served a
+    command. Reads go through the raw descriptor and this caller-owned buffer:
+    a buffered reader would leave already-consumed lines invisible to select
+    and stall on data that has in fact arrived.
+    """
+    body: list[str] = []
+    inside = False
+    while True:
+        while b"\n" in pending:
+            line, _, rest = pending.partition(b"\n")
+            del pending[:]
+            pending.extend(rest)
+            text = line.decode(errors="replace").rstrip("\r")
+            if text.startswith("%begin"):
+                inside, body = True, []
+            elif text.startswith("%error"):
+                raise SessionGone(f"control client refused a command: {text}")
+            elif text.startswith("%end") and inside:
+                return body
+            elif inside:
+                body.append(text)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise SessionGone("control client never finished the handshake")
+        if not select.select([fd], [], [], remaining)[0]:
+            continue
+        chunk = os.read(fd, 4096)
+        if not chunk:
+            raise SessionGone("control client closed before the handshake")
+        pending.extend(chunk)
+
+
+def _control_identity(proc: subprocess.Popen[bytes]) -> str:
+    """Wait for the control client to serve commands, then have it name itself.
+
+    Attaching produces a reply block of its own; that block, not the arrival of
+    bytes, is when the client is attached and serving. A command written before
+    it is dropped. The name tmux reports is exact where diffing client lists
+    only guesses which new client is ours.
+    """
+    if proc.stdin is None or proc.stdout is None:
+        raise SessionGone("control client was started without pipes")
+    deadline = time.monotonic() + _HANDSHAKE_TIMEOUT_S
+    fd = proc.stdout.fileno()
+    pending = bytearray()
+    _read_block(fd, pending, deadline)
+    try:
+        proc.stdin.write(b"display-message -p '#{client_name}'\n")
+        proc.stdin.flush()
+    except OSError as error:
+        raise SessionGone(f"control client would not take the handshake: {error}") from error
+    reply = _read_block(fd, pending, deadline)
+    name = reply[0].strip() if reply else ""
+    if not name:
+        raise SessionGone("control client did not name itself")
+    return name
 
 
 def _drain(stream: object) -> None:
