@@ -19,6 +19,7 @@
 
 - PostgreSQL：`AGORA_DATABASE_URL`，默认 `postgresql://agora:agora@127.0.0.1:5433/agora`。
 - Redis：`AGORA_REDIS_URL`，默认 `redis://127.0.0.1:6379/0`。
+- 投递持久化套件默认使用独立库 `agora_delivery`（同一主机与端口，只换库名）。这些用例会清投递表，与默认的 `agora` 共用会和其他工作树互相抹数据。`AGORA_DATABASE_URL` 已指向其他库名时沿用该库；仍指向默认 `agora` 时改连 `agora_delivery`，库不存在则自行创建。
 
 显式执行 `docker compose up -d --wait`，健康检查成功后再跑集成用例。测试入口不启动或等待服务；服务不可达会使已选中的集成用例失败，本地与 CI 一致。GitHub Actions 使用该次运行独有的服务容器。
 
@@ -51,6 +52,7 @@ export AGORA_BIG_MODEL=zai-org/GLM-5.3-Flash
 | `test_moderated.py` | moderated 路由、API、decide 工具、幂等、loop cap、BYOA decision、called-on pass、say 非终结、trigger_seq pass 门、in-process 不写 Redis hint、silence 钉 last_seq 不 nudge、每条人类消息 3 次 call_on 封顶 |
 | `test_liveness.py` | subscriber 首次订阅失败即抛 / 重连 / dispatch 隔离、lane 吞异常、done-callback、call_on wake fail-open |
 | `test_brain.py` / `test_k8s.py` / `test_daemon_args.py` / `test_wake.py` / `test_seq.py` | 图节点、triage（含 `response_mode=none`）、参数解析、Job 宿主 |
+| `test_delivery_store.py` | 投递记录持久化：同一事件并发只生效一次、绑定前终态保留并折叠一次、撤销后不可发布、外会话/外回合隔离、重启后按协议恢复、整份记录类型驱动往返 |
 
 ### L2 真模型协调测试
 

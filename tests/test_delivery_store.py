@@ -54,7 +54,7 @@ async def pool(require_services: None) -> asyncpg.Pool:
     await _ensure_database(DELIVERY_DSN, DSN)
     created = await db.create_pool(DELIVERY_DSN)
     await db.migrate(created)
-    await delivery.truncate(created)
+    await db.truncate_all(created)
     yield created
     await created.close()
 
@@ -63,6 +63,43 @@ async def _reopen() -> asyncpg.Pool:
     created = await db.create_pool(DELIVERY_DSN)
     await db.migrate(created)
     return created
+
+
+def _full_record() -> np.DeliveryRecord:
+    request = make_request()
+    turn = np.NativeTurn(session="thread-x", turn="turn-1")
+    return np.DeliveryRecord(
+        request=request,
+        turn_state="accepted",
+        withdrawn=True,
+        bound=turn,
+        applied_events=frozenset({uuid4()}),
+        deferred_events=(
+            event(
+                "execution_completed",
+                "native_notify",
+                summary="EARLY",
+                usage=np.Usage(input_tokens=4, output_tokens=8),
+            ),
+        ),
+        result=np.TurnResult(
+            request_id=request.request_id,
+            turn=turn,
+            outcome="completed",
+            summary="DONE",
+            usage=np.Usage(input_tokens=12, output_tokens=3),
+        ),
+        awaiting_permission=True,
+        note="waiting on the operator",
+    )
+
+
+def test_typed_record_roundtrip_keeps_every_field() -> None:
+    original = _full_record()
+    loaded = delivery._load(delivery._dump(original))
+    assert loaded == original
+    assert type(loaded.applied_events) is frozenset
+    assert type(loaded.deferred_events) is tuple
 
 
 @pytest.mark.asyncio
