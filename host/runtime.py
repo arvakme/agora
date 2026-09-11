@@ -34,6 +34,10 @@ from native_protocol import (
 
 from host.watch import JsonlWatcher, Subscription
 
+# A TUI reading bracketed paste treats bytes after this terminator as real
+# keys, so a body carrying one would deliver something other than itself.
+_PASTE_TERMINATOR = b"\x1b[201~"
+
 _NS = UUID("a3e1c4d2-7b90-4f16-8e2a-5d6c9b0f1a24")
 _PASTE_BUFFER = "agora-host-paste"
 _CLIENT_FMT = "#{client_name}|#{client_readonly}|#{client_session}"
@@ -58,6 +62,10 @@ class SessionGone(Exception):
     """The tmux server or named session is not there. Do not treat it as live."""
 
 
+class HostBusy(Exception):
+    """Another host already holds this deployment root."""
+
+
 @dataclass
 class _Session:
     name: str
@@ -68,6 +76,7 @@ class _Session:
     client: str | None = None
     control: subprocess.Popen[bytes] | None = None
     record: DeliveryRecord | None = None
+    visible_from: int = 0
     watchers: list[JsonlWatcher] = field(default_factory=list)
 
 
@@ -97,7 +106,12 @@ class Host:
         self._sessions: dict[str, _Session] = {}
         root.mkdir(parents=True, exist_ok=True)
         self._lock_fd: TextIOWrapper | None = (root / "host.lock").open("a+")
-        fcntl.flock(self._lock_fd.fileno(), fcntl.LOCK_EX)
+        try:
+            fcntl.flock(self._lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            self._lock_fd.close()
+            self._lock_fd = None
+            raise HostBusy(f"deployment root {root} is already held by another host") from error
         self._write_conf()
         self._load_index()
 
@@ -174,14 +188,20 @@ class Host:
     def deliver(self, name: str, body: str) -> None:
         if not body:
             raise ValueError("body is required")
+        encoded = body.encode()
+        if _PASTE_TERMINATOR in encoded:
+            raise ValueError("body carries a bracketed-paste terminator and cannot be delivered")
         with self._lock:
             state = self._require(name)
             record = start(self._request(state, body))
             reason = blocked_reason(record, self._gate(state))
             if reason:
                 raise DeliveryBlocked(reason)
+            # Anything the CLI wrote before this point belongs to an earlier
+            # turn and must not bind or settle the request being sent now.
+            state.visible_from = _log_end(state.native_log)
             paste = self.root / f".paste-{name}"
-            paste.write_bytes(body.encode())
+            paste.write_bytes(encoded)
             try:
                 self._tmux("load-buffer", "-b", _PASTE_BUFFER, str(paste))
                 self._tmux("paste-buffer", "-prd", "-b", _PASTE_BUFFER, "-t", name)
@@ -201,9 +221,10 @@ class Host:
             state = self._require(name)
             locator = state.native_locator
             log = state.native_log
+            start_at = state.visible_from if state.record is not None else _log_end(log)
         queue: asyncio.Queue[object] = asyncio.Queue()
         loop = asyncio.get_running_loop()
-        watcher = JsonlWatcher(log, session=locator)
+        watcher = JsonlWatcher(log, session=locator, start_at=start_at)
 
         def on_item(item: object) -> None:
             if isinstance(item, NativeEvent):
@@ -465,6 +486,13 @@ def _read_block(fd: int, pending: bytearray, deadline: float) -> list[str]:
         if not chunk:
             raise SessionGone("control client closed before the handshake")
         pending.extend(chunk)
+
+
+def _log_end(log: Path) -> int:
+    try:
+        return log.stat().st_size
+    except OSError:
+        return 0
 
 
 def _control_identity(proc: subprocess.Popen[bytes]) -> str:

@@ -16,6 +16,16 @@ from native_protocol import NativeEvent
 _EVENT_NS = UUID("6b1d0a8e-2c3f-4a91-9d77-0f4e2b8c1a55")
 _END = object()
 
+
+class NativeLogReplaced(Exception):
+    """The native log shrank below the confirmed cursor.
+
+    A CLI appends to its own record, so this means the evidence chain this
+    subscription was following no longer exists. Reading on from the old
+    cursor would either miss records or split one; the subscription ends
+    loudly instead so the caller knows the evidence stopped.
+    """
+
 _NOTE = 0
 if hasattr(select, "kqueue"):
     _NOTE = (
@@ -98,6 +108,8 @@ class Subscription:
         item = await self._queue.get()
         if item is _END:
             raise StopAsyncIteration
+        if isinstance(item, Exception):
+            raise item
         assert isinstance(item, NativeEvent)
         return item
 
@@ -106,10 +118,10 @@ class Subscription:
 
 
 class JsonlWatcher:
-    def __init__(self, path: Path, *, session: str) -> None:
+    def __init__(self, path: Path, *, session: str, start_at: int = 0) -> None:
         self._path = path
         self._session = session
-        self._cursor = 0
+        self._cursor = start_at
         self._tail = b""
         self._last_turn: str | None = None
         self._fds: dict[int, Path] = {}
@@ -190,6 +202,10 @@ class JsonlWatcher:
         if path != self._path or not self._path.is_file():
             return
         with self._path.open("rb") as handle:
+            if handle.seek(0, os.SEEK_END) < self._cursor:
+                self._stop.set()
+                self._emit(NativeLogReplaced(f"{self._path} shrank below the confirmed cursor"))
+                return
             handle.seek(self._cursor)
             chunk = handle.read()
         if not chunk:
