@@ -136,3 +136,20 @@ CREATE INDEX IF NOT EXISTS messages_room_seq_idx ON messages (room_id, seq);
 CREATE INDEX IF NOT EXISTS participants_room_idx ON participants (room_id);
 CREATE INDEX IF NOT EXISTS participants_computer_idx ON participants (computer_id);
 DROP INDEX IF EXISTS moderator_decisions_room_idx;
+
+-- Native delivery log. Transitions go through native_protocol; this table
+-- stores the record and serializes writers. recovery_action is a projection
+-- of plan_recovery used only to find unfinished rows after a restart.
+CREATE TABLE IF NOT EXISTS delivery_records (
+    request_id UUID PRIMARY KEY,
+    turn_state TEXT NOT NULL,
+    withdrawn BOOLEAN NOT NULL DEFAULT FALSE,
+    recovery_action TEXT NOT NULL,
+    record JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS delivery_records_unfinished_idx
+    ON delivery_records (request_id)
+    WHERE recovery_action <> 'settled';
