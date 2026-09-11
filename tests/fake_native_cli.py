@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import select
 import sys
@@ -68,14 +69,36 @@ def _take_commands(buf: bytes, native: Path) -> bytes:
         body = frame
         if body.startswith(b"\x1b[200~") and body.endswith(b"\x1b[201~"):
             body = body[6:-6]
-        if not body.startswith(b"NATIVE\n"):
+        if body.startswith(b"NATIVE\n"):
+            native.parent.mkdir(parents=True, exist_ok=True)
+            payload = body[7:]
+            if payload and not payload.endswith(b"\n"):
+                payload += b"\n"
+            with native.open("ab") as handle:
+                handle.write(payload)
             continue
-        native.parent.mkdir(parents=True, exist_ok=True)
-        payload = body[7:]
-        if payload and not payload.endswith(b"\n"):
-            payload += b"\n"
-        with native.open("ab") as handle:
-            handle.write(payload)
+        if body:
+            _auto_complete(native, body.decode("utf-8", "replace"))
+
+
+def _auto_complete(native: Path, message: str) -> None:
+    native.parent.mkdir(parents=True, exist_ok=True)
+    turn = "auto-turn"
+    lines = [
+        _rollout("user_message", turn=turn, message=message),
+        _rollout("task_complete", turn=turn, message=f"echo: {message}"),
+    ]
+    with native.open("ab") as handle:
+        handle.write("".join(lines).encode())
+
+
+def _rollout(inner: str, *, turn: str, message: str) -> str:
+    payload: dict[str, object] = {"type": inner, "turn_id": turn}
+    if inner == "user_message":
+        payload["message"] = message
+    else:
+        payload["last_agent_message"] = message
+    return json.dumps({"type": "event_msg", "payload": payload}) + "\n"
 
 
 def _wait_kqueue(pred: Callable[[], bool], directory: Path, deadline: float) -> None:
