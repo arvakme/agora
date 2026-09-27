@@ -254,5 +254,6 @@ def test_exec_options_from_env_and_registry():
     with pytest.raises(ValueError):
         ExecOptions.from_env({"AGORA_CANVAS_EFFORT": "huge"})
     assert make_backend("claude-cli").name == "claude-cli"
+    assert make_backend("pi").name == "pi"  # the native session agents register on first use
     with pytest.raises(ValueError, match="unknown canvas backend"):
-        make_backend("pi")
+        make_backend("kimi")

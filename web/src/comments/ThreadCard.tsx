@@ -3,7 +3,7 @@
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { handToAgent, undoAgent } from "../ops/agent";
+import { handToSession, undoAgent } from "../ops/agent";
 import type { AnchorState } from "../canvas/anchors";
 import { IconAlert, IconCheck, IconClose, IconReopen, IconSend, IconSpark, IconUndo } from "../app/icons";
 import type { Message, Thread, ThreadStore } from "./threads";
@@ -52,7 +52,7 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
           </span>
           <span className="tcard-actions">
             {!t.resolved && (
-              <button className="tagent" disabled={running || st.status === "lost"} onClick={() => void handToAgent(api, store, t.id)}>
+              <button className="tagent" disabled={running || st.status === "lost"} onClick={() => void handToSession(api, store, t.id)}>
                 <IconSpark size={13} /> {running ? "处理中" : "交给 Agent"}
               </button>
             )}
@@ -86,7 +86,7 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
                 <Avatar who="agent" spinning />
                 <div className="trow-main">
                   <div className="trow-meta"><b>Agent</b></div>
-                  <span className="shimmer">正在读取画布并规划修改…</span>
+                  <span className="shimmer">已交给会话里的 Agent，等它改完答复…</span>
                 </div>
               </div>
             </Reveal>
@@ -114,10 +114,12 @@ function Reveal({ children }: { children: React.ReactNode }) {
 }
 
 function Row({ m, first, onUndo }: { m: Message; first?: boolean; onUndo?: () => void }) {
-  // Agent replies are the session turn itself (one record in both places).
+  // Eval replies are the session turn itself; native-session replies carry the agent's own
+  // text and point at their last canvas change (for undo) and the session.
   const turn = useTurn(m.turnId);
-  const reply = turn?.reply;
-  const meta = turn ? `${(((turn.endedAt ?? Date.now()) - turn.startedAt) / 1000).toFixed(1)}s${turn.costUsd != null ? ` · $${turn.costUsd.toFixed(4)}` : ""}` : ago(m.at);
+  const native = !!m.sessionId;
+  const reply = native ? (turn?.reply ? { ...turn.reply, text: m.text, tone: m.tone } : undefined) : turn?.reply;
+  const meta = turn && !native ? `${(((turn.endedAt ?? Date.now()) - turn.startedAt) / 1000).toFixed(1)}s${turn.costUsd != null ? ` · $${turn.costUsd.toFixed(4)}` : ""}` : ago(m.at);
   return (
     <div className="trow" data-first={first} data-tone={reply?.tone ?? m.tone}>
       <Avatar who={m.author} />
@@ -138,7 +140,11 @@ function Row({ m, first, onUndo }: { m: Message; first?: boolean; onUndo?: () =>
             )}
           </div>
         )}
-        {turn && (
+        {native ? (
+          <button className="tsession" onClick={() => ui.openSession(m.sessionId!, m.turnId)}>
+            在会话中查看 →
+          </button>
+        ) : turn && (
           <button className="tsession" onClick={() => ui.openSession(turn.sessionId, turn.id)}>
             在会话中查看第 {turn.n} 轮 · {turn.steps.length} 步 →
           </button>

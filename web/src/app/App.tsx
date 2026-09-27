@@ -1,18 +1,17 @@
 import { MotionConfig, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { resolveAnchor } from "../canvas/anchors";
-import { AnimPrompt } from "../anim/AnimPrompt";
 import { CanvasView, type CanvasHandle } from "../canvas/CanvasView";
 import { SPRING } from "../comments/motion";
 import { replayEval, runEval, TASKS, type EvalProgress, type EvalRow } from "../eval/eval";
 import { buildFixture } from "../eval/fixture";
-import { IconAnim, IconClose, IconCols, IconComment, IconGrid, IconList, IconPlus, IconPointer, IconReset, IconRows, IconSelect, IconSingle } from "./icons";
+import { IconClose, IconCols, IconComment, IconGrid, IconList, IconPlus, IconPointer, IconReset, IconRows, IconSelect, IconSingle } from "./icons";
 import { discard, PERSIST, project, reloadFromDisk, save, slotFile, type ProjectInfo } from "../persist";
 import { byId, type El } from "../canvas/scene";
 import { SessionPane } from "../session/SessionPane";
-import { runTurn } from "../session/runTurn";
 import { sessions, type Session, type Turn } from "../session/store";
-import { canvases, ui } from "../session/ui";
+import { agentChoice, canvases, ui } from "../session/ui";
+import { agents, type Binding } from "../session/agents";
 import { createThreadStore, useThreads, type ThreadSnapshot, type ThreadStore } from "../comments/threads";
 import { AllDocs } from "../workspace/AllDocs";
 import { Workspace } from "../workspace/Workspace";
@@ -60,7 +59,7 @@ const uid = (p: string) => `${p}-${Math.random().toString(36).slice(2, 8)}`;
 /** What one delete removed, kept in memory for a single undo. */
 type Removed =
   | { kind: "canvas"; doc: CanvasDoc; index: number; at: { groupId: string; index: number } | null; elements: readonly El[]; store?: ThreadStore }
-  | { kind: "session"; doc: SessionDoc; index: number; at: { groupId: string; index: number } | null; session?: Session; turns: Turn[] };
+  | { kind: "session"; doc: SessionDoc; index: number; at: { groupId: string; index: number } | null; session?: Session; turns: Turn[]; binding?: Binding };
 
 export function App({ boot }: { boot: Boot }) {
   const firstRun = !boot.workspace;
@@ -81,7 +80,6 @@ export function App({ boot }: { boot: Boot }) {
   const [drawers, setDrawers] = useState<Record<string, boolean>>({});
   const [selCount, setSelCount] = useState(0);
   const [editing, setEditing] = useState<string | null>(null);
-  const [animOpen, setAnimOpen] = useState(false);
   const [listOpen, setListOpen] = useState<{ confirm?: string } | null>(null);
   const [removed, setRemoved] = useState<Removed | null>(null);
   const [evalProgress, setEvalProgress] = useState<EvalProgress | null>(null);
@@ -274,7 +272,7 @@ export function App({ boot }: { boot: Boot }) {
       const st = sessions.get();
       const session = st.sessions[doc.sessionId];
       const turns = (session?.turnIds ?? []).map((t) => st.turns[t]).filter(Boolean);
-      setRemoved({ kind: "session", doc, index, at, session, turns });
+      setRemoved({ kind: "session", doc, index, at, session, turns, binding: agents.get().bindings[doc.sessionId] });
       const { [doc.sessionId]: _, ...rest } = st.sessions;
       const keptTurns = Object.fromEntries(Object.entries(st.turns).filter(([, t]) => t.sessionId !== doc.sessionId));
       sessions.hydrate({ ...st, sessions: rest, turns: keptTurns });
@@ -296,6 +294,9 @@ export function App({ boot }: { boot: Boot }) {
     } else if (r.session) {
       const st = sessions.get();
       sessions.hydrate({ ...st, sessions: { ...st.sessions, [r.session.id]: r.session }, turns: { ...st.turns, ...Object.fromEntries(r.turns.map((t) => [t.id, t])) } });
+      // Deleting the session removed its agent binding on disk; bind the same native session again.
+      const b = r.binding;
+      if (b) void agents.bind(r.session.id, b.agent, b.model, b.effort, b.nativeId).catch(() => {});
     }
     if (r.at) {
       const at = r.at;
@@ -341,6 +342,14 @@ export function App({ boot }: { boot: Boot }) {
         h.api.updateScene({ appState: { scrollX: a.width / 2 / a.zoom.value - p.x, scrollY: a.height / 2 / a.zoom.value - p.y } });
         setTimeout(() => h.store.open(threadId), 120);
       });
+    };
+    ui.chooseAgent = async (canvasId) => {
+      // Reuse an unbound session on this canvas, else start one; the pane shows the agent picker.
+      const bound = agents.get().bindings;
+      const s = sessions.onCanvas(canvasId).find((x) => !bound[x.id]) ?? sessions.create(canvasId);
+      const wait = agentChoice.wait(s.id);
+      ui.openSession(s.id);
+      return wait;
     };
     ui.openSession = (sessionId, turnId) => {
       const session = sessions.get().sessions[sessionId];
@@ -496,8 +505,6 @@ export function App({ boot }: { boot: Boot }) {
           store={storeFor(canvasDoc.id)}
           onCommentSelection={() => handle?.commentSelection()}
           onReset={() => handle?.reset()}
-          animOpen={animOpen}
-          onAnim={() => setAnimOpen((o) => !o)}
           evalButton={
             EVAL_MODE && handle ? (
               <button
@@ -515,25 +522,6 @@ export function App({ boot }: { boot: Boot }) {
             在「{canvasDoc.title}」上点击一个元素钉评论 · Esc 退出
           </motion.div>
         )}
-        {animOpen && (
-          <AnimPrompt
-            onClose={() => setAnimOpen(false)}
-            onScript={(script) => {
-              // Offline examples mount directly (no model involved).
-              handle?.animate(script);
-              setAnimOpen(false);
-            }}
-            onRequest={(text) => {
-              // Generated animations are a turn in this canvas's session, like any other request.
-              setAnimOpen(false);
-              const c = canvases.get(canvasDoc.id);
-              if (!c) return;
-              const s = sessions.forCanvas(canvasDoc.id);
-              ui.openSession(s.id);
-              void runTurn({ api: c.api, sessionId: s.id, canvasId: canvasDoc.id, request: { id: `anim-${Date.now()}`, origin: "chat", messages: [{ author: "user", text }], anchorIds: [] }, origin: { kind: "chat" }, text });
-            }}
-          />
-        )}
         </>}
         {removed && (
           <motion.div className="undo-toast" role="status" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
@@ -549,7 +537,7 @@ export function App({ boot }: { boot: Boot }) {
   );
 }
 
-function Dock({ at, title, mode, setMode, selCount, drawerOpen, toggleDrawer, store, onCommentSelection, onReset, animOpen, onAnim, evalButton }: {
+function Dock({ at, title, mode, setMode, selCount, drawerOpen, toggleDrawer, store, onCommentSelection, onReset, evalButton }: {
   at: { x: number; bottom: number } | null;
   title: string;
   mode: "browse" | "comment";
@@ -560,8 +548,6 @@ function Dock({ at, title, mode, setMode, selCount, drawerOpen, toggleDrawer, st
   store: ThreadStore;
   onCommentSelection: () => void;
   onReset: () => void;
-  animOpen: boolean;
-  onAnim: () => void;
   evalButton: React.ReactNode;
 }) {
   const { threads } = useThreads(store);
@@ -584,10 +570,6 @@ function Dock({ at, title, mode, setMode, selCount, drawerOpen, toggleDrawer, st
           {drawerOpen && <motion.span layoutId="dock-drawer" className="dock-on" transition={SPRING} />}
           <IconList size={17} />
           {open > 0 && <em className="dock-badge">{open}</em>}
-        </button>
-        <button className="dock-btn icon" data-on={animOpen} onClick={onAnim} aria-label="算法动画" title="算法动画 · 用动画演示…">
-          {animOpen && <motion.span layoutId="dock-anim" className="dock-on" transition={SPRING} />}
-          <IconAnim size={17} />
         </button>
         <span className="dock-sep" />
         <button className="dock-btn icon" onClick={onReset} aria-label="清空画布（可撤销）" title="清空画布（⌘Z 可撤销）"><IconReset size={16} /></button>

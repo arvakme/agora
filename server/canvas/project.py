@@ -58,14 +58,11 @@ name = {name}
 port = 0
 
 [agent]
+# Schema-constrained planning (the eval baseline). Sessions pick their own agent when created.
 backend = "claude-cli"
 model = "claude-sonnet-5"
 # low | medium | high | xhigh | max; empty = the backend's default
 effort = ""
-
-[pi]
-# Pi session id for this project (reserved, not used yet).
-session_id = ""
 """
 
 
@@ -81,6 +78,13 @@ class Conflict(Exception):
 
 class NotEmpty(Exception):
     """An import was attempted into a project that already has data."""
+
+
+class Locked(Exception):
+    """A session's agent binding is fixed once chosen; a different one was requested."""
+
+
+AGENT_KINDS = ("pi", "claude", "codex")
 
 
 def version_of(data: bytes | None) -> str | None:
@@ -214,6 +218,7 @@ class ProjectStore:
             "canvas": self.dir / "canvases" / f"{id}.excalidraw",
             "threads": self.dir / "threads" / f"{id}.json",
             "session": self.dir / "sessions" / f"{id}.jsonl",
+            "binding": self.dir / "sessions" / f"{id}.agent.json",
         }[kind]
 
     def _rel(self, path: Path) -> str:
@@ -328,6 +333,59 @@ class ProjectStore:
             self._atomic(path, body)
         return version_of(body) or ""
 
+    # ——— agent bindings (sessions/<id>.agent.json; written only by the server) ———
+    # A session is one native coding-agent session: which CLI, model and effort, chosen at
+    # creation and never changed, plus the CLI's own session id (set once).
+    def read_binding(self, id: str) -> dict[str, Any] | None:
+        raw = self._bytes(self._path("binding", id))
+        return None if raw is None else json.loads(raw)
+
+    def bindings(self) -> dict[str, dict[str, Any]]:
+        out = {}
+        for p in sorted((self.dir / "sessions").glob("*.agent.json")):
+            id = p.name.removesuffix(".agent.json")
+            if ID_RE.match(id):
+                try:
+                    out[id] = json.loads(p.read_bytes())
+                except (OSError, json.JSONDecodeError):
+                    continue
+        return out
+
+    def bind(self, id: str, *, agent: str, model: str = "", effort: str = "", native_id: str | None = None, at: int | None = None) -> dict[str, Any]:
+        """Create the binding, or confirm an identical one. A different agent/model/effort → ``Locked``."""
+        if agent not in AGENT_KINDS:
+            raise ValueError(f"agent must be one of {AGENT_KINDS}, got {agent!r}")
+        path = self._path("binding", id)
+        with self._locked():
+            cur = self.read_binding(id)
+            if cur is not None:
+                if (cur.get("agent"), cur.get("model") or "", cur.get("effort") or "") != (agent, model or "", effort or ""):
+                    raise Locked(f"session {id} is bound to {cur.get('agent')} {cur.get('model') or ''} {cur.get('effort') or ''}".strip())
+                if native_id and cur.get("nativeId") and cur["nativeId"] != native_id:
+                    raise Locked(f"session {id} is bound to native session {cur['nativeId']}")
+                if native_id and not cur.get("nativeId"):
+                    cur = {**cur, "nativeId": native_id}
+                    self._atomic(path, dump_json(cur))
+                return cur
+            data = {"agent": agent, "model": model or "", "effort": effort or "", "nativeId": native_id, "createdAt": at or 0}
+            self._atomic(path, dump_json(data))
+            return data
+
+    def set_native(self, id: str, native_id: str) -> dict[str, Any]:
+        """Record the CLI's session id once (Codex only learns it on the first run)."""
+        path = self._path("binding", id)
+        with self._locked():
+            cur = self.read_binding(id)
+            if cur is None:
+                raise ValueError(f"session {id} has no agent binding")
+            if cur.get("nativeId") == native_id:
+                return cur
+            if cur.get("nativeId"):
+                raise Locked(f"session {id} is bound to native session {cur['nativeId']}")
+            cur = {**cur, "nativeId": native_id}
+            self._atomic(path, dump_json(cur))
+            return cur
+
     # ——— whole project ———
     def snapshot(self) -> dict[str, Any]:
         ws = self.read("workspace")
@@ -350,12 +408,14 @@ class ProjectStore:
                 continue
             folded, v = self.read_session(id) or ({}, "")
             sessions[id] = {"state": folded, "version": v}
+        bindings = self.bindings()
         return {
             **self.info(),
             "empty": self.is_empty(),
             "workspace": None if ws is None else {"data": ws[0], "version": ws[1]},
             "canvases": canvases,
             "sessions": sessions,
+            "bindings": bindings,
         }
 
     def import_all(self, payload: dict[str, Any]) -> None:

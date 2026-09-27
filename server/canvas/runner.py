@@ -17,9 +17,13 @@ event stream, each event stamped with the server's epoch-ms ``at``:
 cache-read / cache-write tokens, wall time, cost. ``costUsd``/``durationMs`` stay on the
 result for existing callers and mirror ``usage``.
 
-``ClaudeCliBackend`` (``claude -p --output-format stream-json``) is the only backend
-today; the user's own Pi runtime plugs in later as another entry in ``BACKENDS``
-without touching the router or the UI.
+Two kinds of request share the seam:
+
+- schema-constrained planning (``schema`` set): ``ClaudeCliBackend`` (``claude-cli``,
+  ``claude -p --json-schema`` in a neutral empty directory). The eval baseline.
+- a native session turn (``schema`` None): the user's own coding agent in the project
+  directory, resuming the session's native id — ``pi``, ``claude``, ``codex`` in
+  ``server/canvas/agents.py``. ``result.raw`` is then the agent's final message text.
 
 Every run validates the structured output against the caller's JSON Schema before the
 result goes out — the backend's structural check; referential and freshness checks stay
@@ -77,13 +81,16 @@ class ExecOptions:
 
 @dataclass(frozen=True)
 class RunRequest:
-    """What to run: one schema-constrained prompt, optionally with MCP tools."""
+    """What to run: one prompt — schema-constrained (planning) or free (a session turn)."""
 
-    schema: dict[str, Any]
-    system: str
+    schema: dict[str, Any] | None
+    system: str | None
     prompt: str
     mcp_config: dict[str, Any] | None = None
     options: ExecOptions = field(default_factory=ExecOptions)
+    # Session turns: where the agent runs (the project root) and extra environment.
+    cwd: str | None = None
+    env: dict[str, str] | None = None
 
 
 class Usage(TypedDict):
@@ -471,13 +478,22 @@ class ClaudeCliBackend:
         yield finish(raw, final)
 
 
-# Backend registry: ExecOptions.backend → factory. Pi is added here in its own change.
+# Backend registry: ExecOptions.backend → factory. The native session agents (pi, claude,
+# codex) live in agents.py and are registered on first use.
 BACKENDS: dict[str, Callable[[], AgentBackend]] = {
     ClaudeCliBackend.name: ClaudeCliBackend,
 }
 
 
+def _register_agents() -> None:
+    from server.canvas.agents import BACKEND_CLASSES
+
+    for name, cls in BACKEND_CLASSES.items():
+        BACKENDS.setdefault(name, cls)
+
+
 def make_backend(name: str = DEFAULT_BACKEND) -> AgentBackend:
+    _register_agents()
     try:
         return BACKENDS[name]()
     except KeyError:

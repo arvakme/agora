@@ -11,6 +11,7 @@ import { foldSessions, sessionRecords, threadsFromFile, threadsToFile, type Logg
 import { markImported, readLegacy } from "./project/legacy";
 import type { ThreadSnapshot } from "./comments/threads";
 import type { El } from "./canvas/scene";
+import type { Binding } from "./session/agents";
 
 export const PERSIST = !new URLSearchParams(location.search).has("eval") && !new URLSearchParams(location.search).has("fresh");
 
@@ -23,12 +24,15 @@ type Snapshot = ProjectInfo & {
   workspace: Versioned<unknown> | null;
   canvases: Record<string, { scene: { elements: El[] }; version: string; threads: Versioned<ThreadsFile> | null }>;
   sessions: Parameters<typeof foldSessions>[0] & Record<string, { version: string }>;
+  /** Agent bindings (sessions/<id>.agent.json), written by the server only. */
+  bindings?: Record<string, Binding>;
 };
 export type Loaded = {
   project: ProjectInfo;
   workspace?: unknown;
   canvases: Record<string, { elements: El[]; threads?: ThreadSnapshot }>;
   sessions: SessionsState;
+  bindings: Record<string, Binding>;
   imported: boolean;
 };
 
@@ -83,6 +87,7 @@ export async function connect(): Promise<Loaded> {
     workspace: snap.workspace?.data,
     canvases,
     sessions: folded.state,
+    bindings: snap.bindings ?? {},
     imported,
   };
 }

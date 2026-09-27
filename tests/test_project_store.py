@@ -34,7 +34,7 @@ def test_init_creates_layout_config_and_gitignore(tmp_path):
     ignored = [l for l in GITIGNORE.splitlines() if l and not l.startswith("#")]
     assert ignored == ["sessions/", "run/", "*.tmp", "*.lock"]
     cfg = s.config()
-    assert cfg["project"]["name"] == "p" and cfg["server"]["port"] == 0 and cfg["pi"]["session_id"] == ""
+    assert cfg["project"]["name"] == "p" and cfg["server"]["port"] == 0 and "pi" not in cfg  # sessions bind their own agent
     first_id = cfg["project"]["id"]
     assert s.init() is False and s.config()["project"]["id"] == first_id  # idempotent, never rewrites config
 

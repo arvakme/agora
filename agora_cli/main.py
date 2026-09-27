@@ -4,8 +4,10 @@
     agora up     [--project P] [--dev]  init + start (or reuse) this project's server
     agora open   [--project P] [--dev]  up, then open the browser
     agora status [--project P]
-    agora down   [--project P]          stop it
+    agora down   [--project P]          stop it (and this project's terminal panes)
     agora serve  --project P --port N   (internal) run the server in the foreground
+    agora canvas list|read|search|apply|anim|schema   the agora-canvas skill's commands
+    agora skill install [--agent all|claude|pi|codex]  link the skill into the project
 
 P defaults to the current directory. The live server is recorded in P/.agora/run/server.json
 (pid, port, url); a second ``up`` for the same project reuses it. Different projects get
@@ -245,6 +247,9 @@ def cmd_status(p: Project, _a) -> int:
 
 
 def cmd_down(p: Project, _a) -> int:
+    from server.canvas.terminal import Terminals
+
+    Terminals(p.root, p.run).kill_server()  # Agora's own tmux server for this project only
     st = p.state()
     if not st:
         print(f"not running (project {p.root})")
@@ -293,9 +298,13 @@ def main(argv: list[str] | None = None) -> int:
             s.add_argument("--no-browser", action="store_true", help="only print the URL")
         if name == "serve":
             s.add_argument("--port", type=int, required=True)
+    from agora_cli.canvas import add_parsers, find_root
+
+    add_parsers(sub)
     a = ap.parse_args(argv)
     try:
-        return a.fn(Project(a.project), a)
+        project = Project(str(find_root(a.project))) if a.cmd in ("canvas", "skill") else Project(a.project)
+        return a.fn(project, a)
     except RuntimeError as e:
         print(f"agora: {e}", file=sys.stderr)
         return 2

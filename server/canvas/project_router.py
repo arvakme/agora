@@ -94,7 +94,8 @@ def create_project_router(store: ProjectStore) -> APIRouter:
 
     @router.delete("/sessions/{id}")
     def delete_session(id: str):
-        return guard(lambda: (store.delete("session", id), {"ok": True})[1])
+        # The agent binding goes with the log; undoing the delete re-binds (PUT /api/agent/sessions/{id}).
+        return guard(lambda: (store.delete("session", id), store.delete("binding", id), {"ok": True})[2])
 
     @router.post("/import")
     def import_all(payload: dict[str, Any]):
@@ -129,13 +130,27 @@ NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>Agora</title>
 或用 <code>agora up --dev</code> 走 vite 开发服务器。项目 API 已在 <code>/api/project</code> 就绪。</p>"""
 
 
-def create_project_app(root: Path | str, *, dist: Path | None = None, canvas_router: APIRouter | None = None) -> FastAPI:
+def create_project_app(root: Path | str, *, dist: Path | None = None, canvas_router: APIRouter | None = None, hub=None) -> FastAPI:
     """The app one ``agora up`` serves for one project."""
+    from contextlib import asynccontextmanager
+
+    from server.canvas.agent_router import create_agent_router
+    from server.canvas.sessions import AgentHub
+
     store = ProjectStore(root)
     store.init()
-    app = FastAPI(title=f"agora · {store.info()['name']}")
+    hub = hub or AgentHub(store)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        yield
+        await hub.close()
+
+    app = FastAPI(title=f"agora · {store.info()['name']}", lifespan=lifespan)
     app.state.store = store
+    app.state.hub = hub
     app.include_router(create_project_router(store), prefix="/api/project")
+    app.include_router(create_agent_router(hub), prefix="/api/agent")
     if canvas_router is None:
         from server.canvas.router import create_router
 

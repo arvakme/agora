@@ -52,7 +52,7 @@ export function freeze(scene: Scene, req: Request, selectedIds: string[]): Froze
 }
 
 /** Elements (by id) whose freshness token no longer matches the frozen one. */
-export function staleIds(ctx: FrozenContext, ids: string[], scene: Scene): string[] {
+export function staleIds(ctx: Pick<FrozenContext, "versions">, ids: string[], scene: Scene): string[] {
   const map = byId(scene);
   return ids.filter((id) => {
     const frozen = ctx.versions[id];

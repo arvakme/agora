@@ -1,6 +1,7 @@
-// Sessions ("rooms" with Pi Master): turns, their steps, and the undo batches they
-// produced. One store for the whole app; canvas comments that are handed to the agent
-// create turns here too, so a thread and its session show the same record.
+// Sessions: Agora's record of each session — the canvas it belongs to, and the canvas
+// changes made in it (turns: steps plus the undo batch). The conversation itself lives in
+// the native agent's own log (agents.ts); a turn here is one `agora canvas apply`/`anim`
+// by that agent, or one eval planning turn (runTurn.ts).
 import { useSyncExternalStore } from "react";
 import type { Batch } from "../ops/apply";
 import type { El } from "../canvas/scene";
@@ -22,6 +23,8 @@ export type Step = {
 };
 export type Origin =
   | { kind: "chat" }
+  /** A change the session's agent made through the agora-canvas skill. */
+  | { kind: "agent" }
   | { kind: "comment"; threadId: string; threadN: number; anchor: string };
 export type TurnStatus = "running" | "applied" | "empty" | "invalid" | "stale" | "error";
 export type Turn = {
@@ -31,9 +34,8 @@ export type Turn = {
   canvasId: string;
   origin: Origin;
   request: string;
-  /** `#` references to canvas elements and `@` mentions of agents, as picked in the composer. */
+  /** `#` references to canvas elements, as picked in the composer. */
   refs: { id: string; label: string }[];
-  mentions: string[];
   startedAt: number;
   endedAt?: number;
   status: TurnStatus;
@@ -79,10 +81,11 @@ export const sessions = {
     return s;
   },
   relink: (id: string, canvasId: string) => set({ ...state, sessions: { ...state.sessions, [id]: { ...state.sessions[id], canvasId } } }),
-  /** The session a canvas's comments report into (the first one linked to it; created on demand). */
+  /** The session a canvas's comments report into for eval runs (the first one linked to it; created on demand). */
   forCanvas(canvasId: string): Session {
     return Object.values(state.sessions).find((s) => s.canvasId === canvasId) ?? sessions.create(canvasId);
   },
+  onCanvas: (canvasId: string) => Object.values(state.sessions).filter((s) => s.canvasId === canvasId),
 
   startTurn(sessionId: string, t: Omit<Turn, "id" | "n" | "sessionId" | "steps" | "startedAt" | "status">): Turn {
     const s = state.sessions[sessionId];
