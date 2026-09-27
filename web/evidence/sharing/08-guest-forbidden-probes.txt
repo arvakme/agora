@@ -1,0 +1,16 @@
+guest page https://agora-share-e2e-7d163b.quietharbor.de/ (share cookie set), 2026-09-27T18:17:14.399Z, via page.fetch in Ego
+403  PUT /api/project/canvases/c1
+403  POST /api/project/threads/c1/merge
+403  GET /api/project/snapshot
+403  GET /api/project
+403  GET /api/project/events
+403  GET /api/agent/catalog
+403  POST /api/agent/sessions/s1/send
+403  POST /api/agent/sessions/s1/terminal
+403  POST /api/agent/canvas/apply
+403  POST /api/canvas/turns
+403  GET /api/share
+403  DELETE /api/share/x
+403  GET /libraries/index.json
+200  GET /api/guest/state (whitelisted)
+state contains owner email: false; contains codePaths/customData: false; contains /tmp path: false

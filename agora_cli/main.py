@@ -8,6 +8,7 @@
     agora serve  --project P --port N   (internal) run the server in the foreground
     agora canvas list|read|search|apply|anim|schema   the agora-canvas skill's commands
     agora skill install [--agent all|claude|pi|codex]  link the skill into the project
+    agora share create [--canvas C] [--for 1d] | list | revoke <id>|--all   share a canvas (web/docs/sharing.md)
 
 P defaults to the current directory. The live server is recorded in P/.agora/run/server.json
 (pid, port, url); a second ``up`` for the same project reuses it. Different projects get
@@ -268,7 +269,7 @@ def cmd_serve(p: Project, a) -> int:
 
     from server.canvas.project_router import create_project_app
 
-    uvicorn.run(create_project_app(p.root), host=HOST, port=a.port, log_level="info")
+    uvicorn.run(create_project_app(p.root, gateway=True), host=HOST, port=a.port, log_level="info")
     return 0
 
 
@@ -301,9 +302,12 @@ def main(argv: list[str] | None = None) -> int:
     from agora_cli.canvas import add_parsers, find_root
 
     add_parsers(sub)
+    from agora_cli.share import add_parser as add_share
+
+    add_share(sub)
     a = ap.parse_args(argv)
     try:
-        project = Project(str(find_root(a.project))) if a.cmd in ("canvas", "skill") else Project(a.project)
+        project = Project(str(find_root(a.project))) if a.cmd in ("canvas", "skill", "share") else Project(a.project)
         return a.fn(project, a)
     except RuntimeError as e:
         print(f"agora: {e}", file=sys.stderr)

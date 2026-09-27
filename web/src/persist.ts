@@ -9,7 +9,7 @@
 import { createClient } from "./project/client";
 import { foldSessions, sessionRecords, threadsFromFile, threadsToFile, type Logged, type Person, type SessionsState, type ThreadsFile } from "./project/format";
 import { markImported, readLegacy } from "./project/legacy";
-import type { ThreadSnapshot } from "./comments/threads";
+import { threadStores, type ThreadSnapshot } from "./comments/threads";
 import type { El } from "./canvas/scene";
 import type { Binding } from "./session/agents";
 
@@ -98,6 +98,31 @@ function putIfChanged(slot: string, path: string, data: unknown, compare: string
   void project.write(slot, { op: { kind: "put", path, data } });
 }
 
+/** Threads are merged on the server, not overwritten: share guests write the same file. */
+function mergeIfChanged(slot: string, path: string, data: unknown) {
+  const compare = JSON.stringify(data);
+  if (written.get(slot) === compare) return;
+  written.set(slot, compare);
+  void project.write(slot, { op: { kind: "merge", path, data } });
+}
+
+/** Someone else's comments (share guests) arrive from the server as the merged file. */
+export function followProject(onShares?: () => void) {
+  if (!PERSIST) return () => {};
+  const es = new EventSource("/api/project/events");
+  es.onmessage = (e) => {
+    const ev = JSON.parse(e.data) as { t: string; canvasId?: string; data?: ThreadsFile; version?: string };
+    if (ev.t === "shares") return onShares?.();
+    if (ev.t !== "threads" || !ev.canvasId || !ev.data) return;
+    const store = threadStores.get(ev.canvasId);
+    const snap = threadsFromFile(ev.data);
+    if (!store || !snap) return;
+    if (store.merge(snap)) written.set(`threads:${ev.canvasId}`, JSON.stringify(threadsToFile(store.snapshot())));
+    if (ev.version) project.seen(`threads:${ev.canvasId}`, ev.version);
+  };
+  return () => es.close();
+}
+
 function syncSessions(st: SessionsState) {
   latestSessions = st;
   for (const id of [...logged.keys()])
@@ -130,7 +155,7 @@ function write(key: string, v: unknown) {
     putIfChanged(`canvas:${id}`, `/canvases/${id}`, { elements }, JSON.stringify(elements));
     // No comments and no file yet: don't create an empty threads file.
     if (threads && (threads.threads.length || project.version(`threads:${id}`) != null))
-      putIfChanged(`threads:${id}`, `/threads/${id}`, threadsToFile(threads));
+      mergeIfChanged(`threads:${id}`, `/threads/${id}/merge`, threadsToFile(threads));
     return;
   }
   console.warn("persist: unknown key", key);

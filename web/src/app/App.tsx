@@ -13,8 +13,9 @@ import { sessions, type Session, type Turn } from "../session/store";
 import { agentChoice, canvases, ui } from "../session/ui";
 import { agents, type Binding } from "../session/agents";
 import { pointerFollow } from "../pointer/follow";
-import { createThreadStore, useThreads, type ThreadSnapshot, type ThreadStore } from "../comments/threads";
+import { createThreadStore, threadStores, useThreads, type ThreadSnapshot, type ThreadStore } from "../comments/threads";
 import { AllDocs } from "../workspace/AllDocs";
+import { ShareButton } from "../share/SharePanel";
 import { Workspace } from "../workspace/Workspace";
 import { activate, group, groupOf, groups, moveTab, preset, type Node, type Preset } from "../workspace/layout";
 import {
@@ -99,6 +100,7 @@ export function App({ boot }: { boot: Boot }) {
     if (!stores.current.has(id)) {
       const st = createThreadStore(id, boot.canvases[id]?.threads);
       stores.current.set(id, st);
+      threadStores.set(id, st);
       if (PERSIST) st.subscribe(() => persistCanvas(id));
     }
     return stores.current.get(id)!;
@@ -272,6 +274,7 @@ export function App({ boot }: { boot: Boot }) {
       setRemoved({ kind: "canvas", doc, index, at, elements: scenes.current.get(id) ?? [], store: stores.current.get(id) });
       scenes.current.delete(id);
       stores.current.delete(id);
+      threadStores.delete(id);
       if (PERSIST) void discard(`canvas:${id}`);
       if (lastCanvas === id) setLastCanvas(canvasDocs.find((d) => d.id !== id)!.id);
     } else {
@@ -295,7 +298,7 @@ export function App({ boot }: { boot: Boot }) {
     });
     if (r.kind === "canvas") {
       scenes.current.set(r.doc.id, r.elements);
-      if (r.store) stores.current.set(r.doc.id, r.store);
+      if (r.store) stores.current.set(r.doc.id, r.store), threadStores.set(r.doc.id, r.store);
       persistCanvas(r.doc.id);
     } else if (r.session) {
       const st = sessions.get();
@@ -443,6 +446,7 @@ export function App({ boot }: { boot: Boot }) {
             )}
           </div>
           <span className="topbar-gap" />
+          {PERSIST && <ShareButton canvases={canvasDocs.map((d) => ({ id: d.id, title: d.title }))} current={canvasDoc?.id ?? lastCanvas} />}
           <div className="presets" role="group" aria-label="排列">
             {([["single", IconSingle, "单窗"], ["row", IconCols, "左右并排"], ["col", IconRows, "上下并排"], ["grid", IconGrid, "平铺"]] as const).map(([p, Icon, label]) => (
               <button key={p} className="preset" onClick={() => applyPreset(p)} title={label} aria-label={label} disabled={open.size < 2 && p !== "single"}>

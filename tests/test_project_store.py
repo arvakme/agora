@@ -32,7 +32,7 @@ def test_init_creates_layout_config_and_gitignore(tmp_path):
     assert {p.name for p in s.dir.iterdir()} >= {"config.toml", ".gitignore", "canvases", "threads", "sessions", "run"}
     assert (s.dir / ".gitignore").read_text() == GITIGNORE
     ignored = [l for l in GITIGNORE.splitlines() if l and not l.startswith("#")]
-    assert ignored == ["sessions/", "run/", "*.tmp", "*.lock"]
+    assert ignored == ["sessions/", "run/", "shares/", "*.tmp", "*.lock"]
     cfg = s.config()
     assert cfg["project"]["name"] == "p" and cfg["server"]["port"] == 0 and "pi" not in cfg  # sessions bind their own agent
     first_id = cfg["project"]["id"]

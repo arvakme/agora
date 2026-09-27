@@ -7,7 +7,8 @@ import { handToSession, undoAgent } from "../ops/agent";
 import type { AnchorState } from "../canvas/anchors";
 import { IconAlert, IconCheck, IconClose, IconReopen, IconSend, IconSpark, IconUndo } from "../app/icons";
 import type { Message, Thread, ThreadStore } from "./threads";
-import { identity } from "./threads";
+import { identity, isGuestId } from "./threads";
+import { GUEST } from "../guest/mode";
 import { SPRING } from "./motion";
 import { useTurn } from "../session/store";
 import { ui } from "../session/ui";
@@ -51,14 +52,16 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
             <AnchorTag names={st.names} />
           </span>
           <span className="tcard-actions">
-            {!t.resolved && (
+            {!t.resolved && !GUEST && (
               <button className="tagent" disabled={running || st.status === "lost"} onClick={() => void handToSession(api, store, t.id)}>
                 <IconSpark size={13} /> {running ? "处理中" : "交给 Agent"}
               </button>
             )}
-            <button className="tbtn" onClick={() => store.setResolved(t.id, !t.resolved)} title={t.resolved ? "重新打开" : "解决"} aria-label={t.resolved ? "重新打开" : "解决"}>
-              {t.resolved ? <IconReopen size={15} /> : <IconCheck size={15} />}
-            </button>
+            {!GUEST && (
+              <button className="tbtn" onClick={() => store.setResolved(t.id, !t.resolved)} title={t.resolved ? "重新打开" : "解决"} aria-label={t.resolved ? "重新打开" : "解决"}>
+                {t.resolved ? <IconReopen size={15} /> : <IconCheck size={15} />}
+              </button>
+            )}
             <button className="tbtn" onClick={() => store.close()} title="关闭" aria-label="关闭"><IconClose size={15} /></button>
           </span>
         </motion.header>
@@ -77,7 +80,7 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
           {full &&
             rest.map((m) => (
               <Reveal key={m.id}>
-                <Row m={m} onUndo={() => undoAgent(api, store, t.id, m.id)} />
+                <Row m={m} onUndo={GUEST ? undefined : () => undoAgent(api, store, t.id, m.id)} />
               </Reveal>
             ))}
           {full && running && (
@@ -116,16 +119,18 @@ function Reveal({ children }: { children: React.ReactNode }) {
 function Row({ m, first, onUndo }: { m: Message; first?: boolean; onUndo?: () => void }) {
   // Eval replies are the session turn itself; native-session replies carry the agent's own
   // text and point at their last canvas change (for undo) and the session.
-  const turn = useTurn(m.turnId);
+  const turn = useTurn(GUEST ? undefined : m.turnId);
   const native = !!m.sessionId;
   const reply = native ? (turn?.reply ? { ...turn.reply, text: m.text, tone: m.tone } : undefined) : turn?.reply;
   const meta = turn && !native ? `${(((turn.endedAt ?? Date.now()) - turn.startedAt) / 1000).toFixed(1)}s${turn.costUsd != null ? ` · $${turn.costUsd.toFixed(4)}` : ""}` : ago(m.at);
+  const other = m.author === "you" && !!m.by && m.by.id !== identity()?.id;
   return (
     <div className="trow" data-first={first} data-tone={reply?.tone ?? m.tone}>
-      <Avatar who={m.author} />
+      <Avatar who={m.author} name={other ? m.by!.name : undefined} />
       <div className="trow-main">
         <div className="trow-meta">
-          <b>{m.author === "agent" ? "Agent" : m.author === "system" ? "系统" : m.by && m.by.id !== identity()?.id ? m.by.name : "你"}</b>
+          <b>{m.author === "agent" ? "Agent" : m.author === "system" ? "系统" : other ? m.by!.name : "你"}</b>
+          {other && isGuestId(m.by!.id) && !GUEST && <span className="tguest">访客</span>}
           <time>{meta}</time>
         </div>
         <p className="trow-text">{reply?.text ?? m.text}</p>
@@ -140,7 +145,7 @@ function Row({ m, first, onUndo }: { m: Message; first?: boolean; onUndo?: () =>
             )}
           </div>
         )}
-        {native ? (
+        {GUEST ? null : native ? (
           <button className="tsession" onClick={() => ui.openSession(m.sessionId!, m.turnId)}>
             在会话中查看 →
           </button>
@@ -154,10 +159,10 @@ function Row({ m, first, onUndo }: { m: Message; first?: boolean; onUndo?: () =>
   );
 }
 
-export function Avatar({ who, spinning }: { who: Message["author"]; spinning?: boolean }) {
+export function Avatar({ who, spinning, name }: { who: Message["author"]; spinning?: boolean; name?: string }) {
   return (
-    <span className="avatar" data-who={who} data-spinning={spinning}>
-      {who === "agent" ? <IconSpark size={12} /> : who === "system" ? "!" : "你"}
+    <span className="avatar" data-who={who} data-spinning={spinning} data-other={!!name}>
+      {who === "agent" ? <IconSpark size={12} /> : who === "system" ? "!" : name ? [...name.trim()][0] ?? "?" : "你"}
     </span>
   );
 }

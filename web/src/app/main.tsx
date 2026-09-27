@@ -7,6 +7,9 @@ import { sessions } from "../session/store";
 import { setIdentity } from "../comments/threads";
 import { agents, connectAgents } from "../session/agents";
 import { installBridge } from "../session/agentBridge";
+import { followProject } from "../persist";
+import { GUEST } from "../guest/mode";
+import { Ended, GuestApp, GuestEnded, loadGuest } from "../guest/GuestApp";
 
 const root = createRoot(document.getElementById("root")!);
 
@@ -21,6 +24,8 @@ async function boot(): Promise<Boot> {
   // This page executes `agora canvas …` edits and follows the agent sessions live.
   installBridge();
   connectAgents();
+  // Comments written by share guests arrive while the page is open.
+  followProject(() => dispatchEvent(new Event("agora:shares")));
   const workspace = p.workspace as WorkspaceState | undefined;
   const canvases: Boot["canvases"] = {};
   for (const d of workspace?.docs ?? []) {
@@ -43,7 +48,13 @@ function Offline({ error }: { error: unknown }) {
   );
 }
 
-boot().then(
-  (b) => root.render(<App boot={b} />),
-  (e) => root.render(<Offline error={e} />),
-);
+if (GUEST)
+  loadGuest().then(
+    (s) => root.render(<GuestApp initial={s} />),
+    (e) => root.render(e instanceof Ended ? <GuestEnded /> : <Offline error={e} />),
+  );
+else
+  boot().then(
+    (b) => root.render(<App boot={b} />),
+    (e) => root.render(<Offline error={e} />),
+  );

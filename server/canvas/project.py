@@ -41,6 +41,7 @@ GITIGNORE = """\
 # workspace.json and config.toml are meant to be committed.
 sessions/
 run/
+shares/
 *.tmp
 *.lock
 """
@@ -78,6 +79,10 @@ class Conflict(Exception):
 
 class NotEmpty(Exception):
     """An import was attempted into a project that already has data."""
+
+
+class NotFound(Exception):
+    """A thread operation named a thread that does not exist."""
 
 
 class Locked(Exception):
@@ -132,6 +137,47 @@ def fold_session(lines: list[dict[str, Any]]) -> dict[str, Any]:
         elif t == "batch" and rec.get("id"):
             batches[rec["id"]] = rec.get("batch")
     return {"session": session, "turns": turns, "batches": batches}
+
+
+def participants_of(t: dict[str, Any]) -> list[dict[str, Any]]:
+    seen: dict[str, dict[str, Any]] = {}
+    for p in [t.get("createdBy"), *(m.get("by") for m in t.get("messages") or [])]:
+        if isinstance(p, dict) and p.get("id") and p["id"] not in seen:
+            seen[p["id"]] = p
+    return list(seen.values())
+
+
+def merge_thread_files(disk: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    """Union by id. The incoming page's copy wins for fields it knows (resolved, message edits);
+    threads and messages only on disk (another writer's) are kept. ``n`` collisions between two
+    new threads are settled by renumbering the incoming one."""
+    by_id = {t.get("id"): t for t in disk.get("threads") or []}
+    out: list[dict[str, Any]] = []
+    seen: set[Any] = set()
+    for t in incoming.get("threads") or []:
+        d = by_id.get(t.get("id"))
+        if d is None:
+            out.append(dict(t))
+        else:
+            mine = [m for m in t.get("messages") or []]
+            ids = {m.get("id") for m in mine}
+            extra = [m for m in d.get("messages") or [] if m.get("id") not in ids]
+            msgs = sorted(mine + extra, key=lambda m: m.get("at") or 0) if extra else mine
+            out.append({**t, "n": d.get("n", t.get("n")), "messages": msgs})
+        seen.add(t.get("id"))
+    out += [dict(t) for t in disk.get("threads") or [] if t.get("id") not in seen]
+    seq = max(int(disk.get("seq") or 0), int(incoming.get("seq") or 0), max((int(t.get("n") or 0) for t in out), default=0))
+    taken: set[int] = set()
+    for t in out:  # disk numbering first; a clashing incoming-only thread gets the next number
+        if t.get("id") in by_id:
+            taken.add(int(t.get("n") or 0))
+    for t in out:
+        if t.get("id") not in by_id and int(t.get("n") or 0) in taken:
+            seq += 1
+            t["n"] = seq
+        taken.add(int(t.get("n") or 0))
+        t["participants"] = participants_of(t)
+    return {**incoming, "seq": seq, "threads": out}
 
 
 @dataclass(frozen=True)
@@ -385,6 +431,59 @@ class ProjectStore:
             cur = {**cur, "nativeId": native_id}
             self._atomic(path, dump_json(cur))
             return cur
+
+    # ——— comment threads by operation (several writers: the owner's page and share guests) ———
+    # Whole-file CAS would make two people commenting at once conflict all the time. Instead the
+    # server reads the latest file under the lock, applies the change and writes it back:
+    # new threads and messages merge by id, ``n`` comes from the file's ``seq``.
+    def merge_threads(self, id: str, incoming: dict[str, Any]) -> tuple[dict[str, Any], str, bool]:
+        """Merge a page's whole threads snapshot into the file (nothing on disk is dropped).
+        Returns (file, version, changed)."""
+        path = self._path("threads", id)
+        with self._locked():
+            raw = self._bytes(path)
+            disk = json.loads(raw) if raw else {"seq": 0, "threads": []}
+            merged = merge_thread_files(disk, incoming)
+            body = dump_json(merged)
+            if body != raw:
+                self._atomic(path, body)
+        return merged, version_of(body) or "", body != raw
+
+    def thread_op(self, id: str, op: dict[str, Any]) -> tuple[dict[str, Any], str, dict[str, Any]]:
+        """Apply one ``create`` / ``reply`` / ``resolve`` op. Returns (file, version, the thread)."""
+        path = self._path("threads", id)
+        with self._locked():
+            raw = self._bytes(path)
+            data = json.loads(raw) if raw else {"seq": 0, "threads": []}
+            threads: list[dict[str, Any]] = data.setdefault("threads", [])
+            kind = op.get("op")
+            if kind == "create":
+                t = op["thread"]
+                existing = next((x for x in threads if x.get("id") == t["id"]), None)
+                if existing is None:
+                    data["seq"] = max(int(data.get("seq") or 0), max((int(x.get("n") or 0) for x in threads), default=0)) + 1
+                    t = {**t, "n": data["seq"]}
+                    t["participants"] = participants_of(t)
+                    threads.append(t)
+                    existing = t
+                thread = existing
+            else:
+                thread = next((x for x in threads if x.get("id") == op.get("threadId")), None)
+                if thread is None:
+                    raise NotFound(str(op.get("threadId")))
+                if kind == "reply":
+                    m = op["message"]
+                    if not any(x.get("id") == m["id"] for x in thread["messages"]):
+                        thread["messages"].append(m)
+                        thread["participants"] = participants_of(thread)
+                elif kind == "resolve":
+                    thread["resolved"] = bool(op.get("resolved"))
+                else:
+                    raise ValueError(f"unknown thread op {kind!r}")
+            body = dump_json(data)
+            if body != raw:
+                self._atomic(path, body)
+        return data, version_of(body) or "", thread
 
     # ——— whole project ———
     def snapshot(self) -> dict[str, Any]:
