@@ -1,16 +1,17 @@
-// Engine adapter contract + the playback clock. Engine-agnostic; copied into the tldraw spike.
+// Engine adapter contract + the playback clock. Engine-agnostic: Excalidraw is the only
+// implementation today (engine-excalidraw.ts); another canvas plugs in behind AnimEngine.
 // The controller owns time (step, t, speed); an engine only mounts a region and draws Frames.
 import { frameAt, type Frame, type Timeline } from "./timeline.ts";
 
 export type ViewRect = { x: number; y: number; w: number; h: number };
 
 export interface AnimEngine {
-  readonly name: "excalidraw" | "tldraw";
+  readonly name: string;
   /** Create the titled region + node shapes at a free spot (one undoable edit). */
   mount(tl: Timeline): void;
   /** Draw one frame. Must stay out of undo history. */
   render(frame: Frame): void;
-  /** Optional native tween from the current frame to `to` (tldraw: editor.animateShapes). */
+  /** Optional native tween from the current frame to `to`, for engines with an animation API. */
   tween?(to: Frame, ms: number): Promise<void>;
   /** Region rectangle in viewport (CSS px) coordinates, for anchoring the player; null if gone. */
   rect(): ViewRect | null;

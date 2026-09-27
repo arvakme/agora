@@ -40,6 +40,18 @@ export type Turn = {
   steps: Step[];
   reply?: { text: string; tone?: "error" | "warn"; changes?: string[]; batchId?: string; undone?: boolean; undoError?: string };
   costUsd?: number | null;
+  /** Per backend call (plan turns: one; animations: one per generation attempt). Not rendered yet. */
+  usage?: Usage[];
+};
+/** One backend call's accounting, same shape for every execution backend (server/canvas/runner.py). */
+export type Usage = {
+  model: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  durationMs: number | null;
+  costUsd: number | null;
 };
 export type Session = { id: string; canvasId: string; createdAt: number; turnIds: string[] };
 export type SerialBatch = { before: [string, El | null][]; after: [string, number][] };

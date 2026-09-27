@@ -28,7 +28,16 @@ if (!files.length) {
 }
 
 const procs: ChildProcess[] = [];
-const cleanup = () => procs.forEach((p) => p.kill("SIGTERM"));
+// Children run in their own process group (detached) so cleanup reaches the real server
+// under the npx/uv wrapper; killing only the wrapper left vite orphaned on the port.
+const cleanup = () =>
+  procs.forEach((p) => {
+    try {
+      process.kill(-p.pid!, "SIGTERM");
+    } catch {
+      p.kill("SIGTERM");
+    }
+  });
 process.on("SIGINT", () => (cleanup(), process.exit(130)));
 
 async function waitFor(url: string, ms = 30_000): Promise<boolean> {
@@ -44,7 +53,7 @@ async function waitFor(url: string, ms = 30_000): Promise<boolean> {
 }
 
 console.log(`starting vite dev on :${PORT} …`);
-procs.push(spawn("npx", ["vite", "--port", String(PORT), "--strictPort"], { cwd: WEB, stdio: ["ignore", "pipe", "inherit"] }));
+procs.push(spawn("npx", ["vite", "--port", String(PORT), "--strictPort"], { cwd: WEB, stdio: ["ignore", "pipe", "inherit"], detached: true }));
 if (!(await waitFor(`http://localhost:${PORT}/`))) {
   console.error("vite dev server did not come up");
   cleanup();

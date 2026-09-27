@@ -17,7 +17,8 @@ through ``FAKE_CLAUDE_MODE`` so runner/router tests never touch a model or the n
 - ``ignore_term``   trap SIGTERM and keep running (SIGKILL escalation tests)
 - ``nostdin``       never read stdin (stdin-drain timeout tests)
 
-``FAKE_CLAUDE_PIDFILE`` makes the process write its pid (kill assertions)."""
+``FAKE_CLAUDE_PIDFILE`` makes the process write its pid (kill assertions);
+``FAKE_CLAUDE_PROBEFILE`` makes it write {"cwd", "argv"} as JSON (spawn assertions)."""
 
 import json
 import os
@@ -27,6 +28,17 @@ import time
 from pathlib import Path
 
 MODE = os.environ.get("FAKE_CLAUDE_MODE", "ok")
+
+
+USAGE = {"input_tokens": 1200, "output_tokens": 80, "cache_read_input_tokens": 900, "cache_creation_input_tokens": 300}
+MODEL_USAGE = {
+    "claude-sonnet-5": {"inputTokens": 1200, "outputTokens": 80, "cacheReadInputTokens": 900, "cacheCreationInputTokens": 300, "costUSD": 0.012},
+    "claude-haiku-4-5": {"inputTokens": 50, "outputTokens": 3, "costUSD": 0.0001},
+}
+
+
+def assistant(content: list) -> dict:
+    return {"type": "assistant", "message": {"model": "claude-sonnet-5", "content": content, "usage": {"input_tokens": 400, "output_tokens": 20}}}
 
 
 def emit(obj: dict) -> None:
@@ -49,14 +61,16 @@ def main() -> None:
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
     if pidfile := os.environ.get("FAKE_CLAUDE_PIDFILE"):
         Path(pidfile).write_text(str(os.getpid()))
+    if probe := os.environ.get("FAKE_CLAUDE_PROBEFILE"):
+        Path(probe).write_text(json.dumps({"cwd": os.getcwd(), "argv": sys.argv[1:]}))
     if MODE == "nostdin":
         emit({"type": "system", "subtype": "init", "session_id": "fake"})
         time.sleep(600)
         return
     sys.stdin.read()  # the runner pipes the prompt on stdin
 
-    emit({"type": "system", "subtype": "init", "session_id": "fake"})
-    emit({"type": "assistant", "message": {"content": [{"type": "text", "text": "thinking …"}]}})
+    emit({"type": "system", "subtype": "init", "session_id": "fake-session", "model": "claude-sonnet-5"})
+    emit(assistant([{"type": "text", "text": "thinking …"}]))
     if MODE == "bigline":
         emit(
             {
@@ -128,6 +142,9 @@ def main() -> None:
                 "total_cost_usd": 0.012,
                 "result": "",
                 "duration_ms": 10,
+                "session_id": "fake-session",
+                "usage": USAGE,
+                "modelUsage": MODEL_USAGE,
             }
         )
         sys.stderr.write("dying anyway\n")
@@ -157,6 +174,9 @@ def main() -> None:
             "total_cost_usd": 0.012,
             "result": "",
             "duration_ms": 10,
+            "session_id": "fake-session",
+            "usage": USAGE,
+            "modelUsage": MODEL_USAGE,
         }
     )
 

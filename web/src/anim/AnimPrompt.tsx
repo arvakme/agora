@@ -1,5 +1,5 @@
 // "用动画演示…" input + the browser half of generation (fetch → validate → one repair retry).
-// Engine-agnostic; copied verbatim into the tldraw spike.
+// Engine-agnostic.
 import { useState } from "react";
 import { PRESETS } from "./examples.ts";
 import { validateScript, type AnimScript } from "./script.ts";

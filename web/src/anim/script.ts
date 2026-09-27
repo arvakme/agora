@@ -1,5 +1,5 @@
 // Algorithm-animation script: initial nodes + steps of parallel primitives. Engine-agnostic
-// (no Excalidraw / tldraw imports) — this file is copied verbatim into the tldraw spike.
+// (no canvas-engine imports).
 // The model returns one of these; nothing runs before validateScript accepts it.
 import { z } from "zod";
 

@@ -1,4 +1,4 @@
-/* Algorithm-animation player + prompt. Self-contained (copied into the tldraw spike),
+/* Algorithm-animation player + prompt. Self-contained,
    same komo dark-toolbar language as the Agora dock. */
 .anim-player, .anim-prompt {
   --a-bg: #1c1c1c; --a-ink: #eeeeee; --a-ink-2: #a3a3a3; --a-ink-3: #767676; --a-line: #ffffff14;

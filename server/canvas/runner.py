@@ -1,15 +1,29 @@
-"""One-shot ``claude -p`` runs that drive canvas edits and animation scripts.
+"""Backend-agnostic execution of the canvas agent's schema-constrained turns.
 
-The seam is ``OneShotRunner.run(schema, system, prompt, mcp) -> AsyncIterator[PlanEvent]``:
-an async iterator of the same events the spike's Vite middleware emitted (start / text /
-tool_use / tool_result / output / result), each stamped with the server's epoch-ms ``at``.
-Phase 1 runs the CLI as a subprocess of the FastAPI process (uvicorn runs on this machine
-and can use its ``claude`` login). A later phase swaps the implementation for a native
-host runner without touching the router or the UI.
+The seam is ``AgentBackend.run(RunRequest) -> AsyncIterator[event]``. A request says
+*what* to run (JSON schema, system prompt, prompt, optional MCP tools) and *how*
+(``ExecOptions``: backend, model, effort, session). Every backend emits the same
+event stream, each event stamped with the server's epoch-ms ``at``:
 
-Every run validates ``structured_output`` against the caller's JSON Schema before the
-result event goes out — the backend's structural check; referential and freshness checks
-stay in the browser (only it holds the current scene).
+- ``start``        {backend, model, session?}
+- ``text``         {text}                       narration
+- ``tool_use``     {id, name, input}            e.g. search_library
+- ``tool_result``  {id, text}
+- ``output``       {}                           the structured answer is being written
+- ``usage``        {usage}                      per model message (partial, as reported)
+- ``result``       {raw, error?, costUsd, durationMs, usage, session?, prompt}  always last
+
+``usage`` is one shape for every backend (see ``Usage``): model name, input / output /
+cache-read / cache-write tokens, wall time, cost. ``costUsd``/``durationMs`` stay on the
+result for existing callers and mirror ``usage``.
+
+``ClaudeCliBackend`` (``claude -p --output-format stream-json``) is the only backend
+today; the user's own Pi runtime plugs in later as another entry in ``BACKENDS``
+without touching the router or the UI.
+
+Every run validates the structured output against the caller's JSON Schema before the
+result goes out — the backend's structural check; referential and freshness checks stay
+in the browser (only it holds the current scene).
 """
 
 from __future__ import annotations
@@ -17,16 +31,126 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import tempfile
 import time
-from collections.abc import AsyncIterator
-from typing import Any, Protocol
+from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass, field
+from typing import Any, Protocol, TypedDict
 
 from server.canvas import schemas
 
-MODEL = "claude-sonnet-5"
+DEFAULT_BACKEND = "claude-cli"
+DEFAULT_MODEL = "claude-sonnet-5"
+# Kept for callers that imported the old name.
+MODEL = DEFAULT_MODEL
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
+# ``ExecOptions.session`` value that starts a persistent session (its id comes back
+# on ``start``/``result``); ``None`` is a one-shot run that leaves nothing behind.
+NEW_SESSION = "new"
 TIMEOUT_S = 240
 KILL_GRACE_S = 5
 STDOUT_LIMIT = 8 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class ExecOptions:
+    """How to run a turn. Backends map these onto their own knobs."""
+
+    backend: str = DEFAULT_BACKEND
+    model: str = DEFAULT_MODEL
+    effort: str | None = None
+    session: str | None = None
+
+    @classmethod
+    def from_env(cls, env: dict[str, str] | None = None) -> ExecOptions:
+        """``AGORA_CANVAS_{BACKEND,MODEL,EFFORT}`` override the defaults."""
+        env = os.environ if env is None else env
+        effort = env.get("AGORA_CANVAS_EFFORT") or None
+        if effort is not None and effort not in EFFORTS:
+            raise ValueError(f"AGORA_CANVAS_EFFORT must be one of {EFFORTS}, got {effort!r}")
+        return cls(
+            backend=env.get("AGORA_CANVAS_BACKEND") or DEFAULT_BACKEND,
+            model=env.get("AGORA_CANVAS_MODEL") or DEFAULT_MODEL,
+            effort=effort,
+        )
+
+
+@dataclass(frozen=True)
+class RunRequest:
+    """What to run: one schema-constrained prompt, optionally with MCP tools."""
+
+    schema: dict[str, Any]
+    system: str
+    prompt: str
+    mcp_config: dict[str, Any] | None = None
+    options: ExecOptions = field(default_factory=ExecOptions)
+
+
+class Usage(TypedDict):
+    model: str | None
+    inputTokens: int | None
+    outputTokens: int | None
+    cacheReadTokens: int | None
+    cacheWriteTokens: int | None
+    durationMs: int | None
+    costUsd: float | None
+
+
+def empty_usage(model: str | None = None) -> Usage:
+    return {
+        "model": model,
+        "inputTokens": None,
+        "outputTokens": None,
+        "cacheReadTokens": None,
+        "cacheWriteTokens": None,
+        "durationMs": None,
+        "costUsd": None,
+    }
+
+
+class AgentBackend(Protocol):
+    """Runs one ``RunRequest``; yields the event stream above, ending in ``result``."""
+
+    name: str
+
+    def run(self, req: RunRequest) -> AsyncIterator[dict[str, Any]]: ...
+
+
+def now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _int(v: Any) -> int | None:
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+def _num(v: Any) -> float | None:
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+def claude_message_usage(u: dict[str, Any] | None, model: str | None) -> Usage:
+    """Anthropic ``message.usage`` (snake_case) → ``Usage``."""
+    out = empty_usage(model)
+    if isinstance(u, dict):
+        out["inputTokens"] = _int(u.get("input_tokens"))
+        out["outputTokens"] = _int(u.get("output_tokens"))
+        out["cacheReadTokens"] = _int(u.get("cache_read_input_tokens"))
+        out["cacheWriteTokens"] = _int(u.get("cache_creation_input_tokens"))
+    return out
+
+
+def claude_result_usage(final: dict[str, Any] | None, model: str | None, duration_ms: int) -> Usage:
+    """The ``result`` line of stream-json → ``Usage`` (totals for the whole run)."""
+    out = claude_message_usage((final or {}).get("usage"), model)
+    out["durationMs"] = duration_ms
+    if final:
+        out["costUsd"] = _num(final.get("total_cost_usd"))
+        by_model = final.get("modelUsage")
+        if isinstance(by_model, dict) and by_model:
+            # The model that did the work: the one with the most output tokens.
+            out["model"] = max(by_model, key=lambda k: (by_model[k] or {}).get("outputTokens") or 0)
+    return out
+
 
 PLAN_SYSTEM = """You edit an Excalidraw diagram for a comment thread on a collaboration canvas.
 Return ONLY typed operations matching the provided JSON schema. Never invent element ids: target ids from the scene.
@@ -71,10 +195,6 @@ Within one step a node may be moved at most once, highlighted at most once, rela
 Run the algorithm faithfully on the given input — the script must reflect the real sequence of comparisons/visits.
 Give every step a caption in the user's language. Keep ≤ 80 steps; one step per meaningful event (a comparison, a swap, a visit).
 Title: short, in the user's language, include the input."""
-
-
-def now_ms() -> int:
-    return int(time.time() * 1000)
 
 
 async def _stop(proc: asyncio.subprocess.Process) -> None:
@@ -126,19 +246,6 @@ def build_prompt(ctx: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-class OneShotRunner(Protocol):
-    """Runs one schema-constrained prompt; yields PlanEvent dicts, ending in ``result``."""
-
-    def run(
-        self,
-        *,
-        schema: dict[str, Any],
-        system: str,
-        prompt: str,
-        mcp_config: dict[str, Any] | None = None,
-    ) -> AsyncIterator[dict[str, Any]]: ...
-
-
 def library_mcp_config() -> dict[str, Any]:
     """The asset library as an MCP tool (search only) for the planning call."""
     from server.canvas.library_mcp import MODULE
@@ -146,8 +253,22 @@ def library_mcp_config() -> dict[str, Any]:
     return {"mcpServers": {"library": {"command": MODULE[0], "args": list(MODULE[1:])}}}
 
 
-class ClaudeCliRunner:
-    """``claude -p --output-format stream-json`` as a subprocess."""
+def neutral_workdir() -> str:
+    """An empty directory outside any repository for model subprocesses.
+
+    ``claude -p`` folds its working directory into the model context (cwd, git status,
+    recent commits, project memory paths). Run from the repo root, that context changed
+    answers: the same T1 prompt was misread as "already named Redis" 6/20 times from
+    the agora checkout vs 0/20 from an empty directory (2026-09-27). The planner must
+    see only the prompt we build.
+    """
+    return tempfile.mkdtemp(prefix="agora-canvas-run-")
+
+
+class ClaudeCliBackend:
+    """``claude -p --output-format stream-json`` as a subprocess (one process per turn)."""
+
+    name = "claude-cli"
 
     def __init__(
         self,
@@ -155,72 +276,86 @@ class ClaudeCliRunner:
         *,
         timeout_s: float = TIMEOUT_S,
         env: dict[str, str] | None = None,
+        workdir: str | None = None,
     ) -> None:
         self.cmd = cmd or ["claude"]
         self.timeout_s = timeout_s
         self.env = env
+        self._workdir = workdir
 
-    async def run(
-        self,
-        *,
-        schema: dict[str, Any],
-        system: str,
-        prompt: str,
-        mcp_config: dict[str, Any] | None = None,
-    ) -> AsyncIterator[dict[str, Any]]:
+    @property
+    def workdir(self) -> str:
+        if self._workdir is None or not os.path.isdir(self._workdir):
+            self._workdir = neutral_workdir()
+        return self._workdir
+
+    def args(self, req: RunRequest) -> list[str]:
+        o = req.options
+        args = [
+            *self.cmd,
+            "-p",
+            "--model",
+            o.model,
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--json-schema",
+            json.dumps(req.schema),
+            "--system-prompt",
+            req.system,
+            "--tools",
+            "",
+        ]
+        if o.effort:
+            args += ["--effort", o.effort]
+        if req.mcp_config:
+            args += [
+                "--mcp-config",
+                json.dumps(req.mcp_config),
+                "--allowedTools",
+                "mcp__library__search_library",
+            ]
+        if o.session is None:
+            args += ["--no-session-persistence"]
+        elif o.session != NEW_SESSION:
+            args += ["--resume", o.session]
+        args += ["--setting-sources", "", "--strict-mcp-config"]
+        return args
+
+    async def run(self, req: RunRequest) -> AsyncIterator[dict[str, Any]]:
+        o = req.options
         started = now_ms()
-        yield {"t": "start", "at": started}
+        session: str | None = o.session if o.session not in (None, NEW_SESSION) else None
+        model: str | None = o.model
+        yield {"t": "start", "at": started, "backend": self.name, "model": o.model, "session": session}
 
-        def finish(raw: Any, cost_usd: float | None, error: str | None = None) -> dict[str, Any]:
+        def finish(raw: Any, final: dict[str, Any] | None, error: str | None = None) -> dict[str, Any]:
+            at = now_ms()
+            usage = claude_result_usage(final, model, at - started)
             out: dict[str, Any] = {
                 "t": "result",
-                "at": now_ms(),
+                "at": at,
                 "raw": raw,
-                "costUsd": cost_usd,
-                "durationMs": now_ms() - started,
-                "prompt": prompt,
+                "costUsd": usage["costUsd"],
+                "durationMs": usage["durationMs"],
+                "usage": usage,
+                "backend": self.name,
+                "session": session,
+                "prompt": req.prompt,
             }
             if error:
                 out["error"] = error
             return out
 
-        args = [
-            *self.cmd,
-            "-p",
-            "--model",
-            MODEL,
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            "--json-schema",
-            json.dumps(schema),
-            "--system-prompt",
-            system,
-            "--tools",
-            "",
-        ]
-        if mcp_config:
-            args += [
-                "--mcp-config",
-                json.dumps(mcp_config),
-                "--allowedTools",
-                "mcp__library__search_library",
-            ]
-        args += [
-            "--no-session-persistence",
-            "--setting-sources",
-            "",
-            "--strict-mcp-config",
-        ]
-
         env = {**os.environ, **(self.env or {})}
         try:
             proc = await asyncio.create_subprocess_exec(
-                *args,
+                *self.args(req),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
+                cwd=self.workdir,
                 # StreamReader's default 64 KiB line limit rejects long
                 # stream-json lines (big assistant text, tool results).
                 limit=STDOUT_LIMIT,
@@ -244,7 +379,7 @@ class ClaudeCliRunner:
             async with asyncio.timeout(self.timeout_s):
                 assert proc.stdin is not None and proc.stdout is not None
                 try:
-                    proc.stdin.write(prompt.encode())
+                    proc.stdin.write(req.prompt.encode())
                     await proc.stdin.drain()
                 except (BrokenPipeError, ConnectionResetError):
                     pass
@@ -261,8 +396,13 @@ class ClaudeCliRunner:
                             continue
                         at = now_ms()
                         dtype = d.get("type")
-                        if dtype == "assistant":
-                            for c in (d.get("message") or {}).get("content") or []:
+                        if dtype == "system" and d.get("subtype") == "init":
+                            model = str(d.get("model") or model)
+                            if o.session is not None and d.get("session_id"):
+                                session = str(d["session_id"])
+                        elif dtype == "assistant":
+                            msg = d.get("message") or {}
+                            for c in msg.get("content") or []:
                                 if c.get("type") == "text" and str(c.get("text", "")).strip():
                                     yield {"t": "text", "at": at, "text": str(c["text"])}
                                 elif c.get("type") == "tool_use" and c.get("name") == "StructuredOutput":
@@ -275,6 +415,8 @@ class ClaudeCliRunner:
                                         "name": str(c.get("name")),
                                         "input": c.get("input"),
                                     }
+                            if isinstance(msg.get("usage"), dict):
+                                yield {"t": "usage", "at": at, "usage": claude_message_usage(msg["usage"], str(msg.get("model") or model))}
                         elif dtype == "user":
                             for c in (d.get("message") or {}).get("content") or []:
                                 if c.get("type") != "tool_result":
@@ -288,6 +430,8 @@ class ClaudeCliRunner:
                                     yield {"t": "tool_result", "at": at, "id": str(c.get("tool_use_id")), "text": text}
                         elif dtype == "result":
                             final = d
+                            if o.session is not None and d.get("session_id"):
+                                session = str(d["session_id"])
                 except TimeoutError:
                     raise
                 except Exception as exc:
@@ -304,26 +448,37 @@ class ClaudeCliRunner:
 
         err = b"".join(err_chunks).decode("utf-8", "replace")
         if timed_out:
-            yield finish(None, None, f"timeout after {self.timeout_s}s")
+            yield finish(None, final, f"timeout after {self.timeout_s}s")
             return
         if stream_error:
-            yield finish(None, None, stream_error)
+            yield finish(None, final, stream_error)
             return
         if proc.returncode != 0:
-            yield finish(final, None, f"exit {proc.returncode}: {err[:500]}")
+            yield finish(final, final, f"exit {proc.returncode}: {err[:500]}")
             return
         if final is None:
             yield finish(None, None, f"exit {proc.returncode}: {err[:500]}")
             return
-        cost_usd = final.get("total_cost_usd")
-        cost = cost_usd if isinstance(cost_usd, (int, float)) else None
         if final.get("is_error") or "structured_output" not in final or final.get("structured_output") is None:
             detail = f"{final.get('subtype', 'error')} {str(final.get('result') or '')[:300]}".strip()
-            yield finish(final.get("structured_output"), cost, f"claude: {detail}")
+            yield finish(final.get("structured_output"), final, f"claude: {detail}")
             return
         raw = final["structured_output"]
-        schema_errors = schemas.validate(schema, raw)
+        schema_errors = schemas.validate(req.schema, raw)
         if schema_errors:
-            yield finish(raw, cost, f"schema: {'; '.join(schema_errors[:5])}")
+            yield finish(raw, final, f"schema: {'; '.join(schema_errors[:5])}")
             return
-        yield finish(raw, cost)
+        yield finish(raw, final)
+
+
+# Backend registry: ExecOptions.backend → factory. Pi is added here in its own change.
+BACKENDS: dict[str, Callable[[], AgentBackend]] = {
+    ClaudeCliBackend.name: ClaudeCliBackend,
+}
+
+
+def make_backend(name: str = DEFAULT_BACKEND) -> AgentBackend:
+    try:
+        return BACKENDS[name]()
+    except KeyError:
+        raise ValueError(f"unknown canvas backend {name!r}; known: {sorted(BACKENDS)}") from None

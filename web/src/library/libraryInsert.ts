@@ -7,6 +7,7 @@
 import { convertToExcalidrawElements, getCommonBounds, restoreElements } from "@excalidraw/excalidraw";
 import type { Side } from "../ops/ops";
 import { bbox, FONT, libraryMeta, type El, type LibraryMeta } from "../canvas/scene";
+import { clearSpot, obstaclesFor } from "../canvas/spacing";
 
 export type LibraryItem = { id: string; name: string; library: string; elements: unknown[] };
 
@@ -43,7 +44,7 @@ export function instantiate(
   }
 
   // Keep ≥ MIN_GAP from everything around it: slide along the requested side until clear.
-  if (opts.obstacles?.length) ({ X, Y } = clear({ x: X, y: Y, w: W, h: H + labelH }, opts.obstacles, opts.side ?? "right", opts.frameId ?? null));
+  if (opts.obstacles?.length) ({ x: X, y: Y } = clearSpot({ x: X, y: Y, w: W, h: H + labelH }, obstaclesFor(opts.obstacles, { frameId: opts.frameId }), [opts.side ?? "right"]));
 
   const outer = `lib-${opts.ref}-${rid()}`;
   const ids = new Map(els.map((e) => [e.id, `${opts.ref}-${rid()}`]));
@@ -88,34 +89,3 @@ export function caption(text: string, root: { x: number; y: number; width: numbe
   const [t] = convertToExcalidrawElements([{ type: "text", text, x: 0, y: 0, ...FONT, fontSize: 14, textAlign: "center" }], { regenerateIds: false });
   return { ...t, id: `${root.id}-label`, x: root.x + (root.width - t.width) / 2, y: root.y + root.height + 6, groupIds: [group], frameId: root.frameId } as El;
 }
-
-export const MIN_GAP = 16;
-
-/** Distance between two boxes (0 when they touch or overlap). */
-export function boxGap(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) {
-  const dx = Math.max(0, Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w));
-  const dy = Math.max(0, Math.max(a.y, b.y) - Math.min(a.y + a.h, b.y + b.h));
-  return Math.hypot(dx, dy);
-}
-
-function clear(box: { x: number; y: number; w: number; h: number }, obstacles: readonly El[], side: Side, frameId: string | null) {
-  const rects = obstacles
-    .filter((e) => !e.isDeleted && e.type !== "arrow" && e.type !== "line" && !(e.type === "text" && (e as unknown as { containerId?: string }).containerId) && e.id !== frameId)
-    .map((e) => {
-      const b = bbox(e);
-      return { x: b.x, y: b.y, w: b.width, h: b.height, frame: e.type === "frame" };
-    });
-  const step = { right: [1, 0], left: [-1, 0], below: [0, 1], above: [0, -1] }[side];
-  let { x, y } = box;
-  for (let i = 0; i < 200; i++) {
-    const me = { x, y, w: box.w, h: box.h };
-    // A frame only blocks at its border: being fully inside or fully outside with room is fine.
-    const hit = rects.find((r) => boxGap(me, r) < MIN_GAP && !(r.frame && inside(me, r)));
-    if (!hit) break;
-    x += step[0] * 8;
-    y += step[1] * 8;
-  }
-  return { X: x, Y: y };
-}
-const inside = (a: { x: number; y: number; w: number; h: number }, r: { x: number; y: number; w: number; h: number }) =>
-  a.x >= r.x + MIN_GAP && a.y >= r.y + MIN_GAP && a.x + a.w <= r.x + r.w - MIN_GAP && a.y + a.h <= r.y + r.h - MIN_GAP;

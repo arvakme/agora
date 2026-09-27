@@ -10,6 +10,7 @@ import { buildFixture } from "./fixture";
 import type { LibraryItem } from "../library/libraryInsert";
 import { byId, bbox, isArrow, isShape, labelOf, libraryMeta, type El, type Scene } from "../canvas/scene";
 import type { ThreadStore } from "../comments/threads";
+import type { Usage } from "../session/store";
 
 type Sem = Record<string, Record<string, unknown>>;
 
@@ -207,6 +208,10 @@ export type EvalRow = {
   detail: string;
   summary: string[];
   promptChars: number;
+  /** Exact prompt text the model received (absent in rows recorded before 2026-09-27 evening). */
+  prompt?: string;
+  /** Backend-reported tokens / time / cost / model (absent in older rows). */
+  usage?: Usage;
   at: string;
 };
 export type EvalProgress = { index: number; total: number; done: boolean; log: string[] };
@@ -214,7 +219,7 @@ export type EvalProgress = { index: number; total: number; done: boolean; log: s
 export async function runEval(
   api: ExcalidrawImperativeAPI,
   threads: ThreadStore,
-  { runs, onProgress, reset, only }: { runs: number; onProgress: (p: EvalProgress) => void; reset: () => void; only?: string[] },
+  { runs, onProgress, only }: { runs: number; onProgress: (p: EvalProgress) => void; /** Ignored: the harness loads its own fixture. */ reset?: () => void; only?: string[] },
 ) {
   const runId = new Date().toISOString().replace(/[:.]/g, "-");
   const tasks = TASKS.filter((t) => !only || only.some((o) => t.id === o || t.id.startsWith(`${o}-`)));
@@ -227,7 +232,7 @@ export async function runEval(
   for (const task of tasks) {
     for (let run = 1; run <= runs; run++) {
       index++;
-      reset();
+      loadFixture(api, threads);
       await frame();
       const all = api.getSceneElementsIncludingDeleted() as El[];
       const map = byId(all);
@@ -267,6 +272,8 @@ export async function runEval(
         detail: chk.detail,
         summary: o.summary,
         promptChars: JSON.stringify(o.ctx.scene).length,
+        prompt: o.prompt,
+        usage: o.usage,
         at: new Date().toISOString(),
       };
       rows.push(row);
@@ -278,6 +285,17 @@ export async function runEval(
   log.push(`done: ${ok}/${rows.length} success → eval/runs/${runId}.jsonl`);
   report(true);
   return rows;
+}
+
+/**
+ * Every eval/replay row starts from the fixture with no history and no threads. The
+ * harness owns this instead of borrowing the canvas's UI reset (which is now an undoable
+ * "clear canvas", not "load the example").
+ */
+export function loadFixture(api: ExcalidrawImperativeAPI, threads?: ThreadStore) {
+  api.updateScene({ elements: buildFixture(), appState: { selectedElementIds: {} }, captureUpdate: CaptureUpdateAction.NEVER });
+  api.history.clear();
+  threads?.reset();
 }
 
 const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -304,7 +322,7 @@ export type ReplayResult = {
 export async function replayEval(
   api: ExcalidrawImperativeAPI,
   rows: EvalRow[],
-  { reset }: { reset: () => void },
+  _opts: { /** Ignored: the harness loads its own fixture. */ reset?: () => void } = {},
 ): Promise<ReplayResult[]> {
   const out: ReplayResult[] = [];
   const fixtureSem = JSON.stringify(semantic(buildFixture()));
@@ -341,7 +359,7 @@ export async function replayEval(
       push({ replayed: false, match: true, reason: `status=${row.status} 由模型侧决定，不可回放` });
       continue;
     }
-    reset();
+    loadFixture(api);
     await settle();
     const { plan, errors } = validatePlan({ ops: (row.ops ?? []) as Op[] }, { ...sceneIndex(scene()), libraryItem: (id) => itemFile.has(id) && !!itemFile.get(id) });
     if (row.status === "invalid") {
