@@ -1,0 +1,220 @@
+/* Design tokens — copied from ~/Job/agora-design/tokens.css (arvak family v0.2, Marginalia-led).
+ *
+ * Scoped to `.ds` for now: the parts of Agora rewritten to the design system (session
+ * trajectory, progress pointer) wrap themselves in `.ds`, while the rest of the page keeps its
+ * own variables until the site-wide unification replaces them (docs: design-system.md §11).
+ * Dark values apply only when the page forces `data-theme="dark"`: the rest of Agora is
+ * light-only today, so following the OS here would mix themes on one screen.
+ * Raw colours live only in this file.
+ */
+ .ds {
+
+  /* Ground. Marginalia has no shell behind panes: columns sit flush on one white sheet
+   * and are separated by hairlines. Cool graphite neutrals, never warm, never lavender. */
+  --bg: #ffffff;            /* page / column ground (Marginalia --sheet) */
+  --surface: #ffffff;       /* floating layers, inputs */
+  --raised: #f6f7f7;        /* hover fill, user message (Marginalia --hover) */
+  --well: #eef1f2;          /* segmented track, tag chip, quiet button, skeleton (Marginalia --well) */
+  --selected: #f2f4f5;      /* current row in a flush list (Marginalia .memo-card[aria-current]) */
+  --code-surface: #f7f8f8;  /* code / mono blocks, secondary column (Marginalia --sheet-2) */
+  --scrim: rgb(22 32 38 / 0.24);
+
+  /* Text (light). fg >=11.5:1; fg-muted >=5:1 on bg/raised/well/selected; fg-subtle >=4.6:1 on
+   * bg/raised/selected (not on --well: 4.44). fg-faint is NOT a text colour. */
+  --fg: #2c3136;
+  --fg-muted: #5e686d;
+  --fg-subtle: #687076;
+  --fg-faint: #9aa1a6;      /* rules, dots, disabled glyphs, placeholder icons only */
+
+  /* Lines. One neutral hairline does almost everything. */
+  --line: #eceef0;          /* column dividers, header underline, row divider, menu border */
+  --line-strong: #d5dadd;   /* hover border, drag outline */
+
+  /* Graphite chrome: the sidebar is graphite in BOTH themes (Marginalia .lib-sidebar). */
+  --chrome-bg: #2b3035;
+  --chrome-fg: #d9dee2;
+  --chrome-muted: #98a0a6;  /* counts, section labels (5.0:1; Marginalia's #8b949b is 4.3) */
+  --chrome-hover: rgb(255 255 255 / 0.055);
+  --chrome-current: rgb(255 255 255 / 0.09);
+  --chrome-line: rgb(255 255 255 / 0.1);
+  --accent-on-chrome: #bea5f5; /* icons on graphite (6.3:1) */
+
+  /* The one accent: Dither purple (Marginalia theme/accent.css = blog --color-brand).
+   * --accent is for text, icons and marks; --accent-fill is for filled buttons. */
+  --accent: #7048b4;              /* 6.4:1 on white */
+  --accent-hover: #5f3a9f;
+  --accent-ink: #5a3796;          /* small accent text on wash/tint (7.0:1 on tint) */
+  --accent-fill: #7048b4;
+  --accent-fill-hover: #5f3a9f;
+  --accent-fill-pressed: #52328a;
+  --accent-fg: #ffffff;           /* text/icons on --accent-fill (6.4:1) */
+  --accent-wash: rgb(112 72 180 / 0.09);   /* selected row in a floating list, count pill */
+  --accent-tint: rgb(112 72 180 / 0.14);   /* hover on selected, capture tag pill */
+  --accent-ring: rgb(112 72 180 / 0.35);   /* drop targets, pill hairline */
+  --accent-soft: #bea5f5;                  /* secondary data series, pin ring (blog brand-soft) */
+  --selection: rgb(112 72 180 / 0.22);     /* Marginalia --accent-select */
+  --focus-ring: var(--accent);   /* solid: the 35% ring is only 1.6:1, too faint for keyboard focus */
+
+  /* Semantic. Text values darkened to >=4.7:1 on every ground above. Info = accent. */
+  --positive: #367455;
+  --positive-dot: #5fa98a;  /* status dot only (not text) — Marginalia .lib-sync-dot */
+  --positive-wash: rgb(63 125 92 / 0.1);
+  --negative: #a84b40;
+  --negative-wash: #fbefef;
+  --caution: #8a6424;
+  --caution-dot: #c9a45a;
+  --caution-wash: rgb(154 114 51 / 0.1);
+  --info: var(--accent);
+
+  /* Chart / trace series: accent first, then neutrals. Not a rainbow. */
+  --series-1: #7048b4;
+  --series-2: #bea5f5;
+  --series-3: #5e686d;
+  --series-4: #d5dadd;
+
+  /* Depth. Neutral graphite shadow, never tinted. */
+  --shadow-tint: rgb(20 30 40 / 0.08);
+  --shadow-tint-strong: rgb(20 30 40 / 0.13);
+}
+
+:root[data-theme="dark"] .ds {
+  --bg: #202428;
+  --surface: #292f34;
+  --raised: #2c3034;
+  --well: #2b3035;
+  --selected: #2b3035;
+  --code-surface: #272c30;
+  --scrim: rgb(0 0 0 / 0.5);
+  --fg: #d9dee2;
+  --fg-muted: #a0a8ad;
+  --fg-subtle: #939ca2;
+  --fg-faint: #5a6167;
+  --line: #2c3136;
+  --line-strong: #3d444a;
+  --chrome-bg: #2b3035;
+  --chrome-fg: #d9dee2;
+  --chrome-muted: #98a0a6;
+  --chrome-hover: rgb(255 255 255 / 0.055);
+  --chrome-current: rgb(255 255 255 / 0.09);
+  --chrome-line: rgb(255 255 255 / 0.1);
+  --accent-on-chrome: #bea5f5;
+  --accent: #bea5f5;
+  --accent-hover: #cfbbf8;
+  --accent-ink: #d6c6fa;
+  --accent-fill: #7a52c0;
+  --accent-fill-hover: #6c46b0;
+  --accent-fill-pressed: #603ea0;
+  --accent-fg: #ffffff;
+  --accent-wash: rgb(190 165 245 / 0.1);
+  --accent-tint: rgb(190 165 245 / 0.16);
+  --accent-ring: rgb(190 165 245 / 0.4);
+  --accent-soft: #7a5cbf;
+  --selection: rgb(190 165 245 / 0.22);
+  --positive: #75b798;
+  --positive-dot: #75b798;
+  --positive-wash: rgb(108 186 140 / 0.12);
+  --negative: #df8585;
+  --negative-wash: #3a292b;
+  --caution: #d6b16a;
+  --caution-dot: #d6b16a;
+  --caution-wash: rgb(214 177 106 / 0.12);
+  --series-1: #bea5f5;
+  --series-2: #7a5cbf;
+  --series-3: #a0a8ad;
+  --series-4: #3d444a;
+  --shadow-tint: rgb(0 0 0 / 0.28);
+  --shadow-tint-strong: rgb(0 0 0 / 0.32);
+}
+
+/* ───────────── Theme-independent ───────────── */
+ .ds {
+  /* Type. System sans for all UI (CJK-first). Numbers stay in the sans with tabular-nums
+   * (Marginalia counts and times). Mono is for code, source, commands and ids only;
+   * JetBrains Mono is Marginalia's code default (shared/appearance.ts). */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Geist Mono", Menlo, "PingFang SC", monospace;
+
+  /* Size scale: six steps. Marginalia's 11.5/12.5/13.5/14.5 half-steps fold into these. */
+  --text-xs: 11px;   /* counts, kbd, section labels, dense meta */
+  --text-sm: 12px;   /* secondary UI, meta lines, toolbar text, menu items */
+  --text-md: 13px;   /* UI body: rows, inputs, buttons, messages (Marginalia .lib 13px) */
+  --text-lg: 15px;   /* column/list titles, card titles, and READING text (editor/preview 15) */
+  --text-xl: 20px;   /* dialog + page titles */
+  --text-2xl: 28px;  /* display figures (rare) */
+  --leading-tight: 1.3;
+  --leading-ui: 1.45;
+  --leading-read: 1.5;   /* Marginalia editor/preview default line height */
+  --measure: 48em;       /* reading column width (Marginalia lineWidthEm / --article-measure) */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-strong: 600;
+  --track-title: -0.01em;
+  --track-display: -0.035em;
+
+  /* Space: 4px base, used unevenly on purpose. */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 22px;   /* column content inset (Marginalia list/doc padding-left 22) */
+  --space-8: 32px;
+  --space-9: 48px;
+
+  /* Chrome geometry (Marginalia library.css). */
+  --column-head: 54px;   /* list-head / doc-head height, hairline underneath */
+  --sidebar-w: 232px;
+  --rail-w: 80px;
+  --list-w: 320px;
+  --control-sm: 26px;    /* segment button, small icon button */
+  --control-md: 30px;    /* icon button, nav item, input */
+  --control-lg: 32px;    /* text button, menu item min-height */
+  --row-nav: 30px;
+  --row-menu: 32px;
+
+  /* Radius roles. Nested inner radius = outer − padding (or 0).
+   * Columns and panes have NO radius: they are flush. */
+  --r-xs: 5px;    /* menu items, thumbnails, kbd, inline code */
+  --r-sm: 7px;    /* icon buttons, nav items, inputs */
+  --r-md: 9px;    /* menus, dropdowns, small popovers (item 5 + padding 4) */
+  --r-lg: 12px;   /* composer, inline AI prompt, cards inside a floating layer */
+  --r-xl: 14px;   /* command palette, floating card/popover, toast, dialog */
+  --r-pill: 999px;/* text buttons, segmented track, tag chips, count pills, avatars */
+
+  /* Elevation. Flush chrome has no shadow; floating layers get a hairline plus a lift. */
+  --edge: 0 0 0 1px var(--line);
+  --lift-1: 0 1px 2px var(--shadow-tint);                 /* selected segment */
+  --lift-2: 0 8px 24px var(--shadow-tint-strong);         /* menus, popovers (Marginalia --pop) */
+  --lift-3: 0 14px 36px var(--shadow-tint-strong);        /* palette, toast, dialog */
+  --glass-blur: blur(28px) saturate(1.4);                 /* system-level floating layers only */
+
+  /* Motion (Marginalia pace: 120–200ms, soft spring). */
+  --dur-tap: 120ms;    /* hover fill, press, icon colour */
+  --dur-glide: 200ms;  /* column collapse, popover, segment slide, dialog rise */
+  --dur-drift: 280ms;  /* something entering: pin drop, new pane */
+  --dur-sweep: 700ms;  /* whole-view change (rare; no Marginalia counterpart) */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-layout: cubic-bezier(0.2, 0.8, 0.2, 1);   /* column width / sidebar (Marginalia) */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.32, 0.5, 1); /* only: press release, pill→card morph, pin drop, count roll */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds {
+    --dur-tap: 1ms;
+    --dur-glide: 1ms;
+    --dur-drift: 1ms;
+    --dur-sweep: 1ms;
+  }
+}
+
+
+/* Base for scoped parts: system sans, 13px UI, tabular numbers in metadata. */
+.ds { font-family: var(--font-sans); font-size: var(--text-md); line-height: var(--leading-ui); color: var(--fg); -webkit-font-smoothing: antialiased; }
+.ds ::selection { background: var(--selection); color: inherit; }
+.ds :focus:not(:focus-visible) { outline: none; }
+.ds :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+/* Inputs never draw a focus ring (D14): the caret is the focus. */
+.ds input:focus-visible, .ds textarea:focus-visible { outline: none; }

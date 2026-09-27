@@ -14,7 +14,7 @@
   threads/<canvasId>.json  这块画布的评论线程                   提交
   sessions/<id>.jsonl      会话里的画布修改（含撤销数据），追加写   不提交
   sessions/<id>.agent.json 会话绑定的 agent / 模型 / 强度 / 原生 id  不提交
-  run/                     server.json（pid、端口、URL）、日志、锁  不提交
+  run/                     server.json（pid、端口、URL）、日志、锁、usage/（无头续接的用量）  不提交
   .gitignore               由 agora 生成：sessions/ run/ *.tmp *.lock
 ```
 
@@ -52,6 +52,7 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
 - `elements` 保留原顺序（它就是图层顺序），已删除的元素（`isDeleted`）不写。
 - 画布名不在这里，在 `workspace.json` 的 docs 里（改名不动场景文件）。
 - Excalidraw 每次编辑会更新元素的 `version`/`versionNonce`/`updated`，diff 里会看到这些行，这是格式本身的噪声。
+- 节点代表的代码路径存在元素的 `customData.codePaths`（glob 列表，[进度指针](progress-pointer.md)），和图一起提交。
 
 ### threads/<canvasId>.json
 

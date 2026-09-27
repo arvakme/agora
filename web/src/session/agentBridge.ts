@@ -8,9 +8,10 @@ import { animHosts } from "../anim/AnimLayer";
 import { validateScript } from "../anim/script";
 import { staleIds } from "../canvas/context";
 import { toModelView } from "../canvas/modelView";
-import { byId, libraryMeta, live, nameOf, versionOf, type Scene } from "../canvas/scene";
+import { byId, codePathsOf, libraryMeta, live, nameOf, versionOf, type Scene } from "../canvas/scene";
 import { applyPlan } from "../ops/apply";
 import { referencedIds, validatePlan, type Op } from "../ops/ops";
+import { cleanGlobs, resolveElement, writeCodePaths } from "../pointer/writeLinks";
 import { agents, setBridgeHandler } from "./agents";
 import { fetchLibraryItems, sceneIndex, settle } from "./runTurn";
 import { sessions, type Origin, type Turn } from "./store";
@@ -128,12 +129,42 @@ export async function animFromAgent(req: { canvasId: string; sessionId?: string;
   return { status: "mounted", title: script.title, nodes: script.nodes.length, steps: script.steps.length, turnId: T };
 }
 
+/** `agora canvas link`: associate elements with code paths (progress pointer), one undoable change. */
+export async function linkFromAgent(req: { canvasId: string; sessionId?: string; links: Record<string, string[]>; clear?: boolean }) {
+  const c = await ui.ensureCanvas(req.canvasId);
+  if (!c) return { status: "error", errors: [`canvas ${req.canvasId} is not in this workspace`] };
+  const scene = all(c.api);
+  const map = byId(scene);
+  const errors: string[] = [];
+  const updates = new Map<string, string[]>();
+  for (const [ref, globs] of Object.entries(req.links ?? {})) {
+    const r = resolveElement(ref, scene);
+    if (!r.id) {
+      errors.push(r.error!);
+      continue;
+    }
+    const prev = updates.get(r.id) ?? (req.clear ? [] : codePathsOf(map.get(r.id)));
+    updates.set(r.id, cleanGlobs([...prev, ...globs]));
+  }
+  if (errors.length) return { status: "invalid", errors };
+  const linked = [...updates].map(([id, codePaths]) => ({ id, label: nameOf(map.get(id)!, map), codePaths }));
+  const batch = writeCodePaths(c.api, updates);
+  if (!batch) return { status: "linked", linked, unchanged: true };
+  const title = `关联代码路径：${linked.map((l) => `${l.label} → ${l.codePaths.join(" ") || "（清除）"}`).join("；")}`;
+  const rec = recordFor(req.sessionId, req.canvasId, title.length > 120 ? `关联代码路径 · ${linked.length} 个元素` : title);
+  const batchId = sessions.saveBatch(batch);
+  end(rec?.turnId, "applied", { text: `已关联 ${linked.length} 个元素的代码路径`, changes: linked.map((l) => `${l.label}：${l.codePaths.join("、") || "已清除"}`), batchId });
+  if (rec) sessions.step(rec.turnId, { kind: "apply", title: "写进元素的 customData.codePaths", elements: linked.map((l) => l.id), status: "done" });
+  return { status: "linked", linked, turnId: rec?.turnId };
+}
+
 /** Route bridge requests from the server to the executors above. */
 export function installBridge() {
   setBridgeHandler(async (req) => {
     if (req.kind === "read") return readCanvas(req.canvasId as string);
     if (req.kind === "apply") return applyFromAgent(req as unknown as Parameters<typeof applyFromAgent>[0]);
     if (req.kind === "anim") return animFromAgent(req as unknown as Parameters<typeof animFromAgent>[0]);
+    if (req.kind === "link") return linkFromAgent(req as unknown as Parameters<typeof linkFromAgent>[0]);
     return { status: "error", errors: [`unknown bridge request ${req.kind}`] };
   });
 }

@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.1",
+    "@unlocalhosted/dither-icons": "^0.2.5",
     "motion": "^13.4.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

@@ -16,7 +16,7 @@ Agora 里的一个会话，就是用户选定的原生 coding agent 的一个原
 | 对话记录 | 以 CLI 自己的会话日志为准（见 §4），不另存一份；`.agora/sessions/<id>.jsonl` 只记这个会话里的画布修改（每次 `agora canvas apply/anim` 一条 turn，带整批撤销数据） |
 | 删除 | 删除会话同时删绑定文件；撤销删除时用原来的 agent / 模型 / 强度 / 原生 id 重新绑定 |
 
-会话面板只显示这一个 agent（名字就是 Pi / Claude Code / Codex）：对话（用户消息、agent 回复、工具调用可展开）、它改画布的卡片（撤销、在画布中高亮）、状态行（处理中 / 排队原因 / 出错）、「在终端打开」。来自终端的消息带「终端」标记。没有 @ 提及、没有派发步骤。
+会话面板只显示这一个 agent（名字就是 Pi / Claude Code / Codex）：「对话 / 轨迹」两种视图（见 §7）、它改画布的卡片（撤销、在画布中高亮）、状态行（处理中 / 排队原因 / 出错）、「在终端打开」。来自终端的轮次带「终端」标记。头部显示这个会话累计的轮数、tokens、耗时和花费。没有 @ 提及、没有派发步骤。
 
 **画布评论「交给 Agent」**：交给这块画布上**最近活动**的已绑定会话（最近一次收发、改图或绑定的时间）。画布上还没有已绑定会话时，打开（或复用）一个未绑定会话让用户选 agent，选好后自动交出；选「先不交」则在线程里留一条系统消息。Agent 收到的是线程全文 + 锚点名字和 id（`web/src/comments/handoff.ts`）；它的最终答复贴回线程，线程消息链接到会话和它最后一次改图（撤销按钮撤的是那一批；一次评论里改了多批时，前面的批次在会话里逐条撤销）。
 
@@ -101,9 +101,10 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 | POST | `/sessions/{id}/send` | `{text, canvasId?, context?}` → `{sendId, route: terminal\|headless}` |
 | POST | `/sessions/{id}/interrupt` | 停止当前无头一轮并清空排队 |
 | POST / DELETE | `/sessions/{id}/terminal` | 打开（`{launch}`）/ 关闭终端 |
+| GET | `/sessions/{id}/items/{itemId}` | 一条会话记录的全文（工具输入 / 输出超过预览长度时，页面「展开全文」用） |
 | GET | `/events?executor=1` | SSE：`transcript`、`status`、`delivered`、`done`、`bridge`（给执行页面） |
 | POST | `/bridge/{rid}` | 页面回传 read/apply/anim 结果 |
-| GET / POST | `/canvas/list`、`/canvas/read`、`/canvas/apply`、`/canvas/anim` | `agora canvas` 用 |
+| GET / POST | `/canvas/list`、`/canvas/read`、`/canvas/apply`、`/canvas/anim`、`/canvas/link` | `agora canvas` 用（`link` 见 [进度指针](progress-pointer.md)） |
 
 ## 6. 限制
 
@@ -113,3 +114,32 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 - **写需要页面**：改图和动画由打开的 Agora 页面执行；只开终端、没开页面时 `apply` 返回退出码 3。
 - **日志是同步通道**：CLI 关掉会话持久化（例如 Claude 的 `--no-session-persistence`，或继承到嵌套标记）时，面板看不到那边的对话。
 - **Codex 终端先行**：还没有原生 id 的 Codex 会话在终端里开新会话，Agora 认领打开终端之后、同一项目目录下出现的第一个未被占用的 rollout；同一时间在同一目录另起 Codex 可能认错。
+
+## 7. 对话与轨迹视图
+
+信息结构照搬 DeepSeek Harness（github.com/deepseek-ai/deepseek-harness，MIT，提交 477b4f4）：`ui-chat` 的每轮过程分组与一行摘要、`ui-trajectory` 的时间轴总览与「轮 → 步骤 → 记录」明细。用 Agora 的技术栈重写（`web/src/session/trajectoryModel.ts` 折叠，`TrajectoryView.tsx` 界面），没有引入它的依赖；对应关系写在两个文件的文件头。界面按统一设计规范 v0.2（`web/src/app/tokens.css`，作用域 `.ds`）。
+
+**会话记录条目**（`server/canvas/transcript.py`，都从 CLI 原生日志来，面板和终端的轮次一样）：
+
+| kind | 内容 |
+|---|---|
+| `user` / `assistant` | 消息文字；assistant 带 `msg`（同一次模型请求的文字和工具调用共用，轨迹里是一「步」） |
+| `tool` | `name`、一行摘要 `input`、完整输入 `args`、输出 `output`、`isError`、开始 `at` / 结束 `endAt`、写到的文件 `files` |
+| `usage` | 一次模型请求的 tokens（输入不含缓存、输出、缓存读、缓存写）和模型；Pi 带花费。Claude 一条消息拆成多条记录时按消息 id 合并，Codex 用每次响应的 `token_usage_record` |
+| `context` | 生效的模型 / 强度：Codex 的 `turn_context`，Pi 的 `model_change` / `thinking_level_change` |
+| `end` | 这一轮结束：Claude 交互模式的 `turn_duration`、Codex 的 `task_complete.duration_ms` 给出耗时；没有就用结束时间减开始时间 |
+| `run` | 无头续接时 runner 的结果用量（Claude 的花费只在这里：原生日志不记花费）。存 `.agora/run/usage/<会话>.jsonl`，重启后还在 |
+
+工具输入 / 输出服务端保留全文（每条最多 256k 字符），推给页面的是前 4000 字符的预览加总长度，页面点「展开全文」再取。
+
+**对话视图**：每轮一个头（第 N 轮 · 终端 · 时间 · 模型 · 强度 · 输入 / 输出 / 缓存 tokens · 耗时 · 花费，只显示日志里有的），然后是用户消息、**过程折叠成一行**（「已读取文件并修改了文件 · 用时 12 s · 4 次工具调用」，按工具类别计数取前三；进行中显示「正在编辑文件，用时 …」且保持展开，出错的轮次也保持展开），展开后是中间消息和工具调用，每个工具调用可再展开看输入、输出、改到的文件和起止时间；这一轮里的改图卡片；最后是答复。
+
+**轨迹视图**：工具栏（轮数 · 记录数 · 调用数，时间轴「等宽 / 实际时长」，展开 / 收起所有轮次，搜索）；时间轴总览（用户 / 消息 / 工具三条泳道、轮次分界；「实际时长」按记录的开始时间与时长、去掉记录之间的空闲；拖动选一段只看这段里的记录，右键或「清除选择」取消）；明细按轮分组，粘性轮头带用量，轮内是「消息」和「第 N 步」（步骤描述：墙钟时长 + 工具直方图，如 `1.5 s Bash×6`），每条记录 `#序号 · 类型 · 摘要 · 用时`，点开就地看输入输出。进度指针或别处要看某一轮时，面板切到轨迹并定位到那一轮。
+
+**用量从哪来、缺什么**：
+
+| | 模型 | 强度 | tokens | 耗时 | 花费 |
+|---|---|---|---|---|---|
+| Claude Code | 日志 `message.model` | 绑定时选的（日志不记） | 日志 `message.usage` | 交互：`turn_duration`；无头：结束减开始 | 只有无头续接（runner 结果 `total_cost_usd`）；终端里的轮次不显示 |
+| Pi | 日志 `model_change` / 消息 | `thinking_level_change` | 消息 `usage` | 结束减开始 | 消息 `usage.cost.total` |
+| Codex | `turn_context.model` | `turn_context.effort` | `token_usage_record` | `task_complete.duration_ms` | 不记，不显示 |

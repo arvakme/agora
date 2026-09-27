@@ -40,6 +40,12 @@ export const libraryMeta = (el: El | undefined): LibraryMeta | undefined => {
   return m?.library ? m : undefined;
 };
 
+/** Code paths (globs) a diagram element stands for — the progress pointer's mapping (docs/progress-pointer.md). */
+export const codePathsOf = (el: El | undefined): string[] => {
+  const v = (el?.customData as { codePaths?: unknown } | undefined)?.codePaths;
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x) : [];
+};
+
 export function labelOf(el: El, map: Map<string, El>): string {
   if (el.type === "text") return el.text;
   const lib = libraryMeta(el);

@@ -10,13 +10,45 @@ export const AGENT_NAMES: Record<AgentKind, string> = { pi: "Pi", claude: "Claud
 export const AGENT_KINDS: AgentKind[] = ["pi", "claude", "codex"];
 
 export type Binding = { agent: AgentKind; model: string; effort: string; nativeId: string | null; createdAt: number };
+export type FileOp = "edit" | "write" | "add" | "delete";
+/** One model request's accounting (server/canvas/transcript.py `_usage`, runner `Usage`). */
+export type Usage = {
+  model: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  costUsd: number | null;
+  durationMs?: number | null;
+};
+/** A transcript item from the native log (server/canvas/transcript.py). */
 export type Item = {
   id: string;
-  kind: "user" | "assistant" | "tool";
+  kind: "user" | "assistant" | "tool" | "usage" | "context" | "end" | "run";
   text?: string;
   at: number;
+  endAt?: number;
+  startAt?: number;
+  /** Model message this text / tool call belongs to (one request = one trajectory step). */
+  msg?: string;
   source?: "agora" | "terminal";
-  tool?: { name?: string; input?: string; output?: string; isError?: boolean };
+  tool?: {
+    name?: string;
+    input?: string;
+    /** Full input (preview when `argsLen` is set: fetch the item for the rest). */
+    args?: string;
+    argsLen?: number;
+    output?: string;
+    outputLen?: number;
+    isError?: boolean;
+    files?: { path: string; op: FileOp }[];
+  };
+  usage?: Usage;
+  model?: string;
+  effort?: string;
+  durationMs?: number;
+  error?: string;
+  turn?: string;
 };
 export type Status = {
   running: boolean;
@@ -164,6 +196,8 @@ export const agents = {
       await fetch(`/api/agent/sessions/${sessionId}/terminal`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ launch, canvasId }) }),
     )) as { attach: string; launched: "kitty" | "terminal" | null; created: boolean };
   },
+  /** A transcript item in full (tool args / output past the preview). */
+  item: async (sessionId: string, itemId: string) => (await json(await fetch(`/api/agent/sessions/${sessionId}/items/${encodeURIComponent(itemId)}`))) as Item,
   closeTerminal: (sessionId: string) => fetch(`/api/agent/sessions/${sessionId}/terminal`, { method: "DELETE" }),
   interrupt: (sessionId: string) => fetch(`/api/agent/sessions/${sessionId}/interrupt`, { method: "POST" }),
 
