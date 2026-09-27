@@ -1,4 +1,4 @@
-/* Progress pointer on the canvas (design-system.md v0.2 via app/tokens.css, scoped .ds).
+/* Progress pointer on the canvas (design-system.md v0.2, app/tokens.css).
  * One purple: the pointer's icon, ring and the one primary button in the path editor. */
 .ptr-layer { position: absolute; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
 .ptr-ui { pointer-events: auto; }

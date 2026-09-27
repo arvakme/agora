@@ -1,7 +1,10 @@
 import { createRoot } from "react-dom/client";
+import "./tokens.css";
+import "./theme";
 import "@excalidraw/excalidraw/index.css";
 import "./styles.css";
-import { App, type Boot, type WorkspaceState } from "./App";
+import { App, prepareBoot, type Boot, type WorkspaceState } from "./App";
+import { IconTerminal } from "./icons";
 import { connect, PERSIST } from "../persist";
 import { sessions } from "../session/store";
 import { setIdentity } from "../comments/threads";
@@ -38,12 +41,15 @@ async function boot(): Promise<Boot> {
 function Offline({ error }: { error: unknown }) {
   return (
     <div className="offline">
-      <h1>没有连上项目服务</h1>
-      <p>画布、评论和会话存在项目目录的 <code>.agora/</code> 里，由这个项目自己的 Agora 服务读写。在项目目录运行</p>
-      <pre>agora up</pre>
-      <p>再打开它给出的地址（或用 <code>agora open</code>）。</p>
-      <p className="offline-detail">{String(error)}</p>
-      <a href="?fresh">不保存，直接试用 →</a>
+      <main>
+        <IconTerminal size={56} />
+        <h1>没有连上项目服务</h1>
+        <p>画布、评论和会话存在项目目录的 <code>.agora/</code> 里，由这个项目自己的 Agora 服务读写。在项目目录运行</p>
+        <pre>agora up</pre>
+        <p>再打开它给出的地址（或用 <code>agora open</code>）。</p>
+        <p className="offline-detail">{String(error)}</p>
+        <a href="?fresh">不保存，直接试用 →</a>
+      </main>
     </div>
   );
 }
@@ -55,6 +61,6 @@ if (GUEST)
   );
 else
   boot().then(
-    (b) => root.render(<App boot={b} />),
+    (b) => root.render(<App boot={prepareBoot(b)} />),
     (e) => root.render(<Offline error={e} />),
   );

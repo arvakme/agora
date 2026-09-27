@@ -1,11 +1,12 @@
 import { MotionConfig, motion } from "motion/react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { resolveAnchor } from "../canvas/anchors";
 import { CanvasView, type CanvasHandle } from "../canvas/CanvasView";
 import { SPRING } from "../comments/motion";
 import { replayEval, runEval, TASKS, type EvalProgress, type EvalRow } from "../eval/eval";
 import { buildFixture } from "../eval/fixture";
-import { IconClose, IconCols, IconComment, IconGrid, IconList, IconPlus, IconPointer, IconReset, IconRows, IconSelect, IconSingle } from "./icons";
+import { IconClose, IconCols, IconComment, IconGrid, IconHint, IconLayers, IconList, IconPlus, IconPointer, IconRows, IconSelect, IconSingle, IconTrash, IconWorkspace } from "./icons";
+import { ThemeButton } from "./ThemeButton";
 import { discard, PERSIST, project, reloadFromDisk, save, slotFile, type ProjectInfo } from "../persist";
 import { byId, type El } from "../canvas/scene";
 import { SessionPane } from "../session/SessionPane";
@@ -45,7 +46,7 @@ const EVAL_RUNS = Number(params.get("runs")) || 3;
 
 export type { Doc } from "../workspace/model";
 export type WorkspaceState = { v?: 2; docs: Doc[]; root: Node; focused: string };
-export type Boot = { workspace?: WorkspaceState; canvases: Record<string, { elements: El[]; threads: ThreadSnapshot }>; project?: ProjectInfo };
+export type Boot = { workspace?: WorkspaceState; canvases: Record<string, { elements: El[]; threads: ThreadSnapshot }>; project?: ProjectInfo; firstRun?: boolean };
 
 /** First run: the sample canvas on the left, its session docked on the right. Later canvases start blank. */
 function defaults(): WorkspaceState {
@@ -57,6 +58,21 @@ function defaults(): WorkspaceState {
   return { v: 2, docs, root: root.kind === "split" ? { ...root, sizes: [0.6, 0.4] } : root, focused: "c1" };
 }
 
+/**
+ * Settle the workspace before the first render: the first-run defaults and any session record an
+ * older build never saved are created here, once, outside React. Doing it during App's render
+ * (as a useMemo / useState initializer) wrote to the sessions store while rendering — and Fast
+ * Refresh re-runs useMemo, so every edit created another session and React warned
+ * "Cannot update SessionPane while rendering App".
+ */
+export function prepareBoot(boot: Boot): Boot {
+  const workspace = boot.workspace ?? defaults();
+  const docs = migrateDocs(workspace.docs);
+  const firstCanvas = docs.find((d) => d.kind === "canvas")!.id;
+  for (const d of docs) if (d.kind === "session" && !sessions.get().sessions[d.sessionId]) sessions.create(firstCanvas, d.sessionId);
+  return { ...boot, workspace: { ...workspace, docs }, firstRun: !boot.workspace };
+}
+
 const uid = (p: string) => `${p}-${Math.random().toString(36).slice(2, 8)}`;
 /** What one delete removed, kept in memory for a single undo. */
 type Removed =
@@ -64,15 +80,10 @@ type Removed =
   | { kind: "session"; doc: SessionDoc; index: number; at: { groupId: string; index: number } | null; session?: Session; turns: Turn[]; binding?: Binding };
 
 export function App({ boot }: { boot: Boot }) {
-  const firstRun = !boot.workspace;
-  const initial = useMemo(() => boot.workspace ?? defaults(), [boot]);
-  const [docs, setDocs] = useState<Doc[]>(() => {
-    const ds = migrateDocs(initial.docs);
-    // Older builds never saved the first-run session; recreate a lost record so its tab still works.
-    const firstCanvas = ds.find((d) => d.kind === "canvas")!.id;
-    for (const d of ds) if (d.kind === "session" && !sessions.get().sessions[d.sessionId]) sessions.create(firstCanvas, d.sessionId);
-    return ds;
-  });
+  // prepareBoot (main.tsx) has settled the workspace; nothing here writes to a store while rendering.
+  const firstRun = !!boot.firstRun;
+  const initial = boot.workspace!;
+  const [docs, setDocs] = useState<Doc[]>(initial.docs);
   const [root, setRoot] = useState<Node>(initial.root);
   const [focused, setFocused] = useState(initial.focused);
   const [lastCanvas, setLastCanvas] = useState(() =>
@@ -398,12 +409,15 @@ export function App({ boot }: { boot: Boot }) {
   // session pane below the canvas is never covered.
   const [dockAt, setDockAt] = useState<{ x: number; bottom: number } | null>(null);
   useLayoutEffect(() => {
-    const el = canvasDoc && document.querySelector<HTMLElement>(`[data-pane="${canvasDoc.id}"]`);
+    // The canvas stage, not the whole pane: with the comments column open the dock stays centred on the drawing.
+    const el = canvasDoc && document.querySelector<HTMLElement>(`[data-pane="${canvasDoc.id}"] .canvas-stage`);
     if (!el) return;
     const place = () => {
       const r = el.getBoundingClientRect();
+      // A narrow canvas puts Excalidraw in its compact layout, whose toolbar sits at the bottom: clear it.
+      const compact = !!el.querySelector(".excalidraw--mobile");
       setDockAt((d) => {
-        const next = { x: Math.round(r.left + r.width / 2), bottom: Math.round(innerHeight - r.bottom + 14) };
+        const next = { x: Math.round(r.left + r.width / 2), bottom: Math.round(innerHeight - r.bottom + (compact ? 72 : 14)) };
         return d && d.x === next.x && d.bottom === next.bottom ? d : next;
       });
     };
@@ -413,7 +427,7 @@ export function App({ boot }: { boot: Boot }) {
     const until = performance.now() + 600;
     const loop = () => (place(), performance.now() < until && (frame = requestAnimationFrame(loop)));
     frame = requestAnimationFrame(loop);
-    const ro = new ResizeObserver(place);
+    const ro = new ResizeObserver(() => requestAnimationFrame(place));
     ro.observe(el);
     addEventListener("resize", place);
     return () => (cancelAnimationFrame(frame), ro.disconnect(), removeEventListener("resize", place));
@@ -424,10 +438,11 @@ export function App({ boot }: { boot: Boot }) {
     <MotionConfig reducedMotion="user">
       <div className="app" data-mode={mode}>
         <header className="topbar">
-          <span className="brand"><span className="brand-mark" />Agora{boot.project && <span className="project-name" title={boot.project.root}>{boot.project.name}</span>}</span>
+          <span className="brand"><IconWorkspace size={18} />Agora</span>
+          {boot.project && <span className="project-name" title={boot.project.root}>{boot.project.name}</span>}
           <div className="all-docs">
-            <button className="all-docs-btn" aria-expanded={!!listOpen} onClick={() => setListOpen((o) => (o ? null : {}))}>
-              <IconList size={14} />所有画布<em>{canvasDocs.length}</em>
+            <button className="btn ghost all-docs-btn" aria-expanded={!!listOpen} onClick={() => setListOpen((o) => (o ? null : {}))} title="所有画布和会话，包括已关闭的">
+              <IconLayers size={16} /><span className="btn-label">所有画布</span><em>{canvasDocs.length}</em>
             </button>
             {listOpen && (
               <AllDocs
@@ -447,16 +462,19 @@ export function App({ boot }: { boot: Boot }) {
           </div>
           <span className="topbar-gap" />
           {PERSIST && <ShareButton canvases={canvasDocs.map((d) => ({ id: d.id, title: d.title }))} current={canvasDoc?.id ?? lastCanvas} />}
-          <div className="presets" role="group" aria-label="排列">
+          <div className="iseg" role="group" aria-label="排列">
             {([["single", IconSingle, "单窗"], ["row", IconCols, "左右并排"], ["col", IconRows, "上下并排"], ["grid", IconGrid, "平铺"]] as const).map(([p, Icon, label]) => (
-              <button key={p} className="preset" onClick={() => applyPreset(p)} title={label} aria-label={label} disabled={open.size < 2 && p !== "single"}>
-                <Icon size={15} />
+              <button key={p} onClick={() => applyPreset(p)} title={label} aria-label={label} disabled={open.size < 2 && p !== "single"}>
+                <Icon size={16} />
               </button>
             ))}
           </div>
-          <button className="new-session" onClick={() => addSession()}><IconPlus size={14} /> 新建会话</button>
-          <button className="new-canvas" onClick={() => addCanvas()}><IconPlus size={14} /> 新建画布</button>
+          <ThemeButton />
+          <span className="topbar-sep" />
+          <button className="btn quiet new-session" onClick={() => addSession()} title="新建会话：关联当前画布"><IconPlus size={16} /><span className="btn-label">新建会话</span></button>
+          <button className="btn primary" onClick={() => addCanvas()} title="新建画布"><IconPlus size={16} /><span className="btn-label">新建画布</span></button>
         </header>
+        <SaveBanner docTitle={(id) => docOf(id)?.title} />
 
         <Workspace
           root={root}
@@ -474,11 +492,12 @@ export function App({ boot }: { boot: Boot }) {
           onRename={rename}
           renderEmpty={(g) => (
             <div className="wm-empty">
-              <p>没有打开的画布或会话</p>
-              <div>
-                <button onClick={() => onNew(g, "canvas")}>新建画布</button>
-                <button onClick={() => onNew(g, "session")}>新建会话</button>
-                <button onClick={() => setListOpen({})}>所有画布</button>
+              <span className="dither-field" aria-hidden />
+              <p>这里没有打开的画布或会话</p>
+              <div className="wm-empty-actions">
+                <button className="btn primary" onClick={() => onNew(g, "canvas")}><IconPlus size={16} />新建画布</button>
+                <button className="btn ghost" onClick={() => onNew(g, "session")}>新建会话</button>
+                <button className="btn ghost" onClick={() => setListOpen({})}>打开已有的</button>
               </div>
             </div>
           )}
@@ -506,7 +525,6 @@ export function App({ boot }: { boot: Boot }) {
         {canvasDoc && <>
         <Dock
           at={dockAt}
-          title={canvasDoc.title}
           mode={mode}
           setMode={(m) => (ui.focusPane(canvasDoc.id), setMode(m))}
           selCount={selCount}
@@ -518,7 +536,7 @@ export function App({ boot }: { boot: Boot }) {
           evalButton={
             EVAL_MODE && handle ? (
               <button
-                className="dock-btn eval"
+                className="btn sm quiet"
                 disabled={!!evalProgress && !evalProgress.done}
                 onClick={() => runEval(handle.api, handle.store, { runs: EVAL_RUNS, only: EVAL_ONLY, onProgress: setEvalProgress, reset: handle.reset })}
               >
@@ -528,28 +546,26 @@ export function App({ boot }: { boot: Boot }) {
           }
         />
         {mode === "comment" && (
-          <motion.div className="mode-hint" style={dockAt ? { left: dockAt.x, bottom: dockAt.bottom + 54 } : undefined} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
-            在「{canvasDoc.title}」上点击一个元素钉评论 · Esc 退出
+          <motion.div className="mode-hint" style={dockAt ? { left: dockAt.x, bottom: dockAt.bottom + 50 } : undefined} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
+            <IconComment size={14} />在「<b>{canvasDoc.title}</b>」上点一个元素钉评论 · Esc 退出
           </motion.div>
         )}
         </>}
         {removed && (
-          <motion.div className="undo-toast" role="status" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
+          <motion.div className="toast" role="status" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
             <span>已删除「{removed.doc.title}」</span>
-            <button onClick={undoRemove}>撤销</button>
-            <button className="undo-toast-x" aria-label="关闭提示" onClick={() => setRemoved(null)}><IconClose size={12} /></button>
+            <button className="btn sm ghost" onClick={undoRemove}>撤销</button>
+            <button className="icon-btn sm muted" aria-label="关闭提示" onClick={() => setRemoved(null)}><IconClose size={14} /></button>
           </motion.div>
         )}
-        <SaveBanner docTitle={(id) => docOf(id)?.title} />
         {evalProgress && <pre className="eval-log">{evalProgress.log.slice(-14).join("\n")}</pre>}
       </div>
     </MotionConfig>
   );
 }
 
-function Dock({ at, title, mode, setMode, selCount, drawerOpen, toggleDrawer, store, onCommentSelection, onReset, evalButton }: {
+function Dock({ at, mode, setMode, selCount, drawerOpen, toggleDrawer, store, onCommentSelection, onReset, evalButton }: {
   at: { x: number; bottom: number } | null;
-  title: string;
   mode: "browse" | "comment";
   setMode: (m: "browse" | "comment") => void;
   selCount: number;
@@ -563,26 +579,25 @@ function Dock({ at, title, mode, setMode, selCount, drawerOpen, toggleDrawer, st
   const { threads } = useThreads(store);
   const open = threads.filter((t) => !t.resolved).length;
   return (
-    <div className="dock" role="toolbar" aria-label="评论工具" style={at ? { left: at.x, bottom: at.bottom } : undefined}>
-      <span className="dock-title">{title}</span>
+    <div className="dock" role="toolbar" aria-label="画布工具" style={at ? { left: at.x, bottom: at.bottom } : undefined}>
       <div className="dock-tools">
         {([["browse", IconPointer, "浏览 · V"], ["comment", IconComment, "评论 · C"]] as const).map(([m, Icon, label]) => (
-          <button key={m} className="dock-btn icon" data-on={mode === m} onClick={() => setMode(m)} aria-label={label} title={label}>
+          <button key={m} className="dock-btn" data-on={mode === m} aria-pressed={mode === m} onClick={() => setMode(m)} aria-label={label} title={label}>
             {mode === m && <motion.span layoutId="dock-on" className="dock-on" transition={SPRING} />}
-            <Icon size={17} />
+            <Icon size={18} />
           </button>
         ))}
-        <button className="dock-btn icon" disabled={!selCount} onClick={onCommentSelection} aria-label="评论选区" title={selCount ? `评论选中的 ${selCount} 个元素` : "先选中元素"}>
-          <IconSelect size={17} />
+        <button className="dock-btn" disabled={!selCount} onClick={onCommentSelection} aria-label="评论选区" title={selCount ? `评论选中的 ${selCount} 个元素` : "先选中元素"}>
+          <IconSelect size={18} />
           {selCount > 1 && <em className="dock-badge">{selCount}</em>}
         </button>
-        <button className="dock-btn icon" data-on={drawerOpen} onClick={toggleDrawer} aria-label={`所有评论 · ${open} 条进行中`} title="所有评论">
+        <button className="dock-btn" data-on={drawerOpen} aria-pressed={drawerOpen} onClick={toggleDrawer} aria-label={`所有评论 · ${open} 条进行中`} title="所有评论">
           {drawerOpen && <motion.span layoutId="dock-drawer" className="dock-on" transition={SPRING} />}
-          <IconList size={17} />
+          <IconList size={18} />
           {open > 0 && <em className="dock-badge">{open}</em>}
         </button>
         <span className="dock-sep" />
-        <button className="dock-btn icon" onClick={onReset} aria-label="清空画布（可撤销）" title="清空画布（⌘Z 可撤销）"><IconReset size={16} /></button>
+        <button className="dock-btn" onClick={onReset} aria-label="清空画布（可撤销）" title="清空画布（⌘Z 可撤销）"><IconTrash size={18} /></button>
       </div>
       {evalButton}
     </div>
@@ -597,17 +612,21 @@ function SaveBanner({ docTitle }: { docTitle: (id: string) => string | undefined
     const [kind, id] = slot.split(":");
     const what = kind === "workspace" ? "画布清单与布局" : kind === "session" ? "会话记录" : `「${docTitle(id) ?? id}」${kind === "threads" ? "的评论" : ""}`;
     return (
-      <div className="save-banner" role="alert" data-kind="conflict">
+      <div className="notice save-banner" role="alert" data-tone="error">
+        <IconHint size={16} />
+        <b>有冲突</b>
         <span>{what}在别处被改过（另一个窗口、编辑器或 git），这里的改动还没保存 · <code>.agora/{slotFile(slot)}</code></span>
-        <button onClick={reloadFromDisk}>载入磁盘上的版本</button>
-        <button onClick={() => void project.resolve(slot, "overwrite")}>用这里的覆盖</button>
+        <button className="btn sm quiet" onClick={reloadFromDisk}>载入磁盘上的版本</button>
+        <button className="btn sm ghost" onClick={() => void project.resolve(slot, "overwrite")}>用这里的覆盖</button>
       </div>
     );
   }
   if (st.offline)
     return (
-      <div className="save-banner" role="status" data-kind="offline">
-        <span>项目服务连不上，改动暂未保存，恢复后自动写入</span>
+      <div className="notice save-banner" role="status" data-tone="caution">
+        <IconHint size={16} />
+        <b>未连接</b>
+        <span>项目服务连不上，改动暂存在这个页面里，恢复后自动写入。</span>
       </div>
     );
   return null;

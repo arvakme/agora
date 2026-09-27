@@ -1,13 +1,11 @@
-/* Design tokens — copied from ~/Job/agora-design/tokens.css (arvak family v0.2, Marginalia-led).
- *
- * Scoped to `.ds` for now: the parts of Agora rewritten to the design system (session
- * trajectory, progress pointer) wrap themselves in `.ds`, while the rest of the page keeps its
- * own variables until the site-wide unification replaces them (docs: design-system.md §11).
- * Dark values apply only when the page forces `data-theme="dark"`: the rest of Agora is
- * light-only today, so following the OS here would mix themes on one screen.
- * Raw colours live only in this file.
+/* Design tokens: arvak family v0.2 (Marginalia-led), copied from ~/Job/agora-design/tokens.css
+ * and used by the whole site. Raw colours live only in this file; components read the semantic
+ * names. Theme: follows the OS; `<html data-theme="light|dark">` forces one (app/theme.ts sets it
+ * from the person's choice). Agora additions are at the end of each theme block and marked.
  */
- .ds {
+/* ───────────── Light (default) ───────────── */
+:root {
+  color-scheme: light;
 
   /* Ground. Marginalia has no shell behind panes: columns sit flush on one white sheet
    * and are separated by hairlines. Cool graphite neutrals, never warm, never lavender. */
@@ -75,9 +73,81 @@
   /* Depth. Neutral graphite shadow, never tinted. */
   --shadow-tint: rgb(20 30 40 / 0.08);
   --shadow-tint-strong: rgb(20 30 40 / 0.13);
+
+  /* Agora: Excalidraw draws the scene on a canvas; dark mode runs it through
+   * invert(93%) hue-rotate(180deg). --canvas-bg is the scene background that lands on --bg. */
+  /* Agora: wells and hover fills inside floating layers (on --surface). In light they equal
+   * --well / --raised; in dark Marginalia's --well is within 2% of --surface, so a reply box or
+   * a chip on a card would vanish — floating layers step one notch lighter. */
+  --well-on-surface: #eef1f2;
+  /* Agora: the selected button in a segmented track. Light = --surface on --well (Marginalia);
+   * in dark those two are 2% apart, so the selected segment is one step up from the track. */
+  --segment-on: #ffffff;
+  --raised-on-surface: #f6f7f7;
+  --canvas-bg: #ffffff;
+  /* Agora: comment-mode cursor (a cursor cannot read CSS variables, so the colour is baked in). */
+  --cursor-comment: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24'><path d='M4.5 19.5V12a7.5 7.5 0 1 1 7.5 7.5Z' fill='%237048b4' stroke='white' stroke-width='1.6' stroke-linejoin='round'/></svg>") 5 23;
 }
 
-:root[data-theme="dark"] .ds {
+/* ───────────── Dark ───────────── */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #202428;
+    --surface: #292f34;
+    --raised: #2c3034;
+    --well: #2b3035;
+    --selected: #2b3035;
+    --code-surface: #272c30;
+    --scrim: rgb(0 0 0 / 0.5);
+    --fg: #d9dee2;
+    --fg-muted: #a0a8ad;
+    --fg-subtle: #939ca2;
+    --fg-faint: #5a6167;
+    --line: #2c3136;
+    --line-strong: #3d444a;
+    --chrome-bg: #2b3035;
+    --chrome-fg: #d9dee2;
+    --chrome-muted: #98a0a6;
+    --chrome-hover: rgb(255 255 255 / 0.055);
+    --chrome-current: rgb(255 255 255 / 0.09);
+    --chrome-line: rgb(255 255 255 / 0.1);
+    --accent-on-chrome: #bea5f5;
+    --accent: #bea5f5;
+    --accent-hover: #cfbbf8;
+    --accent-ink: #d6c6fa;
+    --accent-fill: #7a52c0;
+    --accent-fill-hover: #6c46b0;
+    --accent-fill-pressed: #603ea0;
+    --accent-fg: #ffffff;
+    --accent-wash: rgb(190 165 245 / 0.1);
+    --accent-tint: rgb(190 165 245 / 0.16);
+    --accent-ring: rgb(190 165 245 / 0.4);
+    --accent-soft: #7a5cbf;
+    --selection: rgb(190 165 245 / 0.22);
+    --positive: #75b798;
+    --positive-dot: #75b798;
+    --positive-wash: rgb(108 186 140 / 0.12);
+    --negative: #df8585;
+    --negative-wash: #3a292b;
+    --caution: #d6b16a;
+    --caution-dot: #d6b16a;
+    --caution-wash: rgb(214 177 106 / 0.12);
+    --series-1: #bea5f5;
+    --series-2: #7a5cbf;
+    --series-3: #a0a8ad;
+    --series-4: #3d444a;
+    --shadow-tint: rgb(0 0 0 / 0.28);
+    --shadow-tint-strong: rgb(0 0 0 / 0.32);
+    --well-on-surface: #353b41;
+    --segment-on: #40474e;
+    --raised-on-surface: #30363b;
+    --canvas-bg: #e6ebef; /* invert(93%) hue-rotate(180deg) of this = #202428 */
+    --cursor-comment: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24'><path d='M4.5 19.5V12a7.5 7.5 0 1 1 7.5 7.5Z' fill='%23bea5f5' stroke='%23202428' stroke-width='1.6' stroke-linejoin='round'/></svg>") 5 23;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #202428;
   --surface: #292f34;
   --raised: #2c3034;
@@ -124,10 +194,15 @@
   --series-4: #3d444a;
   --shadow-tint: rgb(0 0 0 / 0.28);
   --shadow-tint-strong: rgb(0 0 0 / 0.32);
+  --segment-on: #40474e;
+  --well-on-surface: #353b41;
+  --raised-on-surface: #30363b;
+  --canvas-bg: #e6ebef; /* invert(93%) hue-rotate(180deg) of this = #202428 */
+  --cursor-comment: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24'><path d='M4.5 19.5V12a7.5 7.5 0 1 1 7.5 7.5Z' fill='%23bea5f5' stroke='%23202428' stroke-width='1.6' stroke-linejoin='round'/></svg>") 5 23;
 }
 
 /* ───────────── Theme-independent ───────────── */
- .ds {
+:root {
   /* Type. System sans for all UI (CJK-first). Numbers stay in the sans with tabular-nums
    * (Marginalia counts and times). Mono is for code, source, commands and ids only;
    * JetBrains Mono is Marginalia's code default (shared/appearance.ts). */
@@ -202,7 +277,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ds {
+  :root {
     --dur-tap: 1ms;
     --dur-glide: 1ms;
     --dur-drift: 1ms;
@@ -210,11 +285,18 @@
   }
 }
 
-
-/* Base for scoped parts: system sans, 13px UI, tabular numbers in metadata. */
-.ds { font-family: var(--font-sans); font-size: var(--text-md); line-height: var(--leading-ui); color: var(--fg); -webkit-font-smoothing: antialiased; }
-.ds ::selection { background: var(--selection); color: inherit; }
-.ds :focus:not(:focus-visible) { outline: none; }
-.ds :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-/* Inputs never draw a focus ring (D14): the caret is the focus. */
-.ds input:focus-visible, .ds textarea:focus-visible { outline: none; }
+/* ───────────── Base ───────────── */
+html { background: var(--bg); color: var(--fg); }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--leading-ui);
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--selection); color: inherit; }
+/* No ring on pointer focus and no glow around focused inputs (Marginalia);
+ * keyboard focus still gets a visible ring. */
+:focus:not(:focus-visible) { outline: none; }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }

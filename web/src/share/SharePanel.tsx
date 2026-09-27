@@ -3,7 +3,7 @@
 // design: web/docs/sharing.md. The link's token is shown once — only its hash is stored.
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { DI } from "../app/icons";
+import { IconCopy, IconLock, IconShare } from "../app/icons";
 import { SPRING } from "../comments/motion";
 import { fmtLeft } from "../guest/GuestApp";
 import "./share.css";
@@ -65,9 +65,9 @@ export function ShareButton({ canvases, current }: { canvases: { id: string; tit
     return () => (removeEventListener("pointerdown", away, true), removeEventListener("keydown", esc));
   }, [open]);
   return (
-    <div className="ds share" ref={box}>
-      <button className="share-btn" aria-expanded={open} onClick={() => (setOpen((o) => !o), refresh())}>
-        <DI.share size={14} />分享{active > 0 && <em className="share-count">{active}</em>}
+    <div className="share" ref={box}>
+      <button className="btn quiet" aria-expanded={open} onClick={() => (setOpen((o) => !o), refresh())} title="把一块画布分享给别人看和评论">
+        <IconShare size={16} /><span className="btn-label">分享</span>{active > 0 && <em className="count">{active}</em>}
       </button>
       <AnimatePresence>
         {open && (
@@ -141,7 +141,7 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
       </label>
       <div className="share-field">
         <span>有效期</span>
-        <div className="ds-seg share-seg" role="radiogroup" aria-label="有效期">
+        <div className="seg share-seg" data-static role="radiogroup" aria-label="有效期">
           {DURATIONS.map((d) => (
             <button key={d.key} role="radio" aria-checked={dur === d.key} data-on={dur === d.key} onClick={() => setDur(d.key)}>{d.label}</button>
           ))}
@@ -161,7 +161,7 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
       )}
       <div className="share-actions">
         {busy && <span className="share-busy">正在建立隧道和域名，第一次要十几秒…</span>}
-        <button className="share-primary" disabled={busy || !canvasId || customBad} onClick={() => void create()}>
+        <button className="btn primary" disabled={busy || !canvasId || customBad} onClick={() => void create()}>
           {busy ? "创建中…" : "创建链接"}
         </button>
       </div>
@@ -170,7 +170,7 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
         <div className="share-made">
           <div className="share-link">
             <code title={made.url}>{made.url}</code>
-            <button className="share-icon" onClick={() => void copy(made.url)} aria-label="复制链接" title="复制链接"><DI.copy size={14} /></button>
+            <button className="icon-btn sm" onClick={() => void copy(made.url)} aria-label="复制链接" title="复制链接"><IconCopy size={16} /></button>
           </div>
           <p>{copied ? "已复制。" : ""}链接只显示这一次（只存了令牌的哈希）；丢了就撤销后重建一个。</p>
         </div>
@@ -199,7 +199,7 @@ function ShareList({ rows, onChange }: { rows: ShareRow[]; onChange: () => void 
   };
   return (
     <section className="share-list">
-      <h4>当前分享<em>{live.length}</em></h4>
+      <h4>当前分享<em className="count">{live.length}</em></h4>
       {!live.length && <p className="share-empty">没有有效的分享。</p>}
       <ul>
         {live.map((r) => (
@@ -211,7 +211,7 @@ function ShareList({ rows, onChange }: { rows: ShareRow[]; onChange: () => void 
                 {r.expiresAt == null ? "直到撤销" : `剩 ${fmtLeft(r.expiresAt - now)}`} · 访问 {r.visits} · 评论 {r.comments}
               </span>
             </div>
-            <button className="share-revoke" disabled={pending === r.id} onClick={() => void revoke(r.id)}>{pending === r.id ? "撤销中…" : "撤销"}</button>
+            <button className="btn sm danger" disabled={pending === r.id} onClick={() => void revoke(r.id)} title="立即结束这个分享：链接和它的域名都会失效"><IconLock size={14} />{pending === r.id ? "撤销中…" : "撤销"}</button>
           </li>
         ))}
       </ul>

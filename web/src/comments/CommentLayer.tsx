@@ -3,7 +3,7 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence } from "motion/react";
 import { useRef, useState } from "react";
 import { hitTest, resolveAnchor } from "../canvas/anchors";
-import { IconAlert, IconCheck, IconPlus } from "../app/icons";
+import { IconCheck, IconHint, IconPlus } from "../app/icons";
 import { bbox, isArrow } from "../canvas/scene";
 import { useThreads, type Anchor, type ThreadStore } from "./threads";
 import type { CanvasViewState } from "../canvas/CanvasView";
@@ -11,7 +11,7 @@ import { Composer, ThreadCard } from "./ThreadCard";
 
 /** An unsent comment: where it is pinned and what has been typed so far. */
 export type Draft = { anchor: Anchor; text: string };
-const CARD_W = 304;
+const CARD_W = 320;
 const DOCK_CLEAR = 76;
 export type CardPos = { left: number; top?: number; bottom?: number; maxH: number; flip: boolean; up: boolean };
 
@@ -97,7 +97,7 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
             aria-label={`线程 ${t.n}${t.resolved ? "（已解决）" : ""}${st.status === "lost" ? "（锚点已失效）" : ""}`}
           >
             <span className="pin-body">
-              {st.status === "lost" ? <IconAlert size={13} /> : t.resolved ? <IconCheck size={13} /> : t.n}
+              {st.status === "lost" ? <IconHint size={14} /> : t.resolved ? <IconCheck size={14} /> : t.n}
             </span>
             {t.agent === "running" && <span className="pin-orbit" />}
           </button>
@@ -143,7 +143,7 @@ function DraftPin({ draft, view, toScreen }: { draft: Draft; view: CanvasViewSta
   const p = toScreen(resolveAnchor(draft.anchor, view.map).point);
   return (
     <div className="pin draft" style={{ transform: `translate3d(${p.x}px, ${p.y}px, 0)` }}>
-      <span className="pin-body"><IconPlus size={13} /></span>
+      <span className="pin-body"><IconPlus size={14} /></span>
     </div>
   );
 }

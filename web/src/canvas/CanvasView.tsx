@@ -9,7 +9,8 @@ import type { AnimScript } from "../anim/script";
 import { buildFixture } from "../eval/fixture";
 import { maybeInstallLibrary } from "../library/libraryPanel";
 import { AssetBrowser } from "../library/AssetBrowser";
-import { IconAssets } from "../app/icons";
+import { IconFolder } from "../app/icons";
+import { useTheme } from "../app/theme";
 import { bbox, byId, live, type El } from "./scene";
 import type { ThreadStore } from "../comments/threads";
 import { useHighlight } from "../session/ui";
@@ -80,13 +81,19 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
     setHasParked(false);
     cb.current.onModeDone();
   }, [mode]);
+  // Excalidraw draws on a canvas and can't read CSS, so the scene background comes from the
+  // --canvas-bg token (chosen so that in dark mode, after Excalidraw's invert filter, it equals --bg).
+  const { resolved } = useTheme();
   const initialData = useMemo(
     () => ({
       elements: initialElements ? [...initialElements] : buildFixture(),
-      appState: { viewBackgroundColor: "#fbfbfa", currentItemRoughness: 0, currentItemFontFamily: FONT_FAMILY.Helvetica },
+      appState: { viewBackgroundColor: canvasBg(), currentItemRoughness: 0, currentItemFontFamily: FONT_FAMILY.Helvetica },
     }),
     [],
   );
+  useEffect(() => {
+    api?.updateScene({ appState: { viewBackgroundColor: canvasBg() }, captureUpdate: CaptureUpdateAction.NEVER });
+  }, [api, resolved]);
 
   // Excalidraw fires onChange on every pointer move; coalesce to one view update per frame.
   const pending = useRef<{ elements: readonly El[]; appState: AppState } | null>(null);
@@ -162,6 +169,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
   return (
     <div
       className="canvas-view"
+      data-theme-resolved={resolved}
       onPointerDownCapture={(e) => {
         // komo-style: interacting with the canvas outside a card closes the open thread
         // and takes back an unsent pin (parked if it has text).
@@ -170,17 +178,20 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
         dismissDraft(true);
       }}
     >
+      <div className="canvas-stage">
       <Excalidraw
         excalidrawAPI={setApi}
         initialData={initialData}
         onChange={onChange as never}
+        theme={resolved}
+        langCode="zh-CN"
         viewModeEnabled={readOnly}
         UIOptions={{ canvasActions: { loadScene: false, export: false, saveAsImage: false, ...(readOnly && { clearCanvas: false, toggleTheme: false, saveToActiveFile: false }) } }}
       >
         {!readOnly && (
           <DefaultSidebar>
             <DefaultSidebar.TabTriggers>
-              <Sidebar.TabTrigger tab="agora-assets" title="内置素材库"><IconAssets size={16} /></Sidebar.TabTrigger>
+              <Sidebar.TabTrigger tab="agora-assets" title="内置素材库"><IconFolder size={16} /></Sidebar.TabTrigger>
             </DefaultSidebar.TabTriggers>
             <Sidebar.Tab tab="agora-assets">{api && <AssetBrowser api={api} />}</Sidebar.Tab>
           </DefaultSidebar>
@@ -204,12 +215,15 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
           />
           {!readOnly && <HighlightLayer canvasId={doc.id} view={view} />}
           {!readOnly && <PointerLayer api={api} view={view} />}
-          <CommentsDrawer title={doc.title} api={api} store={doc.store} view={view} open={drawerOpen} onClose={() => onDrawer(false)} />
         </>
       )}
+      </div>
+      {api && view && <CommentsDrawer title={doc.title} api={api} store={doc.store} view={view} open={drawerOpen} onClose={() => onDrawer(false)} />}
     </div>
   );
 }
+
+const canvasBg = () => getComputedStyle(document.documentElement).getPropertyValue("--canvas-bg").trim() || "white";
 
 function selectedContainers(selected: Record<string, boolean>, map: Map<string, El>) {
   const ids = Object.keys(selected).map((id) => {

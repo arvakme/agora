@@ -10,12 +10,11 @@
 // output; every turn shows model, effort, tokens, time and cost when the log has them.
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DI } from "../app/icons";
-import "../app/tokens.css";
+import { IconCommentSolid, IconCopy, IconGauge, IconLock, IconMessage, IconPath, IconTarget, IconTerminal, IconUndo } from "../app/icons";
+import { Markdown } from "./markdown";
 import { ProcessFold, TrajectoryView, UsageMeta } from "./TrajectoryView";
 import { buildTurns, sumUsage, type TrajTurn } from "./trajectoryModel";
 import { SPRING } from "../comments/motion";
-import "./design.css";
 import { Composer } from "./Composer";
 import { AGENT_KINDS, AGENT_NAMES, agents, useAgents, type AgentKind, type Catalog } from "./agents";
 import { undoTurn } from "./runTurn";
@@ -25,11 +24,6 @@ import "./session.css";
 
 const fmt = (ms: number) => (ms < 10000 ? `${(ms / 1000).toFixed(1)}s` : ms < 60000 ? `${Math.round(ms / 1000)}s` : `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`);
 const clock = (at: number) => new Date(at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-const COLORS: Record<AgentKind, { bg: string; ink: string }> = {
-  pi: { bg: "#c8b5f4", ink: "#352a50" },
-  claude: { bg: "#f3c7a6", ink: "#5a3217" },
-  codex: { bg: "#bfe3cd", ink: "#1f4a31" },
-};
 
 export function SessionPane({ sessionId, canvasTitles }: { sessionId: string; canvasTitles: Record<string, string> }) {
   const { sessions: all } = useSessions();
@@ -41,10 +35,10 @@ export function SessionPane({ sessionId, canvasTitles }: { sessionId: string; ca
   return <AgentSession sessionId={sessionId} canvasTitles={canvasTitles} />;
 }
 
-function AgentMark({ kind, size = 22 }: { kind: AgentKind; size?: number }) {
-  const c = COLORS[kind];
+/** An agent is its initials in a neutral circle, like a person (no colour per vendor, no sparkle). */
+function AgentMark({ kind, small }: { kind: AgentKind; small?: boolean }) {
   return (
-    <span className="d-avatar" style={{ width: size, height: size, background: c.bg, color: c.ink, fontSize: size * 0.42 }}>
+    <span className={small ? "avatar sm" : "avatar"} aria-hidden>
       {AGENT_NAMES[kind].split(" ").map((w) => w[0]).join("").slice(0, 2)}
     </span>
   );
@@ -84,11 +78,16 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
       <div className="sp-choose">
         <h2>这个会话用哪个 Agent？</h2>
         <p>会话就是它自己的原生会话：在这里讨论「{canvasTitle ?? "画布"}」，也能随时在终端里接着做 coding。选定后不能更改。</p>
-        {waiting && <p className="sp-choose-wait">有一条画布评论在等这个会话，选好后会自动交给它。</p>}
+        {waiting && (
+          <p className="notice" data-tone="caution">
+            <b>在等你</b>
+            <span>有一条画布评论在等这个会话，选好后会自动交给它。</span>
+          </p>
+        )}
         <div className="sp-agents" role="radiogroup" aria-label="Agent">
           {AGENT_KINDS.map((k) => (
             <button key={k} role="radio" aria-checked={kind === k} data-on={kind === k} disabled={cat ? !cat[k].installed : false} onClick={() => setKind(k)}>
-              <AgentMark kind={k} size={26} />
+              <AgentMark kind={k} />
               <span>{AGENT_NAMES[k]}</span>
               {cat && !cat[k].installed && <em>未安装</em>}
             </button>
@@ -117,8 +116,8 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
         </div>
         {err && <p className="sp-warn">{err}</p>}
         <div className="sp-choose-go">
-          <button className="d-chip-btn" disabled={busy || !cat} onClick={() => void start()}>用 {AGENT_NAMES[kind]} 开始</button>
-          {waiting && <button className="d-chip-btn ghost" onClick={() => agentChoice.resolve(sessionId, undefined)}>先不交</button>}
+          <button className="btn primary" disabled={busy || !cat} onClick={() => void start()}>用 {AGENT_NAMES[kind]} 开始</button>
+          {waiting && <button className="btn ghost" onClick={() => agentChoice.resolve(sessionId, undefined)}>先不交</button>}
         </div>
       </div>
     </div>
@@ -204,70 +203,79 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
             ? `上一轮出错：${status.error}`
             : null;
 
+  const totalMs = turns.some((t) => t.durationMs != null) ? turns.reduce((n, t) => n + (t.durationMs ?? 0), 0) : null;
   return (
     <div className="sp" data-agent={binding.agent}>
       <header className="sp-head">
         <AgentMark kind={binding.agent} />
         <div className="sp-title">
-          <h2>
-            {AGENT_NAMES[binding.agent]}
-            <span className="sp-lock" title="创建会话时选定，不能更改">{binding.model || "默认模型"}{binding.effort ? ` · ${binding.effort}` : ""}</span>
-          </h2>
-          <p>
-            <select value={session.canvasId} onChange={(e) => sessions.relink(sessionId, e.target.value)} aria-label="关联画布">
+          <h2 title={binding.nativeId ? `原生会话 ${binding.nativeId}` : "原生会话 id 在第一轮后生成"}>{AGENT_NAMES[binding.agent]}</h2>
+          <p className="sp-meta">
+            <span className="sp-lock" title="创建会话时选定，不能更改">
+              <IconLock size={12} />
+              {binding.model || "默认模型"}{binding.effort ? ` · ${binding.effort}` : ""}
+            </span>
+            <span className="sp-sep" aria-hidden>·</span>
+            <select value={session.canvasId} onChange={(e) => sessions.relink(sessionId, e.target.value)} aria-label="关联画布" title="这个会话默认改的画布">
               {Object.entries(canvasTitles).map(([id, t]) => <option key={id} value={id}>{t}</option>)}
               {!canvasTitles[session.canvasId] && <option value={session.canvasId}>已删除的画布</option>}
             </select>
-            <span title={binding.nativeId ?? "第一轮后生成"}>· 原生会话 {binding.nativeId ? binding.nativeId.slice(0, 8) : "（第一轮后生成）"}</span>
+            {binding.nativeId && <code className="sp-native" title="原生会话 id">{binding.nativeId.slice(0, 8)}</code>}
           </p>
-          {turns.length > 0 && (
-            <p className="ds sp-total" title="这个会话累计（只算日志里记下的）">
-              <DI.gauge size={14} />
-              <span>{turns.length} 轮</span>
-              <UsageMeta usage={total} durationMs={turns.some((t) => t.durationMs != null) ? turns.reduce((n, t) => n + (t.durationMs ?? 0), 0) : null} compact />
-            </p>
-          )}
         </div>
         {status?.terminal.alive ? (
-          <span className="sp-term">
-            <button className="d-chip-btn ghost" onClick={() => void openTerminal()} title="再开一个窗口连到同一个终端">终端已接管{status.terminal.clients ? ` · ${status.terminal.clients} 个窗口` : ""}</button>
-            <button className="d-chip-btn ghost" onClick={() => void agents.closeTerminal(sessionId)} title="结束终端里的 CLI；会话可随时再续接">关闭终端</button>
-          </span>
+          <button className="btn sm quiet sp-term-btn" onClick={() => void openTerminal()} title="再开一个窗口连到同一个终端">
+            <IconTerminal size={16} /><span className="sp-btn-label">新窗口</span>
+          </button>
         ) : (
-          <button className="d-chip-btn" disabled={!!status?.running} onClick={() => void openTerminal()} title={status?.running ? "这一轮结束后再打开" : "用终端打开这个会话，直接在里面做 coding"}>
-            在终端打开
+          <button className="btn sm quiet sp-term-btn" disabled={!!status?.running} onClick={() => void openTerminal()} title={status?.running ? "这一轮结束后再打开" : "用终端打开这个会话，直接在里面做 coding"}>
+            <IconTerminal size={16} /><span className="sp-btn-label">在终端打开</span>
           </button>
         )}
       </header>
       {(status?.terminal.alive || termMsg) && (
-        <div className="sp-attach">
-          {termMsg && <span>{termMsg}</span>}
-          {status?.terminal.alive && (
+        <div className="notice sp-attach" data-tone={status?.terminal.alive ? undefined : "caution"}>
+          {status?.terminal.alive ? (
             <>
+              <i className="dot" data-tone="ok" />
+              <b>终端已接管</b>
               <code title="在任意终端里运行，连到这个会话">{status.terminal.attach}</code>
-              <button className="d-chip-btn ghost" onClick={() => void copy()}>{copied ? "已复制" : "复制"}</button>
+              <button className="icon-btn sm" onClick={() => void copy()} aria-label={copied ? "已复制" : "复制命令"} title={copied ? "已复制" : "复制命令"}><IconCopy size={16} /></button>
+              <button className="btn sm ghost" onClick={() => void agents.closeTerminal(sessionId)} title="结束终端里的 CLI；会话可随时再续接">关闭终端</button>
             </>
+          ) : (
+            <span>{termMsg}</span>
           )}
+          {status?.terminal.alive && termMsg && <span className="sp-attach-msg">{termMsg}{status.terminal.clients ? ` · ${status.terminal.clients} 个窗口` : ""}</span>}
         </div>
       )}
-      <div className="ds sp-views">
-        <div className="ds-seg" role="radiogroup" aria-label="视图">
-          <button role="radio" aria-checked={view === "chat"} data-on={view === "chat"} className="di-trigger" onClick={() => setView("chat")}>
-            <DI.message size={14} />
-            对话
+      <div className="sp-bar">
+        <div className="seg" role="radiogroup" aria-label="视图">
+          <button role="radio" aria-checked={view === "chat"} data-on={view === "chat"} onClick={() => setView("chat")}>
+            {view === "chat" && <motion.span layoutId={`sp-view-${sessionId}`} className="seg-bg" transition={SPRING} />}
+            <IconMessage size={14} />
+            <span>对话</span>
           </button>
-          <button role="radio" aria-checked={view === "trajectory"} data-on={view === "trajectory"} className="di-trigger" onClick={() => setView("trajectory")}>
-            <DI.path size={14} />
-            轨迹
+          <button role="radio" aria-checked={view === "trajectory"} data-on={view === "trajectory"} onClick={() => setView("trajectory")}>
+            {view === "trajectory" && <motion.span layoutId={`sp-view-${sessionId}`} className="seg-bg" transition={SPRING} />}
+            <IconPath size={14} />
+            <span>轨迹</span>
           </button>
         </div>
+        {turns.length > 0 && (
+          <p className="sp-total" title="这个会话累计（只算日志里记下的）">
+            <IconGauge size={14} />
+            <span>{turns.length} 轮</span>
+            <UsageMeta usage={total} durationMs={totalMs} compact />
+          </p>
+        )}
       </div>
       {view === "trajectory" ? (
-        <div className="ds sp-traj">
+        <div className="sp-traj">
           <TrajectoryView sessionId={sessionId} turns={turns} focusTurn={focusTurn} />
         </div>
       ) : (
-        <div className="d-rail-scroll sp-scroll ds" ref={scroll}>
+        <div className="sp-scroll" ref={scroll}>
           {!turns.length && !changes.length && (
             <div className="sp-hello">
               <p>和 {AGENT_NAMES[binding.agent]} 讨论「{canvasTitle ?? "画布"}」的架构；它用 agora-canvas skill 读图、改图、做算法动画。</p>
@@ -278,10 +286,10 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
         </div>
       )}
       {line && (
-        <div className="sp-status" data-tone={status?.held ? "held" : status?.error && !working ? "error" : "run"}>
-          {working && <span className="sp-dot" />}
+        <div className="notice sp-status" data-tone={status?.held ? "caution" : status?.error && !working ? "error" : undefined}>
+          <i className="dot" data-tone={status?.held ? "held" : status?.error && !working ? "error" : "ok"} />
           <span>{line}</span>
-          {status?.running && <button className="d-chip-btn ghost" onClick={() => void agents.interrupt(sessionId)}>停止</button>}
+          {status?.running && <button className="btn sm ghost" onClick={() => void agents.interrupt(sessionId)}>停止</button>}
         </div>
       )}
       <Composer
@@ -325,7 +333,7 @@ function Conversation({ sessionId, turns, changes, canvasTitles, flash, onTrajec
           )}
           <ProcessFold sessionId={sessionId} turn={t} />
           {(byTurn.get(t.n) ?? []).map(card)}
-          {t.reply && <p className="ds-say">{t.reply.text}</p>}
+          {t.reply?.text && <Markdown className="ds-say" text={t.reply.text} />}
           {t.error && !t.running && <p className="ds-say" data-error>这一轮出错：{t.error}</p>}
         </article>
       ))}
@@ -346,11 +354,11 @@ function TurnCard({ t, canvasTitle, flash }: { t: Turn; canvasTitle?: string; fl
   const api = canvases.get(t.canvasId)?.api;
   const detail = t.steps.map((s) => s.detail).filter(Boolean).join(" · ");
   return (
-    <article className="d-turn sp-turn sp-change" data-status={t.status} data-turn={t.id} data-flash={flash} onPointerEnter={() => hover(touched)} onPointerLeave={() => hover(undefined)}>
+    <article className="sp-change" data-status={t.status} data-turn={t.id} data-flash={flash} onPointerEnter={() => hover(touched)} onPointerLeave={() => hover(undefined)}>
       {t.origin.kind === "comment" && (
-        <button className="d-origin sp-origin" onClick={() => t.origin.kind === "comment" && ui.openThread(t.canvasId, t.origin.threadId)} title="在画布中打开这条评论">
-          来自评论 <b>#{t.origin.threadN}</b> · {canvasTitle ?? "画布"} · {t.origin.anchor}
-          <span className="d-origin-link">在画布中打开</span>
+        <button className="chip sp-origin" onClick={() => t.origin.kind === "comment" && ui.openThread(t.canvasId, t.origin.threadId)} title={`来自「${canvasTitle ?? "画布"}」的评论 #${t.origin.threadN}，点击在画布中打开`}>
+          <IconCommentSolid size={12} />
+          <span>#{t.origin.threadN} · {t.origin.anchor}</span>
         </button>
       )}
       <div className="sp-change-head">
@@ -360,24 +368,24 @@ function TurnCard({ t, canvasTitle, flash }: { t: Turn; canvasTitle?: string; fl
       </div>
       <AnimatePresence>
         {t.reply && (
-          <motion.div className="d-reply" data-tone={t.reply.tone} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
+          <motion.div className="sp-change-body" data-tone={t.reply.tone} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
             {t.reply.changes ? <ul data-undone={!!t.reply.undone}>{t.reply.changes.map((c, i) => <li key={i}>{c}</li>)}</ul> : <p>{t.reply.text}</p>}
             {t.reply.undoError && <p className="sp-warn">{t.reply.undoError}</p>}
-            <div className="d-reply-actions">
-              {t.reply.batchId && (t.reply.undone ? <span className="sp-undone">已撤销</span> : <button className="d-chip-btn" disabled={!api} onClick={() => api && undoTurn(api, t.id)}>撤销这次修改</button>)}
+            <div className="sp-change-actions">
+              {t.reply.batchId && (t.reply.undone ? <span className="sp-undone">已撤销</span> : <button className="btn sm ghost" disabled={!api} onClick={() => api && undoTurn(api, t.id)}><IconUndo size={14} />撤销这次修改</button>)}
               {touched.length > 0 && !t.reply.undone && (
                 <button
-                  className="d-chip-btn ghost"
+                  className="btn sm ghost"
                   onClick={() => {
                     ui.focusPane(t.canvasId);
                     highlight.set({ canvasId: t.canvasId, ids: touched });
                     setTimeout(() => highlight.get()?.ids === touched && highlight.set(null), 2600);
                   }}
                 >
-                  在画布中高亮
+                  <IconTarget size={14} />在画布中高亮
                 </button>
               )}
-              <span className="d-meta" title={detail}>{t.endedAt ? fmt(t.endedAt - t.startedAt) : ""}</span>
+              <time title={detail}>{t.endedAt ? fmt(t.endedAt - t.startedAt) : ""}</time>
             </div>
           </motion.div>
         )}

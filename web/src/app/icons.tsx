@@ -1,89 +1,183 @@
+/**
+ * The one icon facade for Agora (design-system.md §8, same shape as Marginalia's ui/icons.tsx).
+ *
+ * Every UI icon comes from Dither Icons (@unlocalhosted/dither-icons, MIT, © 2026 Unlocalhosted;
+ * names checked against its icons.json), from Marginalia's extra icons drawn in the same
+ * construction (./dither-extra, MIT derivative), or — where neither has the glyph — is drawn
+ * here on the same 24-unit grid as an outline (marked "drawn" below). Call sites only write
+ * `<IconX size={16} />`; this file decides colour, texture and motion:
+ *   - colour: the accent, `var(--icon, var(--accent))`. Put `--icon` on a container to change it
+ *     (on a filled purple button it is `--accent-fg`).
+ *   - texture: solid up to 20px, dither from 40px (empty states, offline and share pages).
+ *   - motion: the library's one-shot gesture on hover / focus-visible / click of the whole
+ *     control. The facade tags the nearest interactive ancestor with `di-trigger`, so call sites
+ *     never have to. `active` / `replayKey` replay it on state changes. Never loops.
+ * The comment teardrop is Agora's own mark (the pin's shape) and stays drawn.
+ */
 import {
+  ArrowLeftIcon,
+  CheckIcon,
   CloseIcon,
   CodeIcon,
   CopyIcon,
   CpuIcon,
   ExternalLinkIcon,
   EyeIcon,
-  LockIcon,
-  UserIcon,
   FileIcon,
+  FolderIcon,
   GaugeIcon,
   HintIcon,
   HistoryIcon,
+  LayersIcon,
+  LockIcon,
   MessageIcon,
+  MoonIcon,
+  NextWordIcon,
   PathIcon,
+  PauseIcon,
+  PlayIcon,
+  PlusIcon,
+  PreviousWordIcon,
+  RetryIcon,
   SearchIcon,
+  SendIcon,
+  SunIcon,
   TargetIcon,
   TerminalIcon,
+  TrashIcon,
+  UserIcon,
+  WorkspaceIcon,
 } from "@unlocalhosted/dither-icons";
-import type { ComponentType } from "react";
+import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, type CSSProperties, type ForwardRefExoticComponent, type ReactNode, type RefAttributes } from "react";
+import { ListIcon, MoreIcon, PencilIcon, PinIcon } from "./dither-extra";
 
-const I = (d: string) => (p: { size?: number }) => (
-  <svg width={p.size ?? 16} height={p.size ?? 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <path d={d} />
-  </svg>
-);
+export type IconProps = { size?: number; active?: boolean; replayKey?: number; title?: string; className?: string; style?: CSSProperties };
+type Icon = ForwardRefExoticComponent<IconProps & RefAttributes<SVGSVGElement>>;
+type LibIcon = ForwardRefExoticComponent<IconProps & { texture?: "dither" | "solid" | "outline" } & RefAttributes<SVGSVGElement>>;
 
-/** The one comment glyph: the pin's own teardrop (¾ circle + square bottom-left corner). */
+const COLOR = "var(--icon, var(--accent))";
+const TRIGGER_HOST = 'button, a[href], summary, label, [role="button"], [role="menuitem"], [role="tab"], [role="option"], [role="radio"]';
+
+/** Tags the closest interactive ancestor with `di-trigger` before the icon runtime looks for it. */
+function useTrigger(forwarded: React.ForwardedRef<SVGSVGElement>) {
+  const node = useRef<SVGSVGElement | null>(null);
+  useImperativeHandle(forwarded, () => node.current as SVGSVGElement, []);
+  useLayoutEffect(() => {
+    const svg = node.current;
+    if (!svg || svg.closest(".di-trigger")) return;
+    svg.parentElement?.closest(TRIGGER_HOST)?.classList.add("di-trigger");
+  });
+  return node;
+}
+
+function dither(Base: unknown, name: string): Icon {
+  const B = Base as LibIcon;
+  const C = forwardRef<SVGSVGElement, IconProps>(function DitherFacade({ size = 16, className, style, ...rest }, ref) {
+    const node = useTrigger(ref);
+    return <B ref={node} size={size} texture={size >= 40 ? "dither" : "solid"} className={className ? `ag-icon ${className}` : "ag-icon"} style={{ color: COLOR, flexShrink: 0, ...style }} {...rest} />;
+  });
+  C.displayName = name;
+  return C;
+}
+
+/** Drawn here: 24-unit grid, centre-line outline at 1.6 (1.5 at 16px), round caps, like the library's outline texture. */
+function drawn(art: ReactNode, name: string, fill = false): Icon {
+  const C = forwardRef<SVGSVGElement, IconProps>(function DrawnIcon({ size = 16, className, style, title, active: _a, replayKey: _r }, ref) {
+    void _a;
+    void _r;
+    return (
+      <svg
+        ref={ref}
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill={fill ? "currentColor" : "none"}
+        stroke={fill ? "none" : "currentColor"}
+        strokeWidth={size <= 14 ? 1.9 : 1.6}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={className ? `ag-icon ${className}` : "ag-icon"}
+        style={{ color: COLOR, flexShrink: 0, ...style }}
+        aria-hidden={title ? undefined : true}
+        role={title ? "img" : undefined}
+        aria-label={title}
+      >
+        {art}
+      </svg>
+    );
+  });
+  C.displayName = name;
+  return C;
+}
+
+// ——— Dither Icons (icons.json names in comments) ———
+export const IconPlus = dither(PlusIcon, "IconPlus"); // plus
+export const IconClose = dither(CloseIcon, "IconClose"); // close
+export const IconCheck = dither(CheckIcon, "IconCheck"); // check
+export const IconLayers = dither(LayersIcon, "IconLayers"); // layers — 所有画布
+export const IconWorkspace = dither(WorkspaceIcon, "IconWorkspace"); // workspace — brand mark
+export const IconTrash = dither(TrashIcon, "IconTrash"); // trash — delete, clear canvas
+export const IconCopy = dither(CopyIcon, "IconCopy"); // copy
+export const IconSearch = dither(SearchIcon, "IconSearch"); // search
+export const IconFolder = dither(FolderIcon, "IconFolder"); // folder — asset library
+export const IconSend = dither(SendIcon, "IconSend"); // send — 发送, 交给 Agent
+export const IconMessage = dither(MessageIcon, "IconMessage"); // message — 对话, 新建会话
+export const IconPath = dither(PathIcon, "IconPath"); // path — 轨迹
+export const IconHistory = dither(HistoryIcon, "IconHistory"); // history
+export const IconTerminal = dither(TerminalIcon, "IconTerminal"); // terminal
+export const IconCode = dither(CodeIcon, "IconCode"); // code — 代码路径
+export const IconTarget = dither(TargetIcon, "IconTarget"); // target — progress pointer, highlight
+export const IconHint = dither(HintIcon, "IconHint"); // hint — outside the diagram, warnings, system
+export const IconCpu = dither(CpuIcon, "IconCpu"); // cpu — model
+export const IconGauge = dither(GaugeIcon, "IconGauge"); // gauge — usage
+export const IconShare = dither(ExternalLinkIcon, "IconShare"); // external-link — 分享
+export const IconLock = dither(LockIcon, "IconLock"); // lock — locked binding, revoke
+export const IconEye = dither(EyeIcon, "IconEye"); // eye — view only
+export const IconUser = dither(UserIcon, "IconUser"); // user
+export const IconFile = dither(FileIcon, "IconFile"); // file
+export const IconRetry = dither(RetryIcon, "IconRetry"); // retry — reopen thread, replay, reset player
+export const IconPlay = dither(PlayIcon, "IconPlay"); // play
+export const IconPause = dither(PauseIcon, "IconPause"); // pause
+export const IconPrev = dither(PreviousWordIcon, "IconPrev"); // previous-word — player step back
+export const IconNext = dither(NextWordIcon, "IconNext"); // next-word — player step forward
+export const IconBack = dither(ArrowLeftIcon, "IconBack"); // arrow-left
+export const IconSun = dither(SunIcon, "IconSun"); // sun — light theme
+export const IconMoon = dither(MoonIcon, "IconMoon"); // moon — dark theme
+
+// ——— Marginalia's dither-extra (same construction) ———
+export const IconPencil = dither(PencilIcon, "IconPencil"); // rename
+export const IconList = dither(ListIcon, "IconList"); // 所有评论
+export const IconPin = dither(PinIcon, "IconPin"); // "pinned to" (the comment anchor)
+export const IconMore = dither(MoreIcon, "IconMore");
+
+// ——— drawn (no match in either set) ———
+/** The comment mark: the pin's own teardrop (¾ circle, square bottom-left corner). */
 export const COMMENT_PATH = "M4.5 19.5V12a7.5 7.5 0 1 1 7.5 7.5Z";
-export const IconComment = I(COMMENT_PATH);
-export const IconCheck = I("M5 12.5 10 17 19 7");
-export const IconUndo = I("M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11");
-export const IconSpark = I("M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.5 2.5M15.2 15.2l2.5 2.5M6.3 17.7l2.5-2.5M15.2 8.8l2.5-2.5");
-export const IconReopen = I("M4 12a8 8 0 1 0 2.4-5.7M4 4v4h4");
-export const IconAlert = I("M12 8v5M12 16.5v.01M10.3 3.9 2.6 17a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z");
-export const IconClose = I("M6 6l12 12M18 6 6 18");
-export const IconSelect = I("M4 4h4M4 4v4M20 4h-4M20 4v4M4 20h4M4 20v-4M20 20h-4M20 20v-4M9 9h6v6H9z");
-export const IconSend = I("M5 12h13M13 6l6 6-6 6");
-export const IconPanel = I("M4 5h16v14H4zM14 5v14");
-export const IconReset = I("M20 12a8 8 0 1 1-2.4-5.7M20 4v4h-4");
-export const IconPlus = I("M12 5v14M5 12h14");
-export const IconPointer = I("M5 4l6.5 16 2.2-6.8L20.5 11z");
-export const IconList = I("M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01");
-export const IconSingle = I("M4 5h16v14H4z");
-export const IconCols = I("M4 5h16v14H4zM12 5v14");
-export const IconRows = I("M4 5h16v14H4zM4 12h16");
-export const IconGrid = I("M4 5h16v14H4zM12 5v14M4 12h16");
-/** Anchor mark for "pinned to": a node with a lead line (distinct from the comment teardrop). */
-export const IconAnchor = I("M12 8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM12 8.5V20M5 13a7 7 0 0 0 14 0");
-export const IconPencil = I("M4 20h4L19 9l-4-4L4 16v4ZM13.5 6.5l4 4");
-/** Built-in asset library: a few ready-made parts. */
-export const IconAssets = I("M4 4h7v7H4zM15.5 4a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7ZM4 20l3.5-6 3.5 6zM14 14h7v7h-7z");
-export const IconTrash = I("M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12M10.5 11v5M13.5 11v5");
+export const IconComment = drawn(<path d={COMMENT_PATH} />, "IconComment");
+export const IconCommentSolid = drawn(<path d={COMMENT_PATH} />, "IconCommentSolid", true);
+/** Undo: a hooked arrow back (neither set has one). */
+export const IconUndo = drawn(<path d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />, "IconUndo");
+/** Browse / select tool: the pointer arrow. */
+export const IconPointer = drawn(<path d="M5.5 4.5 11 19l2.1-6.4 6.4-2.1Z" />, "IconPointer");
+/** Comment on the selection: selection corners around a small teardrop. */
+export const IconSelect = drawn(
+  <>
+    <path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4" />
+    <path d="M9.5 14.5V12a2.5 2.5 0 1 1 2.5 2.5Z" />
+  </>,
+  "IconSelect",
+);
+/** Layout presets: one pane, side by side, stacked, grid. */
+export const IconSingle = drawn(<rect x="4" y="5" width="16" height="14" rx="2" />, "IconSingle");
+export const IconCols = drawn(<><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M12 5v14" /></>, "IconCols");
+export const IconRows = drawn(<><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M4 12h16" /></>, "IconRows");
+export const IconGrid = drawn(<><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M12 5v14M4 12h16" /></>, "IconGrid");
+/** System default theme: half sun, half dark. */
+export const IconAuto = drawn(<><circle cx="12" cy="12" r="7.5" /><path d="M12 4.5v15a7.5 7.5 0 0 0 0-15Z" fill="currentColor" stroke="none" /></>, "IconAuto");
 
-// ——— Dither Icons facade (design-system.md §8) ———
-// New UI uses these: accent-coloured by default (`--icon` overrides), solid up to 20px and dither
-// from 40px, the library's own one-shot gesture on the parent `di-trigger` control.
-
-type DitherProps = { size?: number; active?: boolean; replayKey?: number; title?: string };
-type DitherComponent = ComponentType<DitherProps & { texture?: "dither" | "solid" | "outline"; className?: string }>;
-const dither = (C: DitherComponent) =>
-  function DitherFacade({ size = 16, ...p }: DitherProps) {
-    return <C size={size} texture={size >= 40 ? "dither" : "solid"} className="ds-icon" {...p} />;
-  };
-export const DI = {
-  message: dither(MessageIcon as DitherComponent),
-  path: dither(PathIcon as DitherComponent),
-  terminal: dither(TerminalIcon as DitherComponent),
-  code: dither(CodeIcon as DitherComponent),
-  target: dither(TargetIcon as DitherComponent),
-  hint: dither(HintIcon as DitherComponent),
-  cpu: dither(CpuIcon as DitherComponent),
-  gauge: dither(GaugeIcon as DitherComponent),
-  copy: dither(CopyIcon as DitherComponent),
-  close: dither(CloseIcon as DitherComponent),
-  history: dither(HistoryIcon as DitherComponent),
-  search: dither(SearchIcon as DitherComponent),
-  file: dither(FileIcon as DitherComponent),
-  share: dither(ExternalLinkIcon as DitherComponent),
-  eye: dither(EyeIcon as DitherComponent),
-  lock: dither(LockIcon as DitherComponent),
-  user: dither(UserIcon as DitherComponent),
-};
-/** Structural chevron (not in Dither Icons): drawn here so it goes through the facade (1.5 stroke, accent). */
-export const DChevron = ({ size = 12, open = false }: { size?: number; open?: boolean }) => (
-  <svg className="ds-icon ds-chevron" data-open={open} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={(1.5 * 24) / size} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+/** Structural disclosure chevron (not an icon in the library sense): drawn, 1.5 stroke, accent. */
+export const IconChevron = ({ size = 12, open = false }: { size?: number; open?: boolean }) => (
+  <svg className="ag-icon ag-chevron" data-open={open} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={(1.5 * 24) / size} strokeLinecap="round" strokeLinejoin="round" style={{ color: COLOR, flexShrink: 0 }} aria-hidden>
     <path d="M9 6l6 6-6 6" />
   </svg>
 );

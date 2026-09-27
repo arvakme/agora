@@ -7,6 +7,7 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { instantiate, type LibraryItem } from "./libraryInsert";
 import type { El } from "../canvas/scene";
+import { IconBack, IconCheck, IconChevron, IconSearch } from "../app/icons";
 
 type Hit = { id: string; name: string; library: string; source: string; license: string; size: { w: number; h: number } };
 type Lib = { key: string; source: string; name: string; license: string; items: number; file: string };
@@ -57,37 +58,49 @@ export function AssetBrowser({ api }: { api: ExcalidrawImperativeAPI }) {
 
   return (
     <div className="assets" onKeyDown={(e) => e.stopPropagation()}>
-      <input className="assets-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索素材：redis、aws lambda、用户…" aria-label="搜索素材" />
-      {flash && <div className="assets-flash">已插入「{flash}」</div>}
-      {hits ? (
-        <>
-          <div className="assets-head">{hits.length ? `${hits.length} 个结果` : "没有匹配的素材"}</div>
-          <Grid ids={hits.map((h) => ({ id: h.id, title: `${h.name} · ${h.library} · ${h.license}` }))} onPick={insert} />
-        </>
-      ) : openLib ? (
-        <>
-          <button className="assets-back" onClick={() => setOpenLib(null)}>← {openLib.name}<span>{openLib.items} 个 · {openLib.license}</span></button>
-          <LibGrid lib={openLib} onPick={insert} />
-        </>
-      ) : (
-        <div className="assets-sources">
-          {bySource.map(([source, ls]) => (
-            <details key={source} open={source === "official"}>
-              <summary>
-                {SOURCE_NAMES[source] ?? source}
-                <span>{ls.length} 个库 · {ls.reduce((n, l) => n + l.items, 0)} 个组件 · {ls[0].license}</span>
-              </summary>
-              <ul>
-                {ls.map((l) => (
-                  <li key={l.key}>
-                    <button onClick={() => setOpenLib(l)}>{l.name}<span>{l.items}</span></button>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          ))}
-        </div>
-      )}
+      <label className="assets-search">
+        <IconSearch size={16} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索素材：redis、aws lambda、用户…" aria-label="搜索素材" />
+      </label>
+      <div className="assets-body">
+        {flash && <div className="assets-flash" role="status"><IconCheck size={14} />已插入「{flash}」</div>}
+        {hits ? (
+          <>
+            <div className="assets-head">{hits.length ? `${hits.length} 个结果` : "没有匹配的素材"}</div>
+            <Grid ids={hits.map((h) => ({ id: h.id, title: `${h.name} · ${h.library} · ${h.license}` }))} onPick={insert} />
+          </>
+        ) : openLib ? (
+          <>
+            <button className="assets-back" onClick={() => setOpenLib(null)}>
+              <IconBack size={16} />
+              <b>{openLib.name}</b>
+              <span>{openLib.items} 个 · {openLib.license}</span>
+            </button>
+            <LibGrid lib={openLib} onPick={insert} />
+          </>
+        ) : (
+          <div className="assets-sources">
+            {bySource.map(([source, ls]) => (
+              <details key={source} open={source === "official"}>
+                <summary>
+                  <IconChevron size={12} />
+                  <span className="assets-src">
+                    <b>{SOURCE_NAMES[source] ?? source}</b>
+                    <span>{ls.length} 个库 · {ls.reduce((n, l) => n + l.items, 0)} 个组件 · {ls[0].license}</span>
+                  </span>
+                </summary>
+                <ul>
+                  {ls.map((l) => (
+                    <li key={l.key}>
+                      <button onClick={() => setOpenLib(l)}><span>{l.name}</span><em>{l.items}</em></button>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

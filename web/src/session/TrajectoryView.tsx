@@ -15,7 +15,7 @@
 //   RecordRow        ← TrajectoryCell.tsx (#index, kind tag, one-line text, time) and the
 //                      record inspector (input / output / timing / usage)
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
-import { DChevron, DI } from "../app/icons";
+import { IconChevron, IconCopy, IconSearch } from "../app/icons";
 import { agents, type Item } from "./agents";
 import {
   ACTIVITY_NOW,
@@ -93,8 +93,8 @@ function Payload({ sessionId, item, field, label }: { sessionId: string; item: I
       <div className="ds-payload-head">
         {label}
         <span>{(total ?? text.length).toLocaleString()} 字</span>
-        <button className="ds-text-btn di-trigger" onClick={() => void navigator.clipboard?.writeText(text)} title="复制">
-          <DI.copy size={14} />
+        <button className="ds-text-btn" onClick={() => void navigator.clipboard?.writeText(text)} title="复制" aria-label={`复制${label}`}>
+          <IconCopy size={14} />
         </button>
       </div>
       <pre data-error={field === "output" && !!t.isError}>{text}</pre>
@@ -139,7 +139,7 @@ export function ToolRow({ sessionId, item, open, onToggle }: { sessionId: string
   return (
     <div className="ds-tool" data-open={open} data-error={!!t.isError}>
       <button className="ds-tool-line" onClick={onToggle} aria-expanded={open}>
-        <DChevron open={open} />
+        <IconChevron open={open} />
         <b>{t.name || "tool"}</b>
         <span className="ds-mono">{t.input}</span>
         {running ? <em className="ds-dot" data-tone="run">运行中</em> : t.isError ? <em className="ds-dot" data-tone="error">失败</em> : item.endAt ? <time>{fmtDuration(item.endAt - item.at)}</time> : null}
@@ -177,7 +177,7 @@ export function ProcessFold({ sessionId, turn, children }: { sessionId: string; 
         {turn.running && <span className="ds-live" aria-hidden />}
         <span className="ds-process-title">{label}</span>
         {counts && <span className="ds-process-count">{counts}</span>}
-        {!alwaysOpen && <DChevron open={shown} />}
+        {!alwaysOpen && <IconChevron open={shown} />}
       </button>
       {shown && (
         <div className="ds-process-body">
@@ -235,7 +235,7 @@ export function TrajectoryView({ sessionId, turns, focusTurn }: { sessionId: str
         <span className="ds-traj-count">
           {turns.length} 轮 · {records} 条记录 · {calls} 次调用
         </span>
-        <div className="ds-seg" role="radiogroup" aria-label="时间轴">
+        <div className="seg" data-static role="radiogroup" aria-label="时间轴">
           {(["sequence", "duration"] as const).map((m) => (
             <button key={m} role="radio" aria-checked={mode === m} data-on={mode === m} onClick={() => (setMode(m), setRange(null))} title={m === "sequence" ? "每条记录等宽" : "按记录的实际开始时间与时长（去掉空闲间隔）"}>
               {m === "sequence" ? "等宽" : "实际时长"}
@@ -246,7 +246,7 @@ export function TrajectoryView({ sessionId, turns, focusTurn }: { sessionId: str
           {allOpen ? "收起所有轮次" : "展开所有轮次"}
         </button>
         <label className="ds-search">
-          <DI.search size={14} />
+          <IconSearch size={14} />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索" aria-label="搜索轨迹" />
         </label>
       </div>
@@ -293,7 +293,7 @@ function TurnSection({ turn, open, onToggle, children }: { turn: TrajTurn; open:
   return (
     <section className="ds-turn" data-traj-turn={turn.n} data-running={turn.running}>
       <button className="ds-turn-head" onClick={onToggle} aria-expanded={open}>
-        <DChevron open={open} />
+        <IconChevron open={open} />
         <b>第 {turn.n} 轮</b>
         {turn.source === "terminal" && <span className="ds-tag">终端</span>}
         {turn.running && <span className="ds-dot" data-tone="run">进行中</span>}
