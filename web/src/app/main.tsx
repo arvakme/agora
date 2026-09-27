@@ -19,8 +19,9 @@ async function boot(): Promise<Boot> {
     const c = await load<Boot["canvases"][string]>(`canvas:${d.id}`);
     if (c) canvases[d.id] = c;
   }
-  // A workspace saved before sessions existed would reference none; start over then.
-  return workspace?.docs.some((d) => d.kind === "session") ? { workspace, canvases } : { canvases };
+  // v2 workspaces may legitimately have no sessions (all deleted). An unversioned one saved
+  // before sessions existed references none; start over then.
+  return workspace && (workspace.v === 2 || workspace.docs.some((d) => d.kind === "session")) ? { workspace, canvases } : { canvases };
 }
 
 void boot().then((b) => root.render(<App boot={b} />));
