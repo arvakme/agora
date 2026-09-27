@@ -1,0 +1,265 @@
+{
+  "modelView": {
+    "nodes": [
+      {
+        "id": "user",
+        "type": "ellipse",
+        "label": "用户",
+        "x": 60,
+        "y": 60,
+        "width": 160,
+        "height": 64
+      },
+      {
+        "id": "browser",
+        "type": "rectangle",
+        "label": "浏览器",
+        "x": 60,
+        "y": 220,
+        "width": 160,
+        "height": 64
+      },
+      {
+        "id": "backend",
+        "type": "rectangle",
+        "label": "Agora 后端",
+        "x": 320,
+        "y": 220,
+        "width": 160,
+        "height": 64
+      },
+      {
+        "id": "postgres",
+        "type": "rectangle",
+        "label": "Postgres",
+        "x": 200,
+        "y": 400,
+        "width": 160,
+        "height": 64
+      },
+      {
+        "id": "redis",
+        "type": "rectangle",
+        "label": "Redis",
+        "x": 440,
+        "y": 400,
+        "width": 160,
+        "height": 64
+      },
+      {
+        "id": "host",
+        "type": "rectangle",
+        "label": "本机宿主",
+        "x": 600,
+        "y": 220,
+        "width": 160,
+        "height": 64
+      },
+      {
+        "id": "pi",
+        "type": "rectangle",
+        "label": "Pi Master",
+        "x": 880,
+        "y": 220,
+        "width": 160,
+        "height": 64
+      },
+      {
+        "id": "claude",
+        "type": "rectangle",
+        "label": "Claude Code",
+        "x": 790,
+        "y": 410,
+        "width": 160,
+        "height": 64,
+        "frameId": "tmux"
+      },
+      {
+        "id": "codex",
+        "type": "rectangle",
+        "label": "Codex",
+        "x": 1010,
+        "y": 410,
+        "width": 160,
+        "height": 64,
+        "frameId": "tmux"
+      }
+    ],
+    "arrows": [
+      {
+        "id": "e-user-browser",
+        "type": "arrow",
+        "start": {
+          "id": "user"
+        },
+        "end": {
+          "id": "browser"
+        }
+      },
+      {
+        "id": "e-browser-backend",
+        "type": "arrow",
+        "start": {
+          "id": "browser"
+        },
+        "end": {
+          "id": "backend"
+        }
+      },
+      {
+        "id": "e-backend-postgres",
+        "type": "arrow",
+        "start": {
+          "id": "backend"
+        },
+        "end": {
+          "id": "postgres"
+        }
+      },
+      {
+        "id": "e-backend-redis",
+        "type": "arrow",
+        "start": {
+          "id": "backend"
+        },
+        "end": {
+          "id": "redis"
+        }
+      },
+      {
+        "id": "e-backend-host",
+        "type": "arrow",
+        "start": {
+          "id": "backend"
+        },
+        "end": {
+          "id": "host"
+        },
+        "bothEnds": true
+      },
+      {
+        "id": "e-host-pi",
+        "type": "arrow",
+        "start": {
+          "id": "host"
+        },
+        "end": {
+          "id": "pi"
+        }
+      },
+      {
+        "id": "e-pi-claude",
+        "type": "arrow",
+        "start": {
+          "id": "pi"
+        },
+        "end": {
+          "id": "claude"
+        }
+      },
+      {
+        "id": "e-pi-codex",
+        "type": "arrow",
+        "start": {
+          "id": "pi"
+        },
+        "end": {
+          "id": "codex"
+        }
+      }
+    ],
+    "frames": [
+      {
+        "id": "tmux",
+        "type": "frame",
+        "name": "tmux",
+        "x": 760,
+        "y": 370,
+        "width": 460,
+        "height": 150,
+        "children": [
+          "claude",
+          "codex"
+        ]
+      }
+    ]
+  },
+  "rawRedisElements": [
+    {
+      "id": "redis",
+      "type": "rectangle",
+      "x": 440,
+      "y": 400,
+      "width": 160,
+      "height": 64,
+      "angle": 0,
+      "strokeColor": "#1f2328",
+      "backgroundColor": "#eaf7ef",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "a0",
+      "roundness": {
+        "type": 3
+      },
+      "seed": 1568033282,
+      "version": 2,
+      "versionNonce": 325898014,
+      "isDeleted": false,
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "lHU16_-4C7Ryit2VOSDlb"
+        },
+        {
+          "id": "e-backend-redis",
+          "type": "arrow"
+        }
+      ],
+      "updated": 1790502918022,
+      "link": null,
+      "locked": false
+    },
+    {
+      "id": "lHU16_-4C7Ryit2VOSDlb",
+      "type": "text",
+      "x": 499.546875,
+      "y": 422.8,
+      "width": 40.90625,
+      "height": 18.4,
+      "angle": 0,
+      "strokeColor": "#1f2328",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "a1",
+      "roundness": null,
+      "seed": 1105312194,
+      "version": 3,
+      "versionNonce": 784937346,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1790502918022,
+      "link": null,
+      "locked": false,
+      "text": "Redis",
+      "fontSize": 16,
+      "fontFamily": 2,
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "redis",
+      "originalText": "Redis",
+      "autoResize": true,
+      "lineHeight": 1.15
+    }
+  ]
+}

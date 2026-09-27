@@ -1,0 +1,64 @@
+/* Algorithm-animation player + prompt. Self-contained (copied into the tldraw spike),
+   same komo dark-toolbar language as the Agora dock. */
+.anim-player, .anim-prompt {
+  --a-bg: #1c1c1c; --a-ink: #eeeeee; --a-ink-2: #a3a3a3; --a-ink-3: #767676; --a-line: #ffffff14;
+  --a-accent: #eeeeee; --a-danger: #ff8f8f;
+  --a-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "PingFang SC", "Segoe UI", sans-serif;
+  color: var(--a-ink); -webkit-font-smoothing: antialiased;
+}
+.anim-player button, .anim-prompt button { font: inherit; border: 0; background: none; color: inherit; cursor: pointer; }
+.anim-player button:disabled, .anim-prompt button:disabled { opacity: 0.35; cursor: default; }
+.anim-player :focus-visible, .anim-prompt :focus-visible { outline: 2px solid var(--a-accent); outline-offset: 1px; }
+
+.anim-player {
+  position: fixed; z-index: 30; translate: -50% 0; width: max-content; max-width: min(560px, calc(100vw - 32px));
+  padding: 5px 6px 7px; border-radius: 14px; background: var(--a-bg);
+  box-shadow: 0 0 0 1px var(--a-line), 0 6px 16px #00000033;
+}
+.anim-row { display: flex; align-items: center; gap: 2px; }
+.anim-btn { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; color: #bdbdbd; transition: color 150ms, background 150ms; }
+.anim-btn:hover:not(:disabled) { color: #fff; background: #ffffff14; }
+.anim-btn.main { width: 36px; color: #fff; background: #ffffff1c; }
+.anim-count { min-width: 38px; font-size: 11.5px; color: var(--a-ink-2); font-variant-numeric: tabular-nums; text-align: center; }
+.anim-speed { height: 26px; min-width: 38px; padding: 0 8px; border-radius: 8px; font-size: 11.5px !important; font-weight: 600 !important; color: var(--a-ink-2) !important; background: #ffffff0f !important; font-variant-numeric: tabular-nums; }
+.anim-speed:hover:not(:disabled) { color: #fff !important; }
+.anim-speed[data-on="true"] { color: #fff !important; background: #ffffff1f !important; }
+.anim-progress {
+  -webkit-appearance: none; appearance: none; width: 150px; height: 4px; margin: 0 8px; border-radius: 2px; cursor: pointer;
+  background: linear-gradient(to right, var(--a-accent) var(--p, 0%), #ffffff24 var(--p, 0%));
+}
+.anim-progress::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px #0006; }
+.anim-progress::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 50%; background: #fff; }
+.anim-caption { padding: 4px 8px 0; font-size: 12.5px; line-height: 1.45; color: var(--a-ink); max-width: 520px; }
+
+.anim-prompt {
+  position: fixed; left: 50%; bottom: 76px; translate: -50% 0; z-index: 40; width: min(460px, calc(100vw - 32px));
+  padding: 12px; border-radius: 16px; background: var(--a-bg);
+  box-shadow: 0 0 0 1px var(--a-line), 0 8px 20px #00000038;
+  animation: anim-rise 250ms var(--a-ease);
+}
+@keyframes anim-rise { from { opacity: 0; translate: -50% 8px; } }
+.anim-prompt-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.anim-prompt-head b { font-size: 13px; font-weight: 650; }
+.anim-prompt-head span { font-size: 11.5px; color: var(--a-ink-3); }
+.anim-prompt textarea {
+  width: 100%; box-sizing: border-box; resize: none; padding: 9px 10px; border-radius: 10px; border: 0;
+  background: #2e2e2e; color: var(--a-ink); font: 13px/1.5 inherit; outline: none;
+}
+.anim-prompt textarea:focus { box-shadow: 0 0 0 1px var(--a-accent); }
+.anim-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.anim-chip { height: 24px; padding: 0 9px; border-radius: 7px; font-size: 11.5px !important; color: var(--a-ink) !important; background: #ffffff12 !important; }
+.anim-chip:hover { background: #ffffff22 !important; }
+.anim-chip.ghost { color: var(--a-ink-2) !important; background: none !important; box-shadow: inset 0 0 0 1px #ffffff1f; }
+.anim-chip-sep { flex-basis: 100%; height: 0; }
+.anim-err { margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; background: #ff8f8f14; color: var(--a-danger); font: 11px/1.5 ui-monospace, monospace; white-space: pre-wrap; max-height: 140px; overflow: auto; }
+.anim-prompt-foot { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
+.anim-cancel { height: 30px; padding: 0 12px; border-radius: 9px; font-size: 12.5px !important; color: var(--a-ink-2) !important; }
+.anim-go { height: 30px; padding: 0 14px; border-radius: 9px; font-size: 12.5px !important; font-weight: 600 !important; color: #1c1c1c !important; background: var(--a-accent) !important; }
+.anim-shimmer { color: #1c1c1c; }
+
+@media (max-width: 520px) { .anim-progress { width: 80px; } }
+@media (prefers-reduced-motion: reduce) {
+  .anim-prompt { animation: none; }
+}

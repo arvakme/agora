@@ -47,3 +47,25 @@ jobs:
         env:
           AGORA_DATABASE_URL: postgresql://agora:agora@127.0.0.1:5432/agora
           AGORA_REDIS_URL: redis://127.0.0.1:6379/0
+
+  web:
+    # Excalidraw workbench frontend: typecheck, unit tests, build, vendored-asset check.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - working-directory: web
+        run: npm ci
+      - working-directory: web
+        run: npm run typecheck
+      - working-directory: web
+        run: npx vitest run
+      - working-directory: web
+        run: npm run build
+      - working-directory: web
+        run: npm run libraries:fetch -- --check
