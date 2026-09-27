@@ -88,7 +88,7 @@ export async function runTurn(input: {
   const pick = await engineStep(T, input.text);
   if (pick.kind === "animation" && animHosts.has(api)) return runAnimation(api, T, input.text, base);
 
-  // @worker mentions: data + UI only this round; real dispatch will go through Seedmux.
+  // @worker mentions: data + UI only this round; real dispatch will go through the local host.
   for (const m of input.mentions ?? [])
     if (WORKERS[m]) sessions.step(T, { kind: "dispatch", title: `派发给 ${WORKERS[m]}`, detail: "未接入：真实派发将由 Pi Master 经本机宿主交给 worker；本轮由 Pi Master 直接处理", status: "skipped", endedAt: Date.now() });
 

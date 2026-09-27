@@ -112,7 +112,7 @@ export function SessionPane({ sessionId, canvasTitles }: { sessionId: string; ca
       </header>
       <div className="d-presence sp-presence">
         {AGENTS.map((a) => (
-          <span key={a.id} className="d-presence-item" data-state={a.live ? (running ? "running" : "idle") : "offline"} title={a.live ? a.name : `${a.name} · 未接入（将来经 Seedmux 派发）`}>
+          <span key={a.id} className="d-presence-item" data-state={a.live ? (running ? "running" : "idle") : "offline"} title={a.live ? a.name : `${a.name} · 未接入（将来由 Pi Master 经本机宿主派发）`}>
             <Avatar a={a} size={20} state={a.live ? (running ? "running" : "idle") : "offline"} />
             <span>{a.name}</span>
           </span>

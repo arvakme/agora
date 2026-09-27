@@ -1,6 +1,6 @@
 // Session composer: plain text plus two pickers.
 //   #  reference a canvas element (current selection first, then by name) → sent as anchors
-//   @  mention an agent; workers are UI + data only this round ("未接入", Seedmux later)
+//   @  mention an agent; workers are UI + data only this round ("未接入", local host later)
 import { AnimatePresence, motion } from "motion/react";
 import { useRef, useState } from "react";
 import { SPRING } from "../comments/motion";
@@ -50,7 +50,7 @@ export function Composer({ canvasId, canvasTitle, busy, onSend }: {
       : AGENT_LIST.filter((a) => a.name.toLowerCase().includes(pick.q.toLowerCase()) || a.id.includes(pick.q.toLowerCase())).map((a) => ({
           id: a.id,
           label: a.name,
-          hint: a.live ? "主控" : "未接入 · 将来经 Seedmux 派发",
+          hint: a.live ? "主控" : "未接入 · 将来经本机宿主派发",
         }));
 
   const update = (value: string, caret: number) => {
