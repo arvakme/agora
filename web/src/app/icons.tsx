@@ -1,3 +1,20 @@
+import {
+  CloseIcon,
+  CodeIcon,
+  CopyIcon,
+  CpuIcon,
+  FileIcon,
+  GaugeIcon,
+  HintIcon,
+  HistoryIcon,
+  MessageIcon,
+  PathIcon,
+  SearchIcon,
+  TargetIcon,
+  TerminalIcon,
+} from "@unlocalhosted/dither-icons";
+import type { ComponentType } from "react";
+
 const I = (d: string) => (p: { size?: number }) => (
   <svg width={p.size ?? 16} height={p.size ?? 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d={d} />
@@ -30,3 +47,35 @@ export const IconPencil = I("M4 20h4L19 9l-4-4L4 16v4ZM13.5 6.5l4 4");
 /** Built-in asset library: a few ready-made parts. */
 export const IconAssets = I("M4 4h7v7H4zM15.5 4a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7ZM4 20l3.5-6 3.5 6zM14 14h7v7h-7z");
 export const IconTrash = I("M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12M10.5 11v5M13.5 11v5");
+
+// ——— Dither Icons facade (design-system.md §8) ———
+// New UI uses these: accent-coloured by default (`--icon` overrides), solid up to 20px and dither
+// from 40px, the library's own one-shot gesture on the parent `di-trigger` control.
+
+type DitherProps = { size?: number; active?: boolean; replayKey?: number; title?: string };
+type DitherComponent = ComponentType<DitherProps & { texture?: "dither" | "solid" | "outline"; className?: string }>;
+const dither = (C: DitherComponent) =>
+  function DitherFacade({ size = 16, ...p }: DitherProps) {
+    return <C size={size} texture={size >= 40 ? "dither" : "solid"} className="ds-icon" {...p} />;
+  };
+export const DI = {
+  message: dither(MessageIcon as DitherComponent),
+  path: dither(PathIcon as DitherComponent),
+  terminal: dither(TerminalIcon as DitherComponent),
+  code: dither(CodeIcon as DitherComponent),
+  target: dither(TargetIcon as DitherComponent),
+  hint: dither(HintIcon as DitherComponent),
+  cpu: dither(CpuIcon as DitherComponent),
+  gauge: dither(GaugeIcon as DitherComponent),
+  copy: dither(CopyIcon as DitherComponent),
+  close: dither(CloseIcon as DitherComponent),
+  history: dither(HistoryIcon as DitherComponent),
+  search: dither(SearchIcon as DitherComponent),
+  file: dither(FileIcon as DitherComponent),
+};
+/** Structural chevron (not in Dither Icons): drawn here so it goes through the facade (1.5 stroke, accent). */
+export const DChevron = ({ size = 12, open = false }: { size?: number; open?: boolean }) => (
+  <svg className="ds-icon ds-chevron" data-open={open} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={(1.5 * 24) / size} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M9 6l6 6-6 6" />
+  </svg>
+);

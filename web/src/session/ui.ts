@@ -45,3 +45,6 @@ export const highlight = {
   subscribe: (l: () => void) => (ls.add(l), () => void ls.delete(l)),
 };
 export const useHighlight = () => useSyncExternalStore(highlight.subscribe, highlight.get);
+
+/** Show a session's trajectory at one turn (the progress pointer links to turns). The session pane listens. */
+export const openTrajectory = (sessionId: string, turn: number) => dispatchEvent(new CustomEvent("agora:trajectory", { detail: { sessionId, turn } }));

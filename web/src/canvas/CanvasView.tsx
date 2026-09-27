@@ -13,6 +13,7 @@ import { IconAssets } from "../app/icons";
 import { bbox, byId, live, type El } from "./scene";
 import type { ThreadStore } from "../comments/threads";
 import { useHighlight } from "../session/ui";
+import { PointerLayer } from "../pointer/PointerLayer";
 import { AnimatePresence, motion } from "motion/react";
 import { SPRING } from "../comments/motion";
 
@@ -162,7 +163,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
       onPointerDownCapture={(e) => {
         // komo-style: interacting with the canvas outside a card closes the open thread
         // and takes back an unsent pin (parked if it has text).
-        if ((e.target as HTMLElement).closest(".tcard, .pin, .drawer")) return;
+        if ((e.target as HTMLElement).closest(".tcard, .pin, .drawer, .ptr-ui")) return;
         doc.store.close();
         dismissDraft(true);
       }}
@@ -197,6 +198,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
             onCreated={onModeDone}
           />
           <HighlightLayer canvasId={doc.id} view={view} />
+          <PointerLayer api={api} view={view} />
           <CommentsDrawer title={doc.title} api={api} store={doc.store} view={view} open={drawerOpen} onClose={() => onDrawer(false)} />
         </>
       )}

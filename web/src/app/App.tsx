@@ -12,6 +12,7 @@ import { SessionPane } from "../session/SessionPane";
 import { sessions, type Session, type Turn } from "../session/store";
 import { agentChoice, canvases, ui } from "../session/ui";
 import { agents, type Binding } from "../session/agents";
+import { pointerFollow } from "../pointer/follow";
 import { createThreadStore, useThreads, type ThreadSnapshot, type ThreadStore } from "../comments/threads";
 import { AllDocs } from "../workspace/AllDocs";
 import { Workspace } from "../workspace/Workspace";
@@ -115,6 +116,11 @@ export function App({ boot }: { boot: Boot }) {
   const handle = canvasDoc && handles.current.get(canvasDoc.id);
   const sessionCanvas = (d: SessionDoc) => sessions.get().sessions[d.sessionId]?.canvasId ?? "";
 
+  // The progress pointer follows the session pane focused last.
+  useEffect(() => {
+    const d = docs.find((x) => x.id === focused);
+    if (d?.kind === "session") pointerFollow.set(d.sessionId);
+  }, [focused, docs]);
   // Persist the workspace shape; sessions persist themselves on every change.
   useEffect(() => {
     if (PERSIST) save("workspace", () => ({ v: 2, docs, root, focused }));

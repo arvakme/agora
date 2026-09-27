@@ -104,6 +104,24 @@ def cmd_canvas(p, a) -> int:
 
             return out({"items": Library().search(q, a.limit)})
 
+        if a.action == "link":
+            if not base:
+                return out({"error": "Agora 服务没在运行：先在项目里 `agora open`（关联由打开的页面写进画布）。"}, 3)
+            if a.json is not None:
+                links = read_input(a.json)
+                if not isinstance(links, dict):
+                    return out({"error": "--json takes an object: {\"<element id or label>\": [\"glob\", …]}"}, 2)
+            elif a.element:
+                links = {a.element: list(a.globs or [])}
+            else:
+                return out({"error": "usage: agora canvas link <element> <glob…> | --json '{…}' [--clear]"}, 2)
+            code, res = call(base, "POST", "/api/agent/canvas/link", {"canvas": canvas, "session": session, "links": links, "clear": a.clear}, timeout=60)
+            if code == 503:
+                return out(res, 3)
+            if code == 400:
+                return out(res, 2)
+            return out(res, 0 if code == 200 and res.get("status") == "linked" else 1)
+
         if a.action in ("apply", "anim"):
             if not base:
                 return out({"error": "Agora 服务没在运行：先在项目里 `agora open`（改图由打开的页面执行）。"}, 3)
@@ -142,6 +160,7 @@ def add_parsers(sub) -> None:
         ("apply", "apply typed ops (JSON on stdin or --json) as one undoable change"),
         ("anim", "mount an animation script (JSON on stdin or --json)"),
         ("schema", "print the JSON schema of ops or animation scripts"),
+        ("link", "associate a diagram element with code paths (globs) for the progress pointer"),
     ):
         s = csub.add_parser(name, help=help)
         s.add_argument("--canvas", default=None, help="canvas id or name (default: $AGORA_CANVAS / the session's canvas)")
@@ -156,6 +175,11 @@ def add_parsers(sub) -> None:
             s.add_argument("--json", default=None, help="JSON text or a file path (default: stdin)")
         if name == "schema":
             s.add_argument("what", choices=["ops", "anim"])
+        if name == "link":
+            s.add_argument("element", nargs="?", help="element id or its exact label")
+            s.add_argument("globs", nargs="*", help="code paths relative to the project root, e.g. 'server/**' 'web/src/api/*.ts'")
+            s.add_argument("--json", default=None, help='several at once: {"<element>": ["glob", …], …} (text or a file path)')
+            s.add_argument("--clear", action="store_true", help="replace the element's paths with the given ones (none = remove them)")
     c.set_defaults(fn=cmd_canvas)
 
     k = sub.add_parser("skill", help="put the agora-canvas skill where Pi / Claude Code / Codex find it in this project")

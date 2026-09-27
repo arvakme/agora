@@ -43,7 +43,8 @@ TICK_S = 0.4
 TYPING_HOLD_S = 4.0
 DELIVERY_CONFIRM_S = 30.0
 BRIDGE_TIMEOUT_S = 25.0
-MAX_ITEMS = 400
+MAX_ITEMS = 1500
+PREVIEW = 4000  # tool args / output characters pushed to the page; the rest on request
 READS_KEPT = 64
 
 
@@ -133,6 +134,20 @@ class Pending:
     delivered_at: float | None = None
 
 
+def public_item(it: dict[str, Any]) -> dict[str, Any]:
+    """What the page gets: tool args / output cut to a preview, with their full length."""
+    tool = it.get("tool")
+    if not isinstance(tool, dict):
+        return it
+    short = dict(tool)
+    for k in ("args", "output"):
+        v = tool.get(k)
+        if isinstance(v, str) and len(v) > PREVIEW:
+            short[k] = v[:PREVIEW]
+            short[f"{k}Len"] = len(v)
+    return {**it, "tool": short}
+
+
 @dataclass
 class Live:
     """Runtime state of one bound session."""
@@ -140,6 +155,7 @@ class Live:
     id: str
     tail: Tail | None = None
     state: State = field(default_factory=State)
+    runs_loaded: bool = False
     items: OrderedDict[str, dict[str, Any]] = field(default_factory=OrderedDict)
     run: asyncio.Task | None = None
     headless: list[Pending] = field(default_factory=list)
@@ -227,7 +243,7 @@ class AgentHub:
         for sid in self.store.bindings():
             lv = self._get(sid)
             self._follow(sid, lv)
-            sub.put({"t": "transcript", "sessionId": sid, "reset": True, "items": list(lv.items.values())[-MAX_ITEMS:]})
+            sub.put({"t": "transcript", "sessionId": sid, "reset": True, "items": [public_item(i) for i in list(lv.items.values())[-MAX_ITEMS:]]})
             sub.put(self.status(sid))
         return sub
 
@@ -262,8 +278,13 @@ class AgentHub:
 
     def _follow_locked(self, sid: str, lv: Live) -> None:
         b = self.store.read_binding(sid)
+        if not lv.runs_loaded:
+            lv.runs_loaded = True
+            for it in self._load_runs(sid):
+                lv.items[it["id"]] = it
         if not b or not b.get("nativeId"):
             return
+        lv.state.root = str(self.store.root)
         if lv.tail is None:
             path = agents.find_log(b["agent"], b["nativeId"])
             if path is None:
@@ -292,8 +313,54 @@ class AgentHub:
         while len(lv.items) > MAX_ITEMS * 2:
             lv.items.popitem(last=False)
         if changed:
-            self.broadcast({"t": "transcript", "sessionId": sid, "items": changed})
+            latest = {i["id"]: i for i in changed}  # a call and its result in one read: send the merged item once
+            self.broadcast({"t": "transcript", "sessionId": sid, "items": [public_item(i) for i in latest.values()]})
         self._status(sid)
+
+    def item(self, sid: str, item_id: str) -> dict[str, Any]:
+        """One transcript item in full (tool args and output past the preview)."""
+        lv = self._get(sid)
+        self._follow(sid, lv)
+        it = lv.items.get(item_id)
+        if it is None:
+            raise LookupError(f"no item {item_id} in session {sid}")
+        return it
+
+    # Usage the runner reported for headless turns (Claude's cost is only in its result line,
+    # not in the session log). Kept per session under .agora/run so a restart still shows it.
+    def _runs_path(self, sid: str) -> Path:
+        return self.store.run_dir / "usage" / f"{sid}.jsonl"
+
+    def _load_runs(self, sid: str) -> list[dict[str, Any]]:
+        try:
+            lines = self._runs_path(sid).read_text().splitlines()
+        except OSError:
+            return []
+        out = []
+        for line in lines:
+            try:
+                it = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(it, dict) and it.get("id"):
+                out.append(it)
+        return out
+
+    def _record_run(self, sid: str, lv: Live, send_id: str, started: float, result: dict[str, Any] | None) -> None:
+        usage = (result or {}).get("usage")
+        if not isinstance(usage, dict):
+            return
+        it = {"id": f"run-{send_id}", "kind": "run", "at": int(time.time() * 1000), "startAt": int(started * 1000), "usage": usage}
+        with self._follow_lock:
+            lv.items[it["id"]] = it
+        try:
+            path = self._runs_path(sid)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "a") as fh:
+                fh.write(json.dumps(it, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+        self.broadcast({"t": "transcript", "sessionId": sid, "items": [it]})
 
     # ——— main loop ———
     async def _run_loop(self) -> None:
@@ -426,6 +493,7 @@ class AgentHub:
             )
             lv.activity = "启动中"
             lv.running = True
+            started = time.time()
             self._status(sid)
             self.broadcast({"t": "delivered", "sessionId": sid, "sendId": p.send_id, "route": "headless"})
             result: dict[str, Any] | None = None
@@ -453,6 +521,7 @@ class AgentHub:
                 self.store.set_native(sid, native)
             # Let the log catch up so the transcript shows the turn before "done".
             await asyncio.to_thread(self._follow, sid, lv)
+            self._record_run(sid, lv, p.send_id, started, result)
             lv.state.busy = False
             lv.activity = None
             lv.running = False
@@ -545,6 +614,19 @@ class AgentHub:
         if cid != read["canvasId"]:
             raise ValueError(f"base {base} was read from canvas {read['canvasId']}, not {cid}")
         return await self.bridge("apply", {"canvasId": cid, "sessionId": session, "plan": {"ops": ops, **({"note": note} if note else {})}, "versions": read["versions"]})
+
+    async def canvas_link(self, canvas: str | None, session: str | None, links: dict[str, list[str]], clear: bool = False) -> dict[str, Any]:
+        """Associate diagram elements with code paths (globs) — stored in the element's customData."""
+        cid = resolve_canvas(self.store, canvas, session)
+        if not isinstance(links, dict) or not links:
+            raise ValueError("nothing to link: give an element and one or more globs")
+        clean: dict[str, list[str]] = {}
+        for el, globs in links.items():
+            gs = [str(g).strip() for g in (globs or []) if str(g).strip()]
+            if not gs and not clear:
+                raise ValueError(f"no globs for {el!r} (use --clear to remove its paths)")
+            clean[str(el)] = gs
+        return await self.bridge("link", {"canvasId": cid, "sessionId": session, "links": clean, "clear": clear})
 
     async def canvas_anim(self, canvas: str | None, session: str | None, script: Any) -> dict[str, Any]:
         cid = resolve_canvas(self.store, canvas, session)

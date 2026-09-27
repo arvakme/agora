@@ -2,11 +2,11 @@
 // (the input format of convertToExcalidrawElements: type/x/y/width/height/label,
 // arrows with start/end ids) and drops everything the model can't reason about
 // (seeds, nonces, fractional indices, styles, bound-text elements).
-import { byId, isArrow, isShape, labelOf, libraryMeta, type El, type Scene } from "./scene";
+import { byId, codePathsOf, isArrow, isShape, labelOf, libraryMeta, type El, type Scene } from "./scene";
 
-export type SkeletonNode = { id: string; type: string; label: string; x: number; y: number; width: number; height: number; frameId?: string; component?: string };
+export type SkeletonNode = { id: string; type: string; label: string; x: number; y: number; width: number; height: number; frameId?: string; component?: string; codePaths?: string[] };
 export type SkeletonArrow = { id: string; type: "arrow"; start: { id: string } | null; end: { id: string } | null; label?: string; bothEnds?: true };
-export type SkeletonFrame = { id: string; type: "frame"; name: string; x: number; y: number; width: number; height: number; children: string[] };
+export type SkeletonFrame = { id: string; type: "frame"; name: string; x: number; y: number; width: number; height: number; children: string[]; codePaths?: string[] };
 export type ModelView = { nodes: SkeletonNode[]; arrows: SkeletonArrow[]; frames: SkeletonFrame[] };
 
 const r = Math.round;
@@ -27,6 +27,7 @@ export function toModelView(scene: Scene): ModelView {
     width: r(e.width),
     height: r(e.height),
     ...(e.frameId ? { frameId: e.frameId } : {}),
+    ...(codePathsOf(e).length ? { codePaths: codePathsOf(e) } : {}),
   }));
   const arrows = liveEls.filter(isArrow).map((e) => {
     const label = labelOf(e, map);
@@ -50,6 +51,7 @@ export function toModelView(scene: Scene): ModelView {
       width: r(e.width),
       height: r(e.height),
       children: liveEls.filter((c) => c.frameId === e.id && isShape(c)).map((c) => c.id),
+      ...(codePathsOf(e).length ? { codePaths: codePathsOf(e) } : {}),
     }));
   return { nodes, arrows, frames };
 }

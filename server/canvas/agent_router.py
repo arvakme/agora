@@ -45,6 +45,8 @@ class CanvasCall(BaseModel):
     ops: list[Any] | None = None
     note: str | None = None
     script: Any = None
+    links: dict[str, list[str]] | None = None
+    clear: bool = False
 
 
 def create_agent_router(hub: AgentHub) -> APIRouter:
@@ -103,6 +105,14 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
             names = canvas_names(store)
             prompt = body.text if body.raw else agora_prompt(body.text, canvas_id=body.canvasId, canvas_name=names.get(body.canvasId or ""), extra=body.context)
             return hub.send(sid, prompt)
+        except Exception as e:
+            return fail(e)
+
+    @router.get("/sessions/{sid}/items/{item_id}")
+    async def get_item(sid: str, item_id: str):
+        """A transcript item in full: tool args and output past the preview the page got."""
+        try:
+            return await asyncio.to_thread(hub.item, sid, item_id)
         except Exception as e:
             return fail(e)
 
@@ -172,6 +182,13 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
             return JSONResponse(status_code=400, content={"error": "missing base: pass the `base` printed by `agora canvas read`"})
         try:
             return await hub.canvas_apply(body.canvas, body.session, body.base, body.ops or [], body.note)
+        except Exception as e:
+            return fail(e)
+
+    @router.post("/canvas/link")
+    async def canvas_link(body: CanvasCall):
+        try:
+            return await hub.canvas_link(body.canvas, body.session, body.links or {}, body.clear)
         except Exception as e:
             return fail(e)
 

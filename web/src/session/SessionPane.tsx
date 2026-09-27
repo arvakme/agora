@@ -3,12 +3,21 @@
 // by the server), so what is said here, in a headless turn, or in the terminal after
 // "在终端打开" all shows up in one transcript; the canvas changes the agent made through the
 // agora-canvas skill appear in it as cards with undo.
+//
+// Two views of the same turns (trajectory.ts): 对话 — each turn's process folded into one line
+// with the answer below it — and 轨迹 — timeline overview plus turn → step → record ledger
+// (Trajectory.tsx; structure from DeepSeek Harness, MIT). Every tool call opens to its input and
+// output; every turn shows model, effort, tokens, time and cost when the log has them.
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { DI } from "../app/icons";
+import "../app/tokens.css";
+import { ProcessFold, TrajectoryView, UsageMeta } from "./TrajectoryView";
+import { buildTurns, sumUsage, type TrajTurn } from "./trajectoryModel";
 import { SPRING } from "../comments/motion";
 import "./design.css";
 import { Composer } from "./Composer";
-import { AGENT_KINDS, AGENT_NAMES, agents, useAgents, type AgentKind, type Catalog, type Item } from "./agents";
+import { AGENT_KINDS, AGENT_NAMES, agents, useAgents, type AgentKind, type Catalog } from "./agents";
 import { undoTurn } from "./runTurn";
 import { sessions, useSessions, type Turn } from "./store";
 import { agentChoice, canvases, highlight, ui } from "./ui";
@@ -116,10 +125,8 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
   );
 }
 
-type Entry = { at: number; key: string } & ({ item: Item } | { turn: Turn });
-
 function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTitles: Record<string, string> }) {
-  const { sessions: all, turns } = useSessions();
+  const { sessions: all, turns: canvasTurns } = useSessions();
   const ag = useAgents();
   const session = all[sessionId];
   const binding = ag.bindings[sessionId]!;
@@ -129,32 +136,39 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   const [flash, setFlash] = useState<string | null>(null);
   const [termMsg, setTermMsg] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [view, setView] = useState<"chat" | "trajectory">("chat");
+  const [focusTurn, setFocusTurn] = useState<{ n: number; key: number } | null>(null);
   const canvasTitle = canvasTitles[session.canvasId];
   const inflight = ag.inflight[sessionId];
   const working = !!(status?.running || status?.busy || inflight);
-
-  const entries: Entry[] = [
-    ...items.map((item) => ({ at: item.at, key: `i-${item.id}`, item })),
-    ...session.turnIds.map((id) => turns[id]).filter(Boolean).map((turn) => ({ at: turn.startedAt, key: `t-${turn.id}`, turn })),
-  ].sort((a, b) => a.at - b.at);
+  const turns = useMemo(() => buildTurns(items, { model: binding.model, effort: binding.effort }, !!(status?.running || status?.busy)), [items, binding.model, binding.effort, status?.running, status?.busy]);
+  const total = useMemo(() => sumUsage(turns), [turns]);
+  const changes = session.turnIds.map((id) => canvasTurns[id]).filter(Boolean);
 
   useEffect(() => {
-    scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: "smooth" });
-  }, [entries.length]);
+    if (view === "chat") scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: "smooth" });
+  }, [items.length, changes.length, view]);
   useEffect(() => {
     const on = (e: Event) => {
       const id = (e as CustomEvent<string>).detail;
       if (!session.turnIds.includes(id)) return;
+      setView("chat");
       setTimeout(() => {
         document.querySelector(`[data-turn="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
         setFlash(id);
         setTimeout(() => setFlash(null), 1600);
       }, 80);
     };
+    const onTraj = (e: Event) => {
+      const d = (e as CustomEvent<{ sessionId: string; turn: number }>).detail;
+      if (d.sessionId !== sessionId) return;
+      setView("trajectory");
+      setFocusTurn({ n: d.turn, key: Date.now() });
+    };
     addEventListener("agora:turn", on);
-    return () => removeEventListener("agora:turn", on);
-  }, [session]);
-
+    addEventListener("agora:trajectory", onTraj);
+    return () => (removeEventListener("agora:turn", on), removeEventListener("agora:trajectory", onTraj));
+  }, [session, sessionId]);
   const send = async (text: string, refs: Turn["refs"]) => {
     const selected = Object.keys(canvases.get(session.canvasId)?.api.getAppState().selectedElementIds ?? {});
     const notes = [
@@ -206,6 +220,13 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
             </select>
             <span title={binding.nativeId ?? "第一轮后生成"}>· 原生会话 {binding.nativeId ? binding.nativeId.slice(0, 8) : "（第一轮后生成）"}</span>
           </p>
+          {turns.length > 0 && (
+            <p className="ds sp-total" title="这个会话累计（只算日志里记下的）">
+              <DI.gauge size={14} />
+              <span>{turns.length} 轮</span>
+              <UsageMeta usage={total} durationMs={turns.some((t) => t.durationMs != null) ? turns.reduce((n, t) => n + (t.durationMs ?? 0), 0) : null} compact />
+            </p>
+          )}
         </div>
         {status?.terminal.alive ? (
           <span className="sp-term">
@@ -229,17 +250,33 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           )}
         </div>
       )}
-      <div className="d-rail-scroll sp-scroll" ref={scroll}>
-        {!entries.length && (
-          <div className="sp-hello">
-            <p>和 {AGENT_NAMES[binding.agent]} 讨论「{canvasTitle ?? "画布"}」的架构；它用 agora-canvas skill 读图、改图、做算法动画。</p>
-            <p>画布评论「交给 Agent」也会来到这里。想直接写代码时点「在终端打开」，两边说的话会同步。</p>
-          </div>
-        )}
-        {entries.map((e) =>
-          "item" in e ? <ItemView key={e.key} it={e.item} /> : <TurnCard key={e.key} t={e.turn} canvasTitle={canvasTitles[e.turn.canvasId]} flash={flash === e.turn.id} />,
-        )}
+      <div className="ds sp-views">
+        <div className="ds-seg" role="radiogroup" aria-label="视图">
+          <button role="radio" aria-checked={view === "chat"} data-on={view === "chat"} className="di-trigger" onClick={() => setView("chat")}>
+            <DI.message size={14} />
+            对话
+          </button>
+          <button role="radio" aria-checked={view === "trajectory"} data-on={view === "trajectory"} className="di-trigger" onClick={() => setView("trajectory")}>
+            <DI.path size={14} />
+            轨迹
+          </button>
+        </div>
       </div>
+      {view === "trajectory" ? (
+        <div className="ds sp-traj">
+          <TrajectoryView sessionId={sessionId} turns={turns} focusTurn={focusTurn} />
+        </div>
+      ) : (
+        <div className="d-rail-scroll sp-scroll ds" ref={scroll}>
+          {!turns.length && !changes.length && (
+            <div className="sp-hello">
+              <p>和 {AGENT_NAMES[binding.agent]} 讨论「{canvasTitle ?? "画布"}」的架构；它用 agora-canvas skill 读图、改图、做算法动画。</p>
+              <p>画布评论「交给 Agent」也会来到这里。想直接写代码时点「在终端打开」，两边说的话会同步。</p>
+            </div>
+          )}
+          <Conversation sessionId={sessionId} turns={turns} changes={changes} canvasTitles={canvasTitles} flash={flash} onTrajectory={(n) => (setView("trajectory"), setFocusTurn({ n, key: Date.now() }))} />
+        </div>
+      )}
       {line && (
         <div className="sp-status" data-tone={status?.held ? "held" : status?.error && !working ? "error" : "run"}>
           {working && <span className="sp-dot" />}
@@ -258,29 +295,41 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   );
 }
 
-function ItemView({ it }: { it: Item }) {
-  if (it.kind === "user")
-    return (
-      <div className="d-user sp-user" data-source={it.source}>
-        <p>{it.text}</p>
-        <time>{it.source === "terminal" ? "终端 · " : ""}{clock(it.at)}</time>
-      </div>
-    );
-  if (it.kind === "assistant")
-    return (
-      <div className="d-reply sp-say">
-        <p>{it.text}</p>
-      </div>
-    );
-  const t = it.tool ?? {};
+/** 对话 view: per turn — header with usage, the person's message, the process folded into one line, canvas changes, the answer. */
+function Conversation({ sessionId, turns, changes, canvasTitles, flash, onTrajectory }: { sessionId: string; turns: TrajTurn[]; changes: Turn[]; canvasTitles: Record<string, string>; flash: string | null; onTrajectory: (n: number) => void }) {
+  // Canvas changes belong to the turn they happened in (by time); ones before any turn stand alone.
+  const byTurn = new Map<number, Turn[]>();
+  const loose: Turn[] = [];
+  for (const c of changes) {
+    const t = [...turns].reverse().find((t) => t.startedAt <= c.startedAt);
+    if (t) byTurn.set(t.n, [...(byTurn.get(t.n) ?? []), c]);
+    else loose.push(c);
+  }
+  const card = (c: Turn) => <TurnCard key={c.id} t={c} canvasTitle={canvasTitles[c.canvasId]} flash={flash === c.id} />;
   return (
-    <details className="sp-tool" data-error={!!t.isError}>
-      <summary>
-        <b>{t.name || "tool"}</b>
-        <span>{t.input}</span>
-      </summary>
-      {t.output && <pre>{t.output}</pre>}
-    </details>
+    <div className="ds-convo">
+      {loose.map(card)}
+      {turns.map((t) => (
+        <article key={t.n} className="ds-convo-turn">
+          <header className="ds-convo-head">
+            <b>第 {t.n} 轮</b>
+            {t.source === "terminal" && <span className="ds-tag">终端</span>}
+            <time>{clock(t.startedAt)}</time>
+            <UsageMeta model={t.model} effort={t.effort} usage={t.usage} durationMs={t.durationMs} compact />
+            <button onClick={() => onTrajectory(t.n)} title="在轨迹里看这一轮">轨迹</button>
+          </header>
+          {t.user && (
+            <div className="ds-user" data-source={t.user.source}>
+              <p>{t.user.text}</p>
+            </div>
+          )}
+          <ProcessFold sessionId={sessionId} turn={t} />
+          {(byTurn.get(t.n) ?? []).map(card)}
+          {t.reply && <p className="ds-say">{t.reply.text}</p>}
+          {t.error && !t.running && <p className="ds-say" data-error>这一轮出错：{t.error}</p>}
+        </article>
+      ))}
+    </div>
   );
 }
 

@@ -1,0 +1,13 @@
+Pointer glide, 2026-09-28 01:44 (Asia/Singapore), Agora build of this branch, Ego TaskSpace 137.
+The Claude Code session was driven from its terminal pane (tmux send-keys: "把 web/src/App.tsx 的标题改回 Users"),
+so the change reached the page only through the native log. The page sampled the pointer's transform
+every animation frame; x (px) changed from the API 服务 node to the Web 前端 node in ~600 ms:
+
+[t ms, translateX] (only samples where the value changed)
+[0,385] [2593,372] [2610,330] [2626,306] [2659,283] [2668,238] [2694,227] [2718,199] [2735,176] [2760,163]
+[2766,146] [2793,142] [2817,129] [2835,119] [2867,113] [2902,105] [2926,99] [2935,95] [2968,94] [2985,91]
+[3002,90] [3035,89] [3042,88] [3068,87] [3101,86] [3193,85]
+
+Pointer chip before: "Claude Code · app.py · 01:43"; after: "Claude Code · App.tsx · 01:44".
+Before the fix in PointerLayer (transition chosen in the same render that changes the element) the same
+check showed a jump: [[0,"134.4"],[3489,"396.1"]].

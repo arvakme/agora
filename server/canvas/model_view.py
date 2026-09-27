@@ -27,6 +27,12 @@ def library_meta(e: dict[str, Any] | None) -> dict[str, Any] | None:
     return m if isinstance(m, dict) and m.get("library") else None
 
 
+def code_paths(e: dict[str, Any] | None) -> list[str]:
+    """Code paths (globs) the element stands for — ``customData.codePaths`` (progress pointer)."""
+    v = ((e or {}).get("customData") or {}).get("codePaths")
+    return [str(x) for x in v if isinstance(x, str) and x] if isinstance(v, list) else []
+
+
 def bound_text(e: dict[str, Any], by_id: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
     for b in e.get("boundElements") or []:
         if b.get("type") == "text":
@@ -73,6 +79,8 @@ def model_view(elements: list[dict[str, Any]]) -> dict[str, Any]:
         n.update(label=label_of(e, by_id), x=_r(e.get("x")), y=_r(e.get("y")), width=_r(e.get("width")), height=_r(e.get("height")))
         if e.get("frameId"):
             n["frameId"] = e["frameId"]
+        if code_paths(e):
+            n["codePaths"] = code_paths(e)
         nodes.append(n)
     arrows = []
     for e in live:
@@ -100,6 +108,7 @@ def model_view(elements: list[dict[str, Any]]) -> dict[str, Any]:
             "width": _r(e.get("width")),
             "height": _r(e.get("height")),
             "children": [c["id"] for c in live if c.get("frameId") == e["id"] and c.get("type") in SHAPES],
+            **({"codePaths": code_paths(e)} if code_paths(e) else {}),
         }
         for e in live
         if e.get("type") == "frame"
