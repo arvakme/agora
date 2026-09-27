@@ -1,16 +1,14 @@
-// Session composer: plain text plus two pickers.
-//   #  reference a canvas element (current selection first, then by name) → sent as anchors
-//   @  mention an agent; workers are UI + data only this round ("未接入", local host later)
+// Session composer: plain text plus a `#` picker that references canvas elements (current
+// selection first, then by name); references are sent along as names and ids.
 import { AnimatePresence, motion } from "motion/react";
 import { useRef, useState } from "react";
 import { SPRING } from "../comments/motion";
 import { toModelView } from "../canvas/modelView";
 import type { Scene } from "../canvas/scene";
-import { AGENT_LIST } from "./SessionPane";
 import type { Turn } from "./store";
 import { canvases } from "./ui";
 
-type Option = { id: string; label: string; hint?: string; disabled?: boolean };
+type Option = { id: string; label: string; hint?: string };
 
 function elementOptions(canvasId: string, q: string): Option[] {
   const c = canvases.get(canvasId);
@@ -30,42 +28,33 @@ function elementOptions(canvasId: string, q: string): Option[] {
     .slice(0, 8);
 }
 
-export function Composer({ canvasId, canvasTitle, busy, onSend }: {
+export function Composer({ canvasId, canvasTitle, agentName, route, onSend }: {
   canvasId: string;
   canvasTitle?: string;
-  busy: boolean;
-  onSend: (text: string, refs: Turn["refs"], mentions: string[]) => void;
+  agentName: string;
+  /** Where the next message goes: the terminal pane holding the session, or a headless turn. */
+  route: "terminal" | "headless";
+  onSend: (text: string, refs: Turn["refs"]) => Promise<void>;
 }) {
   const [text, setText] = useState("");
   const [refs, setRefs] = useState<Turn["refs"]>([]);
-  const [mentions, setMentions] = useState<string[]>([]);
-  const [pick, setPick] = useState<{ kind: "#" | "@"; q: string; start: number; i: number } | null>(null);
+  const [pick, setPick] = useState<{ q: string; start: number; i: number } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   const ta = useRef<HTMLTextAreaElement>(null);
   const sel = Object.keys(canvases.get(canvasId)?.api.getAppState().selectedElementIds ?? {}).length;
-
-  const options: Option[] = !pick
-    ? []
-    : pick.kind === "#"
-      ? elementOptions(canvasId, pick.q)
-      : AGENT_LIST.filter((a) => a.name.toLowerCase().includes(pick.q.toLowerCase()) || a.id.includes(pick.q.toLowerCase())).map((a) => ({
-          id: a.id,
-          label: a.name,
-          hint: a.live ? "主控" : "未接入 · 将来经本机宿主派发",
-        }));
+  const options = pick ? elementOptions(canvasId, pick.q) : [];
 
   const update = (value: string, caret: number) => {
     setText(value);
-    const m = /(^|\s)([#@])([^\s#@]*)$/.exec(value.slice(0, caret));
-    setPick(m ? { kind: m[2] as "#" | "@", q: m[3], start: caret - m[3].length - 1, i: 0 } : null);
+    const m = /(^|\s)#([^\s#]*)$/.exec(value.slice(0, caret));
+    setPick(m ? { q: m[2], start: caret - m[2].length - 1, i: 0 } : null);
   };
   const choose = (o: Option) => {
     if (!pick) return;
-    const token = `${pick.kind}${o.label} `;
+    const token = `#${o.label} `;
     const caret = ta.current?.selectionStart ?? text.length;
-    const next = text.slice(0, pick.start) + token + text.slice(caret);
-    setText(next);
-    if (pick.kind === "#") setRefs((r) => (r.some((x) => x.id === o.id) ? r : [...r, { id: o.id, label: o.label }]));
-    else setMentions((m) => (m.includes(o.id) ? m : [...m, o.id]));
+    setText(text.slice(0, pick.start) + token + text.slice(caret));
+    setRefs((r) => (r.some((x) => x.id === o.id) ? r : [...r, { id: o.id, label: o.label }]));
     setPick(null);
     requestAnimationFrame(() => {
       const pos = pick.start + token.length;
@@ -75,26 +64,24 @@ export function Composer({ canvasId, canvasTitle, busy, onSend }: {
   };
   const send = () => {
     const t = text.trim();
-    if (!t || busy) return;
-    // Keep only references whose token is still in the text.
-    const keptRefs = refs.filter((r) => t.includes(`#${r.label}`));
-    const keptMentions = mentions.filter((m) => t.includes(`@${AGENT_LIST.find((a) => a.id === m)?.name}`));
-    onSend(t, keptRefs, keptMentions);
+    if (!t) return;
+    const kept = refs.filter((r) => t.includes(`#${r.label}`));
+    setErr(null);
+    onSend(t, kept).catch((e) => (setErr((e as Error).message), setText(t)));
     setText("");
     setRefs([]);
-    setMentions([]);
   };
 
   return (
-    <div className="d-composer sp-composer" data-busy={busy}>
+    <div className="d-composer sp-composer">
       <AnimatePresence>
         {pick && options.length > 0 && (
           <motion.ul className="sp-pick" role="listbox" initial={{ opacity: 0, y: 6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 4 }} transition={SPRING}>
-            <li className="sp-pick-head">{pick.kind === "#" ? `引用「${canvasTitle ?? "画布"}」里的元素` : "点名 agent"}</li>
+            <li className="sp-pick-head">引用「{canvasTitle ?? "画布"}」里的元素</li>
             {options.map((o, i) => (
               <li key={o.id} role="option" aria-selected={i === pick.i} data-on={i === pick.i} onPointerDown={(e) => (e.preventDefault(), choose(o))}>
-                <span>{pick.kind}{o.label}</span>
-                {o.hint && <em data-off={pick.kind === "@" && o.id !== "pi"}>{o.hint}</em>}
+                <span>#{o.label}</span>
+                {o.hint && <em>{o.hint}</em>}
               </li>
             ))}
           </motion.ul>
@@ -105,7 +92,7 @@ export function Composer({ canvasId, canvasTitle, busy, onSend }: {
           ref={ta}
           value={text}
           rows={2}
-          placeholder={busy ? "Pi Master 正在处理上一轮…" : "给 Pi Master 发消息… # 引用画布元素 · @ 点名 worker"}
+          placeholder={`给 ${agentName} 发消息…  # 引用画布元素`}
           onChange={(e) => update(e.target.value, e.target.selectionStart)}
           onKeyDown={(e) => {
             e.stopPropagation();
@@ -120,12 +107,13 @@ export function Composer({ canvasId, canvasTitle, busy, onSend }: {
         />
         <span className="d-composer-ctx">
           <span className="d-ctx-chip">画布 · {canvasTitle ?? "已关闭"}</span>
+          <span className="d-ctx-chip" data-route={route}>{route === "terminal" ? "发到终端里的会话" : "无头续接"}</span>
           {sel > 0 && <span className="d-ctx-chip">选区 · {sel} 个元素</span>}
           {refs.map((r) => <span key={r.id} className="d-ctx-chip ref">#{r.label}</span>)}
-          {mentions.map((m) => <span key={m} className="d-ctx-chip mention">@{AGENT_LIST.find((a) => a.id === m)?.name}</span>)}
+          {err && <span className="d-ctx-chip sp-warn">{err}</span>}
         </span>
       </div>
-      <button className="d-send" onClick={send} disabled={!text.trim() || busy} aria-label="发送">↑</button>
+      <button className="d-send" onClick={send} disabled={!text.trim()} aria-label="发送">↑</button>
     </div>
   );
 }

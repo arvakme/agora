@@ -18,6 +18,19 @@ export const ui = {
   openSession: (_sessionId: string, _turnId?: string) => {},
   /** A closed canvas has no live API: reopen its tab (without moving focus) and resolve once it is mounted. */
   ensureCanvas: async (id: string): Promise<CanvasEntry | undefined> => canvases.get(id),
+  /** No agent session on this canvas yet: open one and let the person pick its agent. Resolves with the bound session. */
+  chooseAgent: async (_canvasId: string): Promise<string | undefined> => undefined,
+};
+
+/** Sessions waiting for the person to pick an agent (a comment hand-off is parked on them). */
+const choosing = new Map<string, (bound: string | undefined) => void>();
+export const agentChoice = {
+  wait: (sessionId: string) => new Promise<string | undefined>((ok) => choosing.set(sessionId, ok)),
+  pending: (sessionId: string) => choosing.has(sessionId),
+  resolve(sessionId: string, bound: string | undefined) {
+    choosing.get(sessionId)?.(bound);
+    choosing.delete(sessionId);
+  },
 };
 
 type Highlight = { canvasId: string; ids: string[] } | null;

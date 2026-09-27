@@ -1,7 +1,9 @@
-// One agent turn, recorded step by step from real events:
+// One schema-constrained planning turn, recorded step by step from real events:
 //   read (freeze context) → think / search_library / plan (streamed from the model)
 //   → check (schema, references, freshness) → apply (one undoable batch) → reply.
-// Both the session composer and canvas comments ("交给 Agent") run through here.
+// This is the eval baseline (claude -p in a neutral directory, scripts/eval.ts). Sessions in
+// the UI talk to the user's own coding agent instead (agents.ts); its canvas edits come
+// back through agentBridge.ts, which reuses the check/apply helpers exported here.
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { applyPlan, undoBatch } from "../ops/apply";
@@ -11,8 +13,6 @@ import { referencedIds, validatePlan, type Op } from "../ops/ops";
 import { byId, isArrow, isShape, libraryMeta, live, nameOf, type Scene } from "../canvas/scene";
 import { sessions, type Origin, type Turn, type Usage } from "./store";
 import { ENTITY_ASSETS, pickEngine, type EnginePick } from "../anim/enginePick";
-import { animHosts } from "../anim/AnimLayer";
-import { validateScript, type AnimScript } from "../anim/script";
 
 export type AgentOutcome = {
   ctx: FrozenContext;
@@ -38,12 +38,11 @@ const all = (api: ExcalidrawImperativeAPI) => api.getSceneElementsIncludingDelet
  * updateScene. rAF is paused in a hidden tab, so a 1s timer caps the wait there instead
  * of holding the turn open until the person comes back.
  */
-const settle = (capMs = 1000) =>
+export const settle = (capMs = 1000) =>
   new Promise<void>((r) => {
     const t = setTimeout(r, capMs);
     requestAnimationFrame(() => requestAnimationFrame(() => (clearTimeout(t), r())));
   });
-const WORKERS: Record<string, string> = { claude: "Claude Code", codex: "Codex" };
 
 export const sceneIndex = (scene: Scene) => {
   const map = byId(scene);
@@ -68,10 +67,9 @@ export async function runTurn(input: {
   origin: Origin;
   text: string;
   refs?: Turn["refs"];
-  mentions?: string[];
 }): Promise<AgentOutcome> {
   const { api } = input;
-  const turn = sessions.startTurn(input.sessionId, { canvasId: input.canvasId, origin: input.origin, request: input.text, refs: input.refs ?? [], mentions: input.mentions ?? [] });
+  const turn = sessions.startTurn(input.sessionId, { canvasId: input.canvasId, origin: input.origin, request: input.text, refs: input.refs ?? [] });
   const T = turn.id;
   const end = (status: Turn["status"], reply: Turn["reply"]) => sessions.patchTurn(T, (t) => ({ ...t, status, reply, endedAt: Date.now() }));
 
@@ -85,12 +83,7 @@ export async function runTurn(input: {
   });
   const base = { ctx, ops: null, errors: [], stale: [], summary: [], costUsd: null, durationMs: 0, turnId: T };
 
-  const pick = await engineStep(T, input.text);
-  if (pick.kind === "animation" && animHosts.has(api)) return runAnimation(api, T, input.text, base);
-
-  // @worker mentions: data + UI only this round; real dispatch will go through the local host.
-  for (const m of input.mentions ?? [])
-    if (WORKERS[m]) sessions.step(T, { kind: "dispatch", title: `派发给 ${WORKERS[m]}`, detail: "未接入：真实派发将由 Pi Master 经本机宿主交给 worker；本轮由 Pi Master 直接处理", status: "skipped", endedAt: Date.now() });
+  await engineStep(T, input.text);
 
   // 2. Plan: stream the model's steps.
   type Res = { raw: unknown; costUsd: number | null; durationMs: number; error?: string; prompt?: string; usage?: Usage };
@@ -232,7 +225,7 @@ export function undoTurn(api: ExcalidrawImperativeAPI, turnId: string): { ok: bo
   return { ok: true, stale: [] };
 }
 
-async function fetchLibraryItems(raw: unknown): Promise<Map<string, LibraryItem>> {
+export async function fetchLibraryItems(raw: unknown): Promise<Map<string, LibraryItem>> {
   const ops = ((raw as { ops?: { op?: string; item?: unknown }[] })?.ops ?? []).filter((o) => o?.op === "insert_library_item" && typeof o.item === "string");
   const ids = [...new Set(ops.map((o) => o.item as string))];
   const found = await Promise.all(
@@ -254,53 +247,6 @@ async function engineStep(T: string, request: string): Promise<EnginePick> {
   const r = await fetch(`/api/canvas/library/search?q=${encodeURIComponent(request)}&limit=3`).catch(() => null);
   const libraryHits = r?.ok ? (((await r.json()) as { items?: unknown[] }).items ?? []).length : 0;
   const pick = pickEngine({ request, libraryHits });
-  sessions.endStep(T, id, { title: pick.useAssets ? "素材库：可用" : "素材库：不用", detail: pick.reason });
+  sessions.endStep(T, id, { title: "素材库：可用", detail: pick.reason });
   return pick;
-}
-
-/** Animation turn: generate a script (one repair retry), validate it, mount the player. */
-async function runAnimation(api: ExcalidrawImperativeAPI, T: string, request: string, base: Omit<AgentOutcome, "status">): Promise<AgentOutcome> {
-  let errors: string[] = [], cost = 0, ms = 0, script: AnimScript | undefined;
-  const end = (status: Turn["status"], reply: Turn["reply"]) => sessions.patchTurn(T, (t) => ({ ...t, status, reply, costUsd: cost, endedAt: Date.now() }));
-  for (let attempt = 1; attempt <= 2 && !script; attempt++) {
-    const gen = sessions.step(T, { kind: "think", title: attempt === 1 ? "生成动画脚本" : "按校验意见修正脚本" });
-    const r = await fetch("/api/canvas/anim", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request, errors }) });
-    const res = (await r.json()) as { raw: unknown; costUsd: number | null; durationMs: number; error?: string; usage?: Usage };
-    cost += res.costUsd ?? 0;
-    ms += res.durationMs ?? 0;
-    sessions.patchTurn(T, (t) => ({ ...t, costUsd: cost }));
-    if (!r.ok || res.error) {
-      sessions.endStep(T, gen, { status: "error", detail: res.error ?? r.statusText });
-      end("error", { text: `模型没有返回可用脚本：${res.error ?? r.statusText}`, tone: "error" });
-      return { ...base, status: "error", errors: [res.error ?? ""], costUsd: cost, durationMs: ms };
-    }
-    if (res.usage) sessions.patchTurn(T, (t) => ({ ...t, usage: [...(t.usage ?? []), res.usage!] }));
-    sessions.endStep(T, gen, { detail: `${((res.durationMs ?? 0) / 1000).toFixed(1)}s · $${(res.costUsd ?? 0).toFixed(4)}` });
-    const check = sessions.step(T, { kind: "check", title: "校验动画脚本" });
-    const v = validateScript(res.raw);
-    if (v.script) {
-      script = v.script;
-      sessions.endStep(T, check, { detail: `${v.script.nodes.length} 个节点 · ${v.script.edges?.length ?? 0} 条边 · ${v.script.steps.length} 步 · 结构与引用 ✓` });
-    } else {
-      errors = v.errors;
-      sessions.endStep(T, check, { status: "error", detail: v.errors.slice(0, 3).join("；") });
-    }
-  }
-  if (!script) {
-    end("invalid", { text: `动画脚本两次都没通过校验，未上画布：\n${errors.slice(0, 6).join("\n")}`, tone: "error" });
-    return { ...base, status: "invalid", errors, costUsd: cost, durationMs: ms };
-  }
-  const mount = sessions.step(T, { kind: "apply", title: "挂载播放器" });
-  const before = new Set(api.getSceneElementsIncludingDeleted().map((e) => e.id));
-  // mount() is one synchronous updateScene, so the new elements are readable right away.
-  // No rAF wait here: requestAnimationFrame is paused while the tab is hidden, and people
-  // switch away during the minute-long script generation — the old settle() kept this
-  // step open until they came back (a 1m38s "mount").
-  animHosts.get(api)!(script);
-  const added = api.getSceneElements().filter((e) => !before.has(e.id));
-  const region = added.filter((e) => e.type !== "text").map((e) => e.id);
-  if (added.length) api.scrollToContent(added, { fitToContent: true, animate: true });
-  sessions.endStep(T, mount, { detail: `区域「${script.title}」· ${script.nodes.length} 个元素 · ${script.steps.length} 步 · 播放器在区域下方`, elements: region });
-  end("applied", { text: `已生成动画「${script.title}」：${script.nodes.length} 个元素、${script.steps.length} 步，用区域下方的播放器播放。`, changes: [`新建动画区域「${script.title}」`] });
-  return { ...base, status: "applied", summary: [`动画「${script.title}」`], costUsd: cost, durationMs: ms };
 }

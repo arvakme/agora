@@ -1,5 +1,7 @@
 # Agora 本地 Agent 工作台计划
 
+> 2026-09-28 起的当前模型：没有 Pi Master / worker 之分，会话就是用户自选的 Pi / Claude Code / Codex 原生会话，画布能力走 agora-canvas skill，见 [web/docs/agent-sessions.md](../web/docs/agent-sessions.md)。下文的 Master/Worker 编排是早先的计划。
+
 产品方向已确认，实施按阶段依赖和对应 Issue 的授权推进。本文描述目标，当前可运行能力见 [README](../README.md)。工单与进度以 [Agora Project](https://github.com/users/arvakme/projects/2) 关联的 Issues 为准，开发流程见[协作规则](development.md)。
 
 ## 1. 已确认范围

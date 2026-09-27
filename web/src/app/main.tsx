@@ -5,6 +5,8 @@ import { App, type Boot, type WorkspaceState } from "./App";
 import { connect, PERSIST } from "../persist";
 import { sessions } from "../session/store";
 import { setIdentity } from "../comments/threads";
+import { agents, connectAgents } from "../session/agents";
+import { installBridge } from "../session/agentBridge";
 
 const root = createRoot(document.getElementById("root")!);
 
@@ -15,6 +17,10 @@ async function boot(): Promise<Boot> {
   setIdentity(p.project.me);
   document.title = `${p.project.name} · Agora`;
   if (Object.keys(p.sessions.sessions).length) sessions.hydrate(p.sessions);
+  agents.hydrateBindings(p.bindings);
+  // This page executes `agora canvas …` edits and follows the agent sessions live.
+  installBridge();
+  connectAgents();
   const workspace = p.workspace as WorkspaceState | undefined;
   const canvases: Boot["canvases"] = {};
   for (const d of workspace?.docs ?? []) {

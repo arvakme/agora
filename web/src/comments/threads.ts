@@ -20,6 +20,9 @@ export type Message = {
   meta?: string;
   /** Agent replies point at their session turn — the single record both views render. */
   turnId?: string;
+  /** Agent replies from a native session: the session that answered (text is the agent's own reply;
+   * turnId, if any, is its last canvas change there — for undo). */
+  sessionId?: string;
   /** Who wrote a human ("you") message. Several people can take part in one thread. */
   by?: Person;
 };

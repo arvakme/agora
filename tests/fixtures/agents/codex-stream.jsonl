@@ -1,0 +1,9 @@
+{"type": "thread.started", "thread_id": "01a0e399-4195-7881-a4a7-b23674d0aa40"}
+{"type": "item.completed", "item": {"id": "item_0", "type": "error", "message": "Codex is ignoring 1 unrecognized configuration setting. Check for typos or deprecated settings.\n  user (/home/user/.codex/config.toml): `wire_api` is ignored."}}
+{"type": "item.completed", "item": {"id": "item_1", "type": "error", "message": "Codex is ignoring 1 unrecognized configuration setting. Check for typos or deprecated settings.\n  user (/home/user/.codex/config.toml): `wire_api` is ignored."}}
+{"type": "turn.started"}
+{"type": "item.completed", "item": {"id": "item_2", "type": "agent_message", "text": "I’ll run `echo hi`.\n"}}
+{"type": "item.started", "item": {"id": "item_3", "type": "command_execution", "command": "/bin/zsh -lc 'echo hi'", "aggregated_output": "", "exit_code": null, "status": "in_progress"}}
+{"type": "item.completed", "item": {"id": "item_3", "type": "command_execution", "command": "/bin/zsh -lc 'echo hi'", "aggregated_output": "hi\n", "exit_code": 0, "status": "completed"}}
+{"type": "item.completed", "item": {"id": "item_4", "type": "agent_message", "text": "done"}}
+{"type": "turn.completed", "usage": {"input_tokens": 36774, "cached_input_tokens": 24320, "cache_write_input_tokens": 0, "output_tokens": 46, "reasoning_output_tokens": 0}}

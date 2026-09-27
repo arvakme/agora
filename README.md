@@ -172,7 +172,7 @@ claim（`one-of-us` 任务锁）的正常释放有两条路：赢家回复落地
 
 ## Workbench（Excalidraw 画布）
 
-`web/` 是单机的 Excalidraw 协作工作台（Phase 1，迁自 `agora-spikes/excalidraw`）：打开示例架构图、在元素上挂评论、「交给 Agent」把评论变成画布改动、会话面板里看流式轨迹、一键撤销；素材库搜索插入现成组件（Kafka / Redis 等约 6k 件）；算法动画按脚本播放。一个项目一个 Agora：数据存在项目根目录的 `.agora/`（画布、评论可提交，会话记录默认不提交），格式与命令见 [web/docs/project-storage.md](web/docs/project-storage.md)。
+`web/` 是单机的 Excalidraw 协作工作台（Phase 1，迁自 `agora-spikes/excalidraw`）：打开示例架构图、在元素上挂评论、「交给 Agent」把评论变成画布改动、会话面板里看流式轨迹、一键撤销；素材库搜索插入现成组件（Kafka / Redis 等约 6k 件）；算法动画按脚本播放。一个项目一个 Agora：数据存在项目根目录的 `.agora/`（画布、评论可提交，会话记录默认不提交），格式与命令见 [web/docs/project-storage.md](web/docs/project-storage.md)。会话就是用户自选的 Pi / Claude Code / Codex 原生会话，画布能力由 `skills/agora-canvas` 提供，可在终端打开并双向同步，见 [web/docs/agent-sessions.md](web/docs/agent-sessions.md)。
 
 ```bash
 uv sync && (cd web && npm ci && npm run build)

@@ -12,7 +12,8 @@
   workspace.json           画布与会话清单（含已关闭）、tab、分屏    提交
   canvases/<id>.excalidraw Excalidraw 原生场景                提交
   threads/<canvasId>.json  这块画布的评论线程                   提交
-  sessions/<id>.jsonl      会话记录，追加写                     不提交
+  sessions/<id>.jsonl      会话里的画布修改（含撤销数据），追加写   不提交
+  sessions/<id>.agent.json 会话绑定的 agent / 模型 / 强度 / 原生 id  不提交
   run/                     server.json（pid、端口、URL）、日志、锁  不提交
   .gitignore               由 agora 生成：sessions/ run/ *.tmp *.lock
 ```
@@ -31,14 +32,13 @@ name = "my-service"    # 默认取目录名，显示在顶栏和标签页标题
 [server]
 port = 0               # 首选端口；0 = 每次 up 自动选空闲端口（实际端口见 run/server.json）
 
-[agent]                # 这个项目里 AI 改图的默认执行参数；AGORA_CANVAS_* 环境变量优先
+[agent]                # 结构化规划改图（评测基线 /api/canvas/turns）的执行参数；AGORA_CANVAS_* 环境变量优先
 backend = "claude-cli"
 model = "claude-sonnet-5"
 effort = ""            # low | medium | high | xhigh | max；空 = 后端默认
-
-[pi]
-session_id = ""        # 预留：这个项目绑定的 Pi 会话
 ```
+
+会话用哪个 agent 不在这里配置：每个会话创建时自己选定，存在 `sessions/<id>.agent.json`（见 [Agent 会话](agent-sessions.md)）。旧配置里的 `[pi] session_id` 已不再使用，留着无害。
 
 ### canvases/<id>.excalidraw
 
@@ -75,6 +75,10 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
 - 本机用户：`git config user.email` 有值时 id 为 `mailto:<email>`，否则 `local:<登录名>`；显示名取 `git config user.name`，没有就用登录名。由服务端在 `/api/project` 的 `me` 里给出。
 - Agent 回复用 `turnId` 指向会话里的那一轮；会话记录不提交时，别人克隆后看得到回复文字，看不到那一轮的步骤。
 - 线程是否正在等 Agent（内存里的 `agent: running`）不落盘。
+
+### sessions/<id>.agent.json
+
+`{ "agent": "claude", "model": "sonnet", "effort": "", "nativeId": "…uuid…", "createdAt": … }`。只由服务端写，选定后不可改（不同选择返回 409），`nativeId` 只能从空设一次。对话本身在 CLI 自己的会话日志里，Agora 跟随读取，不复制。
 
 ### sessions/<id>.jsonl
 
