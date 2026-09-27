@@ -15,7 +15,8 @@
   sessions/<id>.jsonl      会话里的画布修改（含撤销数据），追加写   不提交
   sessions/<id>.agent.json 会话绑定的 agent / 模型 / 强度 / 原生 id  不提交
   run/                     server.json（pid、端口、URL）、日志、锁、usage/（无头续接的用量）  不提交
-  .gitignore               由 agora 生成：sessions/ run/ *.tmp *.lock
+  shares/shares.json       分享记录（令牌只存哈希，见 [分享](sharing.md)），目录自带 `*` 的 .gitignore  不提交
+  .gitignore               由 agora 生成：sessions/ run/ shares/ *.tmp *.lock
 ```
 
 `.gitignore` 只在不存在时生成，之后归用户管；想提交会话记录就删掉 `sessions/` 那一行。
@@ -120,6 +121,8 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
 | GET | `/health` | `{ok, root, pid}`，`agora up` 用来确认端口上是不是这个项目 |
 | GET | `/snapshot` | 全部内容与版本：workspace、canvases（scene + threads）、sessions（折叠后） |
 | PUT | `/workspace`、`/canvases/{id}`、`/threads/{id}` | `{data, base, force?}` → `{version}` 或 409 |
+| POST | `/threads/{id}/merge` | `{data}` → `{version, data}`：按 id 合并进磁盘上的线程文件，从不 409。页面保存线程走这个（分享访客会同时写同一个文件，见 [分享 §4](sharing.md#4-两方同时写评论按操作合并)） |
+| GET | `/events` | SSE：`threads`（别人写入后的整份线程文件与版本）、`shares`（分享列表变了） |
 | DELETE | `/canvases/{id}` | 同时删它的 threads |
 | POST | `/sessions/{id}/append` | `{records, base, force?}` |
 | PUT / DELETE | `/sessions/{id}` | 整份重写 / 删除 |
@@ -153,12 +156,6 @@ IndexedDB 按 origin 隔离：旧数据在哪个地址存的，就要从那个�
 cd my-project && path/to/agora/bin/agora open --dev --web-port 5181
 ```
 
-## 6. 分享预留（本次不实现）
+## 6. 分享
 
-以后要让别人通过链接加入某块画布，主要是看和评论（指出哪里要改）。格式已经为此留好位置，分享不需要新的存储：
-
-- **身份**：访客加入时给自己一个显示名，服务端给他一个 id（例如 `guest:<随机>`，或登录后的 `mailto:`）。他的评论和回复与本机用户完全同构：`author: "human"` + `by: {id, name}`，写进同一个 `threads/<canvasId>.json`；`participants` 自然包含他。现有线程不需要迁移。
-- **权限**：访客只读画布、workspace 和会话；能写的只有评论线程（新线程、回复、标记解决）。服务端据此只对访客开放 `GET /snapshot`（去掉 sessions 与 config）和线程的写接口，画布写接口对访客返回 403。「交给 Agent」和会话仍只属于项目主人。
-- **写入冲突**：访客和主人同时评论同一画布时，线程文件会被两方写。现在的整文件 CAS 在这种场景会频繁冲突，所以分享时线程写入改成**按操作提交**：客户端发「新建线程 / 追加消息 / 改 resolved」这样的操作（带消息 id），服务端在锁内读最新文件、应用操作、原子写回。追加消息和新建线程天然可合并（按 id 去重，`n` 由服务端按 `seq` 分配）；同一线程的 resolved 以后到者为准。这样访客之间、访客与主人之间不会互相覆盖，也不用弹冲突提示。画布本身访客不写，仍是主人单写、整文件 CAS。
-- **推送**：多人同时在线需要把别人的新评论推到页面上（SSE：线程文件变化 → 推送新版本），这也会顺带解决「外部改动要等下次写入才发现」的问题。
-- **提交**：访客评论落在可提交的线程文件里，主人照常 review 与提交；是否把访客身份（显示名）写进 git 由主人决定，必要时可只存 id、在 `config.toml` 里维护 id → 名字的映射。
+已实现，见 [分享](sharing.md)：访客身份 `guest:<随机>` 与本机用户同构写进同一个线程文件；访客只读画布、只写评论（新线程、回复）；线程写入改成服务端按操作 / 按 id 合并；访客的新评论经 SSE 推到作者页。和当初预留的差别：访客不能标记解决（改由作者决定）；访客拿不到 workspace 和会话，只拿到被分享的那一块画布。

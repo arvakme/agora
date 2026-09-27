@@ -208,6 +208,8 @@ textarea { font: inherit; color: inherit; resize: none; border: 0; outline: 0; b
 }
 .avatar[data-who="agent"] { background: #eeeeee; color: #1c1c1c; }
 .avatar[data-who="system"] { background: #3a3a3a; color: var(--card-ink-2); }
+.avatar[data-other="true"] { background: #3d3550; color: var(--pin); }
+.tguest { font-size: 10.5px; padding: 0 6px; border-radius: 999px; background: #ffffff14; color: var(--card-ink-2); }
 .avatar[data-spinning="true"] svg { animation: spin 1.6s linear infinite; }
 .shimmer { font-size: 13px; color: var(--card-ink-2); }
 .tchanges { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--card-line); }

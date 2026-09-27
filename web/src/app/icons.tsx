@@ -3,6 +3,10 @@ import {
   CodeIcon,
   CopyIcon,
   CpuIcon,
+  ExternalLinkIcon,
+  EyeIcon,
+  LockIcon,
+  UserIcon,
   FileIcon,
   GaugeIcon,
   HintIcon,
@@ -72,6 +76,10 @@ export const DI = {
   history: dither(HistoryIcon as DitherComponent),
   search: dither(SearchIcon as DitherComponent),
   file: dither(FileIcon as DitherComponent),
+  share: dither(ExternalLinkIcon as DitherComponent),
+  eye: dither(EyeIcon as DitherComponent),
+  lock: dither(LockIcon as DitherComponent),
+  user: dither(UserIcon as DitherComponent),
 };
 /** Structural chevron (not in Dither Icons): drawn here so it goes through the facade (1.5 stroke, accent). */
 export const DChevron = ({ size = 12, open = false }: { size?: number; open?: boolean }) => (

@@ -11,7 +11,9 @@ export type Op =
   | { kind: "put"; path: string; data: unknown }
   | { kind: "append"; path: string; records: unknown[] }
   | { kind: "replace"; path: string; records: unknown[] }
-  | { kind: "delete"; path: string };
+  | { kind: "delete"; path: string }
+  /** Server-side merge (threads: the owner's page and share guests write the same file). Never conflicts. */
+  | { kind: "merge"; path: string; data: unknown };
 
 export type Pending = {
   op: Op;
@@ -37,9 +39,11 @@ export function createClient({ base = "/api/project", fetchImpl = (u, i) => fetc
 
   async function send(slot: string, op: Op, force: boolean): Promise<"ok" | "conflict"> {
     const baseVersion = versions.get(slot) ?? null;
-    const method = op.kind === "put" || op.kind === "replace" ? "PUT" : op.kind === "append" ? "POST" : "DELETE";
+    const method = op.kind === "put" || op.kind === "replace" ? "PUT" : op.kind === "append" || op.kind === "merge" ? "POST" : "DELETE";
     const body =
-      op.kind === "delete" ? undefined : JSON.stringify(op.kind === "put" ? { data: op.data, base: baseVersion, force } : { records: op.records, base: baseVersion, force });
+      op.kind === "delete"
+        ? undefined
+        : JSON.stringify(op.kind === "merge" ? { data: op.data } : op.kind === "put" ? { data: op.data, base: baseVersion, force } : { records: op.records, base: baseVersion, force });
     for (;;) {
       let r: Response;
       try {

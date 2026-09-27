@@ -1,0 +1,56 @@
+/* Share guest page (GuestApp.tsx). Design system v0.2 tokens via .ds (app/tokens.css). */
+.guest-top {
+  flex: none; height: 44px; display: flex; align-items: center; gap: var(--space-4);
+  padding: 0 var(--space-6); background: var(--bg); border-bottom: 1px solid var(--line); min-width: 0;
+}
+.guest-brand { display: inline-flex; align-items: center; gap: var(--space-3); font-weight: var(--weight-strong); }
+.guest-title { font-weight: var(--weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.guest-project { color: var(--fg-subtle); font-size: var(--text-sm); white-space: nowrap; }
+.guest-gap { flex: 1; }
+.guest-note { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--fg-muted); font-size: var(--text-sm); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.guest-note .ds-icon { color: var(--accent); }
+.guest-name {
+  display: inline-flex; align-items: center; gap: var(--space-3); height: var(--control-md); padding: 0 var(--space-5);
+  border-radius: var(--r-pill); background: var(--well); color: var(--fg-muted); font-size: var(--text-sm);
+  max-width: 180px; overflow: hidden; white-space: nowrap; transition: background var(--dur-tap) var(--ease-out);
+}
+.guest-name:hover { background: var(--line-strong); color: var(--fg); }
+.guest-name .ds-icon { color: var(--accent); flex: none; }
+.guest-canvas { position: relative; flex: 1; min-height: 0; }
+.guest-canvas .canvas-view { position: absolute; inset: 0; }
+.guest .dock { padding: 5px 6px; }
+
+.guest-toast {
+  position: fixed; left: 50%; bottom: 76px; translate: -50% 0; z-index: 40; padding: var(--space-4) var(--space-6);
+  border-radius: var(--r-xl); background: var(--surface); color: var(--fg); box-shadow: var(--edge), var(--lift-3); font-size: var(--text-sm);
+}
+.guest-scrim { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: var(--scrim); padding: var(--space-6); }
+.guest-dialog {
+  width: min(380px, 100%); padding: var(--space-7); border-radius: var(--r-xl); background: var(--surface);
+  box-shadow: var(--edge), var(--lift-3); display: grid; gap: var(--space-5);
+}
+.guest-dialog h2 { margin: 0; font-size: var(--text-lg); font-weight: var(--weight-strong); letter-spacing: var(--track-title); }
+.guest-dialog p { margin: 0; color: var(--fg-muted); line-height: var(--leading-read); }
+.guest-dialog label { display: grid; gap: var(--space-3); font-size: var(--text-sm); color: var(--fg-muted); }
+.guest-dialog input {
+  height: var(--control-lg); padding: 0 var(--space-5); border: 0; border-radius: var(--r-sm);
+  background: var(--well); color: var(--fg); font: inherit; font-size: var(--text-md);
+}
+.guest-dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-4); }
+.guest-btn { height: var(--control-lg); padding: 0 var(--space-6); border-radius: var(--r-pill); font-size: var(--text-md); font-weight: var(--weight-medium); transition: background var(--dur-tap) var(--ease-out); }
+.guest-btn.quiet { background: var(--well); color: var(--fg); }
+.guest-btn.quiet:hover { background: var(--line-strong); }
+.guest-btn.primary { background: var(--accent-fill); color: var(--accent-fg); }
+.guest-btn.primary:hover:not(:disabled) { background: var(--accent-fill-hover); }
+.guest-btn.primary:disabled { opacity: 0.45; }
+
+.guest-ended { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); padding: var(--space-6);
+  background-image: radial-gradient(circle, var(--accent) 0.9px, transparent 1px); background-size: 7px 7px; }
+.guest-ended main { max-width: 360px; padding: var(--space-7) var(--space-8); background: var(--bg); box-shadow: 0 0 0 32px var(--bg); }
+.guest-ended h1 { margin: 0 0 var(--space-4); font-size: var(--text-xl); font-weight: var(--weight-strong); }
+.guest-ended p { margin: 0; color: var(--fg-muted); line-height: var(--leading-read); }
+
+@media (max-width: 640px) {
+  .guest-project, .guest-note { display: none; }
+  .guest-top { padding: 0 var(--space-5); }
+}

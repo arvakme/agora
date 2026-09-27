@@ -48,9 +48,11 @@ type Props = {
   initialElements?: readonly El[];
   /** Called when the scene's elements change (persistence). */
   onScene?: (elements: readonly El[]) => void;
+  /** Share guests: look and comment only — no editing, asset library, animations or progress pointer. */
+  readOnly?: boolean;
 };
 
-export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelection, onModeDone, initialElements, onScene }: Props) {
+export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelection, onModeDone, initialElements, onScene, readOnly }: Props) {
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [view, setView] = useState<CanvasViewState | null>(null);
   // Parent callbacks are recreated every render; read the latest through a ref so
@@ -106,7 +108,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
         return;
       }
       const a = p.appState;
-      maybeInstallLibrary(api, a.openSidebar);
+      if (!readOnly) maybeInstallLibrary(api, a.openSidebar);
       // Keep the view centred while the pane glides/resizes (Excalidraw anchors top-left).
       const prev = lastSize.current;
       lastSize.current = { w: a.width, h: a.height };
@@ -172,16 +174,19 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
         excalidrawAPI={setApi}
         initialData={initialData}
         onChange={onChange as never}
-        UIOptions={{ canvasActions: { loadScene: false, export: false, saveAsImage: false } }}
+        viewModeEnabled={readOnly}
+        UIOptions={{ canvasActions: { loadScene: false, export: false, saveAsImage: false, ...(readOnly && { clearCanvas: false, toggleTheme: false, saveToActiveFile: false }) } }}
       >
-        <DefaultSidebar>
-          <DefaultSidebar.TabTriggers>
-            <Sidebar.TabTrigger tab="agora-assets" title="内置素材库"><IconAssets size={16} /></Sidebar.TabTrigger>
-          </DefaultSidebar.TabTriggers>
-          <Sidebar.Tab tab="agora-assets">{api && <AssetBrowser api={api} />}</Sidebar.Tab>
-        </DefaultSidebar>
+        {!readOnly && (
+          <DefaultSidebar>
+            <DefaultSidebar.TabTriggers>
+              <Sidebar.TabTrigger tab="agora-assets" title="内置素材库"><IconAssets size={16} /></Sidebar.TabTrigger>
+            </DefaultSidebar.TabTriggers>
+            <Sidebar.Tab tab="agora-assets">{api && <AssetBrowser api={api} />}</Sidebar.Tab>
+          </DefaultSidebar>
+        )}
       </Excalidraw>
-      {api && <AnimLayer api={api} />}
+      {api && !readOnly && <AnimLayer api={api} />}
       {hasParked && !draft && <div className="parked-hint">有一条未发送的评论 · 按 C 恢复</div>}
       {api && view && (
         <>
@@ -197,8 +202,8 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
             }}
             onCreated={onModeDone}
           />
-          <HighlightLayer canvasId={doc.id} view={view} />
-          <PointerLayer api={api} view={view} />
+          {!readOnly && <HighlightLayer canvasId={doc.id} view={view} />}
+          {!readOnly && <PointerLayer api={api} view={view} />}
           <CommentsDrawer title={doc.title} api={api} store={doc.store} view={view} open={drawerOpen} onClose={() => onDrawer(false)} />
         </>
       )}
