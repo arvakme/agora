@@ -2,6 +2,7 @@
 // a human summary for the thread, and what is needed to undo exactly this batch.
 import { caption, instantiate, libraryMembers, type LibraryItem } from "../library/libraryInsert";
 import type { Op, Plan } from "./ops";
+import { clearSpot, obstaclesFor } from "../canvas/spacing";
 import {
   arrowsOf,
   boundText,
@@ -137,19 +138,24 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
         break;
       }
       case "add_shape": {
+        const width = o.width ?? NODE_SIZE.width, height = o.height ?? NODE_SIZE.height;
+        // Same spacing rule as library components: never on top of, or within MIN_GAP of,
+        // another node / component / frame border — nudged to the nearest clear spot.
+        const at = clearSpot({ x: o.x, y: o.y, w: width, h: height }, obstaclesFor(work.values(), { frameId: o.frameId ?? null }), ["below", "right", "left", "above"]);
         const els = buildShape({
           id: o.ref,
           shape: o.shape,
-          x: o.x,
-          y: o.y,
-          width: o.width ?? NODE_SIZE.width,
-          height: o.height ?? NODE_SIZE.height,
+          x: at.x,
+          y: at.y,
+          width,
+          height,
           label: o.text,
           base: { frameId: o.frameId ?? null },
         });
         for (const e of els) put({ ...e, frameId: o.frameId ?? null } as El);
         geometryChanged.add(o.ref);
-        summary.push(`新增 ${o.text}${o.frameId ? `（在 ${name(o.frameId)} 内）` : ""}`);
+        const moved = at.x !== o.x || at.y !== o.y ? `（为留出间距移到 (${Math.round(at.x)}, ${Math.round(at.y)})）` : "";
+        summary.push(`新增 ${o.text}${o.frameId ? `（在 ${name(o.frameId)} 内）` : ""}${moved}`);
         break;
       }
       case "add_arrow": {

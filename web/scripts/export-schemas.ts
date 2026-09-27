@@ -12,14 +12,6 @@ mkdirSync(OUT, { recursive: true });
 const schemas: Record<string, unknown> = {
   "plan.schema.json": PLAN_SCHEMA,
   "anim.schema.json": animJsonSchema(),
-  // canvas-engine-pick rule 6 (unsure, tldraw available): the same generation call also
-  // returns `engine`, so choosing never costs an extra model call.
-  "anim-ask.schema.json": {
-    type: "object",
-    additionalProperties: false,
-    required: ["script", "engine"],
-    properties: { script: animJsonSchema(), engine: { enum: ["excalidraw", "tldraw"] } },
-  },
 };
 for (const [name, schema] of Object.entries(schemas)) {
   writeFileSync(join(OUT, name), JSON.stringify(schema, null, 1) + "\n");

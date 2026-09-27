@@ -180,7 +180,7 @@ uv run uvicorn server.main:app --port 8000   # FastAPI，挂载 /api/canvas
 cd web && npm ci && npm run dev              # http://localhost:5181
 ```
 
-- 改图走一次性 `claude -p`（`server/canvas/runner.py` 起子进程，`OneShotRunner` 是执行器接口；阶段 3 再换本机宿主）。需要本机 `claude` 已登录；不可用或未认证时 API 返回明确的 `error` result 事件，不会静默返回空操作。
+- 模型调用经 `server/canvas/runner.py` 的 `AgentBackend` 接口（backend + model + effort + session，统一事件流与 usage：输入/输出/缓存 token、耗时、花费、模型名，随 SSE `usage` 事件和 `result.usage` 下发）。目前唯一的后端是一次性 `claude -p`（在空的临时目录里起子进程，不继承仓库的 git/项目上下文）；`AGORA_CANVAS_BACKEND` / `AGORA_CANVAS_MODEL` / `AGORA_CANVAS_EFFORT` 可覆盖默认。需要本机 `claude` 已登录；不可用或未认证时 API 返回明确的 `error` result 事件，不会静默返回空操作。
 - `POST /api/canvas/turns`（SSE `data:` 帧）把冻结的评论上下文交给模型；模型只能输出 `web/src/ops/ops.ts` 定义的 typed ops，后端先过 JSON Schema（`web/generated/`），前端再过引用与新鲜度检查，应用是一次可撤销批。
 - `POST /api/canvas/anim` 生成动画脚本；`GET /api/canvas/library/{search,item,libs}` 服务素材库，`python -m server.canvas.library_mcp` 同时把它暴露为 MCP 工具给规划调用。
 - 素材库是 vendored 资产（`web/libraries/`，35 MB，来源/许可见其内 `SOURCES.md`/`NOTICE.md`）；重建走 `npm run libraries:fetch`，验收用 `--check` 校验 sha256。

@@ -1,5 +1,4 @@
 // Engine-agnostic player bar (komo dark toolbar language), pinned under its region on the canvas.
-// Copied verbatim into the tldraw spike.
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { SPEEDS, type AnimController, type ViewRect } from "./player.ts";
 

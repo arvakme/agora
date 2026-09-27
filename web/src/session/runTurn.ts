@@ -9,9 +9,8 @@ import { freeze, staleIds, type FrozenContext, type Request } from "../canvas/co
 import type { LibraryItem } from "../library/libraryInsert";
 import { referencedIds, validatePlan, type Op } from "../ops/ops";
 import { byId, isArrow, isShape, libraryMeta, live, nameOf, type Scene } from "../canvas/scene";
-import { sessions, type Origin, type Turn } from "./store";
-import { canvases } from "./ui";
-import { pickEngine, type EnginePick } from "../anim/enginePick";
+import { sessions, type Origin, type Turn, type Usage } from "./store";
+import { ENTITY_ASSETS, pickEngine, type EnginePick } from "../anim/enginePick";
 import { animHosts } from "../anim/AnimLayer";
 import { validateScript, type AnimScript } from "../anim/script";
 
@@ -27,10 +26,23 @@ export type AgentOutcome = {
   durationMs: number;
   batchId?: string;
   turnId: string;
+  /** Exact prompt the backend sent to the model (from the result event), for eval forensics. */
+  prompt?: string;
+  /** Token/cost/time accounting reported by the execution backend. */
+  usage?: Usage;
 };
 
 const all = (api: ExcalidrawImperativeAPI) => api.getSceneElementsIncludingDeleted() as Scene;
-const settle = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+/**
+ * Two animation frames — long enough for Excalidraw to re-measure bound text after
+ * updateScene. rAF is paused in a hidden tab, so a 1s timer caps the wait there instead
+ * of holding the turn open until the person comes back.
+ */
+const settle = (capMs = 1000) =>
+  new Promise<void>((r) => {
+    const t = setTimeout(r, capMs);
+    requestAnimationFrame(() => requestAnimationFrame(() => (clearTimeout(t), r())));
+  });
 const WORKERS: Record<string, string> = { claude: "Claude Code", codex: "Codex", kimi: "Kimi" };
 
 export const sceneIndex = (scene: Scene) => {
@@ -73,16 +85,15 @@ export async function runTurn(input: {
   });
   const base = { ctx, ops: null, errors: [], stale: [], summary: [], costUsd: null, durationMs: 0, turnId: T };
 
-  // canvas-engine-pick: rule lookup, shown as one step (no model call).
-  const pick = await engineStep(T, input.text, input.canvasId);
-  if (pick.kind === "animation" && animHosts.has(api)) return runAnimation(api, T, input.text, pick, base);
+  const pick = await engineStep(T, input.text);
+  if (pick.kind === "animation" && animHosts.has(api)) return runAnimation(api, T, input.text, base);
 
   // @worker mentions: data + UI only this round; real dispatch will go through Seedmux.
   for (const m of input.mentions ?? [])
     if (WORKERS[m]) sessions.step(T, { kind: "dispatch", title: `派发给 ${WORKERS[m]}`, detail: "未接入：真实派发将经 Seedmux 投递给 worker 会话；本轮由 Pi Master 直接处理", status: "skipped", endedAt: Date.now() });
 
   // 2. Plan: stream the model's steps.
-  type Res = { raw: unknown; costUsd: number | null; durationMs: number; error?: string };
+  type Res = { raw: unknown; costUsd: number | null; durationMs: number; error?: string; prompt?: string; usage?: Usage };
   let res: Res | null = null;
   let open: string | null = null;
   const tools = new Map<string, string>();
@@ -134,6 +145,7 @@ export async function runTurn(input: {
           open = sessions.step(T, { kind: "plan", title: "生成操作", startedAt: e.at });
         } else if (e.t === "result") {
           res = e;
+          if (e.usage) sessions.patchTurn(T, (t) => ({ ...t, usage: [...(t.usage ?? []), e.usage as Usage] }));
           const ops = ((e.raw as { ops?: Op[] })?.ops ?? []) as Op[];
           close(e.at, e.error ? { status: "error", detail: e.error } : { title: `生成 ${ops.length} 个操作`, ops: ops.map((o) => ({ op: o.op, target: opTarget(o) })) });
         }
@@ -151,7 +163,7 @@ export async function runTurn(input: {
     return { ...base, status: "error", errors: [msg], costUsd: done?.costUsd ?? null, durationMs: done?.durationMs ?? 0 };
   }
   sessions.patchTurn(T, (t) => ({ ...t, costUsd: done.costUsd }));
-  const withCost = { ...base, costUsd: done.costUsd, durationMs: done.durationMs };
+  const withCost = { ...base, costUsd: done.costUsd, durationMs: done.durationMs, prompt: done.prompt, usage: done.usage };
 
   // 3. Check: library items exist, schema + references, freshness.
   const check = sessions.step(T, { kind: "check", title: "校验 + 新鲜度" });
@@ -232,29 +244,28 @@ async function fetchLibraryItems(raw: unknown): Promise<Map<string, LibraryItem>
   return new Map(found.filter((x): x is LibraryItem => !!x).map((x) => [x.id, x]));
 }
 
-const TLDRAW_AVAILABLE = Boolean(import.meta.env.VITE_TLDRAW_LICENSE_KEY);
-const ENTITY = /图标|素材|logo|插图|icon|asset/i;
-
-async function engineStep(T: string, request: string, canvasId: string): Promise<EnginePick> {
-  const id = sessions.step(T, { kind: "engine", title: "选择引擎" });
-  let libraryHits = 0;
-  if (ENTITY.test(request)) {
-    const r = await fetch(`/api/canvas/library/search?q=${encodeURIComponent(request)}&limit=3`).catch(() => null);
-    libraryHits = r?.ok ? (((await r.json()) as { items?: unknown[] }).items ?? []).length : 0;
-  }
-  const pick = pickEngine({ request, existingEngine: "excalidraw", canvasTitle: canvases.get(canvasId)?.title, tldrawAvailable: TLDRAW_AVAILABLE, libraryHits });
-  sessions.endStep(T, id, { title: `已选 ${pick.engine === "excalidraw" ? "Excalidraw" : "tldraw"}`, detail: `${pick.reason}（规则 ${pick.rule}）` });
+/**
+ * Rule lookup before planning (no model call). Excalidraw is the only engine, so the
+ * session shows this step only when the request raises the asset-library question.
+ */
+async function engineStep(T: string, request: string): Promise<EnginePick> {
+  if (!ENTITY_ASSETS.test(request)) return pickEngine({ request, libraryHits: 0 });
+  const id = sessions.step(T, { kind: "engine", title: "素材库" });
+  const r = await fetch(`/api/canvas/library/search?q=${encodeURIComponent(request)}&limit=3`).catch(() => null);
+  const libraryHits = r?.ok ? (((await r.json()) as { items?: unknown[] }).items ?? []).length : 0;
+  const pick = pickEngine({ request, libraryHits });
+  sessions.endStep(T, id, { title: pick.useAssets ? "素材库：可用" : "素材库：不用", detail: pick.reason });
   return pick;
 }
 
 /** Animation turn: generate a script (one repair retry), validate it, mount the player. */
-async function runAnimation(api: ExcalidrawImperativeAPI, T: string, request: string, pick: EnginePick, base: Omit<AgentOutcome, "status">): Promise<AgentOutcome> {
+async function runAnimation(api: ExcalidrawImperativeAPI, T: string, request: string, base: Omit<AgentOutcome, "status">): Promise<AgentOutcome> {
   let errors: string[] = [], cost = 0, ms = 0, script: AnimScript | undefined;
   const end = (status: Turn["status"], reply: Turn["reply"]) => sessions.patchTurn(T, (t) => ({ ...t, status, reply, costUsd: cost, endedAt: Date.now() }));
   for (let attempt = 1; attempt <= 2 && !script; attempt++) {
     const gen = sessions.step(T, { kind: "think", title: attempt === 1 ? "生成动画脚本" : "按校验意见修正脚本" });
-    const r = await fetch("/api/canvas/anim", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request, errors, askEngine: pick.askModel }) });
-    const res = (await r.json()) as { raw: unknown; costUsd: number | null; durationMs: number; error?: string; engine?: string };
+    const r = await fetch("/api/canvas/anim", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request, errors }) });
+    const res = (await r.json()) as { raw: unknown; costUsd: number | null; durationMs: number; error?: string; usage?: Usage };
     cost += res.costUsd ?? 0;
     ms += res.durationMs ?? 0;
     sessions.patchTurn(T, (t) => ({ ...t, costUsd: cost }));
@@ -263,7 +274,8 @@ async function runAnimation(api: ExcalidrawImperativeAPI, T: string, request: st
       end("error", { text: `模型没有返回可用脚本：${res.error ?? r.statusText}`, tone: "error" });
       return { ...base, status: "error", errors: [res.error ?? ""], costUsd: cost, durationMs: ms };
     }
-    sessions.endStep(T, gen, { detail: `${((res.durationMs ?? 0) / 1000).toFixed(1)}s · $${(res.costUsd ?? 0).toFixed(4)}${res.engine ? ` · 模型建议引擎 ${res.engine}` : ""}` });
+    if (res.usage) sessions.patchTurn(T, (t) => ({ ...t, usage: [...(t.usage ?? []), res.usage!] }));
+    sessions.endStep(T, gen, { detail: `${((res.durationMs ?? 0) / 1000).toFixed(1)}s · $${(res.costUsd ?? 0).toFixed(4)}` });
     const check = sessions.step(T, { kind: "check", title: "校验动画脚本" });
     const v = validateScript(res.raw);
     if (v.script) {
@@ -280,12 +292,15 @@ async function runAnimation(api: ExcalidrawImperativeAPI, T: string, request: st
   }
   const mount = sessions.step(T, { kind: "apply", title: "挂载播放器" });
   const before = new Set(api.getSceneElementsIncludingDeleted().map((e) => e.id));
+  // mount() is one synchronous updateScene, so the new elements are readable right away.
+  // No rAF wait here: requestAnimationFrame is paused while the tab is hidden, and people
+  // switch away during the minute-long script generation — the old settle() kept this
+  // step open until they came back (a 1m38s "mount").
   animHosts.get(api)!(script);
-  await settle();
   const added = api.getSceneElements().filter((e) => !before.has(e.id));
   const region = added.filter((e) => e.type !== "text").map((e) => e.id);
   if (added.length) api.scrollToContent(added, { fitToContent: true, animate: true });
   sessions.endStep(T, mount, { detail: `区域「${script.title}」· ${script.nodes.length} 个元素 · ${script.steps.length} 步 · 播放器在区域下方`, elements: region });
-  end("applied", { text: `已生成动画「${script.title}」：${script.nodes.length} 个元素、${script.steps.length} 步，用区域下方的播放器播放。`, changes: [`新建动画区域「${script.title}」（${pick.engine === "excalidraw" ? "Excalidraw" : "tldraw"}）`] });
+  end("applied", { text: `已生成动画「${script.title}」：${script.nodes.length} 个元素、${script.steps.length} 步，用区域下方的播放器播放。`, changes: [`新建动画区域「${script.title}」`] });
   return { ...base, status: "applied", summary: [`动画「${script.title}」`], costUsd: cost, durationMs: ms };
 }

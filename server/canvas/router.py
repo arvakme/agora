@@ -4,8 +4,9 @@
 - ``POST /anim``         generates an animation script (JSON)
 - ``GET  /library/*``    asset library search/item/list (panel, executor, MCP parity)
 
-Everything model-shaped goes through ``OneShotRunner`` — phase 1 runs ``claude -p`` as a
-subprocess; a later phase swaps in the native host runner. The router holds no business
+Everything model-shaped goes through an ``AgentBackend`` (runner.py) chosen by
+``ExecOptions`` (backend/model/effort, env ``AGORA_CANVAS_*``) — today ``claude -p`` as a
+subprocess; the user's Pi runtime becomes another backend later. The router holds no business
 rules beyond request parsing; scoring/validation live in library.py / runner.py.
 
 This module also doubles as a standalone app for local development::
@@ -29,30 +30,36 @@ from server.canvas.library import Library
 from server.canvas.runner import (
     ANIM_SYSTEM,
     PLAN_SYSTEM,
-    ClaudeCliRunner,
-    OneShotRunner,
+    AgentBackend,
+    ExecOptions,
+    RunRequest,
     build_prompt,
     library_mcp_config,
+    make_backend,
 )
 
 
 def create_router(
     *,
-    runner: OneShotRunner | None = None,
+    backend: AgentBackend | None = None,
+    options: ExecOptions | None = None,
     library: Library | None = None,
 ) -> APIRouter:
-    """Wire the canvas endpoints. ``runner``/``library`` are injectable for tests."""
-    runner = runner or ClaudeCliRunner()
+    """Wire the canvas endpoints. ``backend``/``options``/``library`` are injectable for tests."""
+    options = options or ExecOptions.from_env()
+    backend = backend or make_backend(options.backend)
     library = library or Library()
     router = APIRouter()
 
     async def turn_events(ctx: dict[str, Any]):
-        async for ev in runner.run(
+        req = RunRequest(
             schema=schemas.load("plan.schema.json"),
             system=PLAN_SYSTEM,
             prompt=build_prompt(ctx),
             mcp_config=library_mcp_config(),
-        ):
+            options=options,
+        )
+        async for ev in backend.run(req):
             yield ev
 
     @router.post("/turns")
@@ -80,29 +87,25 @@ def create_router(
     @router.post("/anim")
     async def anim(request: Request):
         body = await request.json()
-        script_schema = schemas.load("anim.schema.json")
-        ask_engine = bool(body.get("askEngine"))
-        schema = schemas.load("anim-ask.schema.json") if ask_engine else script_schema
         prompt = str(body.get("request") or "")
         errors = body.get("errors") or []
         if errors:
             prompt += f"\n\nThe previous attempt failed validation; fix it. Errors: {json.dumps(errors)}"
+        req = RunRequest(schema=schemas.load("anim.schema.json"), system=ANIM_SYSTEM, prompt=prompt, options=options)
         result = None
-        async for ev in runner.run(schema=schema, system=ANIM_SYSTEM, prompt=prompt):
+        async for ev in backend.run(req):
             if ev["t"] == "result":
                 result = ev
         if result is None:
             return {"raw": None, "error": "no result event"}
-        out: dict[str, Any] = {"raw": result.get("raw"), "costUsd": result.get("costUsd"), "durationMs": result.get("durationMs")}
+        out: dict[str, Any] = {
+            "raw": result.get("raw"),
+            "costUsd": result.get("costUsd"),
+            "durationMs": result.get("durationMs"),
+            "usage": result.get("usage"),
+        }
         if result.get("error"):
             out["error"] = result["error"]
-            return out
-        engine = "excalidraw"
-        raw = result["raw"]
-        if isinstance(raw, dict) and "engine" in raw:
-            engine = "tldraw" if raw.get("engine") == "tldraw" else "excalidraw"
-            raw = raw.get("script")
-        out["raw"], out["engine"] = raw, engine
         return out
 
     @router.get("/library/search")

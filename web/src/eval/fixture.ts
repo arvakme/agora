@@ -1,4 +1,4 @@
-// The shared logical fixture (same nodes/edges as the tldraw spike), laid out for Excalidraw.
+// The eval fixture: a small architecture diagram laid out for Excalidraw.
 import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
 import { buildArrow, buildShape, byId, NODE_SIZE, type El, type ShapeKind } from "../canvas/scene";
 

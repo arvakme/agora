@@ -29,7 +29,16 @@ const only = opt("tasks")
   .map((t) => `T${t.replace(/\D/g, "")}`);
 
 const procs: ChildProcess[] = [];
-const cleanup = () => procs.forEach((p) => p.kill("SIGTERM"));
+// Children run in their own process group (detached) so cleanup reaches the real server
+// under the npx/uv wrapper; killing only the wrapper left vite orphaned on the port.
+const cleanup = () =>
+  procs.forEach((p) => {
+    try {
+      process.kill(-p.pid!, "SIGTERM");
+    } catch {
+      p.kill("SIGTERM");
+    }
+  });
 process.on("SIGINT", () => (cleanup(), process.exit(130)));
 
 async function waitFor(url: string, ms = 30_000): Promise<boolean> {
@@ -47,7 +56,7 @@ async function waitFor(url: string, ms = 30_000): Promise<boolean> {
 async function ensureBackend(): Promise<boolean> {
   if (await waitFor(`${API}/api/canvas/library/libs`, 3000)) return true;
   console.log(`canvas backend not on ${API}; starting uvicorn server.canvas.router:app …`);
-  procs.push(spawn("uv", ["run", "uvicorn", "server.canvas.router:app", "--port", new URL(API).port || "8000"], { cwd: ROOT, stdio: ["ignore", "pipe", "inherit"] }));
+  procs.push(spawn("uv", ["run", "uvicorn", "server.canvas.router:app", "--port", new URL(API).port || "8000"], { cwd: ROOT, stdio: ["ignore", "pipe", "inherit"], detached: true }));
   return waitFor(`${API}/api/canvas/library/libs`, 60_000);
 }
 
@@ -58,7 +67,7 @@ if (!apiUp) {
   process.exit(2);
 }
 console.log(`starting vite dev on :${PORT} …`);
-procs.push(spawn("npx", ["vite", "--port", String(PORT), "--strictPort"], { cwd: WEB, stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, AGORA_API_ORIGIN: API } }));
+procs.push(spawn("npx", ["vite", "--port", String(PORT), "--strictPort"], { cwd: WEB, stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, AGORA_API_ORIGIN: API }, detached: true }));
 if (!(await waitFor(`http://localhost:${PORT}/`))) {
   console.error("vite dev server did not come up");
   cleanup();
@@ -87,7 +96,7 @@ await browser.close();
 cleanup();
 
 // Regenerate eval/latest-report.md from this run.
-const report = spawn("node", [join(WEB, "scripts/eval-report.ts"), file], { cwd: WEB, stdio: ["ignore", "pipe", "inherit"] });
+const report = spawn("node", [join(WEB, "scripts/eval-report.ts"), file], { cwd: WEB, stdio: ["ignore", "pipe", "inherit"], detached: true });
 let md = "";
 report.stdout!.on("data", (d) => (md += d));
 await new Promise((r) => report.on("close", r));
