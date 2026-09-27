@@ -144,11 +144,11 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
       },
       dismissDraft: () => dismissDraft(false),
       animate: (script) => animHosts.get(api)?.(script),
+      // Clear to a blank canvas as one undoable step (⌘Z brings it back). Comment threads stay;
+      // their anchors show as deleted, the same as deleting those elements by hand.
       reset() {
-        api.updateScene({ elements: buildFixture(), appState: { selectedElementIds: {} }, captureUpdate: CaptureUpdateAction.NEVER });
-        api.history.clear();
-        fit(api);
-        doc.store.reset();
+        const cleared = api.getSceneElements().map((el) => ({ ...el, isDeleted: true, version: el.version + 1, versionNonce: Math.floor(Math.random() * 2 ** 31) }));
+        api.updateScene({ elements: cleared, appState: { selectedElementIds: {} }, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
         setDraft(null);
         parked.current = null;
         setHasParked(false);

@@ -589,7 +589,7 @@ function Dock({ at, title, mode, setMode, selCount, drawerOpen, toggleDrawer, st
           <IconAnim size={17} />
         </button>
         <span className="dock-sep" />
-        <button className="dock-btn icon" onClick={onReset} aria-label="重置本画布" title="重置本画布"><IconReset size={16} /></button>
+        <button className="dock-btn icon" onClick={onReset} aria-label="清空画布（可撤销）" title="清空画布（⌘Z 可撤销）"><IconReset size={16} /></button>
       </div>
       {evalButton}
     </div>
