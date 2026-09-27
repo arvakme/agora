@@ -316,5 +316,11 @@ def register_routes(app: FastAPI) -> None:
 
     app.include_router(runtime_router)
 
+    # Excalidraw workbench (phase 1): canvas turns, animation scripts, asset library.
+    # Stateless on the server — the browser owns scenes, threads and IndexedDB.
+    from server.canvas.router import create_router as canvas_router
+
+    app.include_router(canvas_router(), prefix="/api/canvas")
+
 
 app = create_app()

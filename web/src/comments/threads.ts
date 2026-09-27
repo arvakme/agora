@@ -1,0 +1,95 @@
+// Our own comment layer state (not Excalidraw's). One store per canvas, so each
+// canvas has independent threads; UI, agent runner and eval share it.
+import { useSyncExternalStore } from "react";
+
+export type Anchor = {
+  /** Stable element ids; the first one carries the pin. */
+  ids: string[];
+  /** Pin position relative to the primary element's bounding box (0..1). */
+  rel: { x: number; y: number };
+  /** Scene position at creation; the pin layer keeps it current while the anchor lives. */
+  last: { x: number; y: number };
+};
+
+export type Message = {
+  id: string;
+  author: "you" | "agent" | "system";
+  text: string;
+  at: number;
+  tone?: "error" | "warn";
+  meta?: string;
+  /** Agent replies point at their session turn — the single record both views render. */
+  turnId?: string;
+};
+
+export type Thread = {
+  id: string;
+  n: number;
+  anchor: Anchor;
+  resolved: boolean;
+  agent: "idle" | "running";
+  messages: Message[];
+  createdAt: number;
+};
+
+type State = { threads: Thread[]; activeId: string | null };
+export type ThreadSnapshot = { threads: Thread[]; seq: number };
+export type ThreadStore = ReturnType<typeof createThreadStore>;
+
+const uid = () => Math.random().toString(36).slice(2, 10);
+
+export function createThreadStore(canvasId: string, initial?: ThreadSnapshot) {
+  let state: State = { threads: initial?.threads.map((t) => ({ ...t, agent: "idle" as const })) ?? [], activeId: null };
+  let seq = initial?.seq ?? 0;
+  const listeners = new Set<() => void>();
+  const set = (next: State) => {
+    state = next;
+    listeners.forEach((l) => l());
+  };
+  const patch = (id: string, f: (t: Thread) => Thread) =>
+    set({ ...state, threads: state.threads.map((t) => (t.id === id ? f(t) : t)) });
+
+  return {
+    canvasId,
+    snapshot: (): ThreadSnapshot => ({ threads: state.threads, seq }),
+    get: () => state,
+    subscribe: (l: () => void) => (listeners.add(l), () => void listeners.delete(l)),
+    thread: (id: string) => state.threads.find((t) => t.id === id),
+    reset() {
+      seq = 0;
+      set({ threads: [], activeId: null });
+    },
+    create(anchor: Anchor, text: string): Thread {
+      const t: Thread = {
+        id: uid(),
+        n: ++seq,
+        anchor,
+        resolved: false,
+        agent: "idle",
+        createdAt: Date.now(),
+        messages: [{ id: uid(), author: "you", text, at: Date.now() }],
+      };
+      set({ threads: [...state.threads, t], activeId: t.id });
+      return t;
+    },
+    reply(id: string, msg: Omit<Message, "id" | "at">) {
+      const m = { ...msg, id: uid(), at: Date.now() };
+      patch(id, (t) => ({ ...t, messages: [...t.messages, m] }));
+      return m;
+    },
+    updateMessage: (id: string, msgId: string, f: (m: Message) => Message) =>
+      patch(id, (t) => ({ ...t, messages: t.messages.map((m) => (m.id === msgId ? f(m) : m)) })),
+    /** Resolving also closes the thread card; reopening leaves it open. */
+    setResolved: (id: string, resolved: boolean) =>
+      set({
+        threads: state.threads.map((t) => (t.id === id ? { ...t, resolved } : t)),
+        activeId: resolved && state.activeId === id ? null : state.activeId,
+      }),
+    setAgent: (id: string, agent: Thread["agent"]) => patch(id, (t) => ({ ...t, agent })),
+    /** Opens a thread (idempotent — never toggles). */
+    open: (id: string) => state.activeId !== id && set({ ...state, activeId: id }),
+    close: () => state.activeId !== null && set({ ...state, activeId: null }),
+  };
+}
+
+export const useThreads = (store: ThreadStore) => useSyncExternalStore(store.subscribe, store.get);

@@ -169,3 +169,27 @@ turn 都是反应式的——叫醒只在新消息落地时发生。但「有人
 claim（`one-of-us` 任务锁）的正常释放有两条路：赢家回复落地，或赢家未履约时 turn 收束前代码 `release_claim`。但 turn 中途**崩溃**的进程没有收束——赢来的锁会把 `task_key` 钉死，任务永远没人能再领。`try_claim` 因此带一条泄压阀：claim 超过 `CLAIM_TTL_S`（默认 300s）未动，任何 agent 一条 `ON CONFLICT … DO UPDATE WHERE created_at < now() - TTL` 原子抢走，不存在两个抢夺者各赢各的的窗口。被抢后原赢家在飞的回复仍会落地（正确性由 verbatim-dup 与 freshness 把守），它只是不再持锁；同一 agent 重复 claim 同一把钥匙是幂等刷新而非输。
 
 开 K8s Job 宿主见 [k8s/README.md](k8s/README.md)。
+
+## Workbench（Excalidraw 画布）
+
+`web/` 是单机的 Excalidraw 协作工作台（Phase 1，迁自 `agora-spikes/excalidraw`）：打开示例架构图、在元素上挂评论、「交给 Agent」把评论变成画布改动、会话面板里看流式轨迹、一键撤销；素材库搜索插入现成组件（Kafka / Redis 等约 6k 件）；算法动画按脚本播放。持久化在浏览器 IndexedDB，服务端不存画布状态。
+
+```bash
+uv sync
+uv run uvicorn server.main:app --port 8000   # FastAPI，挂载 /api/canvas
+cd web && npm ci && npm run dev              # http://localhost:5181
+```
+
+- 改图走一次性 `claude -p`（`server/canvas/runner.py` 起子进程，`OneShotRunner` 是执行器接口；阶段 3 再换本机宿主）。需要本机 `claude` 已登录；不可用或未认证时 API 返回明确的 `error` result 事件，不会静默返回空操作。
+- `POST /api/canvas/turns`（SSE `data:` 帧）把冻结的评论上下文交给模型；模型只能输出 `web/src/ops/ops.ts` 定义的 typed ops，后端先过 JSON Schema（`web/generated/`），前端再过引用与新鲜度检查，应用是一次可撤销批。
+- `POST /api/canvas/anim` 生成动画脚本；`GET /api/canvas/library/{search,item,libs}` 服务素材库，`python -m server.canvas.library_mcp` 同时把它暴露为 MCP 工具给规划调用。
+- 素材库是 vendored 资产（`web/libraries/`，35 MB，来源/许可见其内 `SOURCES.md`/`NOTICE.md`）；重建走 `npm run libraries:fetch`，验收用 `--check` 校验 sha256。
+
+评测：
+
+```bash
+cd web
+npm run eval -- --runs 3     # 7 个固定任务 ×3，真模型，写 eval/runs/*.jsonl + eval/latest-report.md
+npm run eval:replay          # 离线回放最近一轮的模型输出（validate→apply→check→undo），无需模型
+node scripts/lib-parity.ts   # Python 与原型 TS 搜索的 50 查询 Top-8 对照
+```

@@ -1,0 +1,27 @@
+{
+  "$comment": "Sources for the bundled asset library. Edit here, then run `npm run libraries:fetch`. `bundle`: true = vendored into the repo; \"merge-names\" = only used to add names/keywords to items already present (mirrors); false = recorded but not vendored (see SOURCES.md for why).",
+  "official": {
+    "id": "official",
+    "repo": "excalidraw/excalidraw-libraries",
+    "ref": "297a349eaff859e678f78d4dbc8e68df5fce42e5",
+    "license": "MIT",
+    "bundle": true
+  },
+  "community": [
+    { "id": "jonra-agentic-flows", "repo": "jonra/excalidrawlib-agentic-flows", "ref": "f013efa91316657e5ede21d65324b89046790e5a", "license": "MIT", "bundle": true },
+    { "id": "w-gitops", "repo": "w-gitops/excalidrawLib", "ref": "274ab8f1f51ab34cd301d9b275263054c05e3523", "license": "MIT", "bundle": true },
+    { "id": "jorgedlcruz", "repo": "jorgedlcruz/excalidraw-library", "ref": "d15be713aecc69bf7d48355a9fa8cb5fed45588a", "license": "MIT", "bundle": true },
+    { "id": "clainchoupi", "repo": "clainchoupi/excalidrawLib", "ref": "ea013e024e66d8356f739213ea3e744804ec2121", "license": "Apache-2.0", "bundle": true },
+    { "id": "jordanbrauer", "repo": "jordanbrauer/excalidrawlib", "ref": "4fd2a770462a127495c16c8bc4aba6ce3d840b98", "license": "Unlicense", "bundle": true },
+    { "id": "hon668-hvac", "repo": "hon668/hvac-excalidraw-library", "ref": "f1918a180b0e097830c4dcff8a2882b65854c7b6", "license": "MIT", "bundle": true },
+    { "id": "marcrow-pentest", "repo": "marcrow/pentest-excalidraw-library", "ref": "2f596ff1d60fb993d29d75d0eaf88908475db365", "license": "MIT", "bundle": true },
+    { "id": "justgoscha", "repo": "JustGoscha/excalidraw-libs", "ref": "d992db111135a57f5913537351a8c7e712b9084c", "license": "CC0-1.0", "bundle": true },
+    { "id": "tonac-qa", "repo": "tonac/tonac-excalidraw-library-qa", "ref": "c124a6afa83640ee29dd9476798a1c18786816f1", "license": "MIT", "bundle": true },
+    { "id": "getofferhelp-zh", "repo": "getofferhelp/excalidraw-libraries", "ref": "3499f50cd5362cfb5f08106d9b12a12c82e70bb3", "license": "MIT", "bundle": "merge-names" },
+    { "id": "jdebnath21", "repo": "jdebnath21/excalidraw-libraries", "ref": "fae8b1415fec3835e123c8cc6489780852d25cf1", "license": "MIT", "bundle": "merge-names" },
+    { "id": "rkrokson-msft", "repo": "RKrokson/msft-icons-excalidraw", "ref": "9bc407b09080cf6061a9df17ab4e3cf1e79d81d0", "license": "MIT", "bundle": false, "reason": "Converted Microsoft/Azure product icons: Microsoft's icon terms allow use in diagrams but not redistribution as an icon set." }
+  ],
+  "icons": [
+    { "id": "lucide", "package": "lucide-static", "version": "1.48.0", "license": "ISC", "bundle": true }
+  ]
+}

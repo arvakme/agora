@@ -1,0 +1,44 @@
+/* Session pane: builds on the design-B classes (./design.css). */
+.sp { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--paper); }
+.sp-empty { padding: 20px; color: var(--ink-3); }
+.sp-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px 6px 16px; }
+.sp-title { flex: 1; min-width: 0; }
+.sp-title h2 { margin: 0; font-size: 15px; letter-spacing: -0.01em; }
+.sp-title p { margin: 2px 0 0; display: flex; align-items: center; gap: 2px; font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; }
+.sp-title select { font: inherit; font-weight: 600; color: var(--ink-2); border: 0; background: transparent; padding: 0 2px; border-radius: 5px; cursor: pointer; max-width: 140px; }
+.sp-title select:hover { background: #0000000a; }
+.sp-presence { padding: 0 16px 8px; }
+.sp-scroll { scroll-behavior: smooth; }
+.sp-hello { margin: 18px 6px; font-size: 13px; line-height: 1.7; color: var(--ink-2); }
+.sp-hello p { margin: 0 0 6px; }
+.sp-turn { border-radius: 12px; transition: box-shadow 400ms var(--ease), background 400ms var(--ease); }
+.sp-turn[data-flash="true"] { background: #1f23280a; }
+.sp-origin { cursor: pointer; }
+.sp-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.sp-chip { height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11.5px; line-height: 20px; background: #ffffffb3; color: var(--ink-2); }
+.d-step[data-error="true"] .d-node { color: var(--danger); box-shadow: 0 0 0 1px #ff8f8f; background: #fff3f3; }
+.d-op.cand { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
+.d-op.cand i { font-style: normal; color: var(--ink-3); font-size: 10.5px; margin-left: 4px; }
+.d-reply[data-tone="error"] p, .d-reply[data-tone="warn"] p { color: #b54708; }
+.d-reply ul[data-undone="true"] { text-decoration: line-through; color: var(--ink-3); }
+.sp-warn { font-size: 12px; color: #b54708 !important; }
+.sp-undone { font-size: 12px; color: var(--ink-3); }
+.d-chip-btn:disabled { opacity: 0.45; }
+.d-trace-turn h3 { display: flex; align-items: baseline; gap: 6px; }
+.d-trace-turn h3 span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.d-trace-turn h3 em { font-style: normal; font: 11px var(--mono); color: var(--ink-3); }
+/* Two tones: model time (think / search / plan) dark, local work light. Labels carry the kind. */
+.d-wf-dot, .d-wf-bar { background: #b9b6ae; }
+.d-wf-dot[data-kind="think"], .d-wf-bar[data-kind="think"], .d-wf-dot[data-kind="tool"], .d-wf-bar[data-kind="tool"], .d-wf-dot[data-kind="plan"], .d-wf-bar[data-kind="plan"] { background: #4b4f55; }
+
+.sp-composer { position: relative; }
+.sp-composer textarea { width: 100%; font: 13px/1.5 var(--font); color: var(--ink); border: 0; outline: 0; resize: none; background: transparent; }
+
+.sp-composer .d-send:disabled { opacity: 0.4; }
+
+.sp-pick { position: absolute; left: 8px; right: 8px; bottom: calc(100% + 6px); z-index: 5; margin: 0; padding: 5px; list-style: none; border-radius: 12px; background: var(--card); color: var(--card-ink); box-shadow: 0 0 0 1px #ffffff12, 0 12px 32px #0000004d; transform-origin: bottom left; }
+.sp-pick-head { padding: 4px 8px 6px; font-size: 11px; color: var(--card-ink-3); }
+.sp-pick li[role="option"] { display: flex; justify-content: space-between; gap: 10px; padding: 6px 9px; border-radius: 7px; font-size: 12.5px; cursor: pointer; }
+.sp-pick li[data-on="true"] { background: #ffffff14; }
+.sp-pick em { font-style: normal; font-size: 11px; color: var(--card-ink-3); white-space: nowrap; }
+.sp-pick em[data-off="true"] { color: var(--card-ink-2); }
