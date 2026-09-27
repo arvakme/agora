@@ -2,26 +2,42 @@ import { createRoot } from "react-dom/client";
 import "@excalidraw/excalidraw/index.css";
 import "./styles.css";
 import { App, type Boot, type WorkspaceState } from "./App";
-import { load, PERSIST } from "../persist";
+import { connect, PERSIST } from "../persist";
 import { sessions } from "../session/store";
+import { setIdentity } from "../comments/threads";
 
 const root = createRoot(document.getElementById("root")!);
 
-/** Restore the saved workspace (canvases, threads, sessions, layout) before first render. */
+/** Restore the project's workspace (canvases, threads, sessions, layout) before first render. */
 async function boot(): Promise<Boot> {
   if (!PERSIST) return { canvases: {} };
-  const workspace = await load<WorkspaceState>("workspace");
-  const saved = await load<ReturnType<typeof sessions.snapshot>>("sessions");
-  if (saved) sessions.hydrate(saved);
+  const p = await connect();
+  setIdentity(p.project.me);
+  document.title = `${p.project.name} · Agora`;
+  if (Object.keys(p.sessions.sessions).length) sessions.hydrate(p.sessions);
+  const workspace = p.workspace as WorkspaceState | undefined;
   const canvases: Boot["canvases"] = {};
   for (const d of workspace?.docs ?? []) {
-    if (d.kind !== "canvas") continue;
-    const c = await load<Boot["canvases"][string]>(`canvas:${d.id}`);
-    if (c) canvases[d.id] = c;
+    const c = d.kind === "canvas" && p.canvases[d.id];
+    if (c) canvases[d.id] = { elements: c.elements, threads: c.threads ?? { threads: [], seq: 0 } };
   }
-  // v2 workspaces may legitimately have no sessions (all deleted). An unversioned one saved
-  // before sessions existed references none; start over then.
-  return workspace && (workspace.v === 2 || workspace.docs.some((d) => d.kind === "session")) ? { workspace, canvases } : { canvases };
+  return { workspace: workspace?.docs?.length ? workspace : undefined, canvases, project: p.project };
 }
 
-void boot().then((b) => root.render(<App boot={b} />));
+function Offline({ error }: { error: unknown }) {
+  return (
+    <div className="offline">
+      <h1>没有连上项目服务</h1>
+      <p>画布、评论和会话存在项目目录的 <code>.agora/</code> 里，由这个项目自己的 Agora 服务读写。在项目目录运行</p>
+      <pre>agora up</pre>
+      <p>再打开它给出的地址（或用 <code>agora open</code>）。</p>
+      <p className="offline-detail">{String(error)}</p>
+      <a href="?fresh">不保存，直接试用 →</a>
+    </div>
+  );
+}
+
+boot().then(
+  (b) => root.render(<App boot={b} />),
+  (e) => root.render(<Offline error={e} />),
+);

@@ -1,5 +1,5 @@
 import { MotionConfig, motion } from "motion/react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { resolveAnchor } from "../canvas/anchors";
 import { AnimPrompt } from "../anim/AnimPrompt";
 import { CanvasView, type CanvasHandle } from "../canvas/CanvasView";
@@ -7,7 +7,7 @@ import { SPRING } from "../comments/motion";
 import { replayEval, runEval, TASKS, type EvalProgress, type EvalRow } from "../eval/eval";
 import { buildFixture } from "../eval/fixture";
 import { IconAnim, IconClose, IconCols, IconComment, IconGrid, IconList, IconPlus, IconPointer, IconReset, IconRows, IconSelect, IconSingle } from "./icons";
-import { discard, PERSIST, save } from "../persist";
+import { discard, PERSIST, project, reloadFromDisk, save, slotFile, type ProjectInfo } from "../persist";
 import { byId, type El } from "../canvas/scene";
 import { SessionPane } from "../session/SessionPane";
 import { runTurn } from "../session/runTurn";
@@ -44,7 +44,7 @@ const EVAL_RUNS = Number(params.get("runs")) || 3;
 
 export type { Doc } from "../workspace/model";
 export type WorkspaceState = { v?: 2; docs: Doc[]; root: Node; focused: string };
-export type Boot = { workspace?: WorkspaceState; canvases: Record<string, { elements: El[]; threads: ThreadSnapshot }> };
+export type Boot = { workspace?: WorkspaceState; canvases: Record<string, { elements: El[]; threads: ThreadSnapshot }>; project?: ProjectInfo };
 
 /** First run: the sample canvas on the left, its session docked on the right. Later canvases start blank. */
 function defaults(): WorkspaceState {
@@ -406,7 +406,7 @@ export function App({ boot }: { boot: Boot }) {
     <MotionConfig reducedMotion="user">
       <div className="app" data-mode={mode}>
         <header className="topbar">
-          <span className="brand"><span className="brand-mark" />Agora</span>
+          <span className="brand"><span className="brand-mark" />Agora{boot.project && <span className="project-name" title={boot.project.root}>{boot.project.name}</span>}</span>
           <div className="all-docs">
             <button className="all-docs-btn" aria-expanded={!!listOpen} onClick={() => setListOpen((o) => (o ? null : {}))}>
               <IconList size={14} />所有画布<em>{canvasDocs.length}</em>
@@ -542,6 +542,7 @@ export function App({ boot }: { boot: Boot }) {
             <button className="undo-toast-x" aria-label="关闭提示" onClick={() => setRemoved(null)}><IconClose size={12} /></button>
           </motion.div>
         )}
+        <SaveBanner docTitle={(id) => docOf(id)?.title} />
         {evalProgress && <pre className="eval-log">{evalProgress.log.slice(-14).join("\n")}</pre>}
       </div>
     </MotionConfig>
@@ -594,4 +595,28 @@ function Dock({ at, title, mode, setMode, selCount, drawerOpen, toggleDrawer, st
       {evalButton}
     </div>
   );
+}
+
+/** Saving problems: a file changed on disk since this page loaded it, or the project server is unreachable. */
+function SaveBanner({ docTitle }: { docTitle: (id: string) => string | undefined }) {
+  const st = useSyncExternalStore(project.subscribe, project.status);
+  const slot = st.conflicts[0];
+  if (slot) {
+    const [kind, id] = slot.split(":");
+    const what = kind === "workspace" ? "画布清单与布局" : kind === "session" ? "会话记录" : `「${docTitle(id) ?? id}」${kind === "threads" ? "的评论" : ""}`;
+    return (
+      <div className="save-banner" role="alert" data-kind="conflict">
+        <span>{what}在别处被改过（另一个窗口、编辑器或 git），这里的改动还没保存 · <code>.agora/{slotFile(slot)}</code></span>
+        <button onClick={reloadFromDisk}>载入磁盘上的版本</button>
+        <button onClick={() => void project.resolve(slot, "overwrite")}>用这里的覆盖</button>
+      </div>
+    );
+  }
+  if (st.offline)
+    return (
+      <div className="save-banner" role="status" data-kind="offline">
+        <span>项目服务连不上，改动暂未保存，恢复后自动写入</span>
+      </div>
+    );
+  return null;
 }

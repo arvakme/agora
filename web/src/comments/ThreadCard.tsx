@@ -7,6 +7,7 @@ import { handToAgent, undoAgent } from "../ops/agent";
 import type { AnchorState } from "../canvas/anchors";
 import { IconAlert, IconCheck, IconClose, IconReopen, IconSend, IconSpark, IconUndo } from "../app/icons";
 import type { Message, Thread, ThreadStore } from "./threads";
+import { identity } from "./threads";
 import { SPRING } from "./motion";
 import { useTurn } from "../session/store";
 import { ui } from "../session/ui";
@@ -122,7 +123,7 @@ function Row({ m, first, onUndo }: { m: Message; first?: boolean; onUndo?: () =>
       <Avatar who={m.author} />
       <div className="trow-main">
         <div className="trow-meta">
-          <b>{m.author === "agent" ? "Agent" : m.author === "system" ? "系统" : "你"}</b>
+          <b>{m.author === "agent" ? "Agent" : m.author === "system" ? "系统" : m.by && m.by.id !== identity()?.id ? m.by.name : "你"}</b>
           <time>{meta}</time>
         </div>
         <p className="trow-text">{reply?.text ?? m.text}</p>
