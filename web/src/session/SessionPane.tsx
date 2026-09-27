@@ -15,7 +15,6 @@ const AGENTS = [
   { id: "pi", name: "Pi Master", color: "#c8b5f4", ink: "#352a50", live: true },
   { id: "claude", name: "Claude Code", color: "#f3c7a6", ink: "#5a3217", live: false },
   { id: "codex", name: "Codex", color: "#bfe3cd", ink: "#1f4a31", live: false },
-  { id: "kimi", name: "Kimi", color: "#bcd6f5", ink: "#1d3a5c", live: false },
 ];
 export const AGENT_LIST = AGENTS;
 

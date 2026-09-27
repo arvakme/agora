@@ -43,7 +43,7 @@ const settle = (capMs = 1000) =>
     const t = setTimeout(r, capMs);
     requestAnimationFrame(() => requestAnimationFrame(() => (clearTimeout(t), r())));
   });
-const WORKERS: Record<string, string> = { claude: "Claude Code", codex: "Codex", kimi: "Kimi" };
+const WORKERS: Record<string, string> = { claude: "Claude Code", codex: "Codex" };
 
 export const sceneIndex = (scene: Scene) => {
   const map = byId(scene);
@@ -90,7 +90,7 @@ export async function runTurn(input: {
 
   // @worker mentions: data + UI only this round; real dispatch will go through Seedmux.
   for (const m of input.mentions ?? [])
-    if (WORKERS[m]) sessions.step(T, { kind: "dispatch", title: `派发给 ${WORKERS[m]}`, detail: "未接入：真实派发将经 Seedmux 投递给 worker 会话；本轮由 Pi Master 直接处理", status: "skipped", endedAt: Date.now() });
+    if (WORKERS[m]) sessions.step(T, { kind: "dispatch", title: `派发给 ${WORKERS[m]}`, detail: "未接入：真实派发将由 Pi Master 经本机宿主交给 worker；本轮由 Pi Master 直接处理", status: "skipped", endedAt: Date.now() });
 
   // 2. Plan: stream the model's steps.
   type Res = { raw: unknown; costUsd: number | null; durationMs: number; error?: string; prompt?: string; usage?: Usage };
