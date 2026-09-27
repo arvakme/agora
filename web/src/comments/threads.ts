@@ -20,7 +20,11 @@ export type Message = {
   meta?: string;
   /** Agent replies point at their session turn — the single record both views render. */
   turnId?: string;
+  /** Who wrote a human ("you") message. Several people can take part in one thread. */
+  by?: Person;
 };
+/** A person commenting: this machine's user by default (git user.name), later also share guests. */
+export type Person = { id: string; name: string };
 
 export type Thread = {
   id: string;
@@ -30,6 +34,7 @@ export type Thread = {
   agent: "idle" | "running";
   messages: Message[];
   createdAt: number;
+  createdBy?: Person;
 };
 
 type State = { threads: Thread[]; activeId: string | null };
@@ -37,6 +42,11 @@ export type ThreadSnapshot = { threads: Thread[]; seq: number };
 export type ThreadStore = ReturnType<typeof createThreadStore>;
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+
+/** The person new human messages are attributed to (set once the project says who we are). */
+let me: Person | undefined;
+export const setIdentity = (p: Person | undefined) => void (me = p);
+export const identity = () => me;
 
 export function createThreadStore(canvasId: string, initial?: ThreadSnapshot) {
   let state: State = { threads: initial?.threads.map((t) => ({ ...t, agent: "idle" as const })) ?? [], activeId: null };
@@ -67,13 +77,14 @@ export function createThreadStore(canvasId: string, initial?: ThreadSnapshot) {
         resolved: false,
         agent: "idle",
         createdAt: Date.now(),
-        messages: [{ id: uid(), author: "you", text, at: Date.now() }],
+        ...(me && { createdBy: me }),
+        messages: [{ id: uid(), author: "you", text, at: Date.now(), ...(me && { by: me }) }],
       };
       set({ threads: [...state.threads, t], activeId: t.id });
       return t;
     },
     reply(id: string, msg: Omit<Message, "id" | "at">) {
-      const m = { ...msg, id: uid(), at: Date.now() };
+      const m: Message = { ...(msg.author === "you" && me && { by: me }), ...msg, id: uid(), at: Date.now() };
       patch(id, (t) => ({ ...t, messages: [...t.messages, m] }));
       return m;
     },

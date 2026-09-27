@@ -172,12 +172,12 @@ claim（`one-of-us` 任务锁）的正常释放有两条路：赢家回复落地
 
 ## Workbench（Excalidraw 画布）
 
-`web/` 是单机的 Excalidraw 协作工作台（Phase 1，迁自 `agora-spikes/excalidraw`）：打开示例架构图、在元素上挂评论、「交给 Agent」把评论变成画布改动、会话面板里看流式轨迹、一键撤销；素材库搜索插入现成组件（Kafka / Redis 等约 6k 件）；算法动画按脚本播放。持久化在浏览器 IndexedDB，服务端不存画布状态。
+`web/` 是单机的 Excalidraw 协作工作台（Phase 1，迁自 `agora-spikes/excalidraw`）：打开示例架构图、在元素上挂评论、「交给 Agent」把评论变成画布改动、会话面板里看流式轨迹、一键撤销；素材库搜索插入现成组件（Kafka / Redis 等约 6k 件）；算法动画按脚本播放。一个项目一个 Agora：数据存在项目根目录的 `.agora/`（画布、评论可提交，会话记录默认不提交），格式与命令见 [web/docs/project-storage.md](web/docs/project-storage.md)。
 
 ```bash
-uv sync
-uv run uvicorn server.main:app --port 8000   # FastAPI，挂载 /api/canvas
-cd web && npm ci && npm run dev              # http://localhost:5181
+uv sync && (cd web && npm ci && npm run build)
+cd ~/code/my-service && ~/code/agora/bin/agora open     # 初始化 .agora/，起本项目服务并打开浏览器
+~/code/agora/bin/agora down                             # 停掉；--dev 走 vite 热更新
 ```
 
 - 模型调用经 `server/canvas/runner.py` 的 `AgentBackend` 接口（backend + model + effort + session，统一事件流与 usage：输入/输出/缓存 token、耗时、花费、模型名，随 SSE `usage` 事件和 `result.usage` 下发）。目前唯一的后端是一次性 `claude -p`（在空的临时目录里起子进程，不继承仓库的 git/项目上下文）；`AGORA_CANVAS_BACKEND` / `AGORA_CANVAS_MODEL` / `AGORA_CANVAS_EFFORT` 可覆盖默认。需要本机 `claude` 已登录；不可用或未认证时 API 返回明确的 `error` result 事件，不会静默返回空操作。
