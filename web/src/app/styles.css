@@ -41,7 +41,11 @@ textarea { font: inherit; color: inherit; resize: none; border: 0; outline: 0; b
 .topbar { flex: none; height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 14px 0 16px; }
 .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; letter-spacing: -0.01em; }
 .brand-mark { width: 16px; height: 16px; border-radius: 50% 50% 50% 2px; background: var(--pin); box-shadow: inset 0 0 0 1.5px #fff8; }
-.crumb { flex: 1; font-size: 12.5px; color: var(--ink-3); }
+.topbar-gap { flex: 1; }
+.all-docs { position: relative; }
+.all-docs-btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border-radius: 8px; font-size: 12.5px; color: var(--ink-2); transition: background var(--quick), color var(--quick); }
+.all-docs-btn:hover, .all-docs-btn[aria-expanded="true"] { background: #0000000a; color: var(--ink); }
+.all-docs-btn em { font-style: normal; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .presets { display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: #0000000a; }
 .preset { display: grid; place-items: center; width: 30px; height: 26px; border-radius: 7px; color: var(--ink-2); transition: background var(--quick) var(--ease), color var(--quick); }
 .preset:hover:not(:disabled) { background: #fff; color: var(--ink); box-shadow: 0 1px 2px #0000001a; }
@@ -68,22 +72,30 @@ textarea { font: inherit; color: inherit; resize: none; border: 0; outline: 0; b
   cursor: grab; user-select: none; touch-action: none; transition: background var(--quick), color var(--quick);
 }
 .wm-tab:hover { color: var(--ink-2); background: #00000006; }
-.wm-tab[data-active="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 -1px 0 var(--line), 1px 0 0 var(--line), -1px 0 0 var(--line); }
-.wm-group[data-focused="true"] .wm-tab[data-active="true"]::before {
-  content: ""; position: absolute; left: 10px; right: 10px; top: 0; height: 2px; border-radius: 0 0 2px 2px; background: var(--accent);
-  animation: bar-in var(--fast) var(--ease) both;
-}
-@keyframes bar-in { from { transform: scaleX(0.3); opacity: 0 } to { transform: none; opacity: 1 } }
+/* Current tab = same paper as the pane below, joined to it (the bar's bottom hairline breaks under it).
+   No top bar. Other tabs have no surface. The focused group's current tab reads in full ink. */
+.wm-tab[data-active="true"] { background: var(--paper); color: var(--ink-2); box-shadow: 0 -1px 0 var(--line), 1px 0 0 var(--line), -1px 0 0 var(--line); }
+.wm-group[data-focused="true"] .wm-tab[data-active="true"] { color: var(--ink); }
+.ws[data-multi="true"] .wm-group[data-focused="true"] { box-shadow: 0 0 0 1px #0000004d, 0 1px 3px #0000000d; }
 .wm-tab[data-dragging="true"] { opacity: 0.35; }
-.wm-tab-dot { width: 8px; height: 8px; flex: none; border-radius: 50% 50% 50% 2px; background: var(--pin); }
-.wm-tab[data-active="false"] .wm-tab-dot { background: #c9c6d6; }
+/* Kind mark: square = canvas, round = session. Ink on the current tab, grey elsewhere. */
+.wm-tab-dot { width: 7px; height: 7px; flex: none; border-radius: 1.5px; background: #bdbab2; }
+.wm-tab[data-kind="session"] .wm-tab-dot { border-radius: 50%; }
+.wm-tab[data-active="true"] .wm-tab-dot { background: var(--ink-3); }
+.wm-group[data-focused="true"] .wm-tab[data-active="true"] .wm-tab-dot { background: var(--ink); }
 .wm-tab-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wm-tab-sub { margin-left: 6px; font-size: 11.5px; color: var(--ink-3); }
 .wm-tab-close { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; color: var(--ink-3); opacity: 0; transition: opacity var(--quick), background var(--quick); }
 .wm-tab:hover .wm-tab-close, .wm-tab[data-active="true"] .wm-tab-close { opacity: 1; }
 .wm-tab-close:hover { background: #0000000f; color: var(--ink); }
 .wm-add { align-self: center; display: grid; place-items: center; width: 24px; height: 24px; margin-left: 2px; border-radius: 7px; color: var(--ink-3); transition: background var(--quick), color var(--quick); }
 .wm-add:hover { background: #0000000c; color: var(--ink); }
 .wm-slot { overflow: hidden; border-radius: 0 0 12px 12px; }
+.wm-empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; font-size: 13px; color: var(--ink-3); }
+.wm-empty p { margin: 0; }
+.wm-empty div { display: flex; gap: 6px; }
+.wm-empty button { height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12.5px; color: var(--ink-2); box-shadow: 0 0 0 1px var(--line); transition: background var(--quick), color var(--quick); }
+.wm-empty button:hover { background: #0000000a; color: var(--ink); }
 .wm-slot[data-entering="true"] { transition: none; animation: pane-in 380ms var(--ease) both; }
 @keyframes pane-in { from { opacity: 0; transform: scale(0.985) } to { opacity: 1; transform: none } }
 .wm-slot[data-hidden="true"] { opacity: 0; visibility: hidden; pointer-events: none; transition-property: left, top, width, height, opacity, visibility; }
@@ -293,14 +305,15 @@ textarea { font: inherit; color: inherit; resize: none; border: 0; outline: 0; b
 .ditem-meta b .anchor-tag { background: transparent; padding: 0; height: auto; }
 
 /* ——— tab rename + menu ——— */
-.wm-tab-input { font: inherit; color: var(--ink); background: #fff; border: 0; outline: 0; border-radius: 5px; padding: 2px 5px; margin: 0 -5px; box-shadow: 0 0 0 1.5px var(--accent); min-width: 0; max-width: 160px; }
+/* Rename in place: same type and height as the title, a faint neutral field, no ring. */
+.wm-tab-input { font: inherit; color: var(--ink); background: #0000000a; border: 0; outline: 0; border-radius: 4px; height: 20px; padding: 0 4px; margin: 0 -4px; field-sizing: content; min-width: 3em; max-width: 160px; }
+.wm-tab-input::selection { background: #1f232826; color: var(--ink); }
 .wm-menu { position: absolute; z-index: 30; min-width: 168px; padding: 5px; border-radius: 12px; background: var(--card); color: var(--card-ink); box-shadow: 0 0 0 1px #ffffff12, 0 6px 16px #00000038; transform-origin: top left; }
 .wm-menu button { display: flex; align-items: center; gap: 8px; width: 100%; height: 30px; padding: 0 9px; border-radius: 7px; font-size: 12.5px; color: #ddd; }
 .wm-menu button:hover { background: #ffffff12; color: #fff; }
 .wm-menu button.danger:hover { background: #ff6b6b1a; color: #ffb0b0; }
 .wm-menu kbd { margin-left: auto; background: #ffffff10; color: var(--card-ink-3); }
 .wm-menu-scrim { position: absolute; inset: 0; z-index: 29; }
-.crumb b { font-weight: 600; color: var(--ink-2); }
 .drawer-title { padding: 12px 16px 0; font-size: 13px; font-weight: 650; color: #fff; }
 .drawer-title span { margin-left: 4px; font-weight: 450; color: var(--card-ink-3); }
 
@@ -334,9 +347,49 @@ textarea { font: inherit; color: inherit; resize: none; border: 0; outline: 0; b
 .hl-layer { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
 .hl-box { position: absolute; border-radius: 8px; box-shadow: 0 0 0 2px var(--ink); background: #1f23280a; }
 
-/* ——— session tabs + new-session button ——— */
-.wm-tab[data-kind="session"] .wm-tab-dot { background: var(--ink); border-radius: 50%; }
-.wm-tab[data-kind="session"][data-active="false"] .wm-tab-dot { background: #b9b6ae; }
+/* ——— 所有画布 list ——— */
+.ad-scrim { position: fixed; inset: 0; z-index: 39; }
+.ad {
+  position: absolute; left: 0; top: calc(100% + 6px); z-index: 40; width: 340px; max-height: min(520px, 70vh);
+  display: flex; flex-direction: column; padding: 5px; border-radius: 12px;
+  background: var(--card); color: var(--card-ink); box-shadow: 0 0 0 1px #ffffff12, 0 6px 16px #00000038;
+}
+.ad-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
+.ad-row { display: flex; align-items: center; border-radius: 7px; }
+.ad-row:hover { background: #ffffff0d; }
+.ad-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 9px; font-size: 12.5px; color: #ddd; text-align: left; }
+.ad-row[data-sub="true"] .ad-main { padding-left: 25px; }
+.ad-row[data-open="false"] .ad-title { color: var(--card-ink-2); }
+.ad-mark { width: 7px; height: 7px; flex: none; border-radius: 1.5px; background: var(--card-ink-3); }
+.ad-mark[data-kind="session"] { border-radius: 50%; }
+.ad-row[data-open="true"] .ad-mark { background: var(--card-ink); }
+.ad-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ad-state { flex: none; font-size: 11.5px; color: var(--card-ink-3); }
+.ad-del { flex: none; display: grid; place-items: center; width: 28px; height: 28px; margin-right: 2px; border-radius: 6px; color: var(--card-ink-3); opacity: 0; transition: opacity var(--quick), background var(--quick), color var(--quick); }
+.ad-row:hover .ad-del, .ad-del:focus-visible { opacity: 1; }
+.ad-del:hover:not(:disabled) { background: #ffffff12; color: #fff; }
+.ad-group { padding: 10px 9px 4px; font-size: 11.5px; color: var(--card-ink-3); }
+.ad-confirm { margin: 2px 0; padding: 10px 10px 8px; border-radius: 8px; background: #ffffff0d; font-size: 12.5px; }
+.ad-confirm p { margin: 0 0 8px; line-height: 1.5; color: #ddd; }
+.ad-confirm div { display: flex; justify-content: flex-end; gap: 6px; }
+.ad-confirm button { height: 26px; padding: 0 10px; border-radius: 7px; font-size: 12px; color: #ddd; background: #ffffff12; }
+.ad-confirm button:hover { background: #ffffff1c; color: #fff; }
+.ad-confirm button.danger { background: #eeeeee; color: #1c1c1c; font-weight: 600; }
+.ad-confirm button.danger:hover { background: #fff; }
+.ad-foot { display: flex; gap: 2px; margin-top: 4px; padding-top: 5px; border-top: 1px solid var(--card-line); }
+.ad-foot button { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 9px; border-radius: 7px; font-size: 12.5px; color: #ddd; }
+.ad-foot button:hover { background: #ffffff12; color: #fff; }
+.undo-toast {
+  position: fixed; left: 16px; bottom: 18px; z-index: 30; display: flex; align-items: center; gap: 4px;
+  padding: 5px 5px 5px 14px; border-radius: 12px; background: #1c1c1c; color: #eee; font-size: 12.5px;
+  box-shadow: 0 0 0 1px #ffffff14, 0 6px 16px #00000033;
+}
+.undo-toast span { margin-right: 6px; }
+.undo-toast button { height: 28px; padding: 0 10px; border-radius: 8px; font-weight: 600; color: #fff; }
+.undo-toast button:hover { background: #ffffff17; }
+.undo-toast .undo-toast-x { display: grid; place-items: center; width: 28px; padding: 0; color: #a3a3a3; font-weight: 400; }
+
+/* ——— new-session button ——— */
 .new-session { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 9px; background: #fff; color: var(--ink); font-size: 12.5px; font-weight: 550; box-shadow: 0 0 0 1px var(--line); transition: transform var(--quick) var(--ease), background var(--quick); }
 .new-session:hover { background: #f6f5f1; }
 .new-session:active { transform: scale(0.97); }

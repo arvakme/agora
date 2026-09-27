@@ -1,5 +1,5 @@
 // Local persistence in IndexedDB (one object store, a few keys):
-//   "workspace"      → docs (canvases + session tabs, names), layout tree, focus
+//   "workspace"      → every canvas and session doc (open or closed, with names), layout tree, focus, v: 2
 //   "canvas:<id>"    → that canvas's scene elements + its comment threads
 //   "sessions"       → sessions, turns (with steps) and undo batches
 // Why IndexedDB rather than a JSON file on the dev server: the data is per browser
@@ -41,6 +41,13 @@ function flush(key: string) {
   const v = pending.get(key);
   pending.delete(key);
   if (v) void tx("readwrite", (s) => s.put(v(), key)).catch((e) => console.warn("persist", key, e));
+}
+/** Drop a pending write and the stored value (a deleted canvas must not be written back by a late save). */
+export function discard(key: string) {
+  clearTimeout(timers.get(key));
+  timers.delete(key);
+  pending.delete(key);
+  return remove(key);
 }
 // Don't lose the last edit on reload.
 addEventListener("pagehide", () => [...pending.keys()].forEach(flush));

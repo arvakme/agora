@@ -30,3 +30,4 @@ export const IconPencil = I("M4 20h4L19 9l-4-4L4 16v4ZM13.5 6.5l4 4");
 /** Built-in asset library: a few ready-made parts. */
 export const IconAssets = I("M4 4h7v7H4zM15.5 4a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7ZM4 20l3.5-6 3.5 6zM14 14h7v7h-7z");
 export const IconAnim = I("M4 5h16v14H4zM10 9.2v5.6l4.6-2.8z");
+export const IconTrash = I("M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12M10.5 11v5M13.5 11v5");

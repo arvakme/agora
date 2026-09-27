@@ -68,7 +68,7 @@ export function SessionPane({ sessionId, canvasTitles }: { sessionId: string; ca
   const canvasTitle = canvasTitles[session.canvasId];
 
   const send = async (text: string, refs: Turn["refs"], mentions: string[]) => {
-    const c = canvases.get(session.canvasId);
+    const c = canvases.get(session.canvasId) ?? (await ui.ensureCanvas(session.canvasId));
     if (!c) return;
     // History: earlier turns of this room, most recent last (already applied to the canvas).
     const history = list.slice(-6).flatMap((t) => [
@@ -95,7 +95,7 @@ export function SessionPane({ sessionId, canvasTitles }: { sessionId: string; ca
           <p>
             <select value={session.canvasId} onChange={(e) => sessions.relink(sessionId, e.target.value)} aria-label="关联画布">
               {Object.entries(canvasTitles).map(([id, t]) => <option key={id} value={id}>{t}</option>)}
-              {!canvasTitles[session.canvasId] && <option value={session.canvasId}>已关闭的画布</option>}
+              {!canvasTitles[session.canvasId] && <option value={session.canvasId}>已删除的画布</option>}
             </select>
             <span>的房间 · {list.length} 轮 · {fmt(time)} · {usd(cost)}</span>
           </p>

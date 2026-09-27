@@ -16,6 +16,8 @@ export const ui = {
   openThread: (_canvasId: string, _threadId: string) => {},
   /** Show a session tab for this session (open one if none). */
   openSession: (_sessionId: string, _turnId?: string) => {},
+  /** A closed canvas has no live API: reopen its tab (without moving focus) and resolve once it is mounted. */
+  ensureCanvas: async (id: string): Promise<CanvasEntry | undefined> => canvases.get(id),
 };
 
 type Highlight = { canvasId: string; ids: string[] } | null;

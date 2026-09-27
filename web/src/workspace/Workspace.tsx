@@ -5,25 +5,33 @@
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { SPRING } from "../comments/motion";
-import { IconClose, IconPencil, IconPlus } from "../app/icons";
+import { IconClose, IconPencil, IconPlus, IconTrash } from "../app/icons";
 import { activate, equalize, groupOf, groups, layout, moveTab, resize, type Node, type Rect, type Sash, type Zone } from "./layout";
+import { groupKind } from "./model";
 
 const GAP = 6, PAD = 6, HEADER = 34, MIN_PANE = 220;
 
 type Target = { groupId: string; zone: Zone; index?: number; preview: Rect };
 type Drag = { tab: string; x: number; y: number; ox: number; oy: number; active: boolean; target: Target | null };
 
+type NewWhat = "canvas" | "session" | "sample";
 type Props = {
   root: Node;
   setRoot: (n: Node) => void;
   titles: Record<string, string>;
-  /** Pane kind per tab, for the tab's mark. */
+  /** Secondary text after a tab's title (a session's linked canvas). */
+  subtitles?: Record<string, string>;
+  /** Pane kind per tab: the tab's mark, and what a group's「+」creates. */
   kinds?: Record<string, "canvas" | "session">;
-  onAddSession?: (groupId: string) => void;
   focused: string;
   onFocus: (tab: string) => void;
-  onAdd: (groupId: string) => void;
+  /** 「+」: canvas groups get a canvas, session groups a session; mixed or empty groups ask. */
+  onNew: (groupId: string, what: NewWhat) => void;
+  /** Close only hides the tab; delete is a separate, confirmed action. */
   onClose: (tab: string) => void;
+  onDelete: (tab: string) => void;
+  /** Body of a group with no tabs (only the last remaining group can be empty). */
+  renderEmpty: (groupId: string) => ReactNode;
   /** Tab being renamed (new canvases start here). */
   editing: string | null;
   setEditing: (tab: string | null) => void;
@@ -32,8 +40,8 @@ type Props = {
   renderCanvas: (id: string) => ReactNode;
 };
 
-export function Workspace({ root, setRoot, titles, kinds = {}, onAddSession, focused, onFocus, onAdd, onClose, editing, setEditing, onRename, onSettled, renderCanvas }: Props) {
-  const [menu, setMenu] = useState<{ tab: string; x: number; y: number } | null>(null);
+export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, focused, onFocus, onNew, onClose, onDelete, renderEmpty, editing, setEditing, onRename, onSettled, renderCanvas }: Props) {
+  const [menu, setMenu] = useState<{ tab: string; x: number; y: number } | { group: string; x: number; y: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -53,6 +61,16 @@ export function Workspace({ root, setRoot, titles, kinds = {}, onAddSession, foc
   const { rects, sashes } = layout(root, { x: PAD, y: PAD, w: size.w - PAD * 2, h: size.h - PAD * 2 }, GAP);
   const all = groups(root);
   const focusedGroup = groupOf(root, focused)?.id;
+  const kindOf = (t: string) => kinds[t];
+  /** 「+」 or a double-click on the tab bar: same kind as the group, or a small menu when mixed. */
+  const plus = (groupId: string, anchor: HTMLElement) => {
+    const g = all.find((g) => g.id === groupId)!;
+    const kind = groupKind(g.tabs, kindOf);
+    if (kind !== "mixed") return onNew(groupId, kind);
+    const box = ref.current!.getBoundingClientRect(), b = anchor.getBoundingClientRect();
+    setMenu({ group: groupId, x: Math.min(b.left - box.left, box.width - 180), y: b.bottom - box.top + 4 });
+  };
+  const plusLabel = (tabs: string[]) => ({ canvas: "新建画布", session: "新建会话", mixed: "新建…" })[groupKind(tabs, kindOf)];
 
   const targetAt = (x: number, y: number, tab: string): Target | null => {
     const g = all.find((g) => within(rects.get(g.id)!, x, y));
@@ -117,6 +135,13 @@ export function Workspace({ root, setRoot, titles, kinds = {}, onAddSession, foc
     window.addEventListener("pointerup", up);
   };
 
+  useEffect(() => {
+    if (!menu) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenu(null);
+    addEventListener("keydown", onKey, true);
+    return () => removeEventListener("keydown", onKey, true);
+  }, [menu]);
+
   const wasShown = useRef(new Set<string>());
   useEffect(() => {
     wasShown.current = new Set(all.map((g) => g.active));
@@ -125,15 +150,15 @@ export function Workspace({ root, setRoot, titles, kinds = {}, onAddSession, foc
   const tabIds = all.flatMap((g) => g.tabs);
 
   return (
-    <div className="ws" ref={ref} data-dragging={!!drag?.active} data-resizing={resizing}>
+    <div className="ws" ref={ref} data-dragging={!!drag?.active} data-resizing={resizing} data-multi={all.length > 1}>
       {/* Mount panes only once measured, so they start at their real size instead of gliding in from 0. */}
       {size.w > 0 && <>
       <LayoutGroup>
         {all.map((g) => {
           const r = rects.get(g.id)!;
           return (
-            <section key={g.id} className="wm-group" data-group={g.id} data-focused={g.id === focusedGroup} style={box(r)}>
-              <div className="wm-head" onDoubleClick={(e) => e.target === e.currentTarget && onAdd(g.id)}>
+            <section key={g.id} className="wm-group" data-group={g.id} data-focused={g.id === focusedGroup} data-empty={!g.tabs.length} style={box(r)}>
+              <div className="wm-head" role="tablist" onDoubleClick={(e) => e.target === e.currentTarget && plus(g.id, e.currentTarget.querySelector(".wm-add")!)}>
                 {g.tabs.map((t) => (
                   <motion.div
                     layout="position"
@@ -159,21 +184,25 @@ export function Workspace({ root, setRoot, titles, kinds = {}, onAddSession, foc
                   >
                     <span className="wm-tab-dot" />
                     {editing === t ? (
-                      <TitleInput value={titles[t]} onDone={(v) => (v !== null && onRename(t, v), setEditing(null))} />
+                      <TitleInput value={titles[t]} label={kinds[t] === "session" ? "会话名称" : "画布名称"} onDone={(v) => (v !== null && onRename(t, v), setEditing(null))} />
                     ) : (
-                      <span className="wm-tab-title" title="双击重命名">{titles[t]}</span>
+                      <span className="wm-tab-title" title={subtitles[t] ? `${titles[t]} · 关联画布：${subtitles[t]}（双击重命名）` : "双击重命名"}>
+                        {titles[t]}
+                        {subtitles[t] && <span className="wm-tab-sub">{subtitles[t]}</span>}
+                      </span>
                     )}
-                    {tabIds.length > 1 && (
-                      <button className="wm-tab-close" aria-label={`关闭 ${titles[t]}`} onClick={() => onClose(t)}><IconClose size={12} /></button>
-                    )}
+                    <button className="wm-tab-close" aria-label={`关闭 ${titles[t]}`} title="关闭（不会删除）" onClick={() => onClose(t)}><IconClose size={12} /></button>
                   </motion.div>
                 ))}
-                <button className="wm-add" onClick={() => onAdd(g.id)} aria-label="新建画布" title="新建画布"><IconPlus size={14} /></button>
+                <button className="wm-add" onClick={(e) => plus(g.id, e.currentTarget)} aria-label={plusLabel(g.tabs)} title={plusLabel(g.tabs)}><IconPlus size={14} /></button>
               </div>
             </section>
           );
         })}
       </LayoutGroup>
+      {all.filter((g) => !g.tabs.length).map((g) => (
+        <div key={`empty-${g.id}`} className="wm-slot" style={box(body(rects.get(g.id)!))}>{renderEmpty(g.id)}</div>
+      ))}
       {tabIds.map((t) => {
         const g = groupOf(root, t)!;
         const shown = g.active === t;
@@ -210,10 +239,19 @@ export function Workspace({ root, setRoot, titles, kinds = {}, onAddSession, foc
             transition={SPRING}
             onPointerDown={(e) => e.stopPropagation()}
           >
-            {kinds[menu.tab] !== "session" && <button role="menuitem" onClick={() => (setEditing(menu.tab), setMenu(null))}><IconPencil size={13} />重命名<kbd>双击</kbd></button>}
-            <button role="menuitem" onClick={() => (onAdd(groupOf(root, menu.tab)!.id), setMenu(null))}><IconPlus size={13} />新建画布</button>
-            {onAddSession && <button role="menuitem" onClick={() => (onAddSession(groupOf(root, menu.tab)!.id), setMenu(null))}><IconPlus size={13} />新建会话</button>}
-            {tabIds.length > 1 && <button role="menuitem" className="danger" onClick={() => (onClose(menu.tab), setMenu(null))}><IconClose size={13} />关闭</button>}
+            {"group" in menu ? (
+              <>
+                <button role="menuitem" autoFocus onClick={() => (onNew(menu.group, "canvas"), setMenu(null))}>新建画布</button>
+                <button role="menuitem" onClick={() => (onNew(menu.group, "session"), setMenu(null))}>新建会话</button>
+                <button role="menuitem" onClick={() => (onNew(menu.group, "sample"), setMenu(null))}>从示例新建画布</button>
+              </>
+            ) : (
+              <>
+                <button role="menuitem" onClick={() => (setEditing(menu.tab), setMenu(null))}><IconPencil size={13} />重命名<kbd>双击</kbd></button>
+                <button role="menuitem" onClick={() => (onClose(menu.tab), setMenu(null))}><IconClose size={13} />关闭</button>
+                <button role="menuitem" className="danger" onClick={() => (onDelete(menu.tab), setMenu(null))}><IconTrash size={13} />删除…</button>
+              </>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -236,7 +274,7 @@ const within = (r: Rect, x: number, y: number) => x >= r.x && x <= r.x + r.w && 
 const box = (r: Rect) => ({ left: r.x, top: r.y, width: Math.max(0, r.w), height: Math.max(0, r.h) });
 
 /** In-place tab title editor: Enter / blur saves, Esc cancels, blank falls back to the old name. */
-function TitleInput({ value, onDone }: { value: string; onDone: (v: string | null) => void }) {
+function TitleInput({ value, label, onDone }: { value: string; label: string; onDone: (v: string | null) => void }) {
   const done = useRef(false);
   const finish = (v: string | null) => {
     if (done.current) return;
@@ -248,10 +286,8 @@ function TitleInput({ value, onDone }: { value: string; onDone: (v: string | nul
       className="wm-tab-input"
       defaultValue={value}
       autoFocus
-      aria-label="画布名称"
-      size={Math.max(4, value.length + 1)}
+      aria-label={label}
       onFocus={(e) => e.currentTarget.select()}
-      onInput={(e) => (e.currentTarget.size = Math.max(4, e.currentTarget.value.length + 1))}
       onKeyDown={(e) => {
         e.stopPropagation();
         if (e.key === "Enter" && !e.nativeEvent.isComposing) finish(e.currentTarget.value);
