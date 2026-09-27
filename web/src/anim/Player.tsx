@@ -1,6 +1,8 @@
-// Engine-agnostic player bar (komo dark toolbar language), pinned under its region on the canvas.
+// Engine-agnostic player bar, pinned under its region on the canvas. Same form as the canvas dock:
+// a floating pill that follows the theme, icons through the facade.
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { SPEEDS, type AnimController, type ViewRect } from "./player.ts";
+import { IconClose, IconNext, IconPause, IconPlay, IconPrev, IconRetry } from "../app/icons";
 
 export function Player({ ctl, onClose }: { ctl: AnimController; onClose: () => void }) {
   const s = useSyncExternalStore(ctl.subscribe, () => ctl.snapshot);
@@ -23,16 +25,16 @@ export function Player({ ctl, onClose }: { ctl: AnimController; onClose: () => v
     >
       <div className="anim-row">
         <button className="anim-btn" onClick={ctl.reset} aria-label="复位" title="复位">
-          <Glyph d="M4 4v5h5M4.6 13a7 7 0 1 0 1.8-7.1L4 9" />
+          <IconRetry size={16} />
         </button>
         <button className="anim-btn" onClick={() => ctl.prev()} disabled={pos === 0} aria-label="上一步" title="上一步 ←">
-          <Glyph d="M15 5l-7 7 7 7M6 5v14" />
+          <IconPrev size={16} />
         </button>
         <button className="anim-btn main" onClick={ctl.toggle} aria-label={s.playing ? "暂停" : done ? "重播" : "播放"} title="播放 / 暂停 · 空格">
-          {s.playing ? <Glyph d="M8 5v14M16 5v14" /> : done ? <Glyph d="M4 4v5h5M4.6 13a7 7 0 1 0 1.8-7.1L4 9" /> : <Glyph d="M7 4.5v15l12-7.5z" fill />}
+          {s.playing ? <IconPause size={16} /> : done ? <IconRetry size={16} /> : <IconPlay size={16} />}
         </button>
         <button className="anim-btn" onClick={() => ctl.next()} disabled={done || s.playing} aria-label="下一步" title="下一步 →">
-          <Glyph d="M9 5l7 7-7 7M18 5v14" />
+          <IconNext size={16} />
         </button>
         <input
           className="anim-progress"
@@ -42,7 +44,6 @@ export function Player({ ctl, onClose }: { ctl: AnimController; onClose: () => v
           step={0.01}
           value={pos}
           aria-label="进度"
-          style={{ ["--p" as string]: `${(pos / s.total) * 100}%` }}
           onChange={(e) => (ctl.pause(), ctl.seek(Number(e.target.value)))}
         />
         <span className="anim-count">{Math.min(s.step + (s.t > 0 ? 1 : 0), s.total)}/{s.total}</span>
@@ -55,7 +56,7 @@ export function Player({ ctl, onClose }: { ctl: AnimController; onClose: () => v
           </button>
         )}
         <button className="anim-btn" onClick={onClose} aria-label="关闭播放器" title="关闭播放器（保留图形）">
-          <Glyph d="M6 6l12 12M18 6L6 18" />
+          <IconClose size={16} />
         </button>
       </div>
       <div className="anim-caption" aria-live="polite">{s.caption || ctl.tl.script.title}</div>
@@ -79,12 +80,4 @@ function useRegionRect(ctl: AnimController) {
     return () => cancelAnimationFrame(raf);
   }, [ctl]);
   return rect;
-}
-
-function Glyph({ d, fill }: { d: string; fill?: boolean }) {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill={fill ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d={d} />
-    </svg>
-  );
 }

@@ -1,11 +1,11 @@
-// komo-style thread card: one element that morphs from a hover preview into the
-// full thread (layout animation), with replies, agent results and actions.
+// Thread card: one floating card (theme-following, radius 14) that morphs from a hover preview
+// into the full thread (layout animation), with replies, agent results and actions.
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { handToSession, undoAgent } from "../ops/agent";
 import type { AnchorState } from "../canvas/anchors";
-import { IconAlert, IconCheck, IconClose, IconReopen, IconSend, IconSpark, IconUndo } from "../app/icons";
+import { IconCheck, IconClose, IconHint, IconRetry, IconSend, IconUndo } from "../app/icons";
 import type { Message, Thread, ThreadStore } from "./threads";
 import { identity, isGuestId } from "./threads";
 import { GUEST } from "../guest/mode";
@@ -39,7 +39,7 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
       animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
       exit={{ opacity: 0, scale: 0.96, filter: "blur(2px)", transition: { duration: 0.14 } }}
       transition={SPRING}
-      style={{ left: pos.left, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxH, originX: pos.flip ? 1 : 0, originY: pos.up ? 1 : 0, borderRadius: 16 }}
+      style={{ left: pos.left, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxH, originX: pos.flip ? 1 : 0, originY: pos.up ? 1 : 0, borderRadius: 14 }}
       onPointerDown={(e) => e.stopPropagation()}
       onPointerEnter={() => onHover?.(true)}
       onPointerLeave={() => onHover?.(false)}
@@ -53,27 +53,27 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
           </span>
           <span className="tcard-actions">
             {!t.resolved && !GUEST && (
-              <button className="tagent" disabled={running || st.status === "lost"} onClick={() => void handToSession(api, store, t.id)}>
-                <IconSpark size={13} /> {running ? "处理中" : "交给 Agent"}
+              <button className="btn sm primary tagent" disabled={running || st.status === "lost"} onClick={() => void handToSession(api, store, t.id)} title="交给这块画布上最近活动的会话">
+                <IconSend size={14} />{running ? "处理中" : "交给 Agent"}
               </button>
             )}
             {!GUEST && (
-              <button className="tbtn" onClick={() => store.setResolved(t.id, !t.resolved)} title={t.resolved ? "重新打开" : "解决"} aria-label={t.resolved ? "重新打开" : "解决"}>
-                {t.resolved ? <IconReopen size={15} /> : <IconCheck size={15} />}
+              <button className="icon-btn sm" onClick={() => store.setResolved(t.id, !t.resolved)} title={t.resolved ? "重新打开" : "解决"} aria-label={t.resolved ? "重新打开" : "解决"}>
+                {t.resolved ? <IconRetry size={16} /> : <IconCheck size={16} />}
               </button>
             )}
-            <button className="tbtn" onClick={() => store.close()} title="关闭" aria-label="关闭"><IconClose size={15} /></button>
+            <button className="icon-btn sm muted" onClick={() => store.close()} title="关闭" aria-label="关闭"><IconClose size={16} /></button>
           </span>
         </motion.header>
       )}
       {st.status !== "ok" && full && (
-        <div className="tcard-warn"><IconAlert size={13} />{st.status === "lost" ? "锚点已失效：被评论的元素已删除" : "部分锚点已失效"}</div>
+        <div className="tcard-warn"><IconHint size={14} /><b>锚点丢失</b>{st.status === "lost" ? "被评论的元素已删除；撤销删除或重新钉一条" : "有的元素已删除，其余仍在"}</div>
       )}
       <div className="tcard-scroll">
         <Row m={first} first />
         {!full && (rest.length > 0 || running) && (
           <motion.div layout="position" className="tcard-more">
-            {running ? <span className="shimmer">Agent 正在处理…</span> : `${rest.length} 条回复`}
+            {running ? <span className="waiting"><i className="dot" data-tone="ok" />Agent 正在处理…</span> : `${rest.length} 条回复`}
           </motion.div>
         )}
         <AnimatePresence initial={false}>
@@ -86,10 +86,10 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
           {full && running && (
             <Reveal key="running">
               <div className="trow">
-                <Avatar who="agent" spinning />
+                <Avatar who="agent" />
                 <div className="trow-main">
                   <div className="trow-meta"><b>Agent</b></div>
-                  <span className="shimmer">已交给会话里的 Agent，等它改完答复…</span>
+                  <span className="waiting"><i className="dot" data-tone="ok" />已交给会话里的 Agent，等它改完答复…</span>
                 </div>
               </div>
             </Reveal>
@@ -139,9 +139,9 @@ function Row({ m, first, onUndo }: { m: Message; first?: boolean; onUndo?: () =>
           <div className="tchanges" data-undone={!!reply.undone}>
             <ul>{reply.changes.map((c, i) => <li key={i}>{c}</li>)}</ul>
             {reply.undone ? (
-              <span className="tundone"><IconUndo size={12} /> 已撤销</span>
+              <span className="tundone"><IconUndo size={14} />已撤销</span>
             ) : (
-              onUndo && reply.batchId && <button className="tundo" onClick={onUndo}><IconUndo size={12} /> 撤销这次修改</button>
+              onUndo && reply.batchId && <button className="btn sm ghost" onClick={onUndo}><IconUndo size={14} />撤销这次修改</button>
             )}
           </div>
         )}
@@ -159,10 +159,11 @@ function Row({ m, first, onUndo }: { m: Message; first?: boolean; onUndo?: () =>
   );
 }
 
-export function Avatar({ who, spinning, name }: { who: Message["author"]; spinning?: boolean; name?: string }) {
+/** People and agents alike are an initial in a neutral circle; the system note is a hint icon. */
+export function Avatar({ who, name }: { who: Message["author"]; name?: string }) {
   return (
-    <span className="avatar" data-who={who} data-spinning={spinning} data-other={!!name}>
-      {who === "agent" ? <IconSpark size={12} /> : who === "system" ? "!" : name ? [...name.trim()][0] ?? "?" : "你"}
+    <span className="avatar" data-who={who} data-other={!!name}>
+      {who === "agent" ? "A" : who === "system" ? <IconHint size={14} /> : name ? [...name.trim()][0] ?? "?" : "你"}
     </span>
   );
 }
@@ -183,7 +184,7 @@ function Reply({ onSend }: { onSend: (text: string) => void }) {
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && (e.preventDefault(), send())}
       />
-      <button type="submit" className="tsend" disabled={!text.trim()} aria-label="发送回复"><IconSend size={13} /></button>
+      <button type="submit" className="send" disabled={!text.trim()} aria-label="发送回复"><IconSend size={14} /></button>
     </form>
   );
 }
@@ -211,13 +212,13 @@ export function Composer({ names, pos, text, onText, onCancel, onSubmit }: {
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.12 } }}
       transition={SPRING}
-      style={{ left: pos.left, top: pos.top, bottom: pos.bottom, originX: pos.flip ? 1 : 0, originY: pos.up ? 1 : 0, borderRadius: 16 }}
+      style={{ left: pos.left, top: pos.top, bottom: pos.bottom, originX: pos.flip ? 1 : 0, originY: pos.up ? 1 : 0, borderRadius: 14 }}
       onSubmit={(e) => (e.preventDefault(), submit())}
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="composer-head">
         <span className="composer-anchor"><span className="tcard-n new">新评论</span><AnchorTag names={names} /></span>
-        <button type="button" className="tbtn" onClick={onCancel} aria-label="取消评论" title="取消（Esc）"><IconClose size={14} /></button>
+        <button type="button" className="icon-btn sm muted" onClick={onCancel} aria-label="取消评论" title="取消（Esc）"><IconClose size={16} /></button>
       </div>
       <div className="treply bare">
         <textarea
@@ -230,7 +231,7 @@ export function Composer({ names, pos, text, onText, onCancel, onSubmit }: {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) (e.preventDefault(), submit());
           }}
         />
-        <button type="submit" className="tsend" disabled={!text.trim()} aria-label="发表评论"><IconSend size={13} /></button>
+        <button type="submit" className="send" disabled={!text.trim()} aria-label="发表评论"><IconSend size={14} /></button>
       </div>
     </motion.form>
   );

@@ -4,8 +4,7 @@
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DI } from "../app/icons";
-import "../app/tokens.css";
+import { IconCode, IconHint, IconTarget } from "../app/icons";
 import type { CanvasViewState } from "../canvas/CanvasView";
 import { bbox, codePathsOf, isShape, labelOf, live, type El } from "../canvas/scene";
 import { AGENT_NAMES, useAgents } from "../session/agents";
@@ -82,8 +81,8 @@ export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view
         <>
           <motion.span className="ptr-ring" initial={false} animate={{ x: pos.x - 5, y: pos.y - 5, width: pos.w + 10, height: pos.h + 10 }} transition={glide ? GLIDE : { duration: 0 }} />
           <motion.div className="ptr ptr-ui" initial={false} animate={{ x: pos.x, y: pos.y - 34 }} transition={glide ? GLIDE : { duration: 0 }} data-running={turns.at(-1)?.running}>
-            <button className="ptr-chip di-trigger" onClick={() => setOpen(open === "pointer" ? null : "pointer")} aria-expanded={open === "pointer"} title={`${agentName} 最近在改「${labelOf(el!, view.map)}」的代码`}>
-              <DI.target size={16} replayKey={state.placed.length} />
+            <button className="ptr-chip" onClick={() => setOpen(open === "pointer" ? null : "pointer")} aria-expanded={open === "pointer"} title={`${agentName} 最近在改「${labelOf(el!, view.map)}」的代码`}>
+              <IconTarget size={16} replayKey={state.placed.length} />
               <b>{agentName}</b>
               <span className="ptr-file">{base(cur.path)}</span>
               <time>{clock(cur.at)}</time>
@@ -108,8 +107,8 @@ export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view
       )}
       {links.length > 0 && sid && state.outside.length > 0 && (
         <div className="ptr-outside ptr-ui">
-          <button className="ptr-pill di-trigger" onClick={() => setOpen(open === "outside" ? null : "outside")} aria-expanded={open === "outside"}>
-            <DI.hint size={14} />
+          <button className="ptr-pill" onClick={() => setOpen(open === "outside" ? null : "outside")} aria-expanded={open === "outside"}>
+            <IconHint size={14} />
             在架构图之外
             <em>{state.outside.length}</em>
           </button>
@@ -201,14 +200,14 @@ function LinkEditor({ api, view, placed, links, screen }: { api: ExcalidrawImper
     <div className="ptr-edit ptr-ui" style={{ left: s.x + s.w + 8, top: s.y }}>
       {editing !== target.id ? (
         <button
-          className="ptr-pill di-trigger"
+          className="ptr-pill"
           onClick={() => {
             setText(paths.join("\n"));
             setEditing(target.id);
           }}
           title={paths.length ? paths.join("\n") : "让这个节点代表一部分代码，进度指针就能落在它上面"}
         >
-          <DI.code size={14} />
+          <IconCode size={14} />
           {paths.length ? `代码路径 · ${paths.length}` : "关联代码路径"}
         </button>
       ) : (

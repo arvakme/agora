@@ -7,6 +7,7 @@ import { toModelView } from "../canvas/modelView";
 import type { Scene } from "../canvas/scene";
 import type { Turn } from "./store";
 import { canvases } from "./ui";
+import { IconSend } from "../app/icons";
 
 type Option = { id: string; label: string; hint?: string };
 
@@ -73,10 +74,10 @@ export function Composer({ canvasId, canvasTitle, agentName, route, onSend }: {
   };
 
   return (
-    <div className="d-composer sp-composer">
+    <div className="sp-composer">
       <AnimatePresence>
         {pick && options.length > 0 && (
-          <motion.ul className="sp-pick" role="listbox" initial={{ opacity: 0, y: 6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 4 }} transition={SPRING}>
+          <motion.ul className="menu sp-pick" role="listbox" initial={{ opacity: 0, y: 6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 4 }} transition={SPRING}>
             <li className="sp-pick-head">引用「{canvasTitle ?? "画布"}」里的元素</li>
             {options.map((o, i) => (
               <li key={o.id} role="option" aria-selected={i === pick.i} data-on={i === pick.i} onPointerDown={(e) => (e.preventDefault(), choose(o))}>
@@ -87,7 +88,7 @@ export function Composer({ canvasId, canvasTitle, agentName, route, onSend }: {
           </motion.ul>
         )}
       </AnimatePresence>
-      <div className="d-composer-box">
+      <div className="sp-composer-box">
         <textarea
           ref={ta}
           value={text}
@@ -105,15 +106,18 @@ export function Composer({ canvasId, canvasTitle, agentName, route, onSend }: {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) (e.preventDefault(), send());
           }}
         />
-        <span className="d-composer-ctx">
-          <span className="d-ctx-chip">画布 · {canvasTitle ?? "已关闭"}</span>
-          <span className="d-ctx-chip" data-route={route}>{route === "terminal" ? "发到终端里的会话" : "无头续接"}</span>
-          {sel > 0 && <span className="d-ctx-chip">选区 · {sel} 个元素</span>}
-          {refs.map((r) => <span key={r.id} className="d-ctx-chip ref">#{r.label}</span>)}
-          {err && <span className="d-ctx-chip sp-warn">{err}</span>}
+        <span className="sp-ctx">
+          <span className="chip" title="消息默认作用于这块画布"><span>画布 · {canvasTitle ?? "已关闭"}</span></span>
+          <span className="chip" data-route={route} title={route === "terminal" ? "终端里的 CLI 持有这个会话：消息粘贴到终端" : "终端没开：Agora 在后台续接这个会话"}>
+            {route === "terminal" && <i className="dot" data-tone="ok" />}
+            <span>{route === "terminal" ? "发到终端里的会话" : "无头续接"}</span>
+          </span>
+          {sel > 0 && <span className="chip"><span>选区 · {sel} 个元素</span></span>}
+          {refs.map((r) => <span key={r.id} className="chip"><span>#{r.label}</span></span>)}
         </span>
+        {err && <p className="sp-warn" role="alert">没有发出去：{err}</p>}
       </div>
-      <button className="d-send" onClick={send} disabled={!text.trim()} aria-label="发送">↑</button>
+      <button className="send sp-send" onClick={send} disabled={!text.trim()} aria-label="发送"><IconSend size={14} /></button>
     </div>
   );
 }

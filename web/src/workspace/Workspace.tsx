@@ -5,11 +5,12 @@
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { SPRING } from "../comments/motion";
-import { IconClose, IconPencil, IconPlus, IconTrash } from "../app/icons";
+import { IconClose, IconLayers, IconMessage, IconPencil, IconPlus, IconTrash } from "../app/icons";
 import { activate, equalize, groupOf, groups, layout, moveTab, resize, type Node, type Rect, type Sash, type Zone } from "./layout";
 import { groupKind } from "./model";
 
-const GAP = 6, PAD = 6, HEADER = 34, MIN_PANE = 220;
+// Panes are flush: a 1px gap over the hairline-coloured workspace is the divider (D13).
+const GAP = 1, PAD = 0, HEADER = 36, MIN_PANE = 220;
 
 type Target = { groupId: string; zone: Zone; index?: number; preview: Rect };
 type Drag = { tab: string; x: number; y: number; ox: number; oy: number; active: boolean; target: Target | null };
@@ -191,10 +192,11 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, f
                         {subtitles[t] && <span className="wm-tab-sub">{subtitles[t]}</span>}
                       </span>
                     )}
-                    <button className="wm-tab-close" aria-label={`关闭 ${titles[t]}`} title="关闭（不会删除）" onClick={() => onClose(t)}><IconClose size={12} /></button>
+                    <button className="wm-tab-close" aria-label={`关闭 ${titles[t]}`} title="关闭（不会删除）" onClick={() => onClose(t)}><IconClose size={14} /></button>
+                    {g.active === t && <motion.span layoutId={`tab-ind-${g.id}`} className="wm-tab-ind" transition={SPRING} />}
                   </motion.div>
                 ))}
-                <button className="wm-add" onClick={(e) => plus(g.id, e.currentTarget)} aria-label={plusLabel(g.tabs)} title={plusLabel(g.tabs)}><IconPlus size={14} /></button>
+                <button className="wm-add" onClick={(e) => plus(g.id, e.currentTarget)} aria-label={plusLabel(g.tabs)} title={plusLabel(g.tabs)}><IconPlus size={16} /></button>
               </div>
             </section>
           );
@@ -230,7 +232,7 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, f
       <AnimatePresence>
         {menu && (
           <motion.div
-            className="wm-menu"
+            className="menu"
             role="menu"
             style={{ left: menu.x, top: menu.y }}
             initial={{ opacity: 0, scale: 0.96 }}
@@ -241,21 +243,21 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, f
           >
             {"group" in menu ? (
               <>
-                <button role="menuitem" autoFocus onClick={() => (onNew(menu.group, "canvas"), setMenu(null))}>新建画布</button>
-                <button role="menuitem" onClick={() => (onNew(menu.group, "session"), setMenu(null))}>新建会话</button>
-                <button role="menuitem" onClick={() => (onNew(menu.group, "sample"), setMenu(null))}>从示例新建画布</button>
+                <button role="menuitem" autoFocus onClick={() => (onNew(menu.group, "canvas"), setMenu(null))}><IconPlus size={14} />新建画布</button>
+                <button role="menuitem" onClick={() => (onNew(menu.group, "session"), setMenu(null))}><IconMessage size={14} />新建会话</button>
+                <button role="menuitem" onClick={() => (onNew(menu.group, "sample"), setMenu(null))}><IconLayers size={14} />从示例新建画布</button>
               </>
             ) : (
               <>
-                <button role="menuitem" onClick={() => (setEditing(menu.tab), setMenu(null))}><IconPencil size={13} />重命名<kbd>双击</kbd></button>
-                <button role="menuitem" onClick={() => (onClose(menu.tab), setMenu(null))}><IconClose size={13} />关闭</button>
-                <button role="menuitem" className="danger" onClick={() => (onDelete(menu.tab), setMenu(null))}><IconTrash size={13} />删除…</button>
+                <button role="menuitem" onClick={() => (setEditing(menu.tab), setMenu(null))}><IconPencil size={14} />重命名<kbd>双击</kbd></button>
+                <button role="menuitem" onClick={() => (onClose(menu.tab), setMenu(null))}><IconClose size={14} />关闭</button>
+                <button role="menuitem" className="danger" onClick={() => (onDelete(menu.tab), setMenu(null))}><IconTrash size={14} />删除…</button>
               </>
             )}
           </motion.div>
         )}
       </AnimatePresence>
-      {menu && <div className="wm-menu-scrim" onPointerDown={() => setMenu(null)} onContextMenu={(e) => (e.preventDefault(), setMenu(null))} />}
+      {menu && <div className="menu-scrim" onPointerDown={() => setMenu(null)} onContextMenu={(e) => (e.preventDefault(), setMenu(null))} />}
       {drag?.active && (
         <>
           {drag.target && <div className="wm-drop" data-zone={drag.target.zone} style={box(drag.target.preview)} />}

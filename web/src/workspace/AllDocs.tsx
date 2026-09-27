@@ -2,7 +2,7 @@
 // Opening a closed one brings its tab back; deleting is confirmed here, in place.
 import { motion } from "motion/react";
 import { useEffect } from "react";
-import { IconPlus, IconTrash } from "../app/icons";
+import { IconLayers, IconPlus, IconTrash } from "../app/icons";
 import { SPRING } from "../comments/motion";
 import { sessions } from "../session/store";
 import type { CanvasDoc, Doc, SessionDoc } from "./model";
@@ -38,20 +38,20 @@ export function AllDocs({ docs, open, focused, confirm, setConfirm, canvasOf, co
     const last = d.kind === "canvas" && canvases.length === 1;
     const state = d.id === focused ? "当前" : open.has(d.id) ? "已打开" : "已关闭";
     return (
-      <li key={d.id} className="ad-row" data-sub={sub} data-open={open.has(d.id)}>
+      <li key={d.id} className="ad-row" data-sub={sub} data-open={open.has(d.id)} data-current={d.id === focused}>
         <button className="ad-main" onClick={() => onOpen(d.id)} title={open.has(d.id) ? "切换到这里" : "重新打开"}>
           <span className="ad-mark" data-kind={d.kind} />
           <span className="ad-title">{d.title}</span>
           <span className="ad-state">{state}</span>
         </button>
         <button
-          className="ad-del"
+          className="icon-btn sm muted ad-del"
           disabled={last}
           onClick={() => setConfirm(d.id)}
           aria-label={`删除 ${d.title}`}
           title={last ? "至少保留一个画布" : "删除…"}
         >
-          <IconTrash size={14} />
+          <IconTrash size={16} />
         </button>
       </li>
     );
@@ -67,8 +67,8 @@ export function AllDocs({ docs, open, focused, confirm, setConfirm, canvasOf, co
           {orphans.map((s) => row(s, true))}
         </ul>
         <footer className="ad-foot">
-          <button onClick={() => onNew(false)}><IconPlus size={13} />新建空白画布</button>
-          <button onClick={() => onNew(true)}>从示例新建</button>
+          <button className="btn sm ghost" onClick={() => onNew(false)}><IconPlus size={14} />新建空白画布</button>
+          <button className="btn sm ghost" onClick={() => onNew(true)}><IconLayers size={14} />从示例新建</button>
         </footer>
       </motion.div>
     </>
@@ -84,8 +84,8 @@ function Confirm({ doc, comments, onCancel, onConfirm }: { doc: Doc; comments: n
         删除「{doc.title}」？{what}删除后可以立即撤销。
       </p>
       <div>
-        <button autoFocus onClick={onCancel}>取消</button>
-        <button className="danger" onClick={onConfirm}>删除</button>
+        <button className="btn sm ghost" autoFocus onClick={onCancel}>取消</button>
+        <button className="btn sm danger" onClick={onConfirm}><IconTrash size={14} />删除</button>
       </div>
     </li>
   );

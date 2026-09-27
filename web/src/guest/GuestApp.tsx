@@ -7,7 +7,8 @@ import { CanvasView, type CanvasHandle } from "../canvas/CanvasView";
 import { createThreadStore, setIdentity, useThreads, type Message, type Thread, type ThreadStore } from "../comments/threads";
 import { threadsFromFile, type ThreadsFile } from "../project/format";
 import { SPRING } from "../comments/motion";
-import { DI, IconComment, IconList, IconPointer } from "../app/icons";
+import { IconComment, IconEye, IconList, IconLock, IconPointer, IconUser, IconWorkspace } from "../app/icons";
+import { ThemeButton } from "../app/ThemeButton";
 import type { El } from "../canvas/scene";
 import "./guest.css";
 
@@ -46,8 +47,9 @@ export class Ended extends Error {}
 
 export function GuestEnded() {
   return (
-    <div className="ds guest-ended">
+    <div className="guest-ended">
       <main>
+        <IconLock size={56} />
         <h1>这个分享链接已失效</h1>
         <p>它可能已经到期或被作者撤销。需要继续查看的话，请向作者要一个新链接。</p>
       </main>
@@ -172,14 +174,15 @@ export function GuestApp({ initial }: { initial: State }) {
   return (
     <MotionConfig reducedMotion="user">
       <div className="app guest" data-mode={mode}>
-        <header className="ds guest-top">
-          <span className="guest-brand"><span className="brand-mark" />Agora</span>
+        <header className="guest-top">
+          <span className="brand"><IconWorkspace size={18} />Agora</span>
           <span className="guest-title" title={initial.canvas.title}>{initial.canvas.title || "画布"}</span>
           <span className="guest-project">{initial.project.name}</span>
           <span className="guest-gap" />
-          <span className="guest-note"><DI.eye size={14} />只能查看和评论{expires != null && <> · <Remaining at={expires} /></>}</span>
-          <button className="guest-name" onClick={() => setAsking("needed")} title="修改显示名">
-            <DI.user size={14} />{name || "填写名字"}
+          <span className="guest-note"><IconEye size={16} />只能查看和评论{expires != null && <> · <Remaining at={expires} /></>}</span>
+          <ThemeButton />
+          <button className="btn quiet guest-name" onClick={() => setAsking("needed")} title="修改显示名">
+            <IconUser size={16} /><span>{name || "填写名字"}</span>
           </button>
         </header>
         <div className="guest-canvas" data-pane={initial.canvas.id}>
@@ -198,10 +201,10 @@ export function GuestApp({ initial }: { initial: State }) {
         <GuestDock mode={mode} setMode={(m) => (m === "comment" ? startComment() : setMode(m))} drawer={drawer} toggleDrawer={() => setDrawer((d) => !d)} store={store} />
         {mode === "comment" && (
           <motion.div className="mode-hint" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
-            点击一个元素钉评论 · Esc 退出
+            <IconComment size={14} />点一个元素钉评论 · Esc 退出
           </motion.div>
         )}
-        {toast && <div className="ds guest-toast" role="status">{toast}</div>}
+        {toast && <div className="toast" role="status"><span>{toast}</span></div>}
         {asking && <NameDialog initial={name} welcome={asking === "welcome"} title={initial.canvas.title} onOk={confirmName} onSkip={skipName} />}
       </div>
     </MotionConfig>
@@ -232,14 +235,14 @@ function GuestDock({ mode, setMode, drawer, toggleDrawer, store }: { mode: "brow
     <div className="dock" role="toolbar" aria-label="评论工具">
       <div className="dock-tools">
         {([["browse", IconPointer, "浏览 · V"], ["comment", IconComment, "评论 · C"]] as const).map(([m, Icon, label]) => (
-          <button key={m} className="dock-btn icon" data-on={mode === m} onClick={() => setMode(m)} aria-label={label} title={label}>
+          <button key={m} className="dock-btn" data-on={mode === m} aria-pressed={mode === m} onClick={() => setMode(m)} aria-label={label} title={label}>
             {mode === m && <motion.span layoutId="dock-on" className="dock-on" transition={SPRING} />}
-            <Icon size={17} />
+            <Icon size={18} />
           </button>
         ))}
-        <button className="dock-btn icon" data-on={drawer} onClick={toggleDrawer} aria-label={`所有评论 · ${open} 条进行中`} title="所有评论">
+        <button className="dock-btn" data-on={drawer} aria-pressed={drawer} onClick={toggleDrawer} aria-label={`所有评论 · ${open} 条进行中`} title="所有评论">
           {drawer && <motion.span layoutId="dock-drawer" className="dock-on" transition={SPRING} />}
-          <IconList size={17} />
+          <IconList size={18} />
           {open > 0 && <em className="dock-badge">{open}</em>}
         </button>
       </div>
@@ -252,7 +255,7 @@ function NameDialog({ initial, welcome, title, onOk, onSkip }: { initial: string
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => ref.current?.focus(), []);
   return (
-    <div className="ds guest-scrim" onPointerDown={(e) => e.target === e.currentTarget && onSkip()}>
+    <div className="guest-scrim" onPointerDown={(e) => e.target === e.currentTarget && onSkip()}>
       <motion.form
         className="guest-dialog"
         role="dialog"
@@ -262,6 +265,7 @@ function NameDialog({ initial, welcome, title, onOk, onSkip }: { initial: string
         transition={SPRING}
         onSubmit={(e) => (e.preventDefault(), onOk(v))}
       >
+        {welcome && <IconEye size={48} />}
         <h2>{welcome ? `你正在查看「${title || "画布"}」` : "评论前留个名字"}</h2>
         <p>{welcome ? "可以浏览这块画布，也可以在元素上钉评论；作者会看到并回复。不能修改画图。" : "名字会显示在你的评论旁边，作者靠它认出你。"}</p>
         <label>
@@ -269,8 +273,8 @@ function NameDialog({ initial, welcome, title, onOk, onSkip }: { initial: string
           <input ref={ref} value={v} maxLength={40} placeholder="例如：小王" onChange={(e) => setV(e.target.value)} />
         </label>
         <div className="guest-dialog-actions">
-          <button type="button" className="guest-btn quiet" onClick={onSkip}>{welcome ? "先只看" : "取消"}</button>
-          <button type="submit" className="guest-btn primary" disabled={!v.trim()}>{welcome ? "开始" : "好"}</button>
+          <button type="button" className="btn quiet" onClick={onSkip}>{welcome ? "先只看" : "取消"}</button>
+          <button type="submit" className="btn primary" disabled={!v.trim()}>{welcome ? "开始" : "好"}</button>
         </div>
       </motion.form>
     </div>
