@@ -25,6 +25,7 @@ import { canvasFromUrl, nav, nested, urlFor } from "../nested/store";
 import { isEditableTarget, markBackHintSeen, upOnKey } from "../nested/up";
 import { sessionNames } from "../multi/writes";
 import { setWorkstationRoot } from "../workstation/Workstation";
+import { BENCH, installBench } from "../bench/bench";
 import { ShareButton } from "../share/SharePanel";
 import { Workspace } from "../workspace/Workspace";
 import { activate, groupOf, groups, moveTab, preset, type Node, type Preset } from "../workspace/layout";
@@ -62,6 +63,7 @@ export type { Doc } from "../workspace/model";
 import type { Boot } from "./boot";
 export { prepareBoot, type Boot, type WorkspaceState } from "./boot";
 
+let benched = false;
 const uid = (p: string) => `${p}-${Math.random().toString(36).slice(2, 8)}`;
 
 /** Bound agents as a stable string, so the shell re-renders when a binding appears or changes identity, not on every status event. */
@@ -244,6 +246,7 @@ export function App({ boot }: { boot: Boot }) {
     handles.current.set(id, h);
     canvases.set(id, { api: h.api, store: h.store, title: "" });
     bump((n) => n + 1);
+    if (BENCH && !benched) (benched = true), void installBench(h.api);
     // Scripted browser checks: first canvas as before, plus every handle by id.
     // __agora.eval is the eval CLI's entry point (scripts/eval.ts, scripts/eval-replay.ts).
     if (id === "c1")
