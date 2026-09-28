@@ -10,6 +10,7 @@ import { ThemeButton } from "./ThemeButton";
 import { ackChange, adoptCanvas, adoptSession, dropCanvas, flushSaves, PERSIST, project, reloadFromDisk, save, slotFile, type LocalChange } from "../persist";
 import { trash, type Restored } from "../workspace/trash";
 import { TrashPanel } from "../workspace/TrashPanel";
+import { HistoryPanel } from "../workspace/HistoryPanel";
 import { byId, type El } from "../canvas/scene";
 import { SessionPane } from "../session/SessionPane";
 import { sessions, type Session, type Turn } from "../session/store";
@@ -88,7 +89,7 @@ export function App({ boot }: { boot: Boot }) {
   const [removed, setRemoved] = useState<Removed | null>(null);
   const [recoveredNote, setRecoveredNote] = useState(boot.recovered);
   const [change, setChange] = useState<LocalChange | null | undefined>(boot.change);
-  const [panel, setPanel] = useState<"trash" | null>(null);
+  const [panel, setPanel] = useState<"trash" | "history" | null>(null);
   const [panelFocus, setPanelFocus] = useState<string | undefined>();
   useEffect(() => void trash.refresh(), []);
   const [evalProgress, setEvalProgress] = useState<EvalProgress | null>(null);
@@ -469,6 +470,7 @@ export function App({ boot }: { boot: Boot }) {
       return wait;
     };
     ui.openTrash = (trashId) => (setPanelFocus(trashId), setListOpen(null), setPanel("trash"));
+    ui.openHistory = () => (setListOpen(null), setPanel("history"));
     ui.trashSession = (sessionId) => {
       const doc = docsRef.current.find((d) => d.kind === "session" && d.sessionId === sessionId);
       if (doc) setListOpen({ confirm: doc.id });
@@ -561,6 +563,7 @@ export function App({ boot }: { boot: Boot }) {
                 onOpen={(id) => (openDoc(id), setListOpen(null))}
                 onRemove={(id) => (void remove(id), setListOpen({}))}
                 onTrash={() => (setListOpen(null), setPanelFocus(undefined), setPanel("trash"))}
+                onHistory={() => (setListOpen(null), setPanel("history"))}
                 onNew={(sample) => (addCanvas({ sample }), setListOpen(null))}
                 onDismiss={() => setListOpen(null)}
               />
@@ -682,6 +685,23 @@ export function App({ boot }: { boot: Boot }) {
           </motion.div>
         )}
         {panel === "trash" && <TrashPanel focus={panelFocus} titles={names} canvasTitles={canvasTitles} onRestore={(id) => void restore(id)} onDismiss={() => setPanel(null)} />}
+        {panel === "history" && (
+          <HistoryPanel
+            docs={docs.filter((d) => !isDraftDoc(d))}
+            titles={names}
+            canvasTitles={canvasTitles}
+            open={open}
+            currentCanvas={canvasDoc?.id ?? lastCanvas}
+            onOpen={(id) => (openDoc(id), setPanel(null))}
+            onRestore={(id) => (void restore(id), setPanel(null))}
+            onImported={(docId, doc) => {
+              setDocs((ds) => (ds.some((d) => d.id === docId) ? ds : [...ds, doc]));
+              setPanel(null);
+              setTimeout(() => openDoc(docId, { kind: "session" }), 0);
+            }}
+            onDismiss={() => setPanel(null)}
+          />
+        )}
 
         {evalProgress && <pre className="eval-log">{evalProgress.log.slice(-14).join("\n")}</pre>}
       </div>

@@ -316,6 +316,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   };
 
   const inSeedmux = !!status?.terminal.alive && status.terminal.app === "seedmux";
+  const [staleSeen, setStaleSeen] = useState(() => staleKnown(sessionId));
   // Copied along with the project (cp -r): read-only until forked here. A pending fork: the next
   // message (Claude, Pi) or the terminal (all three; Codex only there) continues it as a new native session.
   const copyOf = status?.copy ?? null;
@@ -486,6 +487,13 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           <span>{native.message}</span>
         </div>
       )}
+      {status?.stale && !staleSeen && (
+        <div className="notice sp-lost-note" role="status" data-tone="caution">
+          <b>快到 30 天了</b>
+          <span>这个会话 {status.stale.days} 天没有活动。Claude Code 默认 30 天后删除会话记录；要保留，在 ~/.claude/settings.json 里设 cleanupPeriodDays。Agora 已为它保存轨迹快照，记录删了也能看、能带着摘要接着聊。</span>
+          <button className="btn sm ghost" onClick={() => (rememberStale(sessionId), setStaleSeen(true))}>知道了</button>
+        </div>
+      )}
       {fork && !copyOf && (
         <div className="notice sp-lost-note" role="status">
           <b>分叉</b>
@@ -495,9 +503,11 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
       {copyOf ? (
         <CopyCard sessionId={sessionId} copy={copyOf} agent={binding.agent} />
       ) : stuck && native ? (
-        <NativeMissing sessionId={sessionId} canvasId={session.canvasId} problem={native} agent={binding.agent} model={binding.model} effort={binding.effort} />
+        <NativeMissing sessionId={sessionId} canvasId={session.canvasId} problem={native} agent={binding.agent} model={binding.model} effort={binding.effort} snapshot={!!status?.snapshot || items.length > 0} />
       ) : (
         <Composer
+          key={binding.nativeId ?? "new"}
+          initial={takeDraft(sessionId)}
           canvasId={session.canvasId}
           canvasTitle={canvasTitle}
           agentName={AGENT_NAMES[binding.agent]}
@@ -542,23 +552,31 @@ function CopyCard({ sessionId, copy, agent }: { sessionId: string; copy: NonNull
  * keep what Agora still shows (this pane, read-only), and offer a new session — never resume
  * into a silently new conversation under the same id.
  */
-function NativeMissing({ sessionId, canvasId, problem, agent, model, effort }: { sessionId: string; canvasId: string; problem: NonNullable<import("./agents").Status["native"]>; agent: AgentKind; model: string; effort: string }) {
+function NativeMissing({ sessionId, canvasId, problem, agent, model, effort, snapshot }: { sessionId: string; canvasId: string; problem: NonNullable<import("./agents").Status["native"]>; agent: AgentKind; model: string; effort: string; snapshot: boolean }) {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const fresh = async () => {
+  const act = async (f: () => Promise<unknown>) => {
     setBusy(true);
     setErr(null);
     try {
-      const s = sessions.create(canvasId, undefined, { draft: true });
-      await agents.bind(s.id, agent, model, effort);
-      ui.openSession(s.id);
+      await f();
     } catch (e) {
       setErr((e as Error).message);
     } finally {
       setBusy(false);
     }
   };
+  // This same Agora session continues in a new native session; its first message carries a
+  // summary of what was said (editable before sending). The old native id stays on record.
+  const carryOn = () =>
+    act(async () => {
+      const text = await agents.summary(sessionId);
+      draftText.set(sessionId, text);
+      await agents.restart(sessionId);
+    });
+  const fresh = () => act(() => freshSession(canvasId, agent, model, effort));
   const title = problem.state === "missing" ? "原生会话缺失" : problem.state === "ambiguous" ? "找到多份原生记录" : "原生会话在别的目录";
+  const lost = problem.state === "missing";
   return (
     <div className="sp-lost" role="alert" data-state={problem.state}>
       <p className="sp-lost-title"><b>{title}</b> · 只读</p>
@@ -568,14 +586,41 @@ function NativeMissing({ sessionId, canvasId, problem, agent, model, effort }: {
           {problem.candidates.map((c) => <li key={c}><code>{c}</code></li>)}
         </ul>
       )}
-      <p className="sp-lost-hint">上面是这个会话在 Agora 里已有的轨迹，可以照常查看。要接着讨论，开一个新的 {AGENT_NAMES[agent]} 会话（同一块画布、同样的模型）；这个会话保持原样。</p>
+      <p className="sp-lost-hint">
+        {snapshot ? "上面是 Agora 保存的轨迹快照，只读。" : "Agora 这边没有这个会话的轨迹快照。"}
+        {lost ? `要接着讨论，可以带着摘要在这里开一个新的 ${AGENT_NAMES[agent]} 原生会话（同一个 Agora 会话、同样的模型；发送前可以改摘要），或者另开一个会话。` : `要接着讨论，另开一个 ${AGENT_NAMES[agent]} 会话（同一块画布、同样的模型）；这个会话保持原样。`}
+      </p>
       {err && <p className="sp-warn">{err}</p>}
       <div className="sp-lost-go">
-        <button className="btn primary sm" disabled={busy} onClick={() => void fresh()} data-session={sessionId}>开新会话</button>
+        {lost && <button className="btn primary sm" disabled={busy} onClick={() => void carryOn()} data-session={sessionId}>带着摘要开新会话</button>}
+        <button className={lost ? "btn ghost sm" : "btn primary sm"} disabled={busy} onClick={() => void fresh()}>另开一个会话</button>
+        <button className="btn ghost sm" disabled={busy} onClick={() => ui.trashSession(sessionId)}>移到回收站</button>
       </div>
     </div>
   );
 }
+
+/** A pre-filled message for a session's composer, taken once. */
+function takeDraft(sessionId: string) {
+  const t = draftText.get(sessionId);
+  draftText.delete(sessionId);
+  return t;
+}
+const STALE_KEY = "agora.staleSeen";
+const staleKnown = (sid: string) => {
+  try {
+    return (JSON.parse(localStorage.getItem(STALE_KEY) ?? "[]") as string[]).includes(sid);
+  } catch {
+    return false;
+  }
+};
+const rememberStale = (sid: string) => {
+  try {
+    localStorage.setItem(STALE_KEY, JSON.stringify([...(JSON.parse(localStorage.getItem(STALE_KEY) ?? "[]") as string[]), sid].slice(-200)));
+  } catch {
+    /* private window: shown again next time */
+  }
+};
 
 /** 对话 view: per turn — header with usage, the person's message, the process folded into one line, canvas changes, the answer. */
 function Conversation({ sessionId, turns, changes, canvasTitles, flash, onTrajectory }: { sessionId: string; turns: TrajTurn[]; changes: Turn[]; canvasTitles: Record<string, string>; flash: string | null; onTrajectory: (n: number) => void }) {

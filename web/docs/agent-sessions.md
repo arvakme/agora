@@ -14,7 +14,8 @@ Agora 里的一个会话，就是用户选定的原生 coding agent 的一个原
 | 锁定 | 绑定写在 `.agora/sessions/<id>.agent.json`：`{agent, model, effort, nativeId, createdAt}`，只由服务端写。`PUT /api/agent/sessions/<id>` 再次提交不同的 agent / 模型 / 强度返回 `409 {locked: true}`；`nativeId` 只能从空设一次。界面上没有修改入口，只显示 🔒 模型 · 强度 |
 | 原生 id | Claude Code 和 Pi 在绑定时就分配 uuid（`--session-id`）；Codex 自己分配，第一轮（无头 `thread.started`，或终端里新起的 rollout）后写回 |
 | 已开始 | 绑定里的 `started`：原生日志第一次被找到、或一轮无头续接成功后置为 true（绑定时就带着 `nativeId` 的——撤销删除——直接是 true；没有这个字段的旧绑定按 true 算）。只有没开始过的会话会用 `--session-id` 新建；开始过的永远续接 |
-| 原生记录缺失 | 开始过的会话找不到原生日志（Claude 默认 30 天清理、换机器、`~/.claude` 被清），或找到多份不知跟哪份，或 Pi 的日志只在别的目录下（项目移动过）：发消息和「在终端打开」都返回 `409 {nativeMissing: true, native: {state, candidates, message}}`，不启动 CLI；面板把输入框换成说明（丢了什么、候选文件），只读保留已有轨迹，提供「开新会话」（同一块画布、同样的 agent 和模型，新的原生 id）。Agora 不会用同一个 id 静默新开对话 |
+| 原生记录缺失 | 开始过的会话找不到原生日志（Claude 默认 30 天清理、换机器、`~/.claude` 被清），或找到多份不知跟哪份，或 Pi 的日志只在别的目录下（项目移动过）：发消息和「在终端打开」都返回 `409 {nativeMissing: true, native: {state, candidates, message}}`，不启动 CLI；面板把输入框换成说明（丢了什么、候选文件），只读显示 Agora 保存的轨迹快照（§7），提供「带着摘要开新会话」（日志确实没了时：同一个 Agora 会话换一个新的原生会话，输入框预先填好快照生成的摘要，发送前可以改；旧 id 留在 `natives` 里）、「另开一个会话」（同一块画布、同样的 agent 和模型）和「移到回收站」。Agora 不会用同一个 id 静默新开对话。终端开着时消息照常投进终端（pane 已经持有这个会话，不会新起 CLI） |
+| 快到 30 天 | Claude Code 会话 20 天没有活动（日志的修改时间）：面板提示一次 Claude 默认 30 天清理、怎么设 `cleanupPeriodDays`，以及 Agora 已经存了快照。不改用户的全局配置 |
 | 对话记录 | 以 CLI 自己的会话日志为准（见 §4），不另存一份；`.agora/sessions/<id>.jsonl` 只记这个会话里的画布修改（每次 `agora canvas apply/anim` 一条 turn，带整批撤销数据） |
 | 删除 | 删除会话 = 连同绑定文件、改图记录、轨迹快照和用量挪进回收站（[项目存储 §1](project-storage.md#trash回收站)），关掉它的终端 pane（Agora 的 tmux 或 Seedmux）、停掉正在跑的无头续接（之后才结束的那一轮不再写回原生 id、用量和状态）；原生日志不删。从回收站恢复时绑定原样回来，按原来的原生 id 续接，不会用 `--session-id` 新建。带着原生 id 的 `PUT /sessions/{id}`（导入、恢复）不再按当前的模型目录校验 |
 | 身份与恢复 | 绑定里另有 `natives`（这个会话用过的每个原生 id 和原因）、`log`（上次找到日志的路径）、`pendingFork`（下一次运行要从哪个原生会话分叉）。`nativeId` 只在记录在案的恢复流程里改：分叉（副本在这里继续、Pi 日志没能迁移）、以后的「带着摘要开新会话」。每次绑定和改绑都记进本机注册表（[项目存储 §1](project-storage.md#本机状态localagora-之外的注册表)） |
@@ -141,6 +142,8 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 | POST / DELETE | `/sessions/{id}/terminal` | 打开（`{launch, app: kitty\|seedmux}`）/ 关闭终端；状态里的 `terminal.app` 是 `tmux` 或 `seedmux`（带 `paneId`） |
 | GET | `/terminals` | 能在哪儿打开：`{kitty, seedmux: {available, reason?}}` |
 | GET | `/sessions/{id}/items/{itemId}` | 一条会话记录的全文（工具输入 / 输出超过预览长度时，页面「展开全文」用） |
+| GET | `/sessions/{id}/summary` | `{text}`：按快照生成的「接着之前的讨论」摘要（最近的轮次优先，约 6000 字以内），不调用模型 |
+| POST | `/sessions/{id}/restart` | 原生日志确实没了：换一个新的原生 id（`started: false`），下一条消息新建它；日志还在时拒绝 |
 | GET | `/events?executor=1` | SSE：`transcript`、`status`、`delivered`、`done`、`bridge`（给执行页面） |
 | POST | `/bridge/{rid}` | 页面回传 read/apply/anim 结果 |
 | GET / POST | `/canvas/list`、`/canvas/read`、`/canvas/apply`、`/canvas/anim`、`/canvas/link` | `agora canvas` 用（`link` 见 [进度指针](progress-pointer.md)） |
@@ -170,6 +173,17 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 | `run` | 无头续接时 runner 的结果用量（Claude 的花费只在这里：原生日志不记花费）。存 `.agora/run/usage/<会话>.jsonl`，重启后还在 |
 
 工具输入 / 输出服务端保留全文（每条最多 256k 字符），推给页面的是前 4000 字符的预览加总长度，页面点「展开全文」再取。
+
+**轨迹快照**（`.agora/sessions/snapshots/<会话>.jsonl`，只在本机、不进 git）：推给页面的每条记录（就是上面那份预览：用户和助手的文字全文，工具只有名字、一行摘要、4000 字预览和改到的文件）同时追加一行，同一个 id 以最后一行为准，内容没变不追加，每个会话封顶 20MB。服务启动时先载入它，再从原生日志补全；原生日志没了，面板照样显示快照（只读），「带着摘要开新会话」的摘要也从它来。不备份原生日志本身。
+
+## 8. 会话历史
+
+「所有画布」底部的「会话历史」（`web/src/workspace/HistoryPanel.tsx`，`GET /api/project/history`，`server/canvas/discover.py`）：
+
+- **列出**：清单里的会话（打开的、关闭的）、回收站里的、只有本机注册表知道的，以及在本机找到、属于这个项目但不在项目里的原生会话。每一行：agent 头像、名字、状态（已打开 / 已关闭 · 可续接 / 在终端里运行 / 原生记录缺失 / 来自另一台机器 / 副本 · 只读 / 在回收站 · N 天后清除 / 不在项目里）、所属画布、模型、轮数、创建和最后活动时间。
+- **筛选与搜索**：agent、画布、状态（打开的 / 已关闭 / 回收站 / 要处理的 / 可以导入的）、时间（24 小时 / 7 天 / 30 天）；搜索名字、主题、首条消息（在页面里筛）；勾「搜索对话全文」后由服务端逐个读原生日志里用户和助手说的话（每个文件最多 50MB；日志没了就读快照，`GET /api/project/history/search?q=`）。
+- **找回**：从强到弱——本机注册表的绑定记录（精确到原生 id）；Agora 发出的消息里的隐藏页脚 `(canvas=… session=… project=…)`（项目 id 前 8 位对得上就算这个项目的，`session=` 给出原来的 Agora 会话 id，`canvas=` 给出画布）；只有画布 id 的旧页脚；只在项目目录里跑过、从没经过 Agora 的会话（默认折叠在最后）。扫的是当前根目录和注册表里记下的每个历史根目录：Claude 的转义目录、Pi 的 `--…--` 目录、Codex 的 `state_5.sqlite`（`threads where cwd in (…)`，只读；没有这个库就看最近 400 个 rollout 的首行）。
+- **操作**：打开（清单里的）、恢复（回收站里的）、导入（找到的 / 注册表里的）：按原来的 Agora 会话 id（页脚里有、且没被占用时）建会话、挂到页脚里的画布（没有就当前画布），绑定到那个原生 id、`started: true`——续接，不会新建。
 
 **对话视图**：每轮一个头（第 N 轮 · 终端 · 时间 · 模型 · 强度 · 输入 / 输出 / 缓存 tokens · 耗时 · 花费，只显示日志里有的），然后是用户消息、**过程折叠成一行**（「已读取文件并修改了文件 · 用时 12 s · 4 次工具调用」，按工具类别计数取前三；进行中显示「正在编辑文件，用时 …」且保持展开，出错的轮次也保持展开），展开后是中间消息和工具调用，每个工具调用可再展开看输入、输出、改到的文件和起止时间；这一轮里的改图卡片；最后是答复。答复按 Markdown 渲染（`web/src/session/markdown.tsx`：标题、列表、表格、代码块、引用、行内代码与链接），直接生成 React 元素，文字里的 HTML 标签原样显示为文字，链接只保留 http(s) 与 mailto，所以答复里的内容不会执行脚本。
 

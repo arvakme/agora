@@ -151,6 +151,24 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
         hub.ensure_started()
         return b
 
+    @router.get("/sessions/{sid}/summary")
+    async def summary(sid: str):
+        """The lost conversation as a message to start a new native session with (the page lets the person edit it)."""
+        try:
+            return {"text": await asyncio.to_thread(hub.summary, sid)}
+        except Exception as e:
+            return fail(e)
+
+    @router.post("/sessions/{sid}/restart")
+    async def restart(sid: str):
+        """The native log is gone: the next message starts a new native session for this Agora session."""
+        try:
+            b = await asyncio.to_thread(hub.restart, sid)
+        except Exception as e:
+            return fail(e)
+        hub.ensure_started()
+        return b
+
     @router.post("/sessions/{sid}/interrupt")
     def interrupt(sid: str):
         return {"stopped": hub.interrupt(sid)}

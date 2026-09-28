@@ -77,6 +77,10 @@ export type Status = {
   native?: NativeProblem | null;
   /** Brought along by `cp -r` of the project: read-only here until forked. */
   copy?: { from: string; fromInstance: string; at: number } | null;
+  /** A Claude Code session idle for 20+ days: Claude deletes session logs after 30 by default. */
+  stale?: { days: number; path: string } | null;
+  /** Agora holds a trajectory snapshot of this session (shown read-only if the native log is gone). */
+  snapshot?: boolean;
   running: boolean;
   busy: boolean;
   queued: number;
@@ -290,6 +294,14 @@ export const agents = {
   item: async (sessionId: string, itemId: string) => (await json(await fetch(`/api/agent/sessions/${sessionId}/items/${encodeURIComponent(itemId)}`))) as Item,
   closeTerminal: (sessionId: string) => fetch(`/api/agent/sessions/${sessionId}/terminal`, { method: "DELETE" }),
   interrupt: (sessionId: string) => fetch(`/api/agent/sessions/${sessionId}/interrupt`, { method: "POST" }),
+  /** What was said so far (from Agora's snapshot), as a message to carry into a new native session. */
+  summary: async (sessionId: string) => ((await json(await fetch(`/api/agent/sessions/${sessionId}/summary`))) as { text: string }).text,
+  /** The native log is gone: the next message starts a new native session for this same Agora session. */
+  async restart(sessionId: string): Promise<Binding> {
+    const b = (await json(await fetch(`/api/agent/sessions/${sessionId}/restart`, { method: "POST" }))) as Binding;
+    set({ bindings: { ...state.bindings, [sessionId]: b }, status: { ...state.status, [sessionId]: { ...state.status[sessionId], native: null } } });
+    return b;
+  },
 
   /** The session a canvas's comments go to: the most recently active agent session on it. */
   forCanvas(sessionIds: string[]): string | undefined {

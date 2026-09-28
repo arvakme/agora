@@ -84,7 +84,7 @@ export function AllDocs({ docs, titles, open, focused, confirm, setConfirm, canv
           <button className="btn sm ghost" onClick={() => onNew(false)}><IconPlus size={14} />新建空白画布</button>
           <button className="btn sm ghost" onClick={() => onNew(true)}><IconLayers size={14} />从示例新建</button>
           <span className="ad-foot-gap" />
-          {onHistory && <button className="icon-btn sm muted" onClick={onHistory} aria-label="会话历史" title="会话历史：按时间、agent、主题、画布找会话"><IconHistory size={16} /></button>}
+          {onHistory && <button className="btn sm ghost" onClick={onHistory} title="按时间、agent、主题、画布找会话，也能找回本机的原生会话"><IconHistory size={14} />会话历史</button>}
           <button className="btn sm ghost" onClick={onTrash} title="删除的画布和会话，30 天内可恢复"><IconTrash size={14} />回收站{inTrash.length ? <em>{inTrash.length}</em> : null}</button>
         </footer>
       </motion.div>
