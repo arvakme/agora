@@ -135,6 +135,8 @@ def test_pi_tool_facts():
         ("~/.local/bin/smx-team assign --to A5D548FF", True),
         ("cd web && FOO=1 smx-team spawn --agent codex", True),
         (["/bin/zsh", "-lc", "smx-team spawn --agent claude"], True),
+        ("for a in devin codex; do smx-team spawn --agent $a; done", True),  # a loop's body is a command too
+        ("if ! smx-team assign --to X; then echo no; fi", True),
         ("echo smx-team spawn", False),  # review P2-7: a substring is not a dispatch
         ("grep 'smx-team spawn' old.log", False),
         ("smx-team panes", False),

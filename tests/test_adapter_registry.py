@@ -15,6 +15,16 @@ def test_session_agents_are_the_t1_adapters():
         assert adapters.implemented_tier(adapters.need(k)) == "T1"
 
 
+def test_observed_clis_are_registered_but_never_session_agents():
+    """User decision 2026-09-28: Grok, Cursor and Devin are observed (T2) — trajectory and workstation
+    figure for their sub-agents and Seedmux workers — never picked for an Agora session."""
+    assert [a["kind"] for a in registry.adapter_infos(with_versions=False)] == ["pi", "claude", "codex", "grok", "cursor", "devin"]
+    for k in ("grok", "cursor", "devin"):
+        a = adapters.need(k)
+        assert adapters.implemented_tier(a) == "T2" and a.max_tier == "T2" and k not in adapters.session_kinds()
+    assert adapters.by_seedmux_name("cursor-agent").kind == "cursor" and adapters.by_seedmux_name("devin").kind == "devin"
+
+
 def test_tier_follows_capabilities_and_max_tier():
     class Bare(Adapter):
         kind = "bare"

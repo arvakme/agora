@@ -12,30 +12,24 @@ from typing import Any
 from server.canvas.adapters.base import TIERS, Adapter, Binding, Catalog, Headless, Interactive, Locator, Projector, Subagents, Tier, ToolVocab
 from server.canvas.adapters.claude import ClaudeAdapter
 from server.canvas.adapters.codex import CodexAdapter
+from server.canvas.adapters.cursor import CursorAdapter
+from server.canvas.adapters.devin import DevinAdapter
 from server.canvas.adapters.grok import GrokAdapter
 from server.canvas.adapters.pi import PiAdapter
 
-from server.canvas.adapters.experimental import enabled as _experimental
-
 # Order matters: the session agents (T1) first, in the order the picker shows them; then the
-# observed CLIs (T2), which Seedmux can dispatch as workers. Grok is a v2 feature: registered only
-# with AGORA_EXPERIMENTAL=grok (experimental.py).
-BUILTIN: tuple[type[Adapter], ...] = (PiAdapter, ClaudeAdapter, CodexAdapter)
-EXPERIMENTAL: dict[str, type[Adapter]] = {"grok": GrokAdapter}  # flag name → adapter (v2, off by default)
+# observed CLIs (T2), which run as native sub-agents or Seedmux workers.
+BUILTIN: tuple[type[Adapter], ...] = (PiAdapter, ClaudeAdapter, CodexAdapter, GrokAdapter, CursorAdapter, DevinAdapter)
 ADAPTERS: dict[str, Adapter] = {}
 
 
 def refresh() -> dict[str, Adapter]:
-    """(Re)build the registry from the built-in adapters and the enabled flags (``AGORA_EXPERIMENTAL``),
-    in place: every module holding ``ADAPTERS`` sees the change (tests turn a flag on and back off)."""
+    """(Re)build the registry from the built-in adapters, in place: every module holding
+    ``ADAPTERS`` sees the change."""
     ADAPTERS.clear()
     for cls in BUILTIN:
         a = cls()
         ADAPTERS[a.kind] = a
-    for flag, cls in EXPERIMENTAL.items():
-        if _experimental(flag):
-            a = cls()
-            ADAPTERS[a.kind] = a
     return ADAPTERS
 
 

@@ -1,6 +1,5 @@
-"""**v2, off by default** — registered only with ``AGORA_EXPERIMENTAL=grok`` (experimental.py).
-
-Grok (xAI ``grok`` CLI) — T2, observed only (user decision 2026-09-28: never a session agent).
+"""Grok (xAI ``grok`` CLI) — T2, observed only (user decision 2026-09-28: never a session agent).
+Registered by default since its contract held against the installed 1.0.41 (2026-09-29).
 
 - Log: ``$GROK_HOME`` (``~/.grok``) ``/sessions/<URL-encoded cwd>/<session id>/updates.jsonl`` (the
   authoritative log; ``/resume`` replays it) plus ``summary.json``, ``subagents/<id>/meta.json``.
@@ -174,7 +173,8 @@ class GrokAdapter(Adapter):
     ignored_types = frozenset({
         "agent_thought_chunk", "hook_execution", "plan", "task_backgrounded", "task_completed", "background_tasks", "session_recap",
         "retry_state", "auto_compact_started", "auto_compact_completed", "compaction_checkpoint", "memory_dream_queued",
-        "memory_dream_started", "memory_dream_completed", "memory_observation", "memory_updated", "image_compressed",
+        "memory_dream_started", "memory_dream_completed", "memory_observation", "memory_updated", "memory_flush_started",
+        "memory_flush_completed", "memory_session_saved", "image_compressed",
         "current_mode_update", "available_commands_update", "usage",
     })
     gap_types = frozenset()

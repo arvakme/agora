@@ -73,6 +73,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("AGORA_SEEDMUX_PANES", "0")  # never talk to a real Seedmux in tests
     monkeypatch.setattr(receipts, "_panes", None)
+    monkeypatch.setattr(receipts, "_workers", {})
     monkeypatch.setattr(agents, "check_binding", lambda *a: None)
     s = ProjectStore(tmp_path / "proj")
     s.init()
@@ -146,7 +147,8 @@ def test_receipts_can_be_left_out(env):
 
 def test_workers_of_workers_and_their_sub_agents(env):
     """The main session dispatches a Codex worker (sid known); the worker spawns a native sub-agent
-    and dispatches a Grok worker from its own pane: all of it is one tree (Grok is v2 → receipt only)."""
+    and dispatches a Grok worker from its own pane: all of it is one tree (the Grok worker's session
+    is not on this machine → receipt only)."""
     home, s, tasks = env
     root = str(s.root)
     t0 = time.time() - 900
@@ -177,7 +179,7 @@ def test_workers_of_workers_and_their_sub_agents(env):
     assert sub["parent"] == {"runId": "codex:cx-worker", "via": "native", "toolCallId": "exec-spawn", "evidence": sub["parent"]["evidence"]} and sub["depth"] == 2
     assert [(x["kind"], x.get("path")) for x in sub["timeline"]["segments"]] == [("write", "a.py")]
     assert g["parent"]["runId"] == "codex:cx-worker" and "to_pane" in g["parent"]["evidence"]
-    assert g["tier"] == "T3" and g["kind"] == "grok" and g["state"] == "waiting"  # Grok is v2: receipt only
+    assert g["tier"] == "T3" and g["kind"] == "grok" and g["state"] == "waiting"  # no log for its sid: receipt only
     assert r[f"claude:{P}"]["descendants"] == 3 and w["descendants"] == 2 and w["childCount"] == 2
     assert {(m["kind"], m.get("childRunId")) for m in w["timeline"]["moments"]} >= {("dispatch", "codex:cx-sub"), ("handoff", "codex:cx-sub"), ("dispatch", "smx:T-9r0k01")}
 
@@ -275,3 +277,79 @@ def test_symlinked_or_oversized_ticket_files_are_skipped(env, tmp_path):
     d2.mkdir()
     (d2 / "meta.json").symlink_to(real / "meta.json")
     assert receipts.tickets(root) == []
+
+
+# ——— observed CLIs (T2): Grok by its sid, Devin and Cursor by the ticket their session was given ———
+def test_grok_devin_and_cursor_workers_get_their_trajectories(env):
+    """Seedmux knows a Grok worker's sid but never a Devin or Cursor worker's (they have no hooks):
+    those are found in their CLI's own store — a session in the ticket's cwd, active after the
+    dispatch, that was given this ticket. Each becomes a T2 run with its reads and writes."""
+    from server.canvas.adapters.grok import enc_cwd
+    from tests.native_logs import DevinSession, cursor_end, cursor_says, cursor_tool, cursor_transcript, cursor_user
+
+    home, s, tasks = env
+    root = str(s.root)
+    t0 = time.time() - 900
+    panes = {"grok": "A" * 8 + "-0000-0000-0000-000000000001", "devin": "A" * 8 + "-0000-0000-0000-000000000002", "cursor-agent": "A" * 8 + "-0000-0000-0000-000000000003"}
+    log = main_log(home, root, t0, [*dispatch("T-9r0k02", panes["grok"], t0 + 10, "tu1"), *dispatch("T-dev001", panes["devin"], t0 + 20, "tu2"), *dispatch("T-cur001", panes["cursor-agent"], t0 + 30, "tu3")])
+    # Grok: delivery.json has the sid; the session folder is the URL-encoded cwd.
+    g = home / ".grok" / "sessions" / enc_cwd(root) / "01a0e788-0000-7000-8000-000000000001"
+    jl(g / "updates.jsonl", [
+        {"timestamp": t0 + 12, "method": "session/update", "params": {"sessionId": "g", "update": {"sessionUpdate": "user_message_chunk", "content": {"type": "text", "text": "T-9r0k02"}, "_meta": {"promptIndex": 0}}, "_meta": {"eventId": "g-1", "agentTimestampMs": int((t0 + 12) * 1000)}}},
+        {"timestamp": t0 + 13, "method": "session/update", "params": {"sessionId": "g", "update": {"sessionUpdate": "tool_call", "toolCallId": "call-1", "title": "read_file", "rawInput": {"target_file": f"{root}/server/app.py"}, "_meta": {"x.ai/tool": {"name": "read_file", "kind": "read"}}}, "_meta": {"eventId": "g-2", "agentTimestampMs": int((t0 + 13) * 1000)}}},
+    ])
+    (g / "summary.json").write_text(json.dumps({"info": {"id": g.name, "cwd": root}, "chat_format_version": 1}))
+    ticket(tasks, "T-9r0k02", {"to_pane": panes["grok"], "agent": "grok", "cwd": root, "created_at": t0 + 10, "status": "replied:done", "replied_at": t0 + 100}, {"state": "replied:done", "sid": g.name})
+    # Devin: no sid anywhere; its session in the ticket's cwd was given the ticket.
+    d = DevinSession(home, "brisk-otter", root, int((t0 + 21) * 1000))
+    d.user(0, "u", "你是 Seedmux agent team 的 worker,任务 T-dev001。先读 prompt.md")
+    d.call(1, "a", [("c1", "write", {"file_path": f"{root}/server/cache/note.py", "content": "# note"})])
+    d.result(1.2, "t", "c1", "ok")
+    d.reply(2, "a2", "done")
+    d.save(last_s=30)
+    other = DevinSession(home, "quiet-bystander", root, int((t0 + 22) * 1000))  # same cwd and time, another task
+    other.user(0, "u", "an unrelated prompt")
+    other.save(last_s=30)
+    ticket(tasks, "T-dev001", {"to_pane": panes["devin"], "agent": "devin", "cwd": root, "created_at": t0 + 20, "status": "replied:done", "replied_at": t0 + 120}, {"state": "replied:done", "native": {"agent": "", "sid": ""}})
+    # Cursor: the same, from its agent-transcripts.
+    c = cursor_transcript(home, root, "c76566fc-7d6c-4ae7-b714-868be82512cb", [
+        cursor_user("你是 Seedmux agent team 的 worker,任务 T-cur001。先读 prompt.md"),
+        cursor_says(cursor_tool("Read", {"path": f"{root}/server/app.py"})),
+        cursor_end(),
+    ])
+    import os
+
+    os.utime(c, (t0 + 60, t0 + 60))
+    ticket(tasks, "T-cur001", {"to_pane": panes["cursor-agent"], "agent": "cursor-agent", "cwd": root, "created_at": t0 + 30, "status": "replied:done", "replied_at": t0 + 90}, {"state": "replied:done"})
+    tree = runs.build(NativeRef("claude", P, log, root), root=root, store=s, with_items=True)
+    r = {x["id"]: x for x in tree["runs"]}
+    gr, dv, cu = r[f"grok:{g.name}"], r["devin:brisk-otter"], r["cursor:c76566fc-7d6c-4ae7-b714-868be82512cb"]
+    assert "smx:T-9r0k02" not in r and "smx:T-dev001" not in r and "smx:T-cur001" not in r and "devin:quiet-bystander" not in r
+    assert [x["tier"] for x in (gr, dv, cu)] == ["T2", "T2", "T2"]
+    assert [(x["kind"], x.get("path")) for x in gr["timeline"]["segments"]] == [("read", "server/app.py")]
+    assert [(x["kind"], x.get("path")) for x in dv["timeline"]["segments"]] == [("write", "server/cache/note.py")]
+    assert [(x["kind"], x.get("path")) for x in cu["timeline"]["segments"]] == [("read", "server/app.py")] and cu["timeline"]["timesInferred"] is True
+    assert dv["items"] and cu["items"] and dv["receipt"]["taskId"] == "T-dev001" and dv["state"] == "done"
+    assert "T-dev001" in dv["parent"]["evidence"] and dv["parent"]["via"] == "seedmux" and dv["parent"]["taskId"] == "T-dev001"
+    assert dv["logPath"].endswith("sessions.db/brisk-otter")
+
+
+def test_one_dispatch_call_can_start_several_workers(env):
+    """One ``smx-team spawn`` call that starts three workers prints three ``task=… pane=…`` lines:
+    every one of them links its worker to that call (found on a real session: only the first did)."""
+    home, s, tasks = env
+    root = str(s.root)
+    t0 = time.time() - 3600
+    panes = [f"{c * 8}-0000-0000-0000-00000000000{i}" for i, c in enumerate("DEF")]
+    out = "\n".join(f"task=T-mul00{i} pane={p}" for i, p in enumerate(panes))
+    log = main_log(home, root, t0, [
+        # As on the real session: a heredoc, then one `smx-team spawn` per line.
+        {"type": "assistant", "uuid": "a-m", "timestamp": iso(t0 + 10), "message": {"id": "m-m", "content": [{"type": "tool_use", "id": "tu-multi", "name": "Bash", "input": {"command": "cat > batch.md <<EOF\n| A | 未派发 |\nEOF\nsmx-team spawn --agent devin --cwd . -\nsmx-team spawn --agent cursor-agent --cwd . -\nsmx-team spawn --agent codex --cwd . -"}}]}},
+        {"type": "user", "uuid": "r-m", "timestamp": iso(t0 + 11), "message": {"content": [{"type": "tool_result", "tool_use_id": "tu-multi", "content": out}]}},
+    ])
+    for i, (agent, p) in enumerate(zip(("devin", "cursor-agent", "codex"), panes)):
+        ticket(tasks, f"T-mul00{i}", {"to_pane": p, "agent": agent, "cwd": root, "created_at": t0 + 10, "status": "replied:done", "replied_at": t0 + 100})
+    r = {x["id"]: x for x in runs.build(NativeRef("claude", P, log, root), root=root, store=s)["runs"]}
+    for i in range(3):
+        w = r[f"smx:T-mul00{i}"]
+        assert w["parent"]["toolCallId"] == "tu-multi" and w["parent"]["via"] == "seedmux", w["parent"]
