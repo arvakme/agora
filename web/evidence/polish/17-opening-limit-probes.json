@@ -1,0 +1,28 @@
+[
+ [
+  "guestA-cookies",
+  [
+   "agora_share",
+   "agora_guest"
+  ]
+ ],
+ [
+  "guestB-open",
+  "http://after-proj-b0b5db.localhost:47821/",
+  200
+ ],
+ [
+  "guestC-open",
+  "http://after-proj-b0b5db.localhost:47821/s/<token>",
+  "这个分享链接的打开次数已用完\n\n作者给它设了最多能被几个人打开，名额已经满了。已"
+ ],
+ [
+  "guestC-with-copied-share-cookie",
+  403
+ ],
+ [
+  "guestB-again",
+  "http://after-proj-b0b5db.localhost:47821/",
+  200
+ ]
+]

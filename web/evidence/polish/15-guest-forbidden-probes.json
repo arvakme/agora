@@ -1,0 +1,18 @@
+{
+ "deleteOwners": [
+  403,
+  "{\"error\":\"you can only change your own messages\"}"
+ ],
+ "editOwners": [
+  403,
+  "{\"error\":\"you can only change your own messages\"}"
+ ],
+ "deleteOtherGuests": [
+  403,
+  "{\"error\":\"you can only change your own messages\"}"
+ ],
+ "restoreOtherGuests": [
+  403,
+  "{\"error\":\"you can only change your own messages\"}"
+ ]
+}
