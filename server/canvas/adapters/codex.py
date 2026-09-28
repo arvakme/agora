@@ -243,6 +243,16 @@ def project(rec: dict[str, Any], st: State) -> Out:
         elif itype == "SubAgentActivity" and it.get("kind") == "started" and it.get("agent_thread_id"):
             # ``spawn_agent``: the child is its own thread (runs API: /api/agent/runs).
             items.append({"id": iid, "kind": "tool", "at": started, "endAt": at, "tool": {"name": "spawn_agent", "input": str(it.get("agent_path") or it["agent_thread_id"]), "args": _full(it), "output": "", "isError": False, "activity": "subagents", "spawn": {"childKind": "codex", "childId": str(it["agent_thread_id"]), "via": "native"}}})
+        elif itype == "CollabAgentToolCall":
+            # 0.157: spawn_agent / wait / send_input / close_agent as one item (receiver threads, their states).
+            kids = [str(x) for x in (it.get("receiver_thread_ids") or []) if x]
+            tool = str(it.get("tool") or "collab")
+            states = it.get("agents_states") if isinstance(it.get("agents_states"), dict) else {}
+            out = "\n".join(f"{k}: {v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)}" for k, v in states.items())
+            t: dict[str, Any] = {"name": tool, "input": _summary(it.get("prompt") or ", ".join(kids)), "args": _full({k: v for k, v in it.items() if k in ("tool", "prompt", "receiver_thread_ids", "model", "reasoning_effort")}), "output": _full(out), "isError": it.get("status") == "failed", "activity": "subagents"}
+            if tool == "spawn_agent" and kids:
+                t["spawn"] = {"childKind": "codex", "childId": kids[0], "via": "native"}
+            items.append({"id": iid, "kind": "tool", "at": started, "endAt": at, "tool": t})
         elif itype in ("McpToolCall", "WebSearch"):
             arg = it.get("arguments") or it.get("query") or ""
             items.append({"id": iid, "kind": "tool", "at": started, "endAt": at, "tool": {"name": str(it.get("tool") or itype), "input": _summary(arg), "args": _full(arg), "output": _full(it.get("result") or it.get("status") or ""), "isError": it.get("status") == "failed", "activity": "webSearch" if itype == "WebSearch" else "tools"}})
@@ -396,6 +406,7 @@ class CodexAdapter(Adapter):
         "session_meta", "turn_context", "token_usage_record", "event_msg/token_count", "event_msg/task_started",
         "event_msg/task_complete", "event_msg/turn_aborted", "item/UserMessage", "item/AgentMessage",
         "item/CommandExecution", "item/FileChange", "item/McpToolCall", "item/WebSearch", "item/SubAgentActivity",
+        "item/CollabAgentToolCall",  # 0.157 (first seen recording the 0.157.1 fixture, 2026-09-28)
     })
     # Duplicates of the item_completed records (paginated history, 0.149+) or not shown.
     ignored_types = frozenset({
@@ -453,6 +464,25 @@ class CodexAdapter(Adapter):
             for rec in read_jsonl(ref.path):
                 p = rec.get("payload") if isinstance(rec.get("payload"), dict) else {}
                 it = p.get("item") if rec.get("type") == "event_msg" and p.get("type") == "item_completed" else None
+                if isinstance(it, dict) and it.get("type") == "CollabAgentToolCall":
+                    at = _ms(p.get("completed_at_ms") or rec.get("timestamp"))
+                    states = it.get("agents_states") if isinstance(it.get("agents_states"), dict) else {}
+                    for cid in it.get("receiver_thread_ids") or []:
+                        a = acts.setdefault(str(cid), {})
+                        nick = next((x.get("agent_nickname") for x in it.get("receiver_agents") or [] if isinstance(x, dict) and x.get("thread_id") == cid), None)
+                        if nick:
+                            a.setdefault("nickname", nick)
+                        if it.get("tool") == "spawn_agent":
+                            a.setdefault("at", _ms(p.get("started_at_ms")) if p.get("started_at_ms") else at)
+                            a.setdefault("callId", str(it.get("id")))
+                        s = states.get(cid)
+                        if isinstance(s, dict) and ("completed" in s or "errored" in s or "failed" in s):
+                            a.setdefault("doneAt", at)
+                            if "completed" not in s:
+                                a["failed"] = True
+                        elif it.get("tool") == "close_agent":
+                            a.setdefault("doneAt", at)
+                    continue
                 if isinstance(it, dict) and it.get("type") == "SubAgentActivity" and it.get("agent_thread_id"):
                     a = acts.setdefault(str(it["agent_thread_id"]), {"path": it.get("agent_path")})
                     at = _ms(p.get("completed_at_ms") or rec.get("timestamp"))
@@ -480,15 +510,15 @@ class CodexAdapter(Adapter):
             if cid in edges:
                 why.append("Codex 索引 thread_spawn_edges")
             if a:
-                why.append("父 rollout 的 SubAgentActivity")
-            state = "done" if a.get("doneAt") or edges.get(cid) == "closed" else ("running" if edges.get(cid) == "open" or a else None)
+                why.append("父 rollout 的 spawn_agent（SubAgentActivity / CollabAgentToolCall）")
+            state = ("failed" if a.get("failed") else "done") if a.get("doneAt") or edges.get(cid) == "closed" else ("running" if edges.get(cid) == "open" or a else None)
             out.append(NativeRef(
                 "codex",
                 cid,
                 look.path,
                 meta.get("cwd") or ref.cwd,
                 ParentLink("native", ref.run_id, tool_call_id=a.get("callId"), evidence="、".join(why)),
-                label=str(spawn.get("agent_nickname") or a.get("path") or cid),
+                label=str(spawn.get("agent_nickname") or a.get("nickname") or a.get("path") or cid),
                 meta={"role": spawn.get("agent_role"), "path": spawn.get("agent_path") or a.get("path"), "depth": spawn.get("depth") or 1, "dispatchedAt": a.get("at"), "doneAt": a.get("doneAt"), "interactions": a.get("interactions") or [], "edge": edges.get(cid), "state": state},
             ))
         return out
