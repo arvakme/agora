@@ -93,8 +93,51 @@ def _full(v: Any) -> str:
         return _clip(str(v), MAX_FULL)
 
 
+_layout: dict[str, tuple[float, list[str], set[str]]] = {}
+LAYOUT_TTL_S = 10.0
+
+
+def _repo_layout(root: str) -> tuple[list[str], set[str]]:
+    """The repository's work trees and the project's top-level entries (a few seconds old at most)."""
+    hit = _layout.get(root)
+    if hit and time.monotonic() - hit[0] < LAYOUT_TTL_S:
+        return hit[1], hit[2]
+    from server.canvas.adapters.receipts import worktrees  # receipts imports the adapters
+
+    try:
+        tops = {n for n in os.listdir(root) if not n.startswith(".")}
+    except OSError:
+        tops = set()
+    trees = worktrees(root)
+    _layout[root] = (time.monotonic(), trees, tops)
+    return trees, tops
+
+
+def _repo_relative(path: str, root: str) -> str:
+    """An absolute path inside another work tree of the project's repository, relative to that work tree
+    (so it maps like the project's own file). A work tree deleted after its merge is recognised as a
+    sibling of a live one whose remainder starts at a top-level entry of the project. Anything else —
+    a relative path, a path outside the repository — comes back unchanged."""
+    p = os.path.normpath(path)
+    trees, tops = _repo_layout(root)
+    for wt in trees:
+        if p == wt:
+            return "."
+        if p.startswith(wt.rstrip("/") + "/"):
+            return p[len(wt.rstrip("/")) + 1 :]
+    for wt in trees:
+        parent = os.path.dirname(wt.rstrip("/"))
+        if not p.startswith(parent.rstrip("/") + "/"):
+            continue
+        gone, _, rest = p[len(parent.rstrip("/")) + 1 :].partition("/")
+        if rest and rest.split("/")[0] in tops and not os.path.exists(os.path.join(parent, gone)):
+            return rest
+    return path
+
+
 def rel_path(path: str, root: str | None) -> str:
-    """``path`` relative to the project root (posix) when it is inside it; otherwise as given."""
+    """``path`` relative to the project root (posix) when it is inside it — or inside another work tree of
+    the same repository, where it is relative to that work tree; otherwise as given."""
     if not path:
         return path
     p = path.replace("\\", "/")
@@ -110,7 +153,7 @@ def rel_path(path: str, root: str | None) -> str:
                 continue
             if not rel.startswith(".."):
                 return rel.replace(os.sep, "/")
-    return p
+    return _repo_relative(p, root)
 
 
 def _usage(model: Any, inp: Any, out: Any, cache_read: Any = None, cache_write: Any = None, cost: Any = None) -> dict[str, Any]:

@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from server.canvas import agents
-from server.canvas.adapters import runs
+from server.canvas.adapters import common
 from server.canvas.project import ProjectStore
 from server.canvas.project_router import create_project_app
 
@@ -39,16 +39,16 @@ def repo(tmp_path):
 def test_paths_in_another_worktree_are_relative_to_that_worktree(repo):
     main, linked = repo
     root = str(main)
-    assert runs.repo_relative(f"{linked}/server/app.py", root) == "server/app.py"
-    assert runs.repo_relative(f"{main}/server/app.py", root) == "server/app.py"
-    assert runs.repo_relative(f"{linked}", root) == ""
+    assert common.rel_path(f"{linked}/server/app.py", root) == "server/app.py"
+    assert common.rel_path(f"{main}/server/app.py", root) == "server/app.py"
+    assert common.rel_path(f"{linked}", root) == "."
     # a work tree deleted after its merge: a sibling of a live one, the rest starts at a top-level entry
-    assert runs.repo_relative(f"{main.parent}/wt-gone/server/app.py", root) == "server/app.py"
+    assert common.rel_path(f"{main.parent}/wt-gone/server/app.py", root) == "server/app.py"
     # not inside the repository: unchanged (and so outside the diagram)
-    assert runs.repo_relative("/etc/hosts", root) == "/etc/hosts"
-    assert runs.repo_relative(f"{main.parent}/wt-gone/other/app.py", root) == f"{main.parent}/wt-gone/other/app.py"
-    assert runs.repo_relative(f"{main.parent}/wt-fix2", root) == f"{main.parent}/wt-fix2"
-    assert runs.repo_relative("server/app.py", root) == "server/app.py"
+    assert common.rel_path("/etc/hosts", root) == "/etc/hosts"
+    assert common.rel_path(f"{main.parent}/wt-gone/other/app.py", root) == f"{main.parent}/wt-gone/other/app.py"
+    assert common.rel_path(f"{main.parent}/wt-fix2", root) == f"{main.parent}/wt-fix2"
+    assert common.rel_path("server/app.py", root) == "server/app.py"
 
 
 def test_runs_place_edits_from_other_worktrees_on_their_nodes(repo, tmp_path, monkeypatch):
@@ -73,3 +73,5 @@ def test_runs_place_edits_from_other_worktrees_on_their_nodes(repo, tmp_path, mo
     got = TestClient(create_project_app(s.root)).get("/api/agent/runs", params={"session": "s-1", "canvas": "c1", "receipts": 0}).json()
     segs = [x for x in got["runs"][0]["timeline"]["segments"] if x["kind"] == "write"]
     assert [x.get("node") for x in segs] == ["api", "api", None]
+    # the page places files itself from the paths it is given: they must already be relative
+    assert [x["path"] for x in segs] == ["server/app.py", "server/app.py", "/etc/hosts"]
