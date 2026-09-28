@@ -38,6 +38,10 @@ export const clock = {
   time: (now = Date.now()) => (replay ? replayTime(replay, now) : now),
   /** Changes on every jump in time (see `gen`). */
   gen: () => gen,
+  /** How fast the figures' own motion runs against the wall clock: a replay slower than 1× slows
+   * everything (springs, breathing, gestures) like a slow-motion film; live and faster replays move
+   * at a person's pace, so a 4× replay does not make hands flicker. */
+  motionScale: () => (replay?.playing ? Math.min(1, replay.speed) : 1),
   /** Jump to a moment (pauses). */
   seek(at: number, until: number, gaps?: Replay["gaps"]) {
     replay = { at, playing: false, speed: replay?.speed ?? 1, since: Date.now(), until, gaps: gaps ?? replay?.gaps };
