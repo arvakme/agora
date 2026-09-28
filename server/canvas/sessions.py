@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from server.canvas import adapters, agents, nested, schemas
+from server.canvas.adapters import drift
 from server.canvas.local import Local
 from server.canvas.model_view import model_view, versions
 from server.canvas.project import ProjectStore
@@ -368,6 +369,7 @@ class AgentHub:
             return
         changed: list[dict[str, Any]] = []
         for rec in recs:
+            drift.observe(b["agent"], rec)  # records its adapter does not know (notify-only)
             items, turns = project(b["agent"], rec, lv.state)
             for it in items:
                 prev = lv.items.get(it["id"])

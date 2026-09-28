@@ -301,7 +301,10 @@ class PiAdapter(Adapter):
         return str(head.get("version")) if isinstance(head, dict) and head.get("type") == "session" and head.get("version") is not None else None
 
     # ——— Projector ———
-    known_types = frozenset()  # filled in by the drift step
+    handled_types = frozenset({"message", "model_change", "thinking_level_change"})
+    ignored_types = frozenset({"session", "custom", "custom_message", "compaction", "context_edit", "session_info", "label", "branch_summary"})
+    gap_types = frozenset()
+    known_types = handled_types | ignored_types
 
     def project(self, rec: dict[str, Any], st: State) -> Out:
         return project(rec, st)

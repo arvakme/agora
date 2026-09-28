@@ -95,9 +95,10 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
         ``--version`` (cached 10 minutes)."""
 
         def build() -> list[dict]:
-            from server.canvas.adapters import registry
+            from server.canvas.adapters import drift
 
-            return registry.adapter_infos(store.root, with_versions=bool(versions), with_catalog=bool(catalog))
+            # Drift is notify-only: ``degraded`` says what the tier would drop to and why; nothing is enforced.
+            return drift.adapter_infos(store.root, with_versions=bool(versions), with_catalog=bool(catalog))
 
         return await asyncio.to_thread(build)
 
