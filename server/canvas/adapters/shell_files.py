@@ -54,7 +54,7 @@ def _shaped(w: str, *, strict: bool = False) -> bool:
     """Whether a word is shaped like a file path of the project: not a flag, URL, glob, variable or
     NAME=value; has a directory segment, or an extension in ``EXTENSIONS`` (``strict``: the extension is
     required — for string literals in scripts, where "text/plain" must not pass)."""
-    if not w or len(w) > 240 or w[0] in "-@$~%#!<>|&;(){}*?[" or w in (".", "..", "/"):
+    if not w or len(w) > 240 or w[0] in "-@$%#!<>|&;(){}*?[" or w in (".", "..", "/"):
         return False
     if "://" in w or any(c in w for c in "*?{}$`<>|&;()\\ \t\n=,"):
         return False
@@ -128,8 +128,8 @@ def _scan(command: str, cwd: str | None, root: str | None, writes: list[str], on
         prog = os.path.basename(words[0])
         args = words[1:]
         if prog == "cd":
-            if args and not args[0].startswith("-") and args[0] not in ("~", "-"):
-                cwd = _abs(args[0], cwd, root)
+            if args and not args[0].startswith("-"):
+                cwd = _abs(args[0], cwd, root) or _LOST  # `cd $WT/x`, `cd -`: where it went is unknown
             continue
         if prog == "rtk" and args[:1] == ["proxy"]:
             words = args[1:]
@@ -186,11 +186,26 @@ def _scan(command: str, cwd: str | None, root: str | None, writes: list[str], on
         on += [here(p) for p in _operands(args)]
 
 
+_LOST = "\0"  # the effective directory after a `cd` to somewhere the command line does not tell
+
+
+def _dynamic(p: str) -> bool:
+    """A word the shell expands at run time (`$VAR`, `${VAR}`, `$(…)`, backticks, `cd -`): its value is not in the command."""
+    return "$" in p or "`" in p or p == "-"
+
+
 def _abs(p: str, cwd: str | None, root: str | None) -> str:
-    """``p`` against the effective directory (the shell's ``~`` expanded)."""
+    """``p`` against the effective directory, ``~`` and ``~user`` expanded; "" when it cannot be known
+    (an unexpanded variable in it, an unknown user, or a relative path after a `cd` to an unknown place)."""
+    if _dynamic(p):
+        return ""
     p = os.path.expanduser(p)
+    if p.startswith("~"):
+        return ""
     if os.path.isabs(p):
         return os.path.normpath(p)
+    if cwd == _LOST:
+        return ""
     return os.path.normpath(os.path.join(cwd or root or "", p))
 
 
