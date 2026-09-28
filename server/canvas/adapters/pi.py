@@ -155,6 +155,8 @@ def project(rec: dict[str, Any], st: State) -> Out:
             name = str(b.get("name"))
             st.pending.add(tid)
             tool: dict[str, Any] = {"name": name, "input": _summary(b.get("arguments")), "args": _full(b.get("arguments"))}
+            if isinstance(b.get("arguments"), dict) and isinstance(b["arguments"].get("command"), str) and "smx-team" in b["arguments"]["command"]:
+                st.extra.setdefault("cmd", {})[tid] = b["arguments"]["command"]
             facts = classify(name, b.get("arguments"), st.root)
             if facts.get("files"):
                 tool["files"] = facts["files"]
@@ -175,7 +177,7 @@ def project(rec: dict[str, Any], st: State) -> Out:
         st.pending.discard(tid)
         out = text_of(m.get("content"))
         done: dict[str, Any] = {"name": str(m.get("toolName") or ""), "output": _full(out), "isError": bool(m.get("isError"))}
-        sp = spawn_in_output(out)
+        sp = spawn_in_output(out, st.extra.get("cmd", {}).pop(tid, None))
         if sp:
             done["spawn"] = sp
         items.append({"id": tid, "kind": "tool", "at": at, "endAt": at, "tool": done})

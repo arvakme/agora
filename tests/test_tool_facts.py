@@ -44,8 +44,11 @@ def test_shell_reads(cmd, want):
 
 def test_seedmux_dispatch_in_output():
     out = "ok\ntask=T-5ee5fa pane=a5d548ff-0d58-4406-bdd0-bd1f40810cb3\n"
-    assert spawn_in_output(out) == {"taskId": "T-5ee5fa", "pane": "A5D548FF-0D58-4406-BDD0-BD1F40810CB3", "via": "seedmux"}
-    assert spawn_in_output("task=T-1 pane=nope") is None
+    assert spawn_in_output(out, "~/.local/bin/smx-team spawn --agent devin") == {"taskId": "T-5ee5fa", "pane": "A5D548FF-0D58-4406-BDD0-BD1F40810CB3", "via": "seedmux"}
+    assert spawn_in_output(out, ["/bin/zsh", "-lc", "smx-team assign --to X"])["taskId"] == "T-5ee5fa"
+    # The same line printed by something else (a grep of old logs) is not a dispatch.
+    assert spawn_in_output(out, "rg task= ~/.claude/projects") is None and spawn_in_output(out) is None
+    assert spawn_in_output("task=T-1 pane=nope", "smx-team spawn") is None
 
 
 def test_activity_fallback_covers_every_cli_name():
@@ -93,7 +96,8 @@ def test_codex_reads_through_the_shell():
         cmd("c2", "rtk read /work/p/docs/a.md", [{"type": "unknown", "cmd": "rtk read /work/p/docs/a.md"}]),
         cmd("c3", "rg foo src", [{"type": "search", "cmd": "rg foo src", "query": "foo", "path": "src"}]),
         cmd("c4", "cat x.py", []),
-        cmd("c5", "npm test", [{"type": "unknown", "cmd": "npm test"}], out="task=T-aaaaaa pane=FDC89E5E-61FD-454D-A822-C01693AE47F2"),
+        cmd("c5", "smx-team spawn --agent devin --cwd .", [{"type": "unknown", "cmd": "smx-team spawn --agent devin --cwd ."}], out="task=T-aaaaaa pane=FDC89E5E-61FD-454D-A822-C01693AE47F2"),
+        cmd("c6", "cat old.log", [{"type": "read", "cmd": "cat old.log", "name": "old.log", "path": "old.log"}], out="task=T-bbbbbb pane=FDC89E5E-61FD-454D-A822-C01693AE47F2"),
     ])
     by = {i["id"]: i["tool"] for i in items}
     assert (by["c1"]["activity"], by["c1"]["reads"]) == ("read", ["src/telegram/butler.js"])
@@ -101,6 +105,7 @@ def test_codex_reads_through_the_shell():
     assert by["c3"]["activity"] == "search" and "reads" not in by["c3"]
     assert (by["c4"]["activity"], by["c4"]["reads"]) == ("read", ["x.py"])
     assert by["c5"]["activity"] == "commands" and by["c5"]["spawn"]["taskId"] == "T-aaaaaa"
+    assert "spawn" not in by["c6"]  # printing an old dispatch line is not a dispatch
 
 
 def test_pi_tool_facts():
