@@ -205,14 +205,14 @@ path/to/agora/bin/agora init               # 只建 .agora/
 - `bin/agora` 包一层 `uv run --project <agora 仓库>`，当前目录保持为项目目录；也可以 `PYTHONPATH=<仓库> uv run --project <仓库> python -m agora_cli up`。
 - 默认服务构建好的 `web/dist`（先 `cd web && npm run build`）。`--dev` 另起 vite（热更新）代理到本项目后端，页面地址是 vite 的；`--web-port` 指定 vite 端口。
 - 同一项目重复 `up` 复用在跑的实例（按 `run/server.json` 的 pid + `/health` 的项目根确认）；两个 `up` 同时进来由 `run/up.lock` 串行。进程崩溃留下的旧记录会被清掉重启。
-- `up` 先对账（上面的表）：移动、复制、新 clone 各打印一段说明。
+- `up` 先对账（上面的表）：移动、复制、新 clone 各打印一段说明。`run/server.json` 里记的进程只有在命令行确认是 `agora_cli serve --project <这个项目>` 时才会被当作残留停掉：`cp -r` 一个正在跑的项目会把原项目的 `server.json` 一起复制过来，那个服务属于原项目。
 - 服务进程另在项目外持有一把锁并留一份记录：`$AGORA_STATE_DIR/servers/<实例 id>.{lock,json}`（默认 `~/.local/state/agora`；旧版本按根路径哈希命名的记录照样认）。锁文件里写着服务的 pid。`run/` 丢了（`git clean -fdx`）时，`up` 从这份记录找到还在跑的服务并写回 `run/server.json`，不会起第二个；记录也没了时，第二个 `serve` 拿不到锁直接退出。`down` 同样按这份记录停掉服务；服务卡住不应答、`run/` 和记录都没了时，按锁文件里的 pid 找到它，确认命令行是 `agora_cli serve --project <这个项目>` 再停。`down` 还会关掉这个实例的 tmux 服务器、它开过的 Seedmux pane（持有记录在 `$AGORA_STATE_DIR/seedmux/` 另有一份，`run/` 丢了也找得到），以及旧版本按路径哈希命名、这个实例在以前的位置用过的 tmux 服务器。
 - 服务运行中项目目录被移走、改名或删除：比较 inode（设备号变了但 inode 相同、`config.toml` 里的项目 id 也相同时算重新挂载，不算移走），所有写入返回 `410 {gone: true}`，不会在旧路径上重新长出 `.agora/`；页面提示在新位置运行 `agora up`，没保存的改动留在页面里，可以「下载为 .excalidraw」。只删了 `.agora/`、项目目录还在时单独说明（「.agora 被删除了」）。`/health` 带着 `gone`：`up` 不会复用这样的服务；项目移走后在新位置 `up`，会先停掉留在旧路径上的那个。其他写入失败（磁盘满、没权限、只读）返回 `{error, file}`（500 / 507），页面显示「保存失败」和原因，保留改动，可以重试或下载；页面只在服务端确认写入之后才记下「这个文件已经是这些内容」。
 - 只监听 `127.0.0.1`。
 
 ```bash
 agora doctor            # 检查本机数据：这是哪份副本（移动 / 复制 / 新 clone）、清单里的会话有没有绑定和改图记录、原生日志在不在、Claude 会话是否快到 30 天清理、画布文件与清单是否一致、回收站、旧 tmux 服务器、备份
-agora doctor --fix      # 放回能精确放回的：改图记录等从最新备份（只放缺的），会话绑定从本机注册表；今天还没备份就备份一次。从不删除任何东西
+agora doctor --fix      # 放回能精确放回的：改图记录等从最新备份（只放缺的），会话绑定从本机注册表，agora-canvas skill 链接（也是被忽略的文件）；今天还没备份就备份一次。从不删除任何东西
 agora backup | restore [--from …] [--overwrite] | history [<文件>] [--restore <时间>]
 ```
 

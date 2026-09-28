@@ -160,3 +160,26 @@ def test_moving_a_running_project_stops_the_old_server_and_down_clears_old_socke
     finally:
         agora("down", cwd=b)
         sp.run(["tmux", "-L", old_sock, "kill-server"], capture_output=True)
+
+
+def test_up_in_a_copy_of_a_running_project_leaves_the_original_server_alone(tmp_path):
+    """cp -r of a running project copies its run/server.json; `up` in the copy took that server for
+    a crashed leftover of its own and stopped it."""
+    from agora_cli.main import alive
+
+    a = tmp_path / "orig"
+    a.mkdir()
+    assert agora("up", cwd=a).returncode == 0
+    orig = json.loads((a / ".agora" / "run" / "server.json").read_text())
+    b = tmp_path / "copy"
+    try:
+        shutil.copytree(a, b, ignore=shutil.ignore_patterns("*.lock"))
+        up = agora("up", cwd=b)
+        assert up.returncode == 0 and "副本" in up.stdout, up.stdout + up.stderr
+        assert alive(orig["pid"]) and agora("status", cwd=a).returncode == 0
+        mine = json.loads((b / ".agora" / "run" / "server.json").read_text())
+        assert mine["pid"] != orig["pid"]
+    finally:
+        agora("down", cwd=b)
+        agora("down", cwd=a)
+

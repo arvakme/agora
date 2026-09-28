@@ -364,7 +364,8 @@ export function App({ boot }: { boot: Boot }) {
     }
     if (!PERSIST) return setRemoved({ title });
     try {
-      const m = await trash.put(doc.kind, doc.kind === "canvas" ? id : doc.sessionId, { entry, place: at && { ...at, docIndex: index }, title });
+      // Where it was: its place in the list always, its tab only if it had one.
+      const m = await trash.put(doc.kind, doc.kind === "canvas" ? id : doc.sessionId, { entry, place: { ...(at ?? {}), docIndex: index }, title });
       setRemoved({ title, trashId: m.trashId });
     } catch (e) {
       // Nothing moved: put it back on the page as it was, and say why.
@@ -408,15 +409,15 @@ export function App({ boot }: { boot: Boot }) {
       return [...ds.slice(0, i), entry, ...ds.slice(i)];
     });
     const place = m.place;
-    setRoot((root) => (place && groups(root).some((g) => g.id === place.groupId) ? openTab(root, docId, place.groupId, place.index) : root));
-    if (place) setFocused(docId);
+    const hadTab = !!place?.groupId;
+    setRoot((root) => (hadTab && groups(root).some((g) => g.id === place!.groupId) ? openTab(root, docId, place!.groupId, place!.index) : hadTab ? openTab(root, docId) : root));
+    if (hadTab) setFocused(docId);
     return docId;
   };
   const restore = async (trashId: string) => {
     try {
       const r = await trash.restore(trashId);
-      const docId = applyRestored(r);
-      if (!r.item.place) openDoc(docId);
+      applyRestored(r);
       setRemoved(null);
     } catch (e) {
       setRemoved({ title: "", error: `恢复失败：${(e as Error).message}` });

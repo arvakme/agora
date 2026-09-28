@@ -102,7 +102,7 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
         if not b.get("nativeId") and body.agent in ("claude", "pi"):
             import uuid
 
-            b = store.set_native(sid, str(uuid.uuid4()))
+            b = store.set_native(sid, str(uuid.uuid4()), reason="bind")
         await asyncio.to_thread(hub.note_bind, sid, "import" if body.nativeId else "bind")
         # The terminal CLI finds the canvas skill in the project (Pi also gets --skill).
         try:
