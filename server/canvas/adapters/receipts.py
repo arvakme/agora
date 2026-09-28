@@ -30,7 +30,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from server.canvas.adapters.base import NativeRef, ParentLink
+from server.canvas.adapters.base import NativeRef, ParentLink, valid_id
 from server.canvas.adapters.registry import by_seedmux_name
 
 META_KEYS = ("task", "from_pane", "to_pane", "agent", "model", "effort", "cwd", "created_at", "status", "verify", "replied_at", "resume_session")
@@ -206,7 +206,7 @@ def receipt(t: dict[str, Any], now: float | None = None) -> dict[str, Any]:
         "state": unified_state(m, t["delivery"], now),
         "toPane": m.get("to_pane") or None,
         "fromPane": m.get("from_pane") or None,
-        "sid": d.get("sid") or native.get("sid") or None,
+        "sid": next((x for x in (d.get("sid"), native.get("sid")) if valid_id(x)), None),
         "changed": list(verify.get("changed") or []),
         "accept": verify.get("accept"),
         "replyPreview": reply.strip().splitlines()[0][:300] if reply.strip() else None,

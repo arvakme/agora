@@ -35,6 +35,16 @@ def lower_tier(t: Tier) -> Tier:
     return TIERS[min(i + 1, len(TIERS) - 1)]
 
 
+# ——— native ids ———
+# A native session id as every CLI writes it (uuid, UUIDv7, Devin's slugs): letters, digits, ".", "_",
+# "-". Anything else — "/", "..", glob characters — never reaches a path or a glob (review P1-2).
+NATIVE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def valid_id(native_id: object) -> bool:
+    return isinstance(native_id, str) and NATIVE_ID.match(native_id) is not None and ".." not in native_id
+
+
 # ——— versions ———
 _NUM = re.compile(r"\d+(?:\.\d+)*")
 

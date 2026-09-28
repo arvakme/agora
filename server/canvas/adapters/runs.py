@@ -95,6 +95,10 @@ def canvas_links(store: Any, canvas_id: str) -> list[tuple[str, list[str]]]:
     """(element id, code path globs) of a canvas's elements (``customData.codePaths``)."""
     import json
 
+    from server.canvas.project import ID_RE
+
+    if not ID_RE.match(canvas_id or ""):
+        return []
     try:
         data = json.loads((store.dir / "canvases" / f"{canvas_id}.excalidraw").read_text())
     except (OSError, ValueError):
