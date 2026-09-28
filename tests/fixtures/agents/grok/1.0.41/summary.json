@@ -1,0 +1,14 @@
+{
+ "info": {
+  "id": "01a0e788-92dc-7ea0-9a59-d0a4e2e2d948",
+  "cwd": "/work/project"
+ },
+ "created_at": "2026-09-28T10:21:22.534451Z",
+ "updated_at": "2026-09-28T10:21:42.005309Z",
+ "last_active_at": "2026-09-28T10:21:42.005309Z",
+ "chat_format_version": 1,
+ "session_kind": "headless",
+ "current_model_id": "grok-4.7-build-fast",
+ "reasoning_effort": "high",
+ "num_messages": 24
+}
