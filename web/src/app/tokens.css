@@ -26,7 +26,7 @@
 
   /* Lines. One neutral hairline does almost everything. */
   --line: #eceef0;          /* column dividers, header underline, row divider, menu border */
-  --line-strong: #d5dadd;   /* hover border, drag outline */
+  --line-strong: #d5dadd;   /* hover border, drag outline, the outline of a control or card (--box) */
 
   /* Graphite chrome: the sidebar is graphite in BOTH themes (Marginalia .lib-sidebar). */
   --chrome-bg: #2b3035;
@@ -84,14 +84,19 @@
    * in dark those two are 2% apart, so the selected segment is one step up from the track. */
   --segment-on: #ffffff;
   --raised-on-surface: #f6f7f7;
+  /* Agora: line style (the Loom studio drawings). A floating layer is drawn in ink instead of
+   * lifted (--frame); hatch marks "in progress / waiting" (--hatch-fill). */
+  --line-ink: #2c3136;      /* = --fg: 13.1:1 on white */
+  --hatch: #aab1b6;
   /* Agora: agent avatar tile (AgentAvatar) — a quiet disc under each agent's own mark, and the ink of
   * marks that follow the theme (Pi's badge is #111 on light, #f6f6f6 on dark, per pi.dev/favicon.svg). */
   --avatar-tile: #eef1f2;
   --avatar-edge: #dfe3e6;
   --avatar-ink: #111111;
   /* Agora: 工位视图 figures, Loom's line figure — every bone a capsule with a thin ink outline and
-   * paper inside, the far limbs a shade darker; the selected figure the same in the accent; the
-   * glyph on its ! / ? dot (the only colours of a worker besides its props and marks). */
+   * paper inside, the far limbs filled a shade toward the ink (light grey here, a lighter grey in
+   * dark); the selected figure the same in the accent; the glyph on its ! / ? dot (the only colours
+   * of a worker besides its props and marks). */
   --fig-ink: #2c3136;
   --fig-fill: #ffffff;
   --fig-far: #e3e7ea;
@@ -154,14 +159,16 @@
     --well-on-surface: #353b41;
     --segment-on: #40474e;
     --raised-on-surface: #30363b;
+    --line-ink: #8c959b; /* a light line on the dark ground: 5.1:1 on --bg */
+    --hatch: #5d666c;
     --avatar-tile: #353b41;
     --avatar-edge: #454c53;
     --avatar-ink: #f6f6f6;
     --fig-ink: #d9dee2;
     --fig-fill: #2b3035;
-    --fig-far: #1b1f22;
+    --fig-far: #3a4147;
     --fig-sel-fill: #3b3350;
-    --fig-sel-far: #2a2439;
+    --fig-sel-far: #473d60;
     --fig-mark-fg: #ffffff;
     --canvas-bg: #e6ebef; /* invert(93%) hue-rotate(180deg) of this = #202428 */
   }
@@ -217,14 +224,16 @@
   --segment-on: #40474e;
   --well-on-surface: #353b41;
   --raised-on-surface: #30363b;
+  --line-ink: #8c959b;
+  --hatch: #5d666c;
   --avatar-tile: #353b41;
   --avatar-edge: #454c53;
   --avatar-ink: #f6f6f6;
   --fig-ink: #d9dee2;
   --fig-fill: #2b3035;
-  --fig-far: #1b1f22;
+  --fig-far: #3a4147;
   --fig-sel-fill: #3b3350;
-  --fig-sel-far: #2a2439;
+  --fig-sel-far: #473d60;
   --fig-mark-fg: #ffffff;
   --canvas-bg: #e6ebef; /* invert(93%) hue-rotate(180deg) of this = #202428 */
 }
@@ -277,16 +286,21 @@
   --row-nav: 30px;
   --row-menu: 32px;
 
-  /* Radius roles. Nested inner radius = outer − padding (or 0).
+  /* Radius roles: small drawn corners (line style). Nested inner radius = outer − padding (or 0).
    * Columns and panes have NO radius: they are flush. */
-  --r-xs: 5px;    /* menu items, thumbnails, kbd, inline code */
-  --r-sm: 7px;    /* icon buttons, nav items, inputs */
-  --r-md: 9px;    /* menus, dropdowns, small popovers (item 5 + padding 4) */
-  --r-lg: 12px;   /* composer, inline AI prompt, cards inside a floating layer */
-  --r-xl: 14px;   /* command palette, floating card/popover, toast, dialog */
-  --r-pill: 999px;/* text buttons, segmented track, tag chips, count pills, avatars */
+  --r-xs: 3px;    /* menu items, segments, tags, thumbnails, kbd, inline code */
+  --r-sm: 5px;    /* text and icon buttons, nav items, inputs, segmented tracks */
+  --r-md: 6px;    /* menus, dropdowns, small popovers */
+  --r-lg: 7px;    /* composer, inline AI prompt, cards inside a floating layer */
+  --r-xl: 8px;    /* command palette, floating card/popover, toast, dialog */
+  --r-pill: 999px;/* switches, count badges, status chips, avatars */
 
-  /* Elevation. Flush chrome has no shadow; floating layers get a hairline plus a lift. */
+  /* Elevation. Flush chrome has no shadow. Line style: a floating layer is outlined in ink instead
+   * of lifted (--frame); a control, input or card is a light box (--box); hatch marks work in
+   * progress or waiting. --edge and --lift-* stay for the 工位视图 until it is drawn in lines. */
+  --frame: 0 0 0 1px var(--line-ink);
+  --box: inset 0 0 0 1px var(--line-strong);
+  --hatch-fill: repeating-linear-gradient(135deg, var(--hatch) 0 1px, transparent 1px 4px);
   --edge: 0 0 0 1px var(--line);
   --lift-1: 0 1px 2px var(--shadow-tint);                 /* selected segment */
   --lift-2: 0 8px 24px var(--shadow-tint-strong);         /* menus, popovers (Marginalia --pop) */

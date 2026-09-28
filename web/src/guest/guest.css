@@ -16,12 +16,13 @@
 .guest-scrim { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: var(--scrim); padding: var(--space-6); }
 .guest-dialog {
   width: min(380px, 100%); padding: var(--space-7); border-radius: var(--r-xl); background: var(--surface); color: var(--fg);
-  box-shadow: var(--edge), var(--lift-3); display: grid; gap: var(--space-5);
+  box-shadow: var(--frame); display: grid; gap: var(--space-5);
+  --icon: var(--accent); /* the welcome's large dithered eye keeps the purple (the shell's icons are ink) */
 }
 .guest-dialog h2 { margin: 0; font-size: var(--text-lg); font-weight: var(--weight-strong); letter-spacing: var(--track-title); }
 .guest-dialog p { margin: 0; color: var(--fg-muted); line-height: var(--leading-read); }
 .guest-dialog label { display: grid; gap: var(--space-3); font-size: var(--text-sm); color: var(--fg-muted); }
-.guest-dialog input { height: var(--control-lg); padding: 0 var(--space-5); border: 0; border-radius: var(--r-sm); background: var(--well); color: var(--fg); font-size: var(--text-md); }
+.guest-dialog input { height: var(--control-lg); padding: 0 var(--space-5); border: 0; border-radius: var(--r-sm); background: transparent; box-shadow: var(--box); color: var(--fg); font-size: var(--text-md); }
 .guest-dialog input::placeholder { color: var(--fg-subtle); }
 .guest-dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-4); }
 
