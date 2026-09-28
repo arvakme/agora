@@ -7,7 +7,7 @@ import { replayEval, runEval, TASKS, type EvalProgress, type EvalRow } from "../
 import { buildFixture } from "../eval/fixture";
 import { IconClose, IconCols, IconComment, IconGrid, IconHint, IconLayers, IconList, IconPlus, IconPointer, IconRows, IconSelect, IconSingle, IconTrash, IconWorkspace } from "./icons";
 import { ThemeButton } from "./ThemeButton";
-import { discard, PERSIST, project, reloadFromDisk, save, slotFile, type ProjectInfo } from "../persist";
+import { discard, PERSIST, project, reloadFromDisk, save, slotFile } from "../persist";
 import { byId, type El } from "../canvas/scene";
 import { SessionPane } from "../session/SessionPane";
 import { sessions, type Session, type Turn } from "../session/store";
@@ -19,12 +19,11 @@ import { createThreadStore, threadStores, useThreads, type ThreadSnapshot, type 
 import { AllDocs } from "../workspace/AllDocs";
 import { ShareButton } from "../share/SharePanel";
 import { Workspace } from "../workspace/Workspace";
-import { activate, group, groupOf, groups, moveTab, preset, type Node, type Preset } from "../workspace/layout";
+import { activate, groupOf, groups, moveTab, preset, type Node, type Preset } from "../workspace/layout";
 import {
   closeTab,
   homeGroup,
   isOpen,
-  migrateDocs,
   nextTitle,
   openIds,
   openTab,
@@ -48,33 +47,8 @@ const EVAL_ONLY = params.get("task")?.split(",").map((t) => TASKS[Number(t.repla
 const EVAL_RUNS = Number(params.get("runs")) || 3;
 
 export type { Doc } from "../workspace/model";
-export type WorkspaceState = { v?: 2; docs: Doc[]; root: Node; focused: string };
-export type Boot = { workspace?: WorkspaceState; canvases: Record<string, { elements: El[]; threads: ThreadSnapshot }>; project?: ProjectInfo; firstRun?: boolean };
-
-/** First run: the sample canvas on the left, a draft session docked on the right. Later canvases start blank. */
-function defaults(): WorkspaceState {
-  const s = sessions.create("c1", undefined, { draft: true });
-  const p = sessionDocId(s.id);
-  const docs: Doc[] = [{ id: "c1", kind: "canvas", title: SAMPLE_CANVAS }, { id: p, kind: "session", sessionId: s.id, title: "" }];
-  const g = group(["c1", p]);
-  const root = moveTab(g, p, g.id, "right");
-  return { v: 2, docs, root: root.kind === "split" ? { ...root, sizes: [0.6, 0.4] } : root, focused: "c1" };
-}
-
-/**
- * Settle the workspace before the first render: the first-run defaults and any session record an
- * older build never saved are created here, once, outside React. Doing it during App's render
- * (as a useMemo / useState initializer) wrote to the sessions store while rendering — and Fast
- * Refresh re-runs useMemo, so every edit created another session and React warned
- * "Cannot update SessionPane while rendering App".
- */
-export function prepareBoot(boot: Boot): Boot {
-  const workspace = boot.workspace ?? defaults();
-  const docs = migrateDocs(workspace.docs);
-  const firstCanvas = docs.find((d) => d.kind === "canvas")!.id;
-  for (const d of docs) if (d.kind === "session" && !sessions.get().sessions[d.sessionId]) sessions.create(firstCanvas, d.sessionId);
-  return { ...boot, workspace: { ...workspace, docs }, firstRun: !boot.workspace };
-}
+import type { Boot } from "./boot";
+export { prepareBoot, type Boot, type WorkspaceState } from "./boot";
 
 const uid = (p: string) => `${p}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -101,6 +75,7 @@ export function App({ boot }: { boot: Boot }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [listOpen, setListOpen] = useState<{ confirm?: string } | null>(null);
   const [removed, setRemoved] = useState<Removed | null>(null);
+  const [recoveredNote, setRecoveredNote] = useState(boot.recovered);
   const [evalProgress, setEvalProgress] = useState<EvalProgress | null>(null);
   const handles = useRef(new Map<string, CanvasHandle>());
   const [, bump] = useState(0);
@@ -134,6 +109,10 @@ export function App({ boot }: { boot: Boot }) {
   const canvasDoc = canvasDocs.find((d) => d.id === lastCanvas && shown.has(d.id)) ?? canvasDocs.find((d) => shown.has(d.id));
   const handle = canvasDoc && handles.current.get(canvasDoc.id);
   const sessionCanvas = (d: SessionDoc) => sessions.get().sessions[d.sessionId]?.canvasId ?? "";
+  const sessionSubtitle = (d: SessionDoc) => {
+    const c = sessionCanvas(d);
+    return c ? (titleOf(c) ?? "画布已删除") : "未关联画布";
+  };
   // Session names follow their agent and first message (docs/workspace-model.md §2).
   useSyncExternalStore(agents.subscribe, bindingKey);
   const bindings = agents.get().bindings;
@@ -164,7 +143,7 @@ export function App({ boot }: { boot: Boot }) {
     const sync = () => {
       const { bindings, items } = agents.get();
       let n = 0;
-      for (const id of Object.keys(bindings)) if (sessions.isDraft(id)) (sessions.commit(id), n++);
+      for (const id of Object.keys(bindings)) if (sessions.isDraft(id) || sessions.isPlaceholder(id)) (sessions.commit(id), n++);
       if (n) setCommitted((c) => c + n);
       setDocs((ds) => {
         let changed = false;
@@ -368,7 +347,7 @@ export function App({ boot }: { boot: Boot }) {
       sessions.hydrate({ ...st, sessions: { ...st.sessions, [r.session.id]: r.session }, turns: { ...st.turns, ...Object.fromEntries(r.turns.map((t) => [t.id, t])) } });
       // Deleting the session removed its agent binding on disk; bind the same native session again.
       const b = r.binding;
-      if (b) void agents.bind(r.session.id, b.agent, b.model, b.effort, b.nativeId).catch(() => {});
+      if (b) void agents.bind(r.session.id, b.agent, b.model, b.effort, b.nativeId, b.started).catch(() => {});
     }
     if (r.at) {
       const at = r.at;
@@ -530,12 +509,23 @@ export function App({ boot }: { boot: Boot }) {
           <button className="btn primary" onClick={() => addCanvas()} title="新建画布"><IconPlus size={16} /><span className="btn-label">新建画布</span></button>
         </header>
         <SaveBanner docTitle={(id) => names[id]} />
+        {recoveredNote && (
+          <div className="notice save-banner" role="status" data-tone="caution">
+            <IconHint size={16} />
+            <b>已恢复列表</b>
+            <span>
+              {recoveredNote.why === "unreadable" ? ".agora/workspace.json 读不了" : "没有找到 .agora/workspace.json"}
+              ：按磁盘上的 {recoveredNote.canvases} 块画布和 {recoveredNote.sessions} 个会话重建了列表，没有改动任何画布。画布名是临时的，可以改名；布局需要重新摆。
+            </span>
+            <button className="btn sm ghost" onClick={() => setRecoveredNote(undefined)}>知道了</button>
+          </div>
+        )}
 
         <Workspace
           root={root}
           setRoot={setRoot}
           titles={names}
-          subtitles={Object.fromEntries(docs.flatMap((d) => (d.kind === "session" ? [[d.id, titleOf(sessionCanvas(d)) ?? "画布已删除"]] : [])))}
+          subtitles={Object.fromEntries(docs.flatMap((d) => (d.kind === "session" ? [[d.id, sessionSubtitle(d)]] : [])))}
           kinds={Object.fromEntries(docs.map((d) => [d.id, d.kind]))}
           marks={Object.fromEntries(docs.flatMap((d) => (d.kind === "session" ? [[d.id, <SessionMark key={d.id} sessionId={d.sessionId} />]] : [])))}
           focused={focused}
@@ -660,9 +650,38 @@ function Dock({ at, mode, setMode, selCount, drawerOpen, toggleDrawer, store, on
   );
 }
 
-/** Saving problems: a file changed on disk since this page loaded it, or the project server is unreachable. */
+/**
+ * Saving problems, most serious first: the project directory is gone (410), a write the server
+ * refused (disk full, permissions…), a file changed on disk since this page loaded it, a file on
+ * disk that cannot be read (not written from here), or the project server is unreachable.
+ */
 function SaveBanner({ docTitle }: { docTitle: (id: string) => string | undefined }) {
   const st = useSyncExternalStore(project.subscribe, project.status);
+  const gone = st.failed.find((f) => f.gone);
+  if (gone)
+    return (
+      <div className="notice save-banner" role="alert" data-tone="error">
+        <IconHint size={16} />
+        <b>项目目录不在了</b>
+        <span>{gone.message}</span>
+        <button className="btn sm ghost" onClick={() => void project.retry()}>重试</button>
+      </div>
+    );
+  const failed = st.failed[0];
+  if (failed) {
+    const file = failed.file ?? slotFile(failed.slot);
+    return (
+      <div className="notice save-banner" role="alert" data-tone="error">
+        <IconHint size={16} />
+        <b>保存失败</b>
+        <span>
+          {failed.message.replace(/^保存失败：/, "")}
+          {st.failed.length > 1 ? `（另有 ${st.failed.length - 1} 个文件）` : ""} · <code>.agora/{file}</code> · 改动还在这个页面里
+        </span>
+        <button className="btn sm quiet" onClick={() => void project.retry()}>重试</button>
+      </div>
+    );
+  }
   const slot = st.conflicts[0];
   if (slot) {
     const [kind, id] = slot.split(":");
@@ -677,6 +696,17 @@ function SaveBanner({ docTitle }: { docTitle: (id: string) => string | undefined
       </div>
     );
   }
+  if (st.blocked.length)
+    return (
+      <div className="notice save-banner" role="alert" data-tone="caution">
+        <IconHint size={16} />
+        <b>文件读不了</b>
+        <span>
+          {st.blocked.map((b) => b.reason).join("；")}。这个文件先不保存，其余照常；在编辑器里解决后刷新页面。
+        </span>
+        <button className="btn sm quiet" onClick={() => location.reload()}>刷新</button>
+      </div>
+    );
   if (st.offline)
     return (
       <div className="notice save-banner" role="status" data-tone="caution">

@@ -13,8 +13,10 @@ Agora 里的一个会话，就是用户选定的原生 coding agent 的一个原
 | 选择 | 新会话先显示选择器：Pi / Claude Code / Codex、模型、强度。点「用 X 开始」后固定 |
 | 锁定 | 绑定写在 `.agora/sessions/<id>.agent.json`：`{agent, model, effort, nativeId, createdAt}`，只由服务端写。`PUT /api/agent/sessions/<id>` 再次提交不同的 agent / 模型 / 强度返回 `409 {locked: true}`；`nativeId` 只能从空设一次。界面上没有修改入口，只显示 🔒 模型 · 强度 |
 | 原生 id | Claude Code 和 Pi 在绑定时就分配 uuid（`--session-id`）；Codex 自己分配，第一轮（无头 `thread.started`，或终端里新起的 rollout）后写回 |
+| 已开始 | 绑定里的 `started`：原生日志第一次被找到、或一轮无头续接成功后置为 true（绑定时就带着 `nativeId` 的——撤销删除——直接是 true；没有这个字段的旧绑定按 true 算）。只有没开始过的会话会用 `--session-id` 新建；开始过的永远续接 |
+| 原生记录缺失 | 开始过的会话找不到原生日志（Claude 默认 30 天清理、换机器、`~/.claude` 被清），或找到多份不知跟哪份，或 Pi 的日志只在别的目录下（项目移动过）：发消息和「在终端打开」都返回 `409 {nativeMissing: true, native: {state, candidates, message}}`，不启动 CLI；面板把输入框换成说明（丢了什么、候选文件），只读保留已有轨迹，提供「开新会话」（同一块画布、同样的 agent 和模型，新的原生 id）。Agora 不会用同一个 id 静默新开对话 |
 | 对话记录 | 以 CLI 自己的会话日志为准（见 §4），不另存一份；`.agora/sessions/<id>.jsonl` 只记这个会话里的画布修改（每次 `agora canvas apply/anim` 一条 turn，带整批撤销数据） |
-| 删除 | 删除会话同时删绑定文件；撤销删除时用原来的 agent / 模型 / 强度 / 原生 id 重新绑定 |
+| 删除 | 删除会话同时删绑定文件，关掉它的终端 pane（Agora 的 tmux 或 Seedmux）、停掉正在跑的无头续接；原生日志不删。撤销删除时用原来的 agent / 模型 / 强度 / 原生 id 重新绑定 |
 
 会话面板只显示这一个 agent（名字就是 Pi / Claude Code / Codex，配各自的官方标志，来源与商标说明见 README「许可与致谢」；标志也用在选择 agent、tab、所有画布列表、进度指针标签、轨迹记录和评论线程里该会话的答复上）。所有位置都经过一个组件 `AgentAvatar`（`web/src/session/AgentAvatar.tsx`）：圆形底盘用主题 token（`--avatar-tile` 加 `--avatar-edge` 发丝线，亮色浅灰、暗色石墨），标志居中、不加阴影或光晕；Pi 与 Claude Code 是矢量（Pi 的单色徽标随主题取 `#111` / `#f6f6f6`），Codex 是 64/128px 两档位图按尺寸 × 设备像素比取用；尺寸 16（tab、行内）、26（评论线程里与人的头像并列）、32（会话头部）、40（选择卡片）：「对话 / 轨迹」两种视图（见 §7）、它改画布的卡片（撤销、在画布中高亮）、状态行（处理中 / 排队原因 / 出错）、「在终端打开」。来自终端的轮次带「终端」标记。头部显示这个会话累计的轮数、tokens、耗时和花费。没有 @ 提及、没有派发步骤。
 
@@ -28,9 +30,13 @@ Agora 里的一个会话，就是用户选定的原生 coding agent 的一个原
 
 | | 无头续接（Agora 发消息、终端没开） | 终端里的交互式续接 |
 |---|---|---|
-| Claude Code | `claude -p --output-format stream-json --verbose --session-id <uuid>`（首轮）/ `--resume <uuid>`，`--model`、`--effort`、`--allowedTools "Bash(agora canvas *)"`，提示词走 stdin | `claude --resume <uuid> --model … --effort …`（日志还不存在时 `--session-id`） |
+| Claude Code | `claude -p --output-format stream-json --verbose --session-id <uuid>`（没开始过）/ `--resume <uuid>`（其余一律如此，日志没了 CLI 会明确报错），`--model`、`--effort`、`--allowedTools "Bash(agora canvas *)"`，提示词走 stdin | `claude --resume <uuid> --model … --effort …`（没开始过时 `--session-id`） |
 | Pi | `pi -p --mode json --session-id <uuid> --model <provider/id> --thinking <level> --skill <repo>/skills/agora-canvas -- "<提示词>"` | `pi --session-id <uuid> --model … --models …（锁住 Ctrl+P 轮换）--thinking … --skill …` |
 | Codex | `codex exec --json --skip-git-repo-check [-m] [-c model_reasoning_effort="…"] -`（首轮）/ `codex exec resume <id> --json … -`，提示词走 stdin | `codex resume <id> -m … -c model_reasoning_effort=…`（还没有 id 时 `codex`，id 从新 rollout 认领） |
+
+日志定位（`agents.locate_log`）：先找**当前项目根**对应的位置（Claude `~/.claude/projects/<根路径非字母数字换成 ->/`，Pi `~/.pi/agent/sessions/--<根路径>--/`），它就是 CLI 续接时用的那份；不在那里时，Claude 只有一份就跟那份（`--resume` 全局查找），多份就报「找到多份」；Pi 只在别的目录下时报「在别的目录」（`--session-id` 在这里会新开空会话）。本项目那份之外还有同 id 的副本时，面板顶部提示一次，照常跟随本项目那份。
+
+Agora 发出的消息末尾有一行隐藏页脚：`[[agora]] 来自 Agora · 画布「…」(canvas=<画布 id> session=<Agora 会话 id> project=<项目 id 前 8 位>)。…`，面板里不显示；以后能按它把原生日志认回到 Agora 会话。
 
 事件统一映射成 runner 的事件流（`start` / `text` / `tool_use` / `tool_result` / `usage` / `result`，`result.raw` 是最终回复文字，`result.session` 是原生 id）：
 

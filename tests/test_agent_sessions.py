@@ -74,7 +74,7 @@ def test_binding_api_locks_and_goes_with_the_session(store):
     assert c.put("/api/agent/sessions/s-a", json={"agent": "claude", "model": "opus", "effort": "high"}).status_code == 409
     assert c.put("/api/agent/sessions/s-b", json={"agent": "codex"}).json()["nativeId"] is None  # Codex assigns its own
     assert (store.root / ".claude" / "skills" / "agora-canvas").exists()  # skill linked on demand
-    assert c.delete("/api/project/sessions/s-a").json() == {"ok": True}
+    assert c.delete("/api/project/sessions/s-a").json() == {"ok": True, "terminalClosed": False}
     assert store.read_binding("s-a") is None
     # Undoing the delete re-binds the same native session.
     assert c.put("/api/agent/sessions/s-a", json={"agent": "claude", "model": "sonnet", "effort": "high", "nativeId": "n-x"}).json()["nativeId"] == "n-x"
@@ -108,7 +108,8 @@ async def drain(q, until, timeout=10.0):
     raise AssertionError(f"timed out; saw {[e.get('t') for e in got]}")
 
 
-async def test_headless_turn_in_project_dir_learns_codex_id(store):
+async def test_headless_turn_in_project_dir_learns_codex_id(store, tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
     calls = []
     hub = AgentHub(store, backend_factory=lambda kind: FakeBackend(calls))
     store.bind("s-1", agent="codex", model="gpt-6-sol", effort="low")
@@ -127,7 +128,11 @@ async def test_headless_turn_in_project_dir_learns_codex_id(store):
         assert store.read_binding("s-1")["nativeId"] == "t-new"
         last_status = [e for e in evs if e["t"] == "status"][-1]
         assert last_status["running"] is False
-        # The next turn resumes the id Codex handed out.
+        assert store.read_binding("s-1")["started"] is True  # it ran: from now on only ever resumed
+        # The next turn resumes the id Codex handed out (its rollout is on disk).
+        rollout = tmp_path / "codex-home" / "sessions" / "2026" / "09" / "28" / "rollout-2026-09-28T10-00-00-t-new.jsonl"
+        rollout.parent.mkdir(parents=True)
+        rollout.write_text("")
         hub.send("s-1", "再加一个")
         await drain(sub.q, lambda e: e.get("t") == "done")
         assert calls[1].options.session == "t-new"
@@ -192,8 +197,8 @@ def test_resolve_canvas(store):
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="needs tmux")
 async def test_terminal_pane_both_directions(store, tmp_path, monkeypatch):
     log = tmp_path / "native.jsonl"
-    monkeypatch.setattr(agents, "find_log", lambda kind, nid: log if nid else None)
-    monkeypatch.setattr(agents, "interactive_argv", lambda *a: [sys.executable, str(TUI), str(log)])
+    monkeypatch.setattr(agents, "locate_log", lambda kind, nid, root=None, home=None: agents.LogLookup("found", log, (log,)) if nid else agents.LogLookup("missing"))
+    monkeypatch.setattr(agents, "interactive_argv", lambda *a, **k: [sys.executable, str(TUI), str(log)])
     hub = AgentHub(store)
     store.bind("s-t", agent="pi", native_id="n-1")
     sub = hub.subscribe(executor=False)
@@ -308,8 +313,8 @@ async def test_terminal_in_seedmux_both_directions(store, tmp_path, monkeypatch)
     from server.canvas.terminal import Terminals
 
     log = tmp_path / "native.jsonl"
-    monkeypatch.setattr(agents, "find_log", lambda kind, nid: log if nid else None)
-    monkeypatch.setattr(agents, "interactive_argv", lambda *a: [sys.executable, str(TUI), str(log)])
+    monkeypatch.setattr(agents, "locate_log", lambda kind, nid, root=None, home=None: agents.LogLookup("found", log, (log,)) if nid else agents.LogLookup("missing"))
+    monkeypatch.setattr(agents, "interactive_argv", lambda *a, **k: [sys.executable, str(TUI), str(log)])
     fake = FakeSeedmux(shutil.which("tmux"))
     terms = Terminals(store.root, store.run_dir, seedmux=Seedmux(fake.cfg, fake.sock, fake.tmux))
     hub = AgentHub(store, terminals=terms)

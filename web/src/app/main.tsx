@@ -30,23 +30,29 @@ async function boot(): Promise<Boot> {
   // Comments written by share guests arrive while the page is open.
   followProject(() => dispatchEvent(new Event("agora:shares")));
   const workspace = p.workspace as WorkspaceState | undefined;
+  // Every canvas on disk, listed or not: recovery mode (prepareBoot) rebuilds the list from them.
   const canvases: Boot["canvases"] = {};
-  for (const d of workspace?.docs ?? []) {
-    const c = d.kind === "canvas" && p.canvases[d.id];
-    if (c) canvases[d.id] = { elements: c.elements, threads: c.threads ?? { threads: [], seq: 0 } };
-  }
-  return { workspace: workspace?.docs?.length ? workspace : undefined, canvases, project: p.project };
+  for (const [id, c] of Object.entries(p.canvases)) canvases[id] = { elements: c.elements, threads: c.threads ?? { threads: [], seq: 0 } };
+  return { workspace: workspace?.docs?.length ? workspace : undefined, canvases, project: p.project, empty: p.empty, errors: p.errors };
 }
 
 function Offline({ error }: { error: unknown }) {
+  // The server answered with an error (not a network failure): say so instead of "not connected".
+  const answered = /^(GET|POST) \S+: \d{3}/.test(String((error as Error)?.message ?? error));
   return (
     <div className="offline">
       <main>
         <IconTerminal size={56} />
-        <h1>没有连上项目服务</h1>
-        <p>画布、评论和会话存在项目目录的 <code>.agora/</code> 里，由这个项目自己的 Agora 服务读写。在项目目录运行</p>
-        <pre>agora up</pre>
-        <p>再打开它给出的地址（或用 <code>agora open</code>）。</p>
+        <h1>{answered ? "项目服务出错了" : "没有连上项目服务"}</h1>
+        {answered ? (
+          <p>项目服务在运行，但读取项目时出错了。看下面的错误，或查看 <code>.agora/run/server.log</code>。</p>
+        ) : (
+          <>
+            <p>画布、评论和会话存在项目目录的 <code>.agora/</code> 里，由这个项目自己的 Agora 服务读写。在项目目录运行</p>
+            <pre>agora up</pre>
+            <p>再打开它给出的地址（或用 <code>agora open</code>）。</p>
+          </>
+        )}
         <p className="offline-detail">{String(error)}</p>
         <a href="?fresh">不保存，直接试用 →</a>
       </main>

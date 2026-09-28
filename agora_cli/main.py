@@ -12,7 +12,10 @@
 
 P defaults to the current directory. The live server is recorded in P/.agora/run/server.json
 (pid, port, url); a second ``up`` for the same project reuses it. Different projects get
-different free ports and never share state. ``--dev`` serves the frontend through vite
+different free ports and never share state. The server also holds a lock and a record outside
+the project (``$AGORA_STATE_DIR``, default ~/.local/state/agora/servers/<hash of P>.{lock,json}),
+so losing ``.agora/run/`` (``git clean -fdx``) never leads to a second server for P, and
+``agora down`` still finds and stops it. ``--dev`` serves the frontend through vite
 (hot reload) in front of the project backend instead of the built ``web/dist``.
 
 Run it from anywhere with ``bin/agora`` (wraps ``uv run``), or
@@ -22,7 +25,9 @@ Run it from anywhere with ``bin/agora`` (wraps ``uv run``), or
 from __future__ import annotations
 
 import argparse
+import atexit
 import fcntl
+import hashlib
 import json
 import os
 import shutil
@@ -90,6 +95,11 @@ def health(port: int) -> dict[str, Any] | None:
         return None
 
 
+def state_dir() -> Path:
+    """Machine-local Agora state outside every project (survives ``git clean -fdx``)."""
+    return Path(os.environ.get("AGORA_STATE_DIR") or Path.home() / ".local" / "state" / "agora")
+
+
 class Project:
     def __init__(self, root: str | None) -> None:
         from server.canvas.project import ProjectStore
@@ -98,6 +108,9 @@ class Project:
         self.root = self.store.root
         self.run = self.store.run_dir
         self.state_file = self.run / "server.json"
+        key = hashlib.sha1(str(self.root).encode()).hexdigest()[:16]
+        self.record = state_dir() / "servers" / f"{key}.json"
+        self.lock_file = self.record.with_suffix(".lock")
 
     def state(self) -> dict[str, Any] | None:
         try:
@@ -105,17 +118,58 @@ class Project:
         except (FileNotFoundError, json.JSONDecodeError):
             return None
 
-    def live(self) -> dict[str, Any] | None:
-        """The recorded server if it is really this project's and still answering."""
-        st = self.state()
-        if not st or not alive(st.get("pid")):
+    def registered(self) -> dict[str, Any] | None:
+        """The server record kept outside the project (written by ``serve`` itself)."""
+        try:
+            return json.loads(self.record.read_text())
+        except (FileNotFoundError, json.JSONDecodeError):
             return None
+
+    def lock_held(self) -> bool:
+        """Whether a ``serve`` process for this project holds its lock (it does for its whole life)."""
+        try:
+            fh = open(self.lock_file, "a+")
+        except FileNotFoundError:
+            return False
+        with fh:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+            fcntl.flock(fh, fcntl.LOCK_UN)
+            return False
+
+    def answering(self, st: dict[str, Any] | None) -> bool:
+        """``st`` names a server that is really this project's and still answering."""
+        if not st or not alive(st.get("pid")) or not st.get("port"):
+            return False
         h = health(st["port"])
         if not h or h.get("root") != str(self.root) or h.get("pid") != st["pid"]:
-            return None
+            return False
         if st.get("vite") and not (alive(st["vite"]["pid"]) and port_open(st["vite"]["port"], "localhost")):
+            return False
+        return True
+
+    def live(self) -> dict[str, Any] | None:
+        """The recorded server if it is really this project's and still answering. When
+        ``run/server.json`` is gone (``git clean -fdx``) but the server still runs, it is found
+        through its record outside the project and ``server.json`` is written back."""
+        st = self.state()
+        if self.answering(st):
+            return st
+        reg = self.registered()
+        if not self.answering(reg):
             return None
-        return st
+        assert reg is not None
+        back = {**(st if st and st.get("pid") == reg["pid"] else {}), **reg}
+        try:
+            self.run.mkdir(exist_ok=True)
+            tmp = self.state_file.with_suffix(".tmp")
+            tmp.write_text(json.dumps(back, indent=2) + "\n")
+            os.replace(tmp, self.state_file)
+        except OSError:
+            pass
+        return back
 
 
 def spawn(argv: list[str], *, cwd: Path, log: Path, env: dict[str, str]) -> subprocess.Popen:
@@ -214,6 +268,11 @@ def up(p: Project, dev: bool, web_port: int = 0) -> tuple[dict[str, Any], bool]:
         st = p.live()
         if st:
             return st, True
+        if p.lock_held():
+            raise RuntimeError(
+                f"a server for {p.root} is already running but does not answer (its lock {p.lock_file} is held); "
+                f"stop it with `agora down --project {p.root}`"
+            )
         stale = p.state()
         if stale:  # half-dead leftovers from a crash
             stop((stale.get("vite") or {}).get("pid"), 2)
@@ -252,12 +311,17 @@ def cmd_down(p: Project, _a) -> int:
 
     Terminals(p.root, p.run).shutdown()  # Seedmux panes this project opened, then Agora's own tmux server
     st = p.state()
+    reg = p.registered()
+    if (not st or not alive(st.get("pid"))) and p.answering(reg):
+        st = reg  # run/server.json was lost (git clean -fdx) while the server kept running
     if not st:
         print(f"not running (project {p.root})")
         return 0
     stop((st.get("vite") or {}).get("pid"))
     stop(st.get("pid"))
     p.state_file.unlink(missing_ok=True)
+    if reg and reg.get("pid") == st.get("pid"):
+        p.record.unlink(missing_ok=True)
     ports = [st["port"], *([st["vite"]["port"]] if st.get("vite") else [])]
     busy = [x for x in ports if port_open(x) or port_open(x, "localhost")]
     print(f"stopped (ports {', '.join(map(str, ports))}{' still busy: ' + str(busy) if busy else ' released'})")
@@ -269,7 +333,31 @@ def cmd_serve(p: Project, a) -> int:
 
     from server.canvas.project_router import create_project_app
 
-    uvicorn.run(create_project_app(p.root, gateway=True), host=HOST, port=a.port, log_level="info")
+    # One server per project directory: the lock lives outside the project, so deleting
+    # .agora/run/ does not release it; the kernel does when this process ends, however it ends.
+    p.record.parent.mkdir(parents=True, exist_ok=True)
+    lock = open(p.lock_file, "a+")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        other = p.registered() or {}
+        print(f"agora: a server for {p.root} is already running (pid {other.get('pid', '?')}, port {other.get('port', '?')})", file=sys.stderr)
+        return 3
+    record = {"pid": os.getpid(), "port": a.port, "url": f"http://{HOST}:{a.port}/", "root": str(p.root), "mode": "dist", "startedAt": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    tmp = p.record.with_suffix(".tmp")
+    tmp.write_text(json.dumps(record, indent=2) + "\n")
+    os.replace(tmp, p.record)
+
+    def forget() -> None:
+        if (p.registered() or {}).get("pid") == os.getpid():
+            p.record.unlink(missing_ok=True)
+
+    atexit.register(forget)
+    try:
+        uvicorn.run(create_project_app(p.root, gateway=True), host=HOST, port=a.port, log_level="info")
+    finally:
+        forget()
+        lock.close()
     return 0
 
 

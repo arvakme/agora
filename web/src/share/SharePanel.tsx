@@ -14,7 +14,7 @@ export type ShareRow = {
   canvasTitle: string;
   host: string;
   url: string;
-  status: "active" | "revoked" | "expired";
+  status: "active" | "revoked" | "expired" | "canvas-deleted";
   createdAt: number;
   expiresAt: number | null;
   endedAt: number | null;
@@ -256,7 +256,7 @@ function ShareList({ rows, onChange }: { rows: ShareRow[]; onChange: () => void 
                 <div className="share-row-main">
                   <b>{r.canvasTitle || r.canvasId}</b>
                   <span className="share-meta">
-                    {r.status === "revoked" ? "已撤销" : "已到期"} · {opensText(r)} · 评论 {r.comments}
+                    {r.status === "revoked" ? "已撤销" : r.status === "canvas-deleted" ? "画布已删除" : "已到期"} · {opensText(r)} · 评论 {r.comments}
                     {r.cleanup.length > 0 && " · DNS 记录待清理"}
                   </span>
                 </div>

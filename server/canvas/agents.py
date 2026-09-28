@@ -31,6 +31,7 @@ import signal
 import subprocess
 import time
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -281,31 +282,134 @@ class CodexStream(StreamMapper):
 
 
 # ——— session logs (the CLIs' own transcripts) ———
-def claude_log(native_id: str, home: Path | None = None) -> Path | None:
-    home = home or Path.home()
-    hits = glob.glob(str(home / ".claude" / "projects" / "*" / f"{glob.escape(native_id)}.jsonl"))
-    return Path(hits[0]) if hits else None
+# Where each CLI keeps a session's log, and which copy is the one it will resume:
+# - Claude Code: ~/.claude/projects/<cwd, every non-alphanumeric → "-">/<id>.jsonl. `--resume <id>`
+#   finds the id in any project directory but prefers the current directory's copy.
+# - Pi: ~/.pi/agent/sessions/--<cwd without the leading "/", "/" "\" ":" → "-">--/<time>_<id>.jsonl.
+#   `--session-id <id>` only looks in the current directory's folder and silently starts a new,
+#   empty session with that id when it is not there.
+# - Codex: ~/.codex/sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl, independent of the cwd.
+# A copy outside the current root is still followed when it is the only one (Claude resumes it
+# globally); several copies are reported instead of picking one.
+@dataclass(frozen=True)
+class LogLookup:
+    """Where a native session's log is: ``found`` (``path`` is the one to follow), ``missing``,
+    ``ambiguous`` (several copies, none clearly the current one) or ``elsewhere`` (Pi: only in
+    another directory's folder, so ``--session-id`` would start a new session)."""
+
+    state: str
+    path: Path | None = None
+    candidates: tuple[Path, ...] = ()
 
 
-def pi_log(native_id: str, home: Path | None = None) -> Path | None:
+def claude_dir_name(root: Path | str) -> str:
+    return "".join(c if c.isalnum() and c.isascii() else "-" for c in str(root))
+
+
+def pi_dir_name(root: Path | str) -> str:
+    s = str(root)
+    s = s[1:] if s[:1] in ("/", "\\") else s
+    return "--" + "".join("-" if c in "/\\:" else c for c in s) + "--"
+
+
+def _pi_sessions(home: Path) -> Path:
+    return Path(os.environ.get("PI_CODING_AGENT_SESSION_DIR") or home / ".pi" / "agent" / "sessions")
+
+
+def locate_log(kind: str, native_id: str | None, root: Path | str | None = None, home: Path | None = None) -> LogLookup:
+    """Find a native session's log, preferring the copy that belongs to ``root`` (the project)."""
+    if not native_id:
+        return LogLookup("missing")
     home = home or Path.home()
-    root = Path(os.environ.get("PI_CODING_AGENT_SESSION_DIR") or home / ".pi" / "agent" / "sessions")
-    hits = glob.glob(str(root / "*" / f"*_{glob.escape(native_id)}.jsonl"))
-    return Path(sorted(hits)[-1]) if hits else None
+    if kind == "claude":
+        hits = sorted(Path(p) for p in glob.glob(str(home / ".claude" / "projects" / "*" / f"{glob.escape(native_id)}.jsonl")))
+        mine = [p for p in hits if root is not None and p.parent.name == claude_dir_name(root)]
+        if mine:
+            return LogLookup("found", mine[0], tuple(hits))
+        if len(hits) == 1:
+            return LogLookup("found", hits[0], tuple(hits))
+        return LogLookup("ambiguous" if hits else "missing", None, tuple(hits))
+    if kind == "pi":
+        hits = sorted(Path(p) for p in glob.glob(str(_pi_sessions(home) / "*" / f"*_{glob.escape(native_id)}.jsonl")))
+        if root is None:  # no project to prefer: only an unambiguous copy counts
+            return LogLookup("found", hits[0], tuple(hits)) if len(hits) == 1 else LogLookup("ambiguous" if hits else "missing", None, tuple(hits))
+        mine = [p for p in hits if p.parent.name == pi_dir_name(root)]
+        if len(mine) == 1:
+            return LogLookup("found", mine[0], tuple(hits))
+        if mine:
+            return LogLookup("ambiguous", None, tuple(hits))
+        return LogLookup("elsewhere" if hits else "missing", None, tuple(hits))
+    if kind == "codex":
+        base = Path(os.environ.get("CODEX_HOME") or home / ".codex") / "sessions"
+        hits = sorted(Path(p) for p in glob.glob(str(base / "*" / "*" / "*" / f"rollout-*-{glob.escape(native_id)}.jsonl")))
+        return LogLookup("found", hits[-1], tuple(hits)) if hits else LogLookup("missing")
+    raise ValueError(f"unknown agent {kind!r}")
+
+
+def claude_log(native_id: str, home: Path | None = None, root: Path | str | None = None) -> Path | None:
+    return locate_log("claude", native_id, root, home).path
+
+
+def pi_log(native_id: str, home: Path | None = None, root: Path | str | None = None) -> Path | None:
+    return locate_log("pi", native_id, root, home).path
 
 
 def codex_log(native_id: str, home: Path | None = None) -> Path | None:
-    home = home or Path.home()
-    root = Path(os.environ.get("CODEX_HOME") or home / ".codex") / "sessions"
-    hits = glob.glob(str(root / "*" / "*" / "*" / f"rollout-*-{glob.escape(native_id)}.jsonl"))
-    return Path(sorted(hits)[-1]) if hits else None
+    return locate_log("codex", native_id, None, home).path
 
 
-LOGS = {"claude": claude_log, "pi": pi_log, "codex": codex_log}
+def find_log(kind: str, native_id: str | None, root: Path | str | None = None) -> Path | None:
+    return locate_log(kind, native_id, root).path if native_id else None
 
 
-def find_log(kind: str, native_id: str | None) -> Path | None:
-    return LOGS[kind](native_id) if native_id else None
+class NativeMissing(RuntimeError):
+    """A session that already ran has no usable native log: resuming it would silently start a
+    new, empty conversation under the same id (Claude ``--session-id``, Pi ``--session-id``), so
+    Agora stops and says what is missing instead."""
+
+    def __init__(self, kind: str, native_id: str, lookup: LogLookup) -> None:
+        self.kind, self.native_id, self.lookup = kind, native_id, lookup
+        super().__init__(native_problem(kind, native_id, lookup))
+
+    def public(self) -> dict[str, Any]:
+        return {"state": self.lookup.state, "blocking": True, "nativeId": self.native_id, "candidates": [str(p) for p in self.lookup.candidates], "message": str(self)}
+
+
+def duplicates_note(kind: str, native_id: str, lookup: LogLookup) -> dict[str, Any] | None:
+    """A found log that has other copies with the same id: which one is followed (not blocking)."""
+    if lookup.path is None or len(lookup.candidates) < 2:
+        return None
+    others = [str(p) for p in lookup.candidates if p != lookup.path]
+    return {
+        "state": "duplicates",
+        "blocking": False,
+        "nativeId": native_id,
+        "candidates": [str(lookup.path), *others],
+        "message": f"{NAMES.get(kind, kind)} 的原生会话 {native_id} 另有 {len(others)} 份同 id 的记录；Agora 跟随的是这个项目目录下的那份（也是 CLI 续接的那份）。",
+    }
+
+
+def native_problem(kind: str, native_id: str, lookup: LogLookup) -> str:
+    name = NAMES.get(kind, kind)
+    if lookup.state == "missing":
+        why = "可能被 Claude Code 的 30 天自动清理删掉了，或者这个项目是从别的机器拿来的。" if kind == "claude" else "日志可能被删除或移走了，或者这个项目是从别的机器拿来的。"
+        return f"{name} 的原生会话 {native_id} 在这台机器上找不到了。{why}Agora 不会用同一个 id 新开对话。"
+    if lookup.state == "ambiguous":
+        return f"{name} 的原生会话 {native_id} 找到了 {len(lookup.candidates)} 份记录，Agora 不确定该跟哪一份，先不续接。"
+    if lookup.state == "elsewhere":
+        return f"{name} 的原生会话 {native_id} 在别的目录下（项目移动过？），在这里续接会新开一个空会话，所以先不续接。"
+    return ""
+
+
+def check_native(kind: str, native_id: str | None, started: bool, root: Path | str | None) -> LogLookup:
+    """Resuming a session that already ran needs its log; raise ``NativeMissing`` when it is not usable.
+    A session that never ran (``started`` false) may still be created."""
+    if not native_id:
+        return LogLookup("missing")
+    lookup = locate_log(kind, native_id, root)
+    if lookup.state != "found" and started:
+        raise NativeMissing(kind, native_id, lookup)
+    return lookup
 
 
 def codex_rollouts_since(cwd: Path, since: float, home: Path | None = None) -> list[tuple[str, Path]]:
@@ -477,8 +581,11 @@ class ClaudeCodeBackend(_CliBackend):
         o = req.options
         args = [*self.cmd, "-p", "--output-format", "stream-json", "--verbose"]
         if o.session:
-            exists = claude_log(o.session) is not None
-            args += ["--resume", o.session] if exists else ["--session-id", o.session]
+            # Only a session that never ran is created with --session-id; any other is resumed,
+            # and a missing log then fails loudly in the CLI ("No conversation found") instead of
+            # starting a new, empty conversation under the same id.
+            exists = claude_log(o.session, root=req.cwd) is not None
+            args += ["--session-id", o.session] if o.new_session and not exists else ["--resume", o.session]
         if o.model:
             args += ["--model", o.model]
         if o.effort:
@@ -532,12 +639,14 @@ BACKEND_CLASSES: dict[str, type[_CliBackend]] = {"claude": ClaudeCodeBackend, "p
 
 
 # ——— interactive resume (terminal pane) ———
-def interactive_argv(kind: str, native_id: str | None, model: str | None, effort: str | None) -> list[str]:
-    """The CLI's interactive command that continues ``native_id`` (or starts it)."""
+def interactive_argv(kind: str, native_id: str | None, model: str | None, effort: str | None, *, new: bool = False, root: Path | str | None = None) -> list[str]:
+    """The CLI's interactive command that continues ``native_id`` (or starts it when ``new``: the
+    session never ran). Callers check the log first (``check_native``); Pi has no resume-only
+    flag, so for Pi that check is the only guard against a silent new session."""
     if kind == "claude":
         args = ["claude"]
         if native_id:
-            args += ["--resume", native_id] if claude_log(native_id) else ["--session-id", native_id]
+            args += ["--session-id", native_id] if new and not claude_log(native_id, root=root) else ["--resume", native_id]
         if model:
             args += ["--model", model]
         if effort:
@@ -659,10 +768,14 @@ __all__ = [
     "NAMES",
     "ClaudeCodeBackend",
     "CodexBackend",
+    "LogLookup",
+    "NativeMissing",
     "PiBackend",
     "catalog",
     "check_effort",
+    "check_native",
     "child_env",
     "find_log",
     "interactive_argv",
+    "locate_log",
 ]

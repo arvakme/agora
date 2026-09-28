@@ -76,7 +76,7 @@ def test_codex_turn_failure_is_an_error():
 def test_claude_args_new_then_resume(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     sid = "11111111-2222-3333-4444-555555555555"
-    req = RunRequest(schema=None, system=None, prompt="p", options=ExecOptions(backend="claude", model="sonnet", effort="high", session=sid))
+    req = RunRequest(schema=None, system=None, prompt="p", options=ExecOptions(backend="claude", model="sonnet", effort="high", session=sid, new_session=True))
     args = ClaudeCodeBackend().args(req)
     assert args[:5] == ["claude", "-p", "--output-format", "stream-json", "--verbose"]
     assert ["--session-id", sid] == args[5:7] and "--resume" not in args
@@ -85,6 +85,11 @@ def test_claude_args_new_then_resume(tmp_path, monkeypatch):
     log.parent.mkdir(parents=True)
     log.write_text("{}\n")
     assert ["--resume", sid] == ClaudeCodeBackend().args(req)[5:7]
+    # A session that already ran is always resumed, even when its log is gone: the CLI then fails
+    # ("No conversation found") instead of silently starting a new conversation under the same id.
+    log.unlink()
+    old = RunRequest(schema=None, system=None, prompt="p", options=ExecOptions(backend="claude", model="sonnet", session=sid))
+    assert ["--resume", sid] == ClaudeCodeBackend().args(old)[5:7]
 
 
 def test_pi_and_codex_args():
@@ -145,7 +150,8 @@ def test_registry_and_interactive_commands(tmp_path, monkeypatch):
     for name in ("pi", "claude", "codex", "claude-cli"):
         assert make_backend(name).name == name
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    assert interactive_argv("claude", "u-1", "sonnet", "high") == ["claude", "--session-id", "u-1", "--model", "sonnet", "--effort", "high"]
+    assert interactive_argv("claude", "u-1", "sonnet", "high", new=True) == ["claude", "--session-id", "u-1", "--model", "sonnet", "--effort", "high"]
+    assert interactive_argv("claude", "u-1", "sonnet", "") == ["claude", "--resume", "u-1", "--model", "sonnet"]  # started: never --session-id
     pi = interactive_argv("pi", "u-2", "magpie/group/opus-5-5", "medium")
     assert pi[:3] == ["pi", "--session-id", "u-2"] and pi[pi.index("--models") + 1] == "magpie/group/opus-5-5"
     assert interactive_argv("codex", "t-9", "gpt-6-sol", "") == ["codex", "resume", "t-9", "-m", "gpt-6-sol"]

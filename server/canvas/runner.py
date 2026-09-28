@@ -64,6 +64,9 @@ class ExecOptions:
     model: str = DEFAULT_MODEL
     effort: str | None = None
     session: str | None = None
+    # ``session`` names a native session that has never run yet: the CLI may create it
+    # (Claude ``--session-id``). Otherwise it must already exist (``--resume``).
+    new_session: bool = False
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> ExecOptions:

@@ -238,6 +238,9 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   };
 
   const inSeedmux = !!status?.terminal.alive && status.terminal.app === "seedmux";
+  // The native log is gone / ambiguous: read-only, no terminal, no sending (never a silent new conversation).
+  const native = status?.native ?? null;
+  const stuck = !!native?.blocking && !status?.terminal.alive;
   const line = status?.held
     ? `排队中：${status.held}`
     : status?.running
@@ -265,7 +268,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
             <span className="sp-sep" aria-hidden>·</span>
             <select value={session.canvasId} onChange={(e) => sessions.relink(sessionId, e.target.value)} aria-label="关联画布" title="这个会话默认改的画布">
               {Object.entries(canvasTitles).map(([id, t]) => <option key={id} value={id}>{t}</option>)}
-              {!canvasTitles[session.canvasId] && <option value={session.canvasId}>已删除的画布</option>}
+              {!canvasTitles[session.canvasId] && <option value={session.canvasId}>{session.canvasId ? "已删除的画布" : "未关联画布"}</option>}
             </select>
             {binding.nativeId && <code className="sp-native" title="原生会话 id">{binding.nativeId.slice(0, 8)}</code>}
           </p>
@@ -278,7 +281,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           ) : (
             <button
               className="btn sm quiet sp-term-btn"
-              disabled={!status?.terminal.alive && !!status?.running}
+              disabled={(!status?.terminal.alive && !!status?.running) || stuck}
               onClick={() => void openTerminal()}
               title={status?.terminal.alive ? `再开一个 ${TERM_APP_NAME[termApp]} 窗口连到同一个终端` : status?.running ? "这一轮结束后再打开" : `用 ${TERM_APP_NAME[termApp]} 打开这个会话，直接在里面做 coding`}
             >
@@ -396,13 +399,62 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           {status?.running && <button className="btn sm ghost" onClick={() => void agents.interrupt(sessionId)}>停止</button>}
         </div>
       )}
-      <Composer
-        canvasId={session.canvasId}
-        canvasTitle={canvasTitle}
-        agentName={AGENT_NAMES[binding.agent]}
-        route={status?.terminal.alive ? "terminal" : "headless"}
-        onSend={send}
-      />
+      {native && !native.blocking && (
+        <div className="notice sp-lost-note" role="status">
+          <span>{native.message}</span>
+        </div>
+      )}
+      {stuck && native ? (
+        <NativeMissing sessionId={sessionId} canvasId={session.canvasId} problem={native} agent={binding.agent} model={binding.model} effort={binding.effort} />
+      ) : (
+        <Composer
+          canvasId={session.canvasId}
+          canvasTitle={canvasTitle}
+          agentName={AGENT_NAMES[binding.agent]}
+          route={status?.terminal.alive ? "terminal" : "headless"}
+          onSend={send}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The session's native log is missing (or ambiguous, or in another directory): say what is gone,
+ * keep what Agora still shows (this pane, read-only), and offer a new session — never resume
+ * into a silently new conversation under the same id.
+ */
+function NativeMissing({ sessionId, canvasId, problem, agent, model, effort }: { sessionId: string; canvasId: string; problem: NonNullable<import("./agents").Status["native"]>; agent: AgentKind; model: string; effort: string }) {
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const fresh = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const s = sessions.create(canvasId, undefined, { draft: true });
+      await agents.bind(s.id, agent, model, effort);
+      ui.openSession(s.id);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const title = problem.state === "missing" ? "原生会话缺失" : problem.state === "ambiguous" ? "找到多份原生记录" : "原生会话在别的目录";
+  return (
+    <div className="sp-lost" role="alert" data-state={problem.state}>
+      <p className="sp-lost-title"><b>{title}</b> · 只读</p>
+      <p>{problem.message}</p>
+      {problem.candidates.length > 0 && (
+        <ul className="sp-lost-list">
+          {problem.candidates.map((c) => <li key={c}><code>{c}</code></li>)}
+        </ul>
+      )}
+      <p className="sp-lost-hint">上面是这个会话在 Agora 里已有的轨迹，可以照常查看。要接着讨论，开一个新的 {AGENT_NAMES[agent]} 会话（同一块画布、同样的模型）；这个会话保持原样。</p>
+      {err && <p className="sp-warn">{err}</p>}
+      <div className="sp-lost-go">
+        <button className="btn primary sm" disabled={busy} onClick={() => void fresh()} data-session={sessionId}>开新会话</button>
+      </div>
     </div>
   );
 }

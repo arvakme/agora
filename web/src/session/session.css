@@ -114,3 +114,12 @@
 /* Kitty / Seedmux app icons in the terminal button and its menu: the apps' own icons, unframed. */
 .term-app-icon { flex: none; display: block; user-select: none; }
 .sp-term-menu button:disabled .term-app-icon { filter: grayscale(1); }
+
+/* The native log is missing / ambiguous / elsewhere: read-only, in place of the composer. */
+.sp-lost { margin: var(--space-3); padding: var(--space-4) var(--space-5); border-radius: var(--r-lg); background: var(--raised); font-size: var(--text-sm); color: var(--fg-muted); overflow-wrap: anywhere; }
+.sp-lost p { margin: 0 0 var(--space-2); }
+.sp-lost-title b { color: var(--negative); font-weight: var(--weight-strong); }
+.sp-lost-list { margin: 0 0 var(--space-2); padding-left: var(--space-5); }
+.sp-lost-list code { font-size: var(--text-xs, 12px); }
+.sp-lost-go { display: flex; gap: var(--space-3); }
+.sp-lost-note { margin: 0 var(--space-3) var(--space-2); }

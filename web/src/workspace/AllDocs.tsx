@@ -82,7 +82,11 @@ export function AllDocs({ docs, titles, open, focused, confirm, setConfirm, canv
 
 function Confirm({ doc, title, comments, onCancel, onConfirm }: { doc: Doc; title: string; comments: number; onCancel: () => void; onConfirm: () => void }) {
   const turns = doc.kind === "session" ? (sessions.get().sessions[doc.sessionId]?.turnIds.length ?? 0) : 0;
-  const what = doc.kind === "canvas" ? `画布内容${comments ? `和 ${comments} 条评论` : ""}会一起删除，关联会话保留。` : turns ? `${turns} 轮对话记录会一起删除。` : "它还没有对话记录。";
+  // The native conversation stays in the CLI's own log; what goes is Agora's record of the session.
+  const what =
+    doc.kind === "canvas"
+      ? `画布内容${comments ? `和 ${comments} 条评论` : ""}会一起删除，关联会话保留；这块画布的分享会立即结束。`
+      : `Agora 里的会话记录${turns ? `（${turns} 次改图）` : ""}会删除，终端里正在运行的这个会话会被关闭；原生对话仍在 CLI 自己的日志里。`;
   return (
     <li className="ad-confirm" role="alertdialog" aria-label={`删除 ${title}`}>
       <p>

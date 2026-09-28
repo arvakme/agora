@@ -82,11 +82,15 @@ class Terminals:
 
     # ——— plumbing ———
     def _run(self, *args: str, input: bytes | None = None, check: bool = True) -> subprocess.CompletedProcess:
-        if not self.conf.exists():
-            self.run_dir.mkdir(parents=True, exist_ok=True)
-            self.conf.write_text(CONF)
+        conf = self.conf
+        if not conf.exists():
+            if self.run_dir.parent.is_dir():  # never recreate .agora/ for a project that moved away
+                self.run_dir.mkdir(exist_ok=True)
+                conf.write_text(CONF)
+            else:
+                conf = Path(os.devnull)
         return subprocess.run(
-            [self.tmux, "-L", self.socket, "-f", str(self.conf), *args],
+            [self.tmux, "-L", self.socket, "-f", str(conf), *args],
             input=input,
             capture_output=True,
             timeout=10,

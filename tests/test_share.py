@@ -325,6 +325,27 @@ async def test_revoke_is_immediate_and_tunnel_stays_for_other_shares(env):
     assert (await gb.get("/api/guest/state")).status_code == 403
 
 
+async def test_deleting_a_canvas_ends_its_shares(env):
+    """Before: deleting a canvas left its share live and guests saw a blank canvas."""
+    store, shares, dns, tunnels, clock, app = env
+    a, _, host, token = await make_share(app)
+    store.write("canvas", "c2", {"elements": []}, base=None)
+    async with owner(app) as c:
+        other = (await c.post("/api/share", json={"canvasId": "c2", "ttl": 600})).json()["share"]
+    g = await joined(app, host, token)
+    assert (await g.get("/api/guest/state")).status_code == 200
+    async with owner(app) as c:
+        r = await c.delete("/api/project/canvases/c1")
+    assert r.status_code == 200 and r.json()["sharesEnded"] == [a["id"]]
+    ended = {x["id"]: x for x in shares.list()}
+    assert ended[a["id"]]["status"] == "canvas-deleted" and ended[other["id"]]["status"] == "active"
+    assert (await g.get("/api/guest/state")).status_code == 403  # the token is dead
+    assert set(dns.records) == {other["dnsRecordId"]} and tunnels.tunnels  # the other canvas's share keeps the tunnel
+    async with owner(app) as c:
+        await c.delete("/api/project/canvases/c2")
+    assert dns.records == {} and tunnels.tunnels == {}  # nothing shared any more: tunnel torn down
+
+
 async def test_dns_failure_leaves_token_dead_and_cleanup_retried(env):
     store, shares, dns, tunnels, clock, app = env
     a, _, host, token = await make_share(app)

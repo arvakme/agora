@@ -1,0 +1,65 @@
+// Settling the workspace before the first render (main.tsx → prepareBoot → App). Pure apart from
+// the sessions store, so it is tested without the canvas (boot.test.ts).
+import type { El } from "../canvas/scene";
+import type { ThreadSnapshot } from "../comments/threads";
+import type { FileError, ProjectInfo } from "../persist";
+import { sessions } from "../session/store";
+import { group, moveTab, type Node } from "../workspace/layout";
+import { migrateDocs, recoverWorkspace, SAMPLE_CANVAS, sessionDocId, type Doc } from "../workspace/model";
+
+export type WorkspaceState = { v?: 2; docs: Doc[]; root: Node; focused: string };
+export type Boot = {
+  workspace?: WorkspaceState;
+  canvases: Record<string, { elements: El[]; threads: ThreadSnapshot }>;
+  project?: ProjectInfo;
+  /** The server says the project has nothing yet (no workspace.json, no canvas file). Absent: not persisted (?fresh, ?eval). */
+  empty?: boolean;
+  /** Project files the server could not read. */
+  errors?: FileError[];
+  firstRun?: boolean;
+  /** The list was rebuilt from the files on disk (recovery mode), and why. */
+  recovered?: { canvases: number; sessions: number; why: "missing" | "unreadable" };
+};
+
+/** First run: the sample canvas on the left, a draft session docked on the right. Later canvases start blank. */
+function defaults(): WorkspaceState {
+  const s = sessions.create("c1", undefined, { draft: true });
+  const p = sessionDocId(s.id);
+  const docs: Doc[] = [{ id: "c1", kind: "canvas", title: SAMPLE_CANVAS }, { id: p, kind: "session", sessionId: s.id, title: "" }];
+  const g = group(["c1", p]);
+  const root = moveTab(g, p, g.id, "right");
+  return { v: 2, docs, root: root.kind === "split" ? { ...root, sizes: [0.6, 0.4] } : root, focused: "c1" };
+}
+
+/**
+ * Settle the workspace before the first render: the first-run defaults and any session record an
+ * older build never saved are created here, once, outside React. Doing it during App's render
+ * (as a useMemo / useState initializer) wrote to the sessions store while rendering — and Fast
+ * Refresh re-runs useMemo, so every edit created another session and React warned
+ * "Cannot update SessionPane while rendering App".
+ */
+export function prepareBoot(boot: Boot): Boot {
+  let workspace = boot.workspace;
+  let firstRun = false;
+  let recovered: Boot["recovered"];
+  const onDisk = Object.keys(boot.canvases);
+  if (!workspace) {
+    if (boot.empty !== false || !onDisk.length) {
+      // Only a project the server calls empty gets the sample (and even then c1 is written with
+      // base null, so an existing file is never overwritten).
+      workspace = defaults();
+      firstRun = true;
+    } else {
+      // workspace.json missing, empty or unreadable, canvases on disk: rebuild the list from them.
+      const list = Object.values(sessions.get().sessions).map((s) => ({ id: s.id, canvasId: s.canvasId }));
+      workspace = recoverWorkspace(onDisk, list);
+      recovered = { canvases: onDisk.length, sessions: list.length, why: boot.errors?.some((e) => e.file === "workspace.json") ? "unreadable" : "missing" };
+    }
+  }
+  const docs = migrateDocs(workspace.docs);
+  // A session listed without its record (.agora/sessions/ lost): shown unlinked, not saved, never
+  // re-attached to some canvas (docs/workspace-model.md; the record may still come back).
+  for (const d of docs) if (d.kind === "session" && !sessions.get().sessions[d.sessionId]) sessions.create("", d.sessionId, { placeholder: true });
+  return { ...boot, workspace: { ...workspace, docs }, firstRun, recovered };
+}
+

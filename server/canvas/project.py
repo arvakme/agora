@@ -94,6 +94,12 @@ class NotYours(Exception):
     """A thread operation tried to edit or delete someone else's message."""
 
 
+class Gone(Exception):
+    """The project directory this server was started for is no longer there: it was moved,
+    renamed or deleted while the server ran. Writes are refused instead of growing a new
+    ``.agora/`` at the old path."""
+
+
 AGENT_KINDS = ("pi", "claude", "codex")
 
 
@@ -142,6 +148,16 @@ def fold_session(lines: list[dict[str, Any]]) -> dict[str, Any]:
         elif t == "batch" and rec.get("id"):
             batches[rec["id"]] = rec.get("batch")
     return {"session": session, "turns": turns, "batches": batches}
+
+
+def file_error(file: str, raw: bytes, e: Exception, **extra: Any) -> dict[str, Any]:
+    """What is wrong with an unreadable project file: a merge conflict (and the line of its first
+    marker) or plain invalid JSON (and where the parser stopped)."""
+    lines = raw.decode("utf-8", "replace").splitlines()
+    marker = next((i + 1 for i, l in enumerate(lines) if l.startswith(("<<<<<<< ", "=======", ">>>>>>> ")) or l in ("<<<<<<<", ">>>>>>>")), None)
+    if marker is not None:
+        return {"file": file, "error": "merge-conflict", "line": marker, **extra}
+    return {"file": file, "error": "invalid-json", "line": getattr(e, "lineno", None), "detail": str(e)[:200], **extra}
 
 
 def participants_of(t: dict[str, Any]) -> list[dict[str, Any]]:
@@ -236,6 +252,35 @@ class ProjectStore:
         self.root = Path(root).resolve()
         self.dir = self.root / DIRNAME
         self._lock = threading.RLock()
+        self._ident: tuple[int, int] | None = self._identity()
+
+    # ——— the project directory is still where it was ———
+    def _identity(self) -> tuple[int, int] | None:
+        try:
+            st = os.stat(self.root)
+        except OSError:
+            return None
+        return (st.st_dev, st.st_ino)
+
+    def gone(self) -> str | None:
+        """Why this project can no longer be written (moved, renamed, deleted), or None.
+        Compares the directory at ``root`` with the one the store was opened on (path and
+        inode), and needs ``.agora/`` to still be there."""
+        now = self._identity()
+        if now is None:
+            return f"项目目录 {self.root} 不在了（被移走、改名或删除）"
+        if self._ident is None:
+            self._ident = now
+        elif now != self._ident:
+            return f"项目目录 {self.root} 已经换成了另一个目录（原来的被移走或改名）"
+        if not self.dir.is_dir():
+            return f"{self.dir} 不在了"
+        return None
+
+    def check_alive(self) -> None:
+        why = self.gone()
+        if why:
+            raise Gone(why)
 
     # ——— layout ———
     @property
@@ -247,6 +292,8 @@ class ProjectStore:
         created = not (self.dir / "config.toml").exists()
         for sub in ("canvases", "threads", "sessions", "run"):
             (self.dir / sub).mkdir(parents=True, exist_ok=True)
+        if self._ident is None:
+            self._ident = self._identity()
         if created:
             self._atomic(
                 self.dir / "config.toml",
@@ -297,7 +344,8 @@ class ProjectStore:
     @contextmanager
     def _locked(self) -> Iterator[None]:
         with self._lock:
-            self.run_dir.mkdir(parents=True, exist_ok=True)
+            self.check_alive()  # never recreate .agora/ at a path the project left
+            self.run_dir.mkdir(exist_ok=True)
             with open(self.run_dir / "write.lock", "a+") as fh:
                 fcntl.flock(fh, fcntl.LOCK_EX)
                 try:
@@ -421,7 +469,7 @@ class ProjectStore:
                     continue
         return out
 
-    def bind(self, id: str, *, agent: str, model: str = "", effort: str = "", native_id: str | None = None, at: int | None = None) -> dict[str, Any]:
+    def bind(self, id: str, *, agent: str, model: str = "", effort: str = "", native_id: str | None = None, at: int | None = None, started: bool | None = None) -> dict[str, Any]:
         """Create the binding, or confirm an identical one. A different agent/model/effort → ``Locked``."""
         if agent not in AGENT_KINDS:
             raise ValueError(f"agent must be one of {AGENT_KINDS}, got {agent!r}")
@@ -437,9 +485,24 @@ class ProjectStore:
                     cur = {**cur, "nativeId": native_id}
                     self._atomic(path, dump_json(cur))
                 return cur
-            data = {"agent": agent, "model": model or "", "effort": effort or "", "nativeId": native_id, "createdAt": at or 0}
+            # A native id given at binding time names a session that already exists (undoing a
+            # delete binds the same native session again): it counts as started unless the caller
+            # knows better (the undone binding's own ``started``).
+            data = {"agent": agent, "model": model or "", "effort": effort or "", "nativeId": native_id, "createdAt": at or 0, "started": bool(native_id) if started is None else bool(started)}
             self._atomic(path, dump_json(data))
             return data
+
+    def mark_started(self, id: str) -> dict[str, Any] | None:
+        """The native session exists now (its log was seen, or a turn ran): from here on it is
+        only ever resumed, never created again under the same id."""
+        path = self._path("binding", id)
+        with self._locked():
+            cur = self.read_binding(id)
+            if cur is None or cur.get("started") is True:
+                return cur
+            cur = {**cur, "started": True}
+            self._atomic(path, dump_json(cur))
+            return cur
 
     def set_native(self, id: str, native_id: str) -> dict[str, Any]:
         """Record the CLI's session id once (Codex only learns it on the first run)."""
@@ -537,15 +600,32 @@ class ProjectStore:
         return data, version_of(body) or "", thread
 
     # ——— whole project ———
+    def _read_checked(self, kind: str, id: str | None, errors: list[dict[str, Any]]) -> tuple[Any, str] | None:
+        """``read``, but a file that is not valid JSON (a git merge conflict, a bad edit) is
+        reported in ``errors`` instead of failing the whole snapshot."""
+        path = self._path(kind, id)
+        raw = self._bytes(path)
+        if raw is None:
+            return None
+        try:
+            return json.loads(raw), version_of(raw) or ""
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            errors.append(file_error(self._rel(path), raw, e, kind=kind, id=id, version=version_of(raw)))
+            return None
+
     def snapshot(self) -> dict[str, Any]:
-        ws = self.read("workspace")
+        errors: list[dict[str, Any]] = []
+        ws = self._read_checked("workspace", None, errors)
         canvases: dict[str, Any] = {}
         for p in sorted((self.dir / "canvases").glob("*.excalidraw")):
             id = p.name.removesuffix(".excalidraw")
             if not ID_RE.match(id):
                 continue
-            scene, v = self.read("canvas", id) or ({}, "")
-            th = self.read("threads", id)
+            got = self._read_checked("canvas", id, errors)
+            if got is None:
+                continue  # unreadable: listed in errors, left out (and not written) until fixed
+            scene, v = got
+            th = self._read_checked("threads", id, errors)
             canvases[id] = {
                 "scene": scene,
                 "version": v,
@@ -566,6 +646,7 @@ class ProjectStore:
             "canvases": canvases,
             "sessions": sessions,
             "bindings": bindings,
+            "errors": errors,
         }
 
     def import_all(self, payload: dict[str, Any]) -> None:

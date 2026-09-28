@@ -2,12 +2,21 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import urllib.request
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def _state_dir(tmp_path, monkeypatch):
+    """The per-machine server records go to a temporary directory, not ~/.local/state/agora."""
+    monkeypatch.setenv("AGORA_STATE_DIR", str(tmp_path / "agora-state"))
 
 
 def agora(*args: str, cwd: Path) -> subprocess.CompletedProcess:
@@ -57,3 +66,38 @@ def test_up_reuse_isolation_down(tmp_path):
     assert db.returncode == 0 and "released" in db.stdout, db.stdout
     assert agora("status", cwd=a).returncode == 1
     assert not (a / ".agora" / "run" / "server.json").exists()
+
+
+def test_losing_run_dir_never_starts_a_second_server_and_down_still_stops_it(tmp_path):
+    """B5: `git clean -fdx` removed .agora/run/ while the server ran; the next `up` started a
+    second server on the same .agora/ and `down` said "not running"."""
+    from agora_cli.main import alive, free_port
+    from server.canvas.terminal import Terminals
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    root = proj.resolve()
+    terms = Terminals(root, root / ".agora" / "run")
+    try:
+        assert agora("up", cwd=proj).returncode == 0
+        first = json.loads((proj / ".agora" / "run" / "server.json").read_text())
+        terms.open("s-x", ["sleep", "300"], cwd=root, env={})  # a session's pane on this project's tmux server
+        assert "agora-s-x" in terms.sessions()
+
+        shutil.rmtree(proj / ".agora" / "run")  # what `git clean -fdx` does to it
+        again = agora("up", cwd=proj)
+        assert again.returncode == 0 and "already running" in again.stdout, again.stdout + again.stderr
+        assert json.loads((proj / ".agora" / "run" / "server.json").read_text())["pid"] == first["pid"]  # written back
+
+        # Even without any record, a second server for this directory refuses to start (the lock).
+        second = agora("serve", "--project", str(proj), "--port", str(free_port()), cwd=tmp_path)
+        assert second.returncode == 3 and "already running" in second.stderr
+
+        shutil.rmtree(proj / ".agora" / "run")
+        down = agora("down", cwd=proj)
+        assert down.returncode == 0 and "released" in down.stdout, down.stdout + down.stderr
+        assert not alive(first["pid"])
+        assert terms.sessions() == []  # the project's tmux server is gone too
+    finally:
+        agora("down", cwd=proj)
+        terms.kill_server()
