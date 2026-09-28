@@ -8,7 +8,7 @@ import { animHosts } from "../anim/AnimLayer";
 import { validateScript } from "../anim/script";
 import { staleIds } from "../canvas/context";
 import { toModelView } from "../canvas/modelView";
-import { byId, codePathsOf, libraryMeta, live, nameOf, versionOf, type Scene } from "../canvas/scene";
+import { byId, codePathsOf, labelOf, libraryMeta, live, nameOf, versionOf, type Scene } from "../canvas/scene";
 import { applyPlan } from "../ops/apply";
 import { referencedIds, validatePlan, type Op } from "../ops/ops";
 import { cleanGlobs, resolveElement, writeCodePaths } from "../pointer/writeLinks";
@@ -182,7 +182,9 @@ export async function childFromAgent(req: { op: "create" | "link" | "unlink"; ca
     return { status: "exists", canvas: { id: current, name: name(current) }, node: { id: el.id, label }, hint: "this node already opens that canvas: draw into it with --canvas" };
   let child: string | null = null;
   if (req.op === "create") {
-    child = (await nav.createChild(req.title || label)) ?? null;
+    // Named after the node's first label line ("订单服务 · OrderService"), not its whole description.
+    const first = (labelOf(el, map).split("\n").map((l) => l.trim()).find(Boolean) ?? label).slice(0, 60);
+    child = (await nav.createChild(req.title || first)) ?? null;
     if (!child) return { status: "error", errors: ["could not create the canvas"] };
   } else if (req.op === "link") {
     child = req.child ?? null;

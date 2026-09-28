@@ -170,21 +170,22 @@ export type FigureState = {
 
 /**
  * Where a worker is and what it does at time `t`. It walks to the node of each file it reads or
- * writes (`locate`: path → node id, or null when the file is outside the diagram), taking
- * WALK_MS from the start of that call; otherwise it stays where it last worked.
+ * writes (`locate`: path → node id, or null when the file is outside the diagram), setting off
+ * WALK_MS before that call so it arrives as the call starts; otherwise it stays where it last
+ * worked. A pure function of the lane and `t`: jumping to a moment and playing up to it agree.
  */
 export function figureAt(lane: Lane, t: number, locate: (path: string) => string | null, walkMs = WALK_MS): FigureState {
   let at = HOME;
   let from = HOME;
   let movedAt = -Infinity;
   for (const s of lane.segs) {
-    if (s.start > t) break;
+    if (s.start - walkMs > t) break;
     if (!s.path) continue;
     const to = locate(s.path) ?? OUTSIDE;
     if (to !== at) {
       from = at;
       at = to;
-      movedAt = s.start;
+      movedAt = Math.max(s.start - walkMs, movedAt);
     }
   }
   const walk = walkMs <= 0 ? 1 : Math.min(1, Math.max(0, (t - movedAt) / walkMs));
@@ -193,15 +194,21 @@ export function figureAt(lane: Lane, t: number, locate: (path: string) => string
   return { pose, at, from, walk, seg };
 }
 
-/** The segment under an axis position in one lane (for clicks), nearest within `slop` axis ms. */
+/**
+ * The segment under an axis position in one lane (for clicks), within `slop` axis ms. Short calls
+ * are drawn wider than they last, so a click near one prefers the call (read / write / command /
+ * question) over the thinking around it, then the nearest centre.
+ */
 export function segAt(lane: Lane, axis: Axis, x: number, slop = 0): Seg | null {
   let best: Seg | null = null;
-  let d = Infinity;
+  let score = Infinity;
   for (const s of lane.segs) {
     const a = axis.toX(s.start);
     const b = axis.toX(s.end);
     const dist = x < a ? a - x : x > b ? x - b : 0;
-    if (dist <= slop && dist < d) (best = s), (d = dist);
+    if (dist > slop) continue;
+    const sc = (s.kind === "think" ? 1e12 : 0) + dist * 1e6 + Math.abs((a + b) / 2 - x);
+    if (sc < score) (best = s), (score = sc);
   }
   return best;
 }
