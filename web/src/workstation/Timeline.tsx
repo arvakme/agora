@@ -16,7 +16,7 @@ import { clock, replayTime, useReplay, useTick } from "./clock";
 import { focus, useFocus, type SegRef } from "./focus";
 import { follow, useFollow } from "./follow";
 import { frame } from "./frame";
-import { canvasWhere, OUTSIDE, planFor, stateAt, writeConflicts } from "./place";
+import { canvasWhere, OUTSIDE, outsideProject, planFor, stateAt, writeConflicts } from "./place";
 import { DaySummary } from "./DaySummary";
 import { RunAvatar } from "./RunAvatar";
 import { useRuns } from "./runs/store";
@@ -228,7 +228,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
   const maxis = useMemo(() => buildAxis(intervals, liveNow, Math.max(60, mw), { gapPx: 14 }), [intervals, liveNow, mw]);
   const conflicts = useMemo(() => writeConflicts(flat.map((f) => f.run)), [flat]);
   const where = canvasId ? canvasWhere.get(canvasId) : undefined;
-  const placeOfPath = (p: string) => (where ? where.label(where.ctx.locate(p)?.place ?? OUTSIDE) : undefined);
+  const placeOfPath = (p: string) => (where && !outsideProject(p) ? where.label(where.ctx.locate(p)?.place ?? OUTSIDE) : undefined);
 
   // 追踪: the lanes and the strip are about the traced agent and its sub-agents only.
   const traced = fo.traced && runs.byId.has(fo.traced) ? fo.traced : null;

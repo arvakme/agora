@@ -47,7 +47,7 @@ import { canvasOfView, follow, useFollow } from "./follow";
 import { frame } from "./frame";
 import { gestureFor } from "./gestures";
 import { buildGeometry, type Geometry } from "./geometry";
-import { canvasWhere, conflictAt, OUTSIDE, stateAt, writeConflicts, type Ctx, type RunState, type WriteConflict } from "./place";
+import { canvasWhere, conflictAt, OUTSIDE, outsideProject, stateAt, writeConflicts, type Ctx, type RunState, type WriteConflict } from "./place";
 import { Glide, makeSprings, RIG, solve, SUB_SCALE, type Pt, type Springs, type Trip } from "./rig";
 import type { Leg } from "./route";
 import { RunAvatar } from "./RunAvatar";
@@ -931,7 +931,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   // the lane segment picked or under the pointer rings its node, as in the prototype
   const segPlace = (r: { run: string; i: number } | null) => {
     const g = r ? runs.byId.get(r.run)?.segs[r.i] : undefined;
-    return g?.path ? (geom.locate(g.path)?.place ?? OUTSIDE) : null;
+    return g?.path && !outsideProject(g.path) ? (geom.locate(g.path)?.place ?? OUTSIDE) : null;
   };
   const extra: Snap["rings"] = [];
   const hp = segPlace(fo.segHover);

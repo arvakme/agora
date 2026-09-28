@@ -36,6 +36,16 @@ describe("stateAt: a session's worker", () => {
   it("goes to the 图外 tray for files off the diagram", () => {
     expect(stateAt(r, 23 * S, c).at).toBe(OUTSIDE);
   });
+  it("a file outside the project (absolute path) does not move it: that work is done where it stands, like thinking", () => {
+    const abs = run([seg("think", 0, 1), seg("write", 2, 4, "server/db/models.py"), seg("write", 5, 7, "/private/tmp/x/scratchpad/a.py"), seg("read", 8, 12, "C:\\Users\\me\\t.txt"), seg("write", 13, 15, "docs/notes.md")]);
+    const c2 = ctx([abs]);
+    const at = stateAt(abs, 6 * S, c2);
+    expect(at).toMatchObject({ at: "db", pose: "write", w: 1, trip: null });
+    expect(at.seg?.path).toBe("/private/tmp/x/scratchpad/a.py");
+    expect(stateAt(abs, 10 * S, c2)).toMatchObject({ at: "db", pose: "read", w: 1 });
+    expect(stateAt(abs, 14 * S, c2).at).toBe(OUTSIDE); // a relative file no node claims still goes to the tray
+    expect(stateAt(run([seg("write", 0, 2, "/tmp/only.txt")]), 1 * S, c2)).toMatchObject({ present: true, at: OUTSIDE }); // nowhere yet: it starts at the tray as with a thought
+  });
   it("jumping straight to a time gives the same state as stepping there", () => {
     for (const t of [0.5, 3, 6.4, 7.5, 11, 21.5, 30].map((x) => x * S)) {
       let stepped = stateAt(r, 0, c);
