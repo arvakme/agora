@@ -58,10 +58,15 @@ class Busy(RuntimeError):
     pass
 
 
-def agora_prompt(body: str, *, canvas_id: str | None, canvas_name: str | None, extra: str = "") -> str:
-    """What Agora sends: the person's words, then a context footer (hidden in the transcript)."""
-    where = f"画布「{canvas_name or canvas_id}」(canvas={canvas_id})" if canvas_id else "这个项目的画布"
-    footer = f"{MARKER} 来自 Agora · {where}。读图、改图、做动画用 agora-canvas skill（`agora canvas …`）。{extra}".rstrip()
+def agora_prompt(body: str, *, canvas_id: str | None, canvas_name: str | None, extra: str = "", session_id: str | None = None, project_id: str | None = None) -> str:
+    """What Agora sends: the person's words, then a context footer (hidden in the transcript).
+
+    The footer's ``(canvas=… session=… project=…)`` names the canvas, the Agora session and the
+    project (first 8 characters of its id), so a native log can later be matched back to the
+    Agora session it belongs to even when ``.agora/sessions/`` is gone."""
+    ids = " ".join(f"{k}={v}" for k, v in (("canvas", canvas_id), ("session", session_id), ("project", (project_id or "").replace("-", "")[:8] or None)) if v)
+    where = f"画布「{canvas_name or canvas_id}」" if canvas_id else "这个项目的画布"
+    footer = f"{MARKER} 来自 Agora · {where}{f'({ids})' if ids else ''}。读图、改图、做动画用 agora-canvas skill（`agora canvas …`）。{extra}".rstrip()
     return f"{body.rstrip()}\n\n{footer}"
 
 
@@ -110,6 +115,7 @@ def file_read(store: ProjectStore, canvas_id: str) -> dict[str, Any]:
 
 def save_read(store: ProjectStore, canvas_id: str, vers: dict[str, str]) -> str:
     """Remember the element versions a read saw; the token becomes ``apply --base``."""
+    store.check_alive()
     d = store.run_dir / "reads"
     d.mkdir(parents=True, exist_ok=True)
     token = f"r-{int(time.time())}-{secrets.token_hex(3)}"
@@ -170,6 +176,7 @@ class Live:
     pane_since: float | None = None
     activity: str | None = None
     last_error: str | None = None
+    native: dict[str, Any] | None = None  # the native log is missing / ambiguous / elsewhere (agents.NativeMissing.public)
 
 
 class Subscriber:
@@ -260,6 +267,7 @@ class AgentHub:
             "t": "status",
             "sessionId": sid,
             "binding": b,
+            "native": lv.native,
             "running": lv.running,
             "busy": lv.state.busy,
             "queued": len(lv.headless) + len(lv.pane),
@@ -295,10 +303,22 @@ class AgentHub:
             return
         lv.state.root = str(self.store.root)
         if lv.tail is None:
-            path = agents.find_log(b["agent"], b["nativeId"])
-            if path is None:
+            look = agents.locate_log(b["agent"], b["nativeId"], self.store.root)
+            problem = None
+            if look.state != "found" and binding_started(b):
+                problem = agents.NativeMissing(b["agent"], b["nativeId"], look).public()
+            if problem != lv.native:
+                lv.native = problem
+                self._status(sid)
+            if look.path is None:
                 return
-            lv.tail = Tail(path)
+            lv.tail = Tail(look.path)
+            # Several copies, one of them this project's (Claude after a move or a copy): follow
+            # that one, which is also the one the CLI resumes, and say so instead of picking silently.
+            lv.native = agents.duplicates_note(b["agent"], b["nativeId"], look)
+            self._status(sid)
+            if b.get("started") is not True and not self.store.gone():
+                self.store.mark_started(sid)  # the log exists: from now on only ever resumed
         recs = lv.tail.read()
         if not recs:
             return
@@ -362,6 +382,8 @@ class AgentHub:
         it = {"id": f"run-{send_id}", "kind": "run", "at": int(time.time() * 1000), "startAt": int(started * 1000), "usage": usage}
         with self._follow_lock:
             lv.items[it["id"]] = it
+        if self.store.gone():
+            return  # the project moved away: nothing is written at its old path
         try:
             path = self._runs_path(sid)
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -456,9 +478,22 @@ class AgentHub:
                     self._status(sid)
 
     # ——— sending ———
+    def check_native(self, sid: str, b: dict[str, Any]) -> None:
+        """Refuse to resume a session whose native log is gone (``agents.NativeMissing``)."""
+        lv = self._get(sid)
+        try:
+            agents.check_native(b["agent"], b.get("nativeId"), binding_started(b), self.store.root)
+        except agents.NativeMissing as e:
+            lv.native = e.public()
+            self._status(sid)
+            raise
+        if lv.native is not None and lv.native.get("blocking"):
+            lv.native = None
+            self._status(sid)
+
     def send(self, sid: str, prompt: str) -> dict[str, Any]:
         self.ensure_started()
-        self.binding(sid)
+        self.check_native(sid, self.binding(sid))
         lv = self._get(sid)
         p = Pending(send_id=f"m-{secrets.token_hex(5)}", prompt=prompt, at=time.time())
         lv.last_error = None
@@ -494,12 +529,19 @@ class AgentHub:
             if self.terms.alive(sid):  # someone opened the terminal meanwhile
                 lv.pane.append(p)
                 continue
+            try:
+                self.check_native(sid, b)
+            except agents.NativeMissing as e:
+                lv.last_error = str(e)
+                self.broadcast({"t": "done", "sessionId": sid, "sendId": p.send_id, "text": "", "error": str(e), "route": "headless", "native": e.public()})
+                self._status(sid)
+                continue
             backend = self.make_backend(b["agent"])
             req = RunRequest(
                 schema=None,
                 system=None,
                 prompt=p.prompt,
-                options=ExecOptions(backend=b["agent"], model=b.get("model") or "", effort=b.get("effort") or None, session=b.get("nativeId")),
+                options=ExecOptions(backend=b["agent"], model=b.get("model") or "", effort=b.get("effort") or None, session=b.get("nativeId"), new_session=not binding_started(b)),
                 cwd=str(self.store.root),
                 env=self.env_for(sid),
             )
@@ -531,6 +573,8 @@ class AgentHub:
             native = (result or {}).get("session")
             if native and not b.get("nativeId"):
                 self.store.set_native(sid, native)
+            if native and result and not result.get("error") and not self.store.gone():
+                self.store.mark_started(sid)
             # Let the log catch up so the transcript shows the turn before "done".
             await asyncio.to_thread(self._follow, sid, lv)
             self._record_run(sid, lv, p.send_id, started, result)
@@ -567,7 +611,9 @@ class AgentHub:
         lv = self._get(sid)
         if lv.running:
             raise Busy("这个会话正在无头运行一轮，结束后再在终端打开")
-        argv = agents.interactive_argv(b["agent"], b.get("nativeId"), b.get("model") or None, b.get("effort") or None)
+        if not self.terms.alive(sid):
+            self.check_native(sid, b)
+        argv = agents.interactive_argv(b["agent"], b.get("nativeId"), b.get("model") or None, b.get("effort") or None, new=not binding_started(b), root=self.store.root)
         env = {**self.env_for(sid, canvas_id), "PATH": agents.child_env()["PATH"]}
         if app == "seedmux":
             try:
@@ -592,6 +638,20 @@ class AgentHub:
         lv = self._get(sid)
         lv.pane_alive, lv.pane_since = False, None
         self._status(sid)
+
+    async def forget(self, sid: str) -> bool:
+        """The session was deleted: stop its headless turn, close its terminal pane (Agora's tmux
+        or Seedmux) and drop its runtime state. Returns whether a pane was closed."""
+        lv = self.live.pop(sid, None)
+        if lv is not None:
+            lv.headless.clear()
+            lv.pane.clear()
+            if lv.run and not lv.run.done():
+                lv.run.cancel()
+        alive = await asyncio.to_thread(self.terms.alive, sid)
+        if alive:
+            await asyncio.to_thread(self.terms.kill, sid)
+        return alive
 
     # ——— canvas bridge ———
     def executor(self) -> Subscriber | None:
@@ -660,6 +720,12 @@ class AgentHub:
         if errors:
             return {"status": "invalid", "errors": errors[:12]}
         return await self.bridge("anim", {"canvasId": cid, "sessionId": session, "script": script})
+
+
+def binding_started(b: dict[str, Any]) -> bool:
+    """Whether the native session already exists. Bindings written before this flag existed
+    count as started: resuming one whose log is gone must not silently start a new one."""
+    return b.get("started", True) is not False
 
 
 def _compact(ev: dict[str, Any]) -> dict[str, Any]:

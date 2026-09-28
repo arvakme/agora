@@ -9,8 +9,10 @@ file's current version so the UI can offer "reload" or "keep mine" (``force``).
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -21,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from server.canvas.events import Events
-from server.canvas.project import Conflict, NotEmpty, ProjectStore
+from server.canvas.project import Conflict, Gone, NotEmpty, ProjectStore
 from server.canvas.share import ShareError, ShareManager, check_max_opens, check_ttl
 from server.canvas.runner import DEFAULT_BACKEND, DEFAULT_MODEL, EFFORTS, ExecOptions
 
@@ -43,6 +45,26 @@ class Records(BaseModel):
 
 def conflict(e: Conflict) -> JSONResponse:
     return JSONResponse(status_code=409, content={"conflict": True, "file": e.file, "current": e.current, "base": e.base})
+
+
+def gone(e: Gone) -> JSONResponse:
+    """The project directory moved away while this server ran: 410, never a write at the old path."""
+    return JSONResponse(status_code=410, content={"gone": True, "error": f"{e}。在项目的新位置运行 `agora up`；这个页面里没保存的改动还在，先别关掉它。"})
+
+
+def write_failed(e: OSError, store: ProjectStore) -> JSONResponse:
+    """A write the disk refused (full, read-only, permissions): say which file and why. The old
+    file is intact (writes are atomic)."""
+    why = {errno.ENOSPC: "磁盘空间不足", errno.EACCES: "没有写入权限", errno.EPERM: "没有写入权限", errno.EROFS: "文件系统是只读的", errno.EDQUOT: "超出磁盘配额"}.get(e.errno or 0, e.strerror or type(e).__name__)
+    file = e.filename
+    try:
+        if file:
+            p = Path(file)
+            m = re.match(r"^\.(.+)\.\d+\.[0-9a-f]+\.tmp$", p.name)  # _atomic's temp file → the file it replaces
+            file = str((p.parent / m.group(1) if m else p).relative_to(store.dir))
+    except ValueError:
+        pass
+    return JSONResponse(status_code=507 if e.errno in (errno.ENOSPC, errno.EDQUOT) else 500, content={"error": f"保存失败：{why}", "file": file, "errno": e.errno})
 
 
 class Merge(BaseModel):
@@ -75,7 +97,9 @@ def sse(events: Events, request: Request, accept=None, *, tick: float = 15.0) ->
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"cache-control": "no-cache", "x-accel-buffering": "no"})
 
 
-def create_project_router(store: ProjectStore, events: Events | None = None) -> APIRouter:
+def create_project_router(store: ProjectStore, events: Events | None = None, *, shares: ShareManager | None = None, hub=None) -> APIRouter:
+    """``shares`` (optional): deleting a canvas ends its shares. ``hub`` (optional, an AgentHub):
+    deleting a session closes its terminal pane and stops its headless turn."""
     router = APIRouter()
     events = events or Events()
 
@@ -84,8 +108,12 @@ def create_project_router(store: ProjectStore, events: Events | None = None) -> 
             return f()
         except Conflict as e:
             return conflict(e)
+        except Gone as e:
+            return gone(e)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
+        except OSError as e:
+            return write_failed(e, store)
 
     @router.get("")
     def info():
@@ -93,7 +121,7 @@ def create_project_router(store: ProjectStore, events: Events | None = None) -> 
 
     @router.get("/health")
     def health():
-        return {"ok": True, "root": str(store.root), "pid": os.getpid()}
+        return {"ok": True, "root": str(store.root), "pid": os.getpid(), "gone": store.gone()}
 
     @router.get("/snapshot")
     def snapshot():
@@ -115,7 +143,10 @@ def create_project_router(store: ProjectStore, events: Events | None = None) -> 
         def go():
             store.delete("canvas", id)
             store.delete("threads", id)
-            return {"ok": True}
+            # A share of a deleted canvas would show guests a blank page: end it (token dead,
+            # DNS record removed, tunnel torn down when nothing else is shared).
+            ended = shares.end_for_canvas(id, "canvas-deleted") if shares is not None else []
+            return {"ok": True, "sharesEnded": ended}
 
         return guard(go)
 
@@ -149,9 +180,13 @@ def create_project_router(store: ProjectStore, events: Events | None = None) -> 
         return guard(lambda: {"version": store.replace_session(id, body.records, base=body.base, force=body.force)})
 
     @router.delete("/sessions/{id}")
-    def delete_session(id: str):
+    async def delete_session(id: str):
         # The agent binding goes with the log; undoing the delete re-binds (PUT /api/agent/sessions/{id}).
-        return guard(lambda: (store.delete("session", id), store.delete("binding", id), {"ok": True})[2])
+        # Its terminal pane (Agora's tmux or Seedmux) and a running headless turn end with it.
+        out = await asyncio.to_thread(guard, lambda: (store.delete("session", id), store.delete("binding", id), {"ok": True})[2])
+        if hub is not None and isinstance(out, dict):
+            out["terminalClosed"] = await hub.forget(id)
+        return out
 
     @router.post("/import")
     def import_all(payload: dict[str, Any]):
@@ -306,7 +341,7 @@ def create_project_app(
             return JSONResponse({"error": "forbidden"}, status_code=403)
         return await call_next(request)
 
-    app.include_router(create_project_router(store, events), prefix="/api/project")
+    app.include_router(create_project_router(store, events, shares=shares, hub=hub), prefix="/api/project")
     app.include_router(create_share_router(store, shares, events), prefix="/api/share")
     app.include_router(create_agent_router(hub), prefix="/api/agent")
     if canvas_router is None:

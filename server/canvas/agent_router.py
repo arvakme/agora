@@ -23,6 +23,8 @@ class Bind(BaseModel):
     model: str = ""
     effort: str = ""
     nativeId: str | None = None
+    # Undoing a delete: whether that native session had already started (None: it did if nativeId is given).
+    started: bool | None = None
 
 
 class Send(BaseModel):
@@ -59,6 +61,8 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
             return JSONResponse(status_code=409, content={"error": str(e), "locked": True})
         if isinstance(e, Busy):
             return JSONResponse(status_code=409, content={"error": str(e)})
+        if isinstance(e, agents.NativeMissing):
+            return JSONResponse(status_code=409, content={"error": str(e), "nativeMissing": True, "native": e.public()})
         if isinstance(e, NoPage):
             return JSONResponse(status_code=503, content={"error": str(e), "noPage": True})
         if isinstance(e, LookupError):
@@ -78,7 +82,7 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
             # catalog, agent_models.py); an existing binding is only ever confirmed or refused (409).
             if store.read_binding(sid) is None:
                 await asyncio.to_thread(agents.check_effort, body.agent, body.model, body.effort)
-            b = store.bind(sid, agent=body.agent, model=body.model, effort=body.effort, native_id=body.nativeId, at=int(time.time() * 1000))
+            b = store.bind(sid, agent=body.agent, model=body.model, effort=body.effort, native_id=body.nativeId, at=int(time.time() * 1000), started=body.started)
         except Exception as e:
             return fail(e)
         # Claude and Pi accept the id up front; Codex assigns its own on the first run.
@@ -108,7 +112,8 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
             raise HTTPException(400, "empty message")
         try:
             names = canvas_names(store)
-            prompt = body.text if body.raw else agora_prompt(body.text, canvas_id=body.canvasId, canvas_name=names.get(body.canvasId or ""), extra=body.context)
+            pid = str(store.info().get("id") or "")
+            prompt = body.text if body.raw else agora_prompt(body.text, canvas_id=body.canvasId, canvas_name=names.get(body.canvasId or ""), extra=body.context, session_id=sid, project_id=pid)
             return hub.send(sid, prompt)
         except Exception as e:
             return fail(e)

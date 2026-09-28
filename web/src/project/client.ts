@@ -5,7 +5,12 @@
 // version as `base`; the server refuses a stale base with 409 (another tab, an editor or
 // git changed the file). The slot is then held: later writes only replace the held one,
 // and the UI asks the user to reload or keep this page's version (`resolve`).
-// Network failures retry until the server is back.
+// Network failures retry until the server is back. Any other refusal (disk full, no
+// permission, the project directory moved away: 410) is not swallowed: the slot is held the
+// same way, listed in `failed` with the server's reason, and `retry` sends the latest held
+// write (as a full write, so appends lost with the failed request are not skipped).
+// A slot can also be `block`ed (its file on disk is unreadable, e.g. a merge conflict):
+// nothing is written to it until the page is reloaded.
 
 export type Op =
   | { kind: "put"; path: string; data: unknown }
@@ -21,7 +26,11 @@ export type Pending = {
   overwrite?: () => Op;
 };
 
-export type Status = { conflicts: string[]; offline: boolean; saving: number };
+/** A write the server refused (not a conflict): why, and whether the project directory is gone (410). */
+export type Failure = { slot: string; message: string; status: number; gone: boolean; file?: string };
+/** A slot this page must not write (its file is unreadable), with the reason shown to the user. */
+export type Blocked = { slot: string; reason: string };
+export type Status = { conflicts: string[]; offline: boolean; saving: number; failed: Failure[]; blocked: Blocked[] };
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -29,7 +38,8 @@ export function createClient({ base = "/api/project", fetchImpl = (u, i) => fetc
   const versions = new Map<string, string | null>();
   const chains = new Map<string, Promise<void>>();
   const held = new Map<string, Pending>();
-  let status: Status = { conflicts: [], offline: false, saving: 0 };
+  const blocked = new Map<string, string>();
+  let status: Status = { conflicts: [], offline: false, saving: 0, failed: [], blocked: [] };
   let keepalive = false;
   const listeners = new Set<() => void>();
   const setStatus = (p: Partial<Status>) => {
@@ -37,7 +47,7 @@ export function createClient({ base = "/api/project", fetchImpl = (u, i) => fetc
     listeners.forEach((l) => l());
   };
 
-  async function send(slot: string, op: Op, force: boolean): Promise<"ok" | "conflict"> {
+  async function send(slot: string, op: Op, force: boolean): Promise<"ok" | "conflict" | Failure> {
     const baseVersion = versions.get(slot) ?? null;
     const method = op.kind === "put" || op.kind === "replace" ? "PUT" : op.kind === "append" || op.kind === "merge" ? "POST" : "DELETE";
     const body =
@@ -60,26 +70,45 @@ export function createClient({ base = "/api/project", fetchImpl = (u, i) => fetc
       }
       if (status.offline) setStatus({ offline: false });
       if (r.status === 409) return "conflict";
-      if (!r.ok) throw new Error(`${method} ${op.path}: ${r.status} ${await r.text()}`);
+      if (!r.ok) {
+        const text = await r.text().catch(() => "");
+        let body: { error?: string; detail?: string; file?: string } = {};
+        try {
+          body = JSON.parse(text);
+        } catch {
+          /* plain text */
+        }
+        const message = body.error ?? (typeof body.detail === "string" ? body.detail : "") ?? "";
+        return { slot, status: r.status, gone: r.status === 410, file: body.file, message: message || `${method} ${op.path}: ${r.status} ${text.slice(0, 200)}` };
+      }
       const j = (await r.json()) as { version?: string };
       versions.set(slot, op.kind === "delete" ? null : (j.version ?? null));
       return "ok";
     }
   }
 
-  function run(slot: string, p: Pending, force = false) {
+  /** `force`: overwrite a conflicted file. `full`: send the full write (`overwrite`) without forcing (a retry). */
+  function run(slot: string, p: Pending, force = false, full = force) {
     const prev = chains.get(slot) ?? Promise.resolve();
     setStatus({ saving: status.saving + 1 });
     const next = prev
       .then(async () => {
-        if (!force && held.has(slot)) return void held.set(slot, p); // conflicted: wait for the user
-        const res = await send(slot, force && p.overwrite ? p.overwrite() : p.op, force);
+        if (blocked.has(slot)) return void held.set(slot, p); // unreadable on disk: never written from here
+        if (!force && !full && held.has(slot)) return void held.set(slot, p); // conflicted or failed: wait for the user
+        const res = await send(slot, full && p.overwrite ? p.overwrite() : p.op, force);
         if (res === "conflict") {
           held.set(slot, p);
           if (!status.conflicts.includes(slot)) setStatus({ conflicts: [...status.conflicts, slot] });
-        }
+        } else if (res !== "ok") {
+          held.set(slot, p);
+          setStatus({ failed: [...status.failed.filter((f) => f.slot !== slot), res] });
+        } else if (status.failed.some((f) => f.slot === slot)) setStatus({ failed: status.failed.filter((f) => f.slot !== slot) });
       })
-      .catch((e) => console.warn("project write", slot, e))
+      .catch((e) => {
+        // Not the server's answer (a bug on this page): still keep the write and say so.
+        held.set(slot, p);
+        setStatus({ failed: [...status.failed.filter((f) => f.slot !== slot), { slot, status: 0, gone: false, message: String(e) }] });
+      })
       .finally(() => setStatus({ saving: status.saving - 1 }));
     chains.set(slot, next);
     return next;
@@ -92,6 +121,23 @@ export function createClient({ base = "/api/project", fetchImpl = (u, i) => fetc
     seen: (slot: string, version: string | null) => void versions.set(slot, version),
     version: (slot: string) => versions.get(slot),
     write: (slot: string, p: Pending) => run(slot, p),
+    /** Send the held write of every failed slot again (or only `slot`). */
+    retry(slot?: string) {
+      const slots = status.failed.map((f) => f.slot).filter((s) => !slot || s === slot);
+      setStatus({ failed: status.failed.filter((f) => !slots.includes(f.slot)) });
+      return Promise.all(
+        slots.map((s) => {
+          const p = held.get(s);
+          held.delete(s);
+          return p ? run(s, p, false, true) : Promise.resolve();
+        }),
+      ).then(() => undefined);
+    },
+    /** Never write this slot from this page (its file on disk is unreadable). */
+    block(slot: string, reason: string) {
+      blocked.set(slot, reason);
+      setStatus({ blocked: [...status.blocked.filter((b) => b.slot !== slot), { slot, reason }] });
+    },
     /** Settle a conflicted slot: "overwrite" writes this page's latest version over the file. */
     resolve(slot: string, how: "overwrite" | "drop") {
       const p = held.get(slot);

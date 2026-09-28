@@ -170,3 +170,21 @@ export function savedWorkspace(ws: { docs: Doc[]; root: Node; focused: string },
   const focused = drafts.includes(ws.focused) ? (groups(root).find((g) => g.active)?.active ?? "") : ws.focused;
   return { v: 2, docs: ws.docs.filter((d) => !drafts.includes(d.id)), root, focused };
 }
+
+/** Title of a canvas found on disk without an entry in workspace.json (recovery mode). */
+export const RECOVERED_CANVAS = "已恢复画布";
+
+/**
+ * Recovery mode: `workspace.json` is missing, empty or unreadable but the project has canvases on
+ * disk. Rebuild the list from what is there — every canvas file and every session record — instead
+ * of starting over with the sample (which would overwrite `c1`). Canvases get "已恢复画布 <id>"
+ * (renamable), sessions keep their automatic names; only the first canvas is opened.
+ */
+export function recoverWorkspace(canvasIds: string[], sessionList: { id: string; canvasId: string }[]): { v: 2; docs: Doc[]; root: Node; focused: string } {
+  const ids = [...canvasIds].sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
+  const docs: Doc[] = [
+    ...ids.map((id): CanvasDoc => ({ id, kind: "canvas", title: `${RECOVERED_CANVAS} ${id}` })),
+    ...sessionList.map((s): SessionDoc => ({ id: sessionDocId(s.id), kind: "session", sessionId: s.id, title: "" })),
+  ];
+  return { v: 2, docs, root: group(ids.slice(0, 1), ids[0] ?? ""), focused: ids[0] ?? "" };
+}

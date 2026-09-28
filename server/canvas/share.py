@@ -156,7 +156,8 @@ class ShareFile:
         self.path = self.dir / "shares.json"
 
     def _ensure(self) -> None:
-        self.dir.mkdir(parents=True, exist_ok=True)
+        self.store.check_alive()  # a moved project gets no new .agora/ at its old path
+        self.dir.mkdir(exist_ok=True)
         gi = self.dir / ".gitignore"
         if not gi.exists():
             gi.write_text("# Share records (hashes, hostnames, Cloudflare ids): local only.\n*\n")
@@ -440,6 +441,16 @@ class ShareManager:
             if share.endedAt is None:
                 self._end(share, "revoked")
             return share.public(self.now_ms())
+
+    def end_for_canvas(self, canvas_id: str, reason: str = "canvas-deleted") -> list[str]:
+        """End every live share of one canvas (it was deleted). Returns the ids ended now."""
+        ended = []
+        with self.lock:
+            for s in self.shares:
+                if s.canvasId == canvas_id and s.endedAt is None:
+                    self._end(s, reason)
+                    ended.append(s.id)
+        return ended
 
     def sweep(self) -> list[str]:
         """End expired shares; retry unfinished cleanup. Returns ids ended now."""

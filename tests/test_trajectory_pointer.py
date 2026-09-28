@@ -150,7 +150,9 @@ def test_model_view_carries_code_paths():
 async def test_hub_items_in_full_and_runner_usage(store, tmp_path, monkeypatch):  # noqa: F811
     log = tmp_path / "claude-log.jsonl"
     log.write_text("\n".join(json.dumps(r) for r in CLAUDE) + "\n")
-    monkeypatch.setattr("server.canvas.agents.find_log", lambda kind, nid: log if nid else None)
+    from server.canvas.agents import LogLookup
+
+    monkeypatch.setattr("server.canvas.agents.locate_log", lambda kind, nid, root=None, home=None: LogLookup("found", log, (log,)) if nid else LogLookup("missing"))
 
     class Costly(FakeBackend):
         async def run(self, req):

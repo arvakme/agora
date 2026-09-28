@@ -83,7 +83,7 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
 
 ### sessions/<id>.agent.json
 
-`{ "agent": "claude", "model": "sonnet", "effort": "", "nativeId": "…uuid…", "createdAt": … }`。只由服务端写，选定后不可改（不同选择返回 409），`nativeId` 只能从空设一次。对话本身在 CLI 自己的会话日志里，Agora 跟随读取，不复制。
+`{ "agent": "claude", "model": "sonnet", "effort": "", "nativeId": "…uuid…", "createdAt": …, "started": false }`。只由服务端写，选定后不可改（不同选择返回 409），`nativeId` 只能从空设一次；`started` 表示原生会话已经存在（见 [Agent 会话](agent-sessions.md)）。对话本身在 CLI 自己的会话日志里，Agora 跟随读取，不复制。
 
 ### sessions/<id>.jsonl
 
@@ -103,7 +103,9 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
 
 ### workspace.json
 
-`{ "v": 2, "docs": [...], "root": <分屏树>, "focused": "<doc id>" }`，语义见 [工作区交互模型](workspace-model.md)：docs 列出所有画布和会话（含已关闭，带名字），root 是分组、tab 和分屏比例。它不在时（新项目）首次打开会建示例画布和它的会话。
+`{ "v": 2, "docs": [...], "root": <分屏树>, "focused": "<doc id>" }`，语义见 [工作区交互模型](workspace-model.md)：docs 列出所有画布和会话（含已关闭，带名字），root 是分组、tab 和分屏比例。只有服务端说项目是空的（`snapshot.empty`：没有 workspace.json，也没有任何画布文件）时，首次打开才建示例画布和它的会话，而且写示例画布时 `base: null`，文件已经存在就 409，绝不覆盖。workspace.json 缺失、为空或读不了、但 `canvases/` 里有文件时进入**恢复模式**：按磁盘上的画布（名字「已恢复画布 <id>」）和会话记录重建列表，页面顶部说明一次。清单里有、但 `sessions/<id>.jsonl` 不在的会话（`git clean -fdx`、重新 clone 后）显示在「未关联画布」下，不替它编一个画布、也不写盘，直到用户选了画布或 agent。
+
+读不了的文件（git 合并冲突、无效 JSON）不会让整个 snapshot 失败：`snapshot.errors` 逐个列出 `{file, error: "merge-conflict" | "invalid-json", line}`，其余照常返回；页面说明是哪个文件第几行，并且不写这个文件，直到解决后刷新。
 
 ## 2. 写入：原子 + 版本
 
@@ -147,6 +149,8 @@ path/to/agora/bin/agora init               # 只建 .agora/
 - `bin/agora` 包一层 `uv run --project <agora 仓库>`，当前目录保持为项目目录；也可以 `PYTHONPATH=<仓库> uv run --project <仓库> python -m agora_cli up`。
 - 默认服务构建好的 `web/dist`（先 `cd web && npm run build`）。`--dev` 另起 vite（热更新）代理到本项目后端，页面地址是 vite 的；`--web-port` 指定 vite 端口。
 - 同一项目重复 `up` 复用在跑的实例（按 `run/server.json` 的 pid + `/health` 的项目根确认）；两个 `up` 同时进来由 `run/up.lock` 串行。进程崩溃留下的旧记录会被清掉重启。
+- 服务进程另在项目外持有一把锁并留一份记录：`$AGORA_STATE_DIR/servers/<项目根路径的 sha1 前 16 位>.{lock,json}`（默认 `~/.local/state/agora`）。`run/` 丢了（`git clean -fdx`）时，`up` 从这份记录找到还在跑的服务并写回 `run/server.json`，不会起第二个；记录也没了时，第二个 `serve` 拿不到锁直接退出。`down` 同样按这份记录停掉服务，并关掉这个项目的 tmux 服务器。
+- 服务运行中项目目录被移走、改名或删除（按路径和 inode 判断）：所有写入返回 `410 {gone: true}`，不会在旧路径上重新长出 `.agora/`；页面提示在新位置运行 `agora up`，没保存的改动留在页面里。其他写入失败（磁盘满、没权限、只读）返回 `{error, file}`（500 / 507），页面显示「保存失败」和原因，保留改动，可以重试。
 - 只监听 `127.0.0.1`。
 
 ## 5. 从浏览器旧数据迁移

@@ -66,6 +66,13 @@ let state: State = { sessions: {}, turns: {}, batches: {} };
  * loaded from the project are never drafts, whatever their state.
  */
 const drafts = new Set<string>();
+/**
+ * Sessions listed in workspace.json whose record (.agora/sessions/<id>.jsonl) is missing — after
+ * `git clean -fdx`, a fresh clone, another machine. Their canvas is unknown, so they are shown
+ * unlinked (canvasId "") and nothing is written for them until the person links a canvas, picks
+ * an agent or a turn happens: inventing a link and saving it would overwrite the real one.
+ */
+const placeholders = new Set<string>();
 const listeners = new Set<() => void>();
 const set = (next: State) => {
   state = next;
@@ -81,16 +88,20 @@ export const sessions = {
   hydrate: (s: State) => set(s),
   reset: () => set({ sessions: {}, turns: {}, batches: {} }),
 
-  create(canvasId: string, id = uid("s"), opts: { draft?: boolean } = {}): Session {
+  create(canvasId: string, id = uid("s"), opts: { draft?: boolean; placeholder?: boolean } = {}): Session {
     const s: Session = { id, canvasId, createdAt: Date.now(), turnIds: [] };
     if (opts.draft) drafts.add(id);
+    if (opts.placeholder) placeholders.add(id);
     set({ ...state, sessions: { ...state.sessions, [id]: s } });
     return s;
   },
   isDraft: (id: string) => drafts.has(id),
-  /** The draft's agent was chosen: from now on it is a real session and is saved. */
+  isPlaceholder: (id: string) => placeholders.has(id),
+  /** The draft's agent was chosen (or a placeholder's): from now on it is a real session and is saved. */
   commit(id: string) {
-    if (drafts.delete(id)) set({ ...state });
+    const a = drafts.delete(id);
+    const b = placeholders.delete(id);
+    if (a || b) set({ ...state });
   },
   /** Drop a draft (closing it before an agent was chosen). Does nothing to a saved session. */
   discardDraft(id: string) {
@@ -98,9 +109,11 @@ export const sessions = {
     const { [id]: _, ...rest } = state.sessions;
     set({ ...state, sessions: rest });
   },
-  /** What gets written to the project: everything except drafts. */
-  persisted: (): State => (drafts.size ? { ...state, sessions: Object.fromEntries(Object.entries(state.sessions).filter(([id]) => !drafts.has(id))) } : state),
-  relink: (id: string, canvasId: string) => set({ ...state, sessions: { ...state.sessions, [id]: { ...state.sessions[id], canvasId } } }),
+  /** What gets written to the project: everything except drafts and placeholders. */
+  persisted: (): State =>
+    drafts.size || placeholders.size ? { ...state, sessions: Object.fromEntries(Object.entries(state.sessions).filter(([id]) => !drafts.has(id) && !placeholders.has(id))) } : state,
+  /** Link the session to a canvas (the person chose it: a placeholder becomes a saved session). */
+  relink: (id: string, canvasId: string) => (placeholders.delete(id), set({ ...state, sessions: { ...state.sessions, [id]: { ...state.sessions[id], canvasId } } })),
   /** The session a canvas's comments report into for eval runs (the first one linked to it; created on demand). */
   forCanvas(canvasId: string): Session {
     return Object.values(state.sessions).find((s) => s.canvasId === canvasId) ?? sessions.create(canvasId);
@@ -108,6 +121,7 @@ export const sessions = {
   onCanvas: (canvasId: string) => Object.values(state.sessions).filter((s) => s.canvasId === canvasId),
 
   startTurn(sessionId: string, t: Omit<Turn, "id" | "n" | "sessionId" | "steps" | "startedAt" | "status">): Turn {
+    placeholders.delete(sessionId); // something happened in it: from now on it is saved
     const s = state.sessions[sessionId];
     const turn: Turn = { ...t, id: uid("t"), n: s.turnIds.length + 1, sessionId, steps: [], startedAt: Date.now(), status: "running" };
     set({ ...state, turns: { ...state.turns, [turn.id]: turn }, sessions: { ...state.sessions, [sessionId]: { ...s, turnIds: [...s.turnIds, turn.id] } } });

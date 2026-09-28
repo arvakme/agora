@@ -19,8 +19,12 @@ export const project = createClient();
 
 export type ProjectInfo = { id: string; name: string; root: string; me: Person };
 type Versioned<T> = { data: T; version: string };
+/** A project file the server could not read (server/canvas/project.py `file_error`). */
+export type FileError = { file: string; error: "merge-conflict" | "invalid-json"; line?: number | null; detail?: string; kind?: string; id?: string | null };
 type Snapshot = ProjectInfo & {
+  /** Nothing in the project yet (no workspace.json, no canvas file): the first run may write the sample. */
   empty: boolean;
+  errors?: FileError[];
   workspace: Versioned<unknown> | null;
   canvases: Record<string, { scene: { elements: El[] }; version: string; threads: Versioned<ThreadsFile> | null }>;
   sessions: Parameters<typeof foldSessions>[0] & Record<string, { version: string }>;
@@ -29,6 +33,8 @@ type Snapshot = ProjectInfo & {
 };
 export type Loaded = {
   project: ProjectInfo;
+  empty: boolean;
+  errors: FileError[];
   workspace?: unknown;
   canvases: Record<string, { elements: El[]; threads?: ThreadSnapshot }>;
   sessions: SessionsState;
@@ -67,6 +73,13 @@ export async function connect(): Promise<Loaded> {
     }
   }
 
+  // Unreadable files (a merge conflict, invalid JSON) are left out of the snapshot; this page must
+  // not write over them: their slots are blocked until the file is fixed and the page reloaded.
+  const errors = snap.errors ?? [];
+  for (const e of errors) {
+    const slot = slotOfFile(e.file);
+    if (slot) project.block(slot, describeFileError(e));
+  }
   project.seen("workspace", snap.workspace?.version ?? null);
   if (snap.workspace) written.set("workspace", JSON.stringify(snap.workspace.data));
   const canvases: Loaded["canvases"] = {};
@@ -84,6 +97,8 @@ export async function connect(): Promise<Loaded> {
   latestSessions = folded.state;
   return {
     project: { id: snap.id, name: snap.name, root: snap.root, me: snap.me },
+    empty: snap.empty,
+    errors,
     workspace: snap.workspace?.data,
     canvases,
     sessions: folded.state,
@@ -185,6 +200,20 @@ export function discard(key: string) {
   written.delete(`canvas:${id}`);
   written.delete(`threads:${id}`);
   return project.write(`canvas:${id}`, { op: { kind: "delete", path: `/canvases/${id}` } }).then(() => project.seen(`threads:${id}`, null));
+}
+
+/** A file under .agora/ → the slot that writes it (undefined: not one this page writes). */
+export function slotOfFile(file: string): string | undefined {
+  if (file === "workspace.json") return "workspace";
+  const m = /^(canvases|threads|sessions)\/(.+)\.(excalidraw|json|jsonl)$/.exec(file);
+  if (!m) return undefined;
+  return `${m[1] === "canvases" ? "canvas" : m[1] === "threads" ? "threads" : "session"}:${m[2]}`;
+}
+
+/** One line for the banner: which file, what is wrong, where. */
+export function describeFileError(e: FileError): string {
+  const where = e.line ? `第 ${e.line} 行` : "";
+  return e.error === "merge-conflict" ? `.agora/${e.file} 有合并冲突（${where || "冲突标记"}）` : `.agora/${e.file} 不是有效的 JSON${where ? `（${where}）` : ""}`;
 }
 
 /** A conflicted slot → the file it names, for the banner. */

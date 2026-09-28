@@ -9,7 +9,8 @@ export type AgentKind = "pi" | "claude" | "codex";
 export const AGENT_NAMES: Record<AgentKind, string> = { pi: "Pi", claude: "Claude Code", codex: "Codex" };
 export const AGENT_KINDS: AgentKind[] = ["pi", "claude", "codex"];
 
-export type Binding = { agent: AgentKind; model: string; effort: string; nativeId: string | null; createdAt: number };
+/** `started`: the native session exists (it ran once); from then on it is only ever resumed. */
+export type Binding = { agent: AgentKind; model: string; effort: string; nativeId: string | null; createdAt: number; started?: boolean };
 export type FileOp = "edit" | "write" | "add" | "delete";
 /** One model request's accounting (server/canvas/transcript.py `_usage`, runner `Usage`). */
 export type Usage = {
@@ -50,7 +51,15 @@ export type Item = {
   error?: string;
   turn?: string;
 };
+/**
+ * The native log of a session that already ran is not usable (server/canvas/agents.py
+ * `NativeMissing`): `missing`, `ambiguous` (several copies) or `elsewhere` (Pi: another directory).
+ * These block sending and the terminal: resuming would silently start a new conversation.
+ * `duplicates` only informs: other copies exist, the project's own one is followed.
+ */
+export type NativeProblem = { state: "missing" | "ambiguous" | "elsewhere" | "duplicates"; blocking: boolean; nativeId: string; candidates: string[]; message: string };
 export type Status = {
+  native?: NativeProblem | null;
   running: boolean;
   busy: boolean;
   queued: number;
@@ -193,9 +202,9 @@ export const agents = {
   catalog: () => (catalogP ??= fetch("/api/agent/catalog").then(json) as Promise<Catalog>),
 
   /** Fix the session's agent, model and effort (once; the server refuses a different choice). */
-  async bind(sessionId: string, agent: AgentKind, model: string, effort: string, nativeId?: string | null): Promise<Binding> {
+  async bind(sessionId: string, agent: AgentKind, model: string, effort: string, nativeId?: string | null, started?: boolean): Promise<Binding> {
     const b = (await json(
-      await fetch(`/api/agent/sessions/${sessionId}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ agent, model, effort, nativeId: nativeId ?? null }) }),
+      await fetch(`/api/agent/sessions/${sessionId}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ agent, model, effort, nativeId: nativeId ?? null, started: started ?? null }) }),
     )) as Binding;
     set({ bindings: { ...state.bindings, [sessionId]: b }, activeAt: { ...state.activeAt, [sessionId]: Date.now() } });
     return b;

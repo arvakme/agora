@@ -77,4 +77,57 @@ describe("project client", () => {
     expect(c.status().offline).toBe(false);
     expect(srv.files.get("/workspace")!.body).toBe(1);
   });
+
+  // Experiment B7: a write the server refuses (chmod 555, disk full) used to be logged to the
+  // console and dropped; the page looked saved.
+  it("a refused write is reported with the server's reason, held, and sent again on retry", async () => {
+    const srv = fakeServer();
+    let refuse = true;
+    const fetchImpl = async (url: string, init: RequestInit) =>
+      refuse && init.method === "PUT"
+        ? new Response(JSON.stringify({ error: "保存失败：没有写入权限", file: "canvases/c2.excalidraw" }), { status: 500 })
+        : srv.fetchImpl(url, init);
+    const c = createClient({ fetchImpl });
+    c.seen("canvas:c2", null);
+    await c.write("canvas:c2", { op: { kind: "put", path: "/canvases/c2", data: "a" } });
+    expect(c.status().failed).toEqual([{ slot: "canvas:c2", status: 500, gone: false, file: "canvases/c2.excalidraw", message: "保存失败：没有写入权限" }]);
+    await c.write("canvas:c2", { op: { kind: "put", path: "/canvases/c2", data: "b" } }); // held with the latest
+    expect(srv.files.has("/canvases/c2")).toBe(false);
+    refuse = false;
+    await c.retry();
+    expect(c.status().failed).toEqual([]);
+    expect(srv.files.get("/canvases/c2")!.body).toBe("b");
+  });
+
+  it("a failed append is retried as the full log, so its records are not skipped", async () => {
+    const srv = fakeServer();
+    let refuse = true;
+    const fetchImpl = async (url: string, init: RequestInit) => (refuse ? new Response("Internal Server Error", { status: 500 }) : srv.fetchImpl(url, init));
+    const c = createClient({ fetchImpl });
+    c.seen("session:s1", null);
+    const full = () => ({ kind: "replace" as const, path: "/sessions/s1", records: [{ t: "session" }, { t: "turn", n: 1 }, { t: "turn", n: 2 }] });
+    await c.write("session:s1", { op: { kind: "append", path: "/sessions/s1/append", records: [{ t: "turn", n: 1 }] }, overwrite: full });
+    expect(c.status().failed[0].message).toContain("500");
+    await c.write("session:s1", { op: { kind: "append", path: "/sessions/s1/append", records: [{ t: "turn", n: 2 }] }, overwrite: full });
+    refuse = false;
+    await c.retry();
+    expect(srv.files.get("/sessions/s1")!.body).toEqual(full().records);
+    expect(srv.calls.at(-1)!.body.force).toBe(false);
+  });
+
+  it("410 (project directory moved away) is reported as gone", async () => {
+    const c = createClient({ fetchImpl: async () => new Response(JSON.stringify({ gone: true, error: "项目目录 /x 不在了" }), { status: 410 }) });
+    c.seen("workspace", "v1");
+    await c.write("workspace", { op: { kind: "put", path: "/workspace", data: 1 } });
+    expect(c.status().failed[0]).toMatchObject({ gone: true, status: 410, message: "项目目录 /x 不在了" });
+  });
+
+  it("a blocked slot (unreadable file on disk) is never written", async () => {
+    const srv = fakeServer();
+    const c = createClient({ fetchImpl: srv.fetchImpl });
+    c.block("workspace", ".agora/workspace.json 有合并冲突（第 1 行）");
+    await c.write("workspace", { op: { kind: "put", path: "/workspace", data: 1 } });
+    expect(srv.calls).toEqual([]);
+    expect(c.status().blocked).toEqual([{ slot: "workspace", reason: ".agora/workspace.json 有合并冲突（第 1 行）" }]);
+  });
 });
