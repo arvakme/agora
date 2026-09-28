@@ -50,6 +50,11 @@ def install(kind: str, folder: Path, home: Path, cwd: str, nid: str) -> Path:
         pytest.skip(f"no placement rule for {kind}")
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(src, dst)
+    if kind == "claude" and (folder / "subagents").is_dir():  # <dir>/<id>/subagents/agent-*.jsonl
+        shutil.copytree(folder / "subagents", dst.parent / nid / "subagents")
+    if kind == "codex" and (folder / "children").is_dir():  # child threads are rollouts of their own
+        for c in (folder / "children").glob("*.jsonl"):
+            shutil.copy(c, dst.parent / f"rollout-2026-09-28T00-00-01-{c.stem}.jsonl")
     return dst
 
 
@@ -106,8 +111,14 @@ def test_fixture_contract(kind, folder, home):
     # 4. what the recording promises
     exp = m.get("expected") or {}
     tools = [i["tool"] for i in items if i["kind"] == "tool"]
+    # Written by the session or any of its sub-agents (the whole run tree).
+    from server.canvas.adapters import runs as runs_mod
+    from server.canvas.adapters.base import NativeRef
+
+    tree = runs_mod.build(NativeRef(kind, nid, look.path, cwd), root=cwd, depth=None, home=home, receipts=False)
+    written = {s.get("path") for r in tree["runs"] for s in r["timeline"]["segments"] if s["kind"] == "write"}
     for path in exp.get("files", []):
-        assert any(f["path"] == path for t in tools for f in t.get("files", [])), (path, [t.get("files") for t in tools])
+        assert path in written, (path, written)
     if exp.get("commands"):
         assert sum(1 for t in tools if t.get("activity") in ("commands", "read", "search") and t.get("name") in exp.get("command_tools", [t.get("name") for t in tools])) >= exp["commands"]
     for act in exp.get("activities", []):
