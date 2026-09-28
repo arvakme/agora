@@ -39,6 +39,7 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
   transition: background var(--dur-tap) var(--ease-out), transform var(--dur-tap) var(--ease-spring);
 }
 .icon-btn.sm { width: 28px; height: 28px; }
+.icon-btn.xs { width: 24px; height: 24px; border-radius: var(--r-xs); }
 .icon-btn:hover:not(:disabled), .icon-btn[aria-expanded="true"] { background: var(--raised); }
 .icon-btn:active:not(:disabled) { transform: scale(0.94); }
 .icon-btn.muted { --icon: var(--fg-subtle); }
@@ -250,8 +251,19 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .canvas-view .excalidraw .sidebar-tab-trigger[data-state=active] { --button-bg: var(--segment-on); --button-hover-bg: var(--segment-on); --button-border: transparent; --button-hover-color: var(--accent); color: var(--accent); box-shadow: var(--lift-1); }
 
 /* ——— comment layer ——— */
-.comment-layer { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
-.capture { position: absolute; inset: 0; pointer-events: auto; cursor: var(--cursor-comment), crosshair; }
+/* above the progress pointer (z 4): an open thread card must not sit under its ring or label */
+.comment-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+/* comment mode: the system crosshair (sharp at any pixel ratio) + the aim (comments/Aim.tsx) */
+.capture { position: absolute; inset: 0; pointer-events: auto; cursor: crosshair; touch-action: none; }
+/* Always a stacking context with a transform, so showing, hiding and moving them never changes
+ * that (which would cost a layout): only transform and opacity change. */
+.aim-outline, .aim-pin { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; opacity: 0; isolation: isolate; transform: translate3d(0, 0, 0); transition: opacity var(--dur-tap) var(--ease-out); }
+/* a 1×1 tint and four 1×1 hairlines, sized with scale (Aim.tsx): no layout when the target changes */
+.aim-outline > i { position: absolute; left: 0; top: 0; width: 1px; height: 1px; transform-origin: 0 0; transform: scale(0); background: var(--accent); }
+.aim-outline > i[data-fill] { background: var(--accent-wash); }
+
+.aim-pin .pin-body { animation: none; transform: scale(0.8); opacity: 0.5; transition: transform var(--dur-glide) var(--ease-spring), opacity var(--dur-tap) var(--ease-out); }
+.aim-pin[data-on="true"] .pin-body { transform: scale(1); opacity: 1; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--accent-ring), var(--lift-1); }
 .miss {
   position: absolute; padding: 0 var(--space-5); height: 28px; display: grid; place-items: center; border-radius: var(--r-pill); font-size: var(--text-sm); white-space: nowrap;
   background: var(--surface); color: var(--fg-muted); box-shadow: var(--edge), var(--lift-2); translate: 12px -40px;
@@ -273,6 +285,9 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
   transition: transform var(--dur-tap) var(--ease-spring), background var(--dur-glide) var(--ease-out), color var(--dur-glide), box-shadow var(--dur-glide) var(--ease-out);
 }
 @keyframes pin-drop { from { transform: translateY(-12px) scale(0.5); opacity: 0 } }
+/* the aim was already standing there: the click just sets it down (a small press, no drop) */
+.pin.draft .pin-body { animation: pin-set var(--dur-drift) var(--ease-spring) both; }
+@keyframes pin-set { from { transform: scale(0.86) } }
 .pin:hover .pin-body, .pin.draft .pin-body { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--accent-ring), var(--lift-1); }
 .pin[data-active="true"] .pin-body { box-shadow: 0 0 0 2px var(--accent-soft), var(--lift-2); }
 .pin[data-resolved="true"] .pin-body { background: var(--surface); box-shadow: inset 0 0 0 30px var(--positive-wash), 0 0 0 2px var(--surface), var(--lift-1); color: var(--positive); --icon: var(--positive); transform: scale(0.85); }
@@ -318,6 +333,15 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .trow[data-tone="warn"] .trow-text { color: var(--caution); }
 .trow-text[data-warn] { color: var(--caution); font-size: var(--text-sm); margin-top: var(--space-2); }
 .tcard-more { padding: 0 14px var(--space-5) 50px; font-size: var(--text-sm); color: var(--fg-subtle); }
+/* own messages: edit / delete on hover (always shown on touch); "已编辑" after a change */
+.trow-meta { position: relative; }
+.tedited { color: var(--fg-subtle); font-size: var(--text-xs); }
+.trow-tools { margin-left: auto; align-self: center; display: flex; gap: 0; margin-block: -4px; opacity: 0; transition: opacity var(--dur-tap) var(--ease-out); }
+.trow:hover .trow-tools, .trow:focus-within .trow-tools { opacity: 1; }
+@media (hover: none) { .trow-tools { opacity: 1; } }
+.treply.tedit { margin: var(--space-2) 0 0; padding: 4px 4px 4px 10px; align-items: flex-end; }
+.treply.tedit .btn { flex: none; }
+.toast.undo-toast { position: absolute; left: 50%; bottom: 76px; translate: -50% 0; z-index: 8; pointer-events: auto; }
 .tguest { font-size: var(--text-xs); height: 18px; line-height: 18px; padding: 0 6px; border-radius: var(--r-pill); background: var(--well); color: var(--fg-muted); }
 .waiting { display: inline-flex; align-items: center; gap: var(--space-3); font-size: var(--text-md); color: var(--fg-muted); }
 .tchanges { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--line); }

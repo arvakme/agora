@@ -173,7 +173,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
       onPointerDownCapture={(e) => {
         // komo-style: interacting with the canvas outside a card closes the open thread
         // and takes back an unsent pin (parked if it has text).
-        if ((e.target as HTMLElement).closest(".tcard, .pin, .drawer, .ptr-ui")) return;
+        if ((e.target as HTMLElement).closest(".tcard, .pin, .drawer, .ptr-ui, .undo-toast")) return;
         doc.store.close();
         dismissDraft(true);
       }}

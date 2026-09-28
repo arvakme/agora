@@ -25,6 +25,12 @@ export type Message = {
   sessionId?: string;
   /** Who wrote a human ("you") message. Several people can take part in one thread. */
   by?: Person;
+  /** Set when the author changed the text after posting (shown as 已编辑). */
+  editedAt?: number;
+  /** Last change after posting (edit, delete, restore): the later copy wins when two writers merge. */
+  updatedAt?: number;
+  /** Tombstone: the text is gone; kept so merges with older copies don't bring it back. */
+  deleted?: boolean;
 };
 /** A person commenting: this machine's user by default (git user.name), later also share guests. */
 export type Person = { id: string; name: string };
@@ -38,6 +44,10 @@ export type Thread = {
   messages: Message[];
   createdAt: number;
   createdBy?: Person;
+  /** Last change of the thread itself (resolve, delete, restore). */
+  updatedAt?: number;
+  /** Tombstone: the owner deleted the whole thread; its number is not reused. */
+  deleted?: boolean;
 };
 
 type State = { threads: Thread[]; activeId: string | null };
@@ -45,7 +55,12 @@ type State = { threads: Thread[]; activeId: string | null };
 export type Remote = {
   create?: (t: Thread) => void;
   reply?: (threadId: string, m: Message) => void;
+  edit?: (threadId: string, m: Message) => void;
+  remove?: (threadId: string, msgId: string) => void;
+  restore?: (threadId: string, m: Message) => void;
 };
+/** What a delete can put back, once (the page's undo toast). */
+export type Undo = { canvasId: string; label: string; run: () => void };
 export type ThreadSnapshot = { threads: Thread[]; seq: number };
 export type ThreadStore = ReturnType<typeof createThreadStore>;
 
@@ -55,30 +70,57 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 let me: Person | undefined;
 export const setIdentity = (p: Person | undefined) => void (me = p);
 export const identity = () => me;
+/** The owner's page (not a share guest). The owner may delete anyone's message and whole threads. */
+export const isOwner = () => !isGuestId(me?.id);
+/** Human messages are editable and deletable by whoever wrote them (legacy ones without `by` are the owner's). */
+export const isMine = (m: Message) => m.author === "you" && (m.by ? m.by.id === me?.id : isOwner());
+export const canEdit = (m: Message) => !m.deleted && isMine(m);
+export const canDelete = (m: Message) => !m.deleted && (isMine(m) || isOwner());
+
+const stamp = (x: { updatedAt?: number }) => x.updatedAt ?? 0;
+/** What the UI shows: no deleted threads or messages, no threads left without a message. */
+function visible(all: Thread[]): Thread[] {
+  const out: Thread[] = [];
+  for (const t of all) {
+    if (t.deleted) continue;
+    const messages = t.messages.some((m) => m.deleted) ? t.messages.filter((m) => !m.deleted) : t.messages;
+    if (!messages.length) continue;
+    out.push(messages === t.messages ? t : { ...t, messages });
+  }
+  return out;
+}
+const tombstone = (m: Message, at: number): Message => ({ id: m.id, author: m.author, at: m.at, ...(m.by && { by: m.by }), text: "", deleted: true, updatedAt: at });
 
 /** The live store per canvas, so server pushes (someone else's comments) reach the page. */
 export const threadStores = new Map<string, ThreadStore>();
 
 export function createThreadStore(canvasId: string, initial?: ThreadSnapshot, remote: Remote = {}) {
-  let state: State = { threads: initial?.threads.map((t) => ({ ...t, agent: "idle" as const })) ?? [], activeId: null };
+  // `all` is the file as this page knows it (tombstones included, for saving and merging);
+  // `state.threads` is what the UI renders.
+  let all: Thread[] = initial?.threads.map((t) => ({ ...t, agent: "idle" as const })) ?? [];
+  let state: State = { threads: visible(all), activeId: null };
   let seq = initial?.seq ?? 0;
   const listeners = new Set<() => void>();
-  const set = (next: State) => {
-    state = next;
+  const commit = (next: Thread[], activeId = state.activeId) => {
+    all = next;
+    const threads = visible(all);
+    state = { threads, activeId: activeId && threads.some((t) => t.id === activeId) ? activeId : null };
     listeners.forEach((l) => l());
   };
-  const patch = (id: string, f: (t: Thread) => Thread) =>
-    set({ ...state, threads: state.threads.map((t) => (t.id === id ? f(t) : t)) });
+  const patch = (id: string, f: (t: Thread) => Thread) => commit(all.map((t) => (t.id === id ? f(t) : t)));
+  const find = (id: string) => all.find((t) => t.id === id);
+  const setMsg = (id: string, msgId: string, f: (m: Message) => Message) =>
+    patch(id, (t) => ({ ...t, messages: t.messages.map((m) => (m.id === msgId ? f(m) : m)) }));
 
   return {
     canvasId,
-    snapshot: (): ThreadSnapshot => ({ threads: state.threads, seq }),
+    snapshot: (): ThreadSnapshot => ({ threads: all, seq }),
     get: () => state,
     subscribe: (l: () => void) => (listeners.add(l), () => void listeners.delete(l)),
     thread: (id: string) => state.threads.find((t) => t.id === id),
     reset() {
       seq = 0;
-      set({ threads: [], activeId: null });
+      commit([], null);
     },
     create(anchor: Anchor, text: string): Thread {
       const t: Thread = {
@@ -91,7 +133,7 @@ export function createThreadStore(canvasId: string, initial?: ThreadSnapshot, re
         ...(me && { createdBy: me }),
         messages: [{ id: uid(), author: "you", text, at: Date.now(), ...(me && { by: me }) }],
       };
-      set({ threads: [...state.threads, t], activeId: t.id });
+      commit([...all, t], t.id);
       remote.create?.(t);
       return t;
     },
@@ -101,45 +143,97 @@ export function createThreadStore(canvasId: string, initial?: ThreadSnapshot, re
       if (m.author === "you") remote.reply?.(id, m);
       return m;
     },
+    /** Change the text of one's own message. Returns whether it changed. */
+    edit(id: string, msgId: string, text: string): boolean {
+      const m = find(id)?.messages.find((x) => x.id === msgId);
+      const next = text.trim();
+      if (!m || !canEdit(m) || !next || next === m.text) return false;
+      const now = Date.now();
+      const edited: Message = { ...m, text: next, editedAt: now, updatedAt: now };
+      setMsg(id, msgId, () => edited);
+      remote.edit?.(id, edited);
+      return true;
+    },
+    /** Delete one message (one's own; the owner any). Returns the undo, or null if not allowed. */
+    removeMessage(id: string, msgId: string): Undo | null {
+      const m = find(id)?.messages.find((x) => x.id === msgId);
+      if (!m || !canDelete(m)) return null;
+      setMsg(id, msgId, (x) => tombstone(x, Date.now()));
+      remote.remove?.(id, msgId);
+      return {
+        canvasId,
+        label: "已删除一条评论",
+        run: () => {
+          const back: Message = { ...m, updatedAt: Date.now() };
+          setMsg(id, msgId, () => back);
+          remote.restore?.(id, back);
+        },
+      };
+    },
+    /** The owner deletes a whole thread (also one whose anchor is gone). Returns the undo. */
+    removeThread(id: string): Undo | null {
+      const t = find(id);
+      if (!t || t.deleted || !isOwner()) return null;
+      const now = Date.now();
+      commit(all.map((x) => (x.id === id ? { id: t.id, n: t.n, createdAt: t.createdAt, ...(t.createdBy && { createdBy: t.createdBy }), anchor: t.anchor, agent: "idle", resolved: true, deleted: true, updatedAt: now, messages: [] } : x)));
+      return {
+        canvasId,
+        label: `已删除线程 #${t.n}`,
+        run: () => patch(id, () => ({ ...t, agent: "idle", updatedAt: Date.now() })),
+      };
+    },
     /** Take in the file as the server has it now: threads and messages this page doesn't have yet
-     * (another person's) and the server's numbering. Nothing this page holds is dropped. Returns whether anything changed. */
+     * (another person's), later edits and deletions (by `updatedAt`), and the server's numbering.
+     * Returns whether anything changed. */
     merge(snap: ThreadSnapshot): boolean {
       let changed = false;
-      const mine = new Map(state.threads.map((t) => [t.id, t]));
-      const threads = state.threads.map((t) => {
+      const mine = new Set(all.map((t) => t.id));
+      const next = all.map((t) => {
         const s = snap.threads.find((x) => x.id === t.id);
         if (!s) return t;
+        if (stamp(s) > stamp(t) && s.deleted) {
+          changed = true;
+          return { ...s, anchor: s.anchor ?? t.anchor, agent: "idle" as const };
+        }
+        if (t.deleted && stamp(s) <= stamp(t)) return t; // an older copy doesn't bring a deleted thread back
+        const base = stamp(s) > stamp(t) ? { ...t, resolved: s.resolved, deleted: s.deleted, updatedAt: s.updatedAt } : t;
+        const theirs = new Map(s.messages.map((m) => [m.id, m]));
+        let msgChanged = false;
+        const messages = t.messages.map((m) => {
+          const o = theirs.get(m.id);
+          if (!o || stamp(o) <= stamp(m)) return m;
+          msgChanged = true;
+          return o;
+        });
         const have = new Set(t.messages.map((m) => m.id));
         const extra = s.messages.filter((m) => !have.has(m.id));
-        if (!extra.length && s.n === t.n) return t;
+        if (!extra.length && !msgChanged && s.n === t.n && base === t) return t;
         changed = true;
-        const messages = extra.length ? [...t.messages, ...extra].sort((a, b) => a.at - b.at) : t.messages;
-        return { ...t, n: s.n, messages };
+        return { ...base, n: s.n, messages: extra.length ? [...messages, ...extra].sort((a, b) => a.at - b.at) : messages };
       });
       for (const s of snap.threads)
         if (!mine.has(s.id)) {
-          threads.push({ ...s, agent: "idle" });
+          next.push({ ...s, agent: "idle" });
           changed = true;
         }
       if (snap.seq > seq) {
         seq = snap.seq;
         changed = true;
       }
-      if (changed) set({ ...state, threads });
+      if (changed) commit(next);
       return changed;
     },
-    updateMessage: (id: string, msgId: string, f: (m: Message) => Message) =>
-      patch(id, (t) => ({ ...t, messages: t.messages.map((m) => (m.id === msgId ? f(m) : m)) })),
+    updateMessage: (id: string, msgId: string, f: (m: Message) => Message) => setMsg(id, msgId, f),
     /** Resolving also closes the thread card; reopening leaves it open. */
     setResolved: (id: string, resolved: boolean) =>
-      set({
-        threads: state.threads.map((t) => (t.id === id ? { ...t, resolved } : t)),
-        activeId: resolved && state.activeId === id ? null : state.activeId,
-      }),
+      commit(
+        all.map((t) => (t.id === id ? { ...t, resolved, updatedAt: Date.now() } : t)),
+        resolved && state.activeId === id ? null : state.activeId,
+      ),
     setAgent: (id: string, agent: Thread["agent"]) => patch(id, (t) => ({ ...t, agent })),
     /** Opens a thread (idempotent — never toggles). */
-    open: (id: string) => state.activeId !== id && set({ ...state, activeId: id }),
-    close: () => state.activeId !== null && set({ ...state, activeId: null }),
+    open: (id: string) => state.activeId !== id && commit(all, id),
+    close: () => state.activeId !== null && commit(all, null),
   };
 }
 

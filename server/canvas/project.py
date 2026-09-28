@@ -23,6 +23,7 @@ import re
 import secrets
 import subprocess
 import threading
+import time
 import tomllib
 import uuid
 from collections.abc import Iterator
@@ -89,6 +90,10 @@ class Locked(Exception):
     """A session's agent binding is fixed once chosen; a different one was requested."""
 
 
+class NotYours(Exception):
+    """A thread operation tried to edit or delete someone else's message."""
+
+
 AGENT_KINDS = ("pi", "claude", "codex")
 
 
@@ -141,16 +146,30 @@ def fold_session(lines: list[dict[str, Any]]) -> dict[str, Any]:
 
 def participants_of(t: dict[str, Any]) -> list[dict[str, Any]]:
     seen: dict[str, dict[str, Any]] = {}
-    for p in [t.get("createdBy"), *(m.get("by") for m in t.get("messages") or [])]:
+    live = [m for m in t.get("messages") or [] if not m.get("deleted")]
+    for p in [t.get("createdBy"), *(m.get("by") for m in live)]:
         if isinstance(p, dict) and p.get("id") and p["id"] not in seen:
             seen[p["id"]] = p
     return list(seen.values())
 
 
+def _stamp(x: dict[str, Any]) -> int:
+    """When a thread or message last changed after it was written (edit, delete, restore, resolve)."""
+    v = x.get("updatedAt")
+    return int(v) if isinstance(v, int | float) and not isinstance(v, bool) else 0
+
+
+def message_tombstone(m: dict[str, Any], at: int) -> dict[str, Any]:
+    """A deleted message keeps its id, author and time (so merges don't bring it back); the text goes."""
+    return {**{k: m[k] for k in ("id", "author", "at", "by") if k in m}, "text": "", "deleted": True, "updatedAt": at}
+
+
 def merge_thread_files(disk: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
-    """Union by id. The incoming page's copy wins for fields it knows (resolved, message edits);
-    threads and messages only on disk (another writer's) are kept. ``n`` collisions between two
-    new threads are settled by renumbering the incoming one."""
+    """Union by id. The incoming page's copy wins for fields it knows (resolved, message edits)
+    unless the file's copy changed later (``updatedAt``: someone else edited or deleted it);
+    threads and messages only on disk (another writer's) are kept. Deletions are tombstones
+    (``deleted: true``), so they survive merges instead of coming back from an older copy.
+    ``n`` collisions between two new threads are settled by renumbering the incoming one."""
     by_id = {t.get("id"): t for t in disk.get("threads") or []}
     out: list[dict[str, Any]] = []
     seen: set[Any] = set()
@@ -159,11 +178,16 @@ def merge_thread_files(disk: dict[str, Any], incoming: dict[str, Any]) -> dict[s
         if d is None:
             out.append(dict(t))
         else:
-            mine = [m for m in t.get("messages") or []]
-            ids = {m.get("id") for m in mine}
-            extra = [m for m in d.get("messages") or [] if m.get("id") not in ids]
-            msgs = sorted(mine + extra, key=lambda m: m.get("at") or 0) if extra else mine
-            out.append({**t, "n": d.get("n", t.get("n")), "messages": msgs})
+            win = d if _stamp(d) > _stamp(t) else t
+            if win.get("deleted"):
+                out.append({**win, "n": d.get("n", t.get("n"))})
+            else:
+                disk_msgs = {m.get("id"): m for m in d.get("messages") or []}
+                mine = [disk_msgs[m.get("id")] if m.get("id") in disk_msgs and _stamp(disk_msgs[m.get("id")]) > _stamp(m) else m for m in t.get("messages") or []]
+                ids = {m.get("id") for m in mine}
+                extra = [m for m in d.get("messages") or [] if m.get("id") not in ids]
+                msgs = sorted(mine + extra, key=lambda m: m.get("at") or 0) if extra else mine
+                out.append({**win, "n": d.get("n", t.get("n")), "messages": msgs})
         seen.add(t.get("id"))
     out += [dict(t) for t in disk.get("threads") or [] if t.get("id") not in seen]
     seq = max(int(disk.get("seq") or 0), int(incoming.get("seq") or 0), max((int(t.get("n") or 0) for t in out), default=0))
@@ -450,13 +474,17 @@ class ProjectStore:
         return merged, version_of(body) or "", body != raw
 
     def thread_op(self, id: str, op: dict[str, Any]) -> tuple[dict[str, Any], str, dict[str, Any]]:
-        """Apply one ``create`` / ``reply`` / ``resolve`` op. Returns (file, version, the thread)."""
+        """Apply one ``create`` / ``reply`` / ``edit`` / ``delete`` / ``restore`` / ``resolve`` op.
+        ``edit``, ``delete`` and ``restore`` act on one message and need ``actor``: the id that
+        wrote it (a share guest may only change their own messages → ``NotYours``).
+        Returns (file, version, the thread)."""
         path = self._path("threads", id)
         with self._locked():
             raw = self._bytes(path)
             data = json.loads(raw) if raw else {"seq": 0, "threads": []}
             threads: list[dict[str, Any]] = data.setdefault("threads", [])
             kind = op.get("op")
+            now = int(op.get("at") or time.time() * 1000)
             if kind == "create":
                 t = op["thread"]
                 existing = next((x for x in threads if x.get("id") == t["id"]), None)
@@ -468,7 +496,7 @@ class ProjectStore:
                     existing = t
                 thread = existing
             else:
-                thread = next((x for x in threads if x.get("id") == op.get("threadId")), None)
+                thread = next((x for x in threads if x.get("id") == op.get("threadId") and not x.get("deleted")), None)
                 if thread is None:
                     raise NotFound(str(op.get("threadId")))
                 if kind == "reply":
@@ -476,8 +504,31 @@ class ProjectStore:
                     if not any(x.get("id") == m["id"] for x in thread["messages"]):
                         thread["messages"].append(m)
                         thread["participants"] = participants_of(thread)
+                elif kind in ("edit", "delete", "restore"):
+                    mid = op.get("id") or (op.get("message") or {}).get("id")
+                    i = next((k for k, x in enumerate(thread["messages"]) if x.get("id") == mid), None)
+                    if i is None:
+                        raise NotFound(str(mid))
+                    m = thread["messages"][i]
+                    if not op.get("actor") or (m.get("by") or {}).get("id") != op["actor"]:
+                        raise NotYours(str(mid))
+                    if kind == "edit":
+                        if m.get("deleted"):
+                            raise NotFound(str(mid))
+                        if m.get("text") != op["text"]:
+                            thread["messages"][i] = {**m, "text": op["text"], "editedAt": now, "updatedAt": now}
+                    elif kind == "delete":
+                        if not m.get("deleted"):
+                            thread["messages"][i] = message_tombstone(m, now)
+                    elif m.get("deleted"):  # restore: the page that deleted it sends the text back
+                        back = {**{k: m[k] for k in ("id", "author", "at", "by") if k in m}, "text": op["text"], "updatedAt": now}
+                        if isinstance(op.get("editedAt"), int):
+                            back["editedAt"] = op["editedAt"]
+                        thread["messages"][i] = back
+                    thread["participants"] = participants_of(thread)
                 elif kind == "resolve":
                     thread["resolved"] = bool(op.get("resolved"))
+                    thread["updatedAt"] = now
                 else:
                     raise ValueError(f"unknown thread op {kind!r}")
             body = dump_json(data)

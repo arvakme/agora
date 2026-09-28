@@ -22,7 +22,13 @@ export type ShareRow = {
   guests: number;
   comments: number;
   cleanup: string[];
+  /** Distinct guests (browsers) that opened it / the limit (null = unlimited). */
+  opens: number;
+  maxOpens: number | null;
 };
+
+/** "打开 3/5" or "打开 3" (unlimited). */
+export const opensText = (r: Pick<ShareRow, "opens" | "maxOpens">) => (r.maxOpens ? `打开 ${r.opens ?? 0}/${r.maxOpens}` : `打开 ${r.opens ?? 0}`);
 
 const DURATIONS = [
   { key: "1h", label: "1 小时", s: 3600 },
@@ -94,6 +100,8 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
   const [dur, setDur] = useState<(typeof DURATIONS)[number]["key"]>("1d");
   const [n, setN] = useState("30");
   const [unit, setUnit] = useState<(typeof UNITS)[number]["key"]>("m");
+  const [limited, setLimited] = useState(false);
+  const [maxOpens, setMaxOpens] = useState("5");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [made, setMade] = useState<{ url: string; row: ShareRow } | null>(null);
@@ -104,12 +112,13 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
     return d.s;
   };
   const customBad = dur === "custom" && (!(Number(n) > 0) || (ttl() ?? 0) < 60 || (ttl() ?? 0) > 90 * 86400);
+  const opensBad = limited && !(/^\d+$/.test(maxOpens.trim()) && Number(maxOpens) >= 1 && Number(maxOpens) <= 10000);
   const create = async () => {
     setBusy(true);
     setErr(null);
     setMade(null);
     try {
-      const j = await api<{ url: string; share: ShareRow }>("POST", "", { canvasId, ttl: ttl() });
+      const j = await api<{ url: string; share: ShareRow }>("POST", "", { canvasId, ttl: ttl(), maxOpens: limited ? Number(maxOpens) : null });
       setMade({ url: j.url, row: j.share });
       setCopied(false);
       onCreated();
@@ -159,9 +168,32 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
           </div>
         </div>
       )}
+      <div className="share-field">
+        <span>打开次数</span>
+        <div className="seg share-seg" data-static role="radiogroup" aria-label="打开次数">
+          <button role="radio" aria-checked={!limited} data-on={!limited} onClick={() => setLimited(false)}>不限次数</button>
+          <button role="radio" aria-checked={limited} data-on={limited} onClick={() => setLimited(true)}>限制次数</button>
+        </div>
+      </div>
+      {limited && (
+        <div className="share-field share-custom">
+          <span />
+          <div>
+            最多打开
+            <input inputMode="numeric" value={maxOpens} onChange={(e) => setMaxOpens(e.target.value)} aria-label="最多打开次数" />
+            次{opensBad && <em>1 到 10000 的整数</em>}
+          </div>
+        </div>
+      )}
+      <p className="share-note">
+        {limited
+          ? "每个新访客（一个浏览器）用链接进来算一次，同一个浏览器再打开或刷新不另算；次数用完后新访客打不开，已经进来的人不受影响。"
+          : "任何拿到链接的人都能打开。"}
+        另有防刷的频率限制（同一网络地址每分钟最多打开 10 次），与这里的次数无关。
+      </p>
       <div className="share-actions">
         {busy && <span className="share-busy">正在建立隧道和域名，第一次要十几秒…</span>}
-        <button className="btn primary" disabled={busy || !canvasId || customBad} onClick={() => void create()}>
+        <button className="btn primary" disabled={busy || !canvasId || customBad || opensBad} onClick={() => void create()}>
           {busy ? "创建中…" : "创建链接"}
         </button>
       </div>
@@ -208,7 +240,7 @@ function ShareList({ rows, onChange }: { rows: ShareRow[]; onChange: () => void 
               <b>{r.canvasTitle || r.canvasId}</b>
               <code title={r.url}>{r.host}</code>
               <span className="share-meta">
-                {r.expiresAt == null ? "直到撤销" : `剩 ${fmtLeft(r.expiresAt - now)}`} · 访问 {r.visits} · 评论 {r.comments}
+                {r.expiresAt == null ? "直到撤销" : `剩 ${fmtLeft(r.expiresAt - now)}`} · <span title={r.maxOpens ? `已有 ${r.opens ?? 0} 个访客打开，最多 ${r.maxOpens} 个` : "已打开的访客数（不限次数）"} data-full={!!r.maxOpens && (r.opens ?? 0) >= r.maxOpens}>{opensText(r)}</span> · 评论 {r.comments}
               </span>
             </div>
             <button className="btn sm danger" disabled={pending === r.id} onClick={() => void revoke(r.id)} title="立即结束这个分享：链接和它的域名都会失效"><IconLock size={14} />{pending === r.id ? "撤销中…" : "撤销"}</button>
@@ -224,7 +256,7 @@ function ShareList({ rows, onChange }: { rows: ShareRow[]; onChange: () => void 
                 <div className="share-row-main">
                   <b>{r.canvasTitle || r.canvasId}</b>
                   <span className="share-meta">
-                    {r.status === "revoked" ? "已撤销" : "已到期"} · 访问 {r.visits} · 评论 {r.comments}
+                    {r.status === "revoked" ? "已撤销" : "已到期"} · {opensText(r)} · 评论 {r.comments}
                     {r.cleanup.length > 0 && " · DNS 记录待清理"}
                   </span>
                 </div>

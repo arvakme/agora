@@ -3,16 +3,20 @@ port, so the owner's app (project files, sessions, terminals, agents) is never b
 
 Whitelist (everything else is 403):
 
-    GET  /s/{token}          open the share: sets the share cookie (+ a guest id), redirects to /
+    GET  /s/{token}          open the share: sets the share cookie (+ a guest id), redirects to /;
+                             counts one opening per new guest, refused once ``maxOpens`` is used up
     GET  /                   the canvas page (built frontend, guest mode, noindex)
     GET  /assets/*           the frontend's static files
     GET  /api/guest/state    the shared canvas (read-only), its comment threads, who you are
-    POST /api/guest/comments new thread / reply (``{op: create|reply}``), as ``guest:<id>``
+    POST /api/guest/comments new thread / reply / edit / delete / restore
+                             (``{op: create|reply|edit|delete|restore}``), as ``guest:<id>``;
+                             edit, delete and restore only on the guest's own messages
     GET  /api/guest/events   SSE: threads and canvas changes, and ``ended`` when the share ends
 
 Every request must come for the hostname of an active share; every request past ``/s/`` must
-carry that share's token (cookie, compared in constant time). Guests are rate limited per
-client address (``CF-Connecting-IP``).
+carry that share's token (cookie, compared in constant time) and, for a share with an opening
+limit, a guest id the share admitted. Guests are rate limited per client address
+(``CF-Connecting-IP``); that is flood protection, separate from the owner's opening limit.
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from server.canvas.events import Events
-from server.canvas.project import ID_RE, NotFound, ProjectStore
+from server.canvas.project import ID_RE, NotFound, NotYours, ProjectStore
 from server.canvas.share import RateLimiter, Share, ShareManager, guest_elements, guest_threads
 
 SHARE_COOKIE = "agora_share"
@@ -66,6 +70,12 @@ main{background:var(--bg);padding:28px 32px;max-width:360px;margin:16px;box-shad
 h1{font-size:20px;font-weight:600;margin:0 0 8px}p{margin:0;color:var(--muted)}
 </style>
 <main><h1>这个分享链接已失效</h1><p>它可能已经到期、被作者撤销，或者链接不完整。需要继续查看的话，请向作者要一个新链接。</p></main></html>"""
+
+
+FULL_PAGE = GONE_PAGE.replace("<title>链接已失效", "<title>打开次数已用完").replace(
+    "<h1>这个分享链接已失效</h1><p>它可能已经到期、被作者撤销，或者链接不完整。需要继续查看的话，请向作者要一个新链接。</p>",
+    "<h1>这个分享链接的打开次数已用完</h1><p>作者给它设了最多能被几个人打开，名额已经满了。已经打开过它的浏览器还能继续看；需要查看的话，请向作者要一个新链接。</p>",
+)
 
 
 def forbidden(request: Request, status: int = 403) -> Response:
@@ -113,7 +123,10 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
     streams: dict[str, int] = {}
 
     def share_for(request: Request) -> Share | None:
-        return shares.verify(request.headers.get("host", ""), request.cookies.get(SHARE_COOKIE))
+        share = shares.verify(request.headers.get("host", ""), request.cookies.get(SHARE_COOKIE))
+        if share is None or not shares.is_admitted(share, guest_of(request)):
+            return None
+        return share
 
     def guest_of(request: Request) -> str | None:
         g = request.cookies.get(GUEST_COOKIE) or ""
@@ -153,12 +166,15 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
         if share is None:
             return forbidden(request)
         guest = guest_of(request)
+        gid = guest or secrets.token_hex(8)
+        if not shares.admit(share, gid):
+            return HTMLResponse(FULL_PAGE, status_code=403)
         shares.note_visit(share, new_guest=guest is None)
         resp = RedirectResponse("/", status_code=303)
         max_age = None if share.expiresAt is None else max(1, (share.expiresAt - shares.now_ms()) // 1000)
         resp.set_cookie(SHARE_COOKIE, token, max_age=max_age, httponly=True, secure=True, samesite="lax", path="/")
         if guest is None:
-            resp.set_cookie(GUEST_COOKIE, secrets.token_hex(8), max_age=90 * 86400, httponly=True, secure=True, samesite="lax", path="/")
+            resp.set_cookie(GUEST_COOKIE, gid, max_age=90 * 86400, httponly=True, secure=True, samesite="lax", path="/")
         return resp
 
     def page(request: Request):
@@ -214,30 +230,43 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
         if not isinstance(body, dict):
             return JSONResponse({"error": "bad body"}, status_code=400)
         now = int(time.time() * 1000)
+        actor = f"guest:{guest}"
+        kind = body.get("op")
         try:
-            by = {"id": f"guest:{guest}", "name": clean_text(body.get("name"), MAX_NAME, "name")}
-            text = clean_text(body.get("text"), MAX_TEXT, "text")
             mid = body.get("id")
             if not isinstance(mid, str) or not ID_RE.match(mid) or len(mid) > 32:
                 raise ValueError("id must be a short [A-Za-z0-9._-] string")
-            msg = {"id": mid, "author": "human", "by": by, "text": text, "at": now}
-            if body.get("op") == "create":
+            if kind in ("create", "reply"):
+                by = {"id": actor, "name": clean_text(body.get("name"), MAX_NAME, "name")}
+                msg = {"id": mid, "author": "human", "by": by, "text": clean_text(body.get("text"), MAX_TEXT, "text"), "at": now}
+            if kind == "create":
                 scene = store.read("canvas", share.canvasId)
                 element_ids = {e.get("id") for e in (scene or ({}, ""))[0].get("elements") or [] if not e.get("isDeleted")}
                 tid = body.get("threadId")
                 if not isinstance(tid, str) or not ID_RE.match(tid) or len(tid) > 32:
                     raise ValueError("threadId must be a short [A-Za-z0-9._-] string")
                 op = {"op": "create", "thread": {"id": tid, "anchor": clean_anchor(body.get("anchor"), element_ids), "resolved": False, "createdAt": now, "createdBy": by, "messages": [msg]}}
-            elif body.get("op") == "reply":
+            elif kind == "reply":
                 op = {"op": "reply", "threadId": body.get("threadId"), "message": msg}
+            elif kind == "edit":
+                op = {"op": "edit", "threadId": body.get("threadId"), "id": mid, "text": clean_text(body.get("text"), MAX_TEXT, "text"), "actor": actor, "at": now}
+            elif kind == "delete":
+                op = {"op": "delete", "threadId": body.get("threadId"), "id": mid, "actor": actor, "at": now}
+            elif kind == "restore":
+                edited = body.get("editedAt")
+                op = {"op": "restore", "threadId": body.get("threadId"), "id": mid, "text": clean_text(body.get("text"), MAX_TEXT, "text"), "actor": actor, "at": now,
+                      **({"editedAt": int(_finite(edited, 0, 1e14))} if edited is not None else {})}
             else:
-                raise ValueError("op must be create or reply")
+                raise ValueError("op must be create, reply, edit, delete or restore")
             data, version, thread = await asyncio.to_thread(store.thread_op, share.canvasId, op)
         except NotFound:
-            return JSONResponse({"error": "no such thread"}, status_code=404)
+            return JSONResponse({"error": "no such thread or message"}, status_code=404)
+        except NotYours:
+            return JSONResponse({"error": "you can only change your own messages"}, status_code=403)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
-        shares.note_comment(share)
+        if kind in ("create", "reply"):
+            shares.note_comment(share)
         events.publish({"t": "threads", "canvasId": share.canvasId, "data": data, "version": version})
         return {"thread": guest_threads({"threads": [thread]})["threads"][0]}
 

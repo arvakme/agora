@@ -5,9 +5,10 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { handToSession, undoAgent } from "../ops/agent";
 import type { AnchorState } from "../canvas/anchors";
-import { IconCheck, IconClose, IconHint, IconRetry, IconSend, IconUndo } from "../app/icons";
+import { IconCheck, IconClose, IconHint, IconPencil, IconRetry, IconSend, IconTrash, IconUndo } from "../app/icons";
 import type { Message, Thread, ThreadStore } from "./threads";
-import { identity, isGuestId } from "./threads";
+import { canDelete, canEdit, identity, isGuestId } from "./threads";
+import { offerUndo } from "./undo";
 import { GUEST } from "../guest/mode";
 import { SPRING } from "./motion";
 import { useTurn } from "../session/store";
@@ -35,9 +36,9 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
       data-flip={pos.flip}
       role={full ? "dialog" : "tooltip"}
       aria-label={`线程 ${t.n}`}
-      initial={{ opacity: 0, scale: 0.94, filter: "blur(3px)" }}
-      animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-      exit={{ opacity: 0, scale: 0.96, filter: "blur(2px)", transition: { duration: 0.14 } }}
+      initial={{ opacity: 0, scale: 0.94 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.14 } }}
       transition={SPRING}
       style={{ left: pos.left, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxH, originX: pos.flip ? 1 : 0, originY: pos.up ? 1 : 0, borderRadius: 14 }}
       onPointerDown={(e) => e.stopPropagation()}
@@ -62,6 +63,11 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
                 {t.resolved ? <IconRetry size={16} /> : <IconCheck size={16} />}
               </button>
             )}
+            {!GUEST && (
+              <button className="icon-btn sm muted" onClick={() => offerUndo(store.removeThread(t.id))} title="删除整条线程（可撤销）" aria-label="删除线程">
+                <IconTrash size={16} />
+              </button>
+            )}
             <button className="icon-btn sm muted" onClick={() => store.close()} title="关闭" aria-label="关闭"><IconClose size={16} /></button>
           </span>
         </motion.header>
@@ -70,7 +76,7 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
         <div className="tcard-warn"><IconHint size={14} /><b>锚点丢失</b>{st.status === "lost" ? "被评论的元素已删除；撤销删除或重新钉一条" : "有的元素已删除，其余仍在"}</div>
       )}
       <div className="tcard-scroll">
-        <Row m={first} first />
+        <Row m={first} first tools={full ? { store, threadId: t.id } : undefined} />
         {!full && (rest.length > 0 || running) && (
           <motion.div layout="position" className="tcard-more">
             {running ? <span className="waiting"><i className="dot" data-tone="ok" />Agent 正在处理…</span> : `${rest.length} 条回复`}
@@ -80,7 +86,7 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
           {full &&
             rest.map((m) => (
               <Reveal key={m.id}>
-                <Row m={m} onUndo={GUEST ? undefined : () => undoAgent(api, store, t.id, m.id)} />
+                <Row m={m} tools={{ store, threadId: t.id }} onUndo={GUEST ? undefined : () => undoAgent(api, store, t.id, m.id)} />
               </Reveal>
             ))}
           {full && running && (
@@ -116,7 +122,8 @@ function Reveal({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Row({ m, first, onUndo }: { m: Message; first?: boolean; onUndo?: () => void }) {
+function Row({ m, first, onUndo, tools }: { m: Message; first?: boolean; onUndo?: () => void; tools?: { store: ThreadStore; threadId: string } }) {
+  const [editing, setEditing] = useState(false);
   // Eval replies are the session turn itself; native-session replies carry the agent's own
   // text and point at their last canvas change (for undo) and the session.
   const turn = useTurn(GUEST ? undefined : m.turnId);
@@ -132,8 +139,28 @@ function Row({ m, first, onUndo }: { m: Message; first?: boolean; onUndo?: () =>
           <b>{m.author === "agent" ? "Agent" : m.author === "system" ? "系统" : other ? m.by!.name : "你"}</b>
           {other && isGuestId(m.by!.id) && !GUEST && <span className="tguest">访客</span>}
           <time>{meta}</time>
+          {m.editedAt && <span className="tedited" title={`编辑于 ${new Date(m.editedAt).toLocaleString("zh-CN")}`}>已编辑</span>}
+          {tools && !editing && (canEdit(m) || canDelete(m)) && (
+            <span className="trow-tools">
+              {canEdit(m) && (
+                <button className="icon-btn xs muted" onClick={() => setEditing(true)} title="编辑" aria-label="编辑这条评论"><IconPencil size={14} /></button>
+              )}
+              <button className="icon-btn xs muted" onClick={() => offerUndo(tools.store.removeMessage(tools.threadId, m.id))} title="删除（可撤销）" aria-label="删除这条评论"><IconTrash size={14} /></button>
+            </span>
+          )}
         </div>
-        <p className="trow-text">{reply?.text ?? m.text}</p>
+        {editing && tools ? (
+          <EditBox
+            initial={m.text}
+            onCancel={() => setEditing(false)}
+            onSave={(text) => {
+              tools.store.edit(tools.threadId, m.id, text);
+              setEditing(false);
+            }}
+          />
+        ) : (
+          <p className="trow-text">{reply?.text ?? m.text}</p>
+        )}
         {reply?.undoError && <p className="trow-text" data-warn>{reply.undoError}</p>}
         {reply?.changes && (
           <div className="tchanges" data-undone={!!reply.undone}>
@@ -165,6 +192,35 @@ export function Avatar({ who, name }: { who: Message["author"]; name?: string })
     <span className="avatar" data-who={who} data-other={!!name}>
       {who === "agent" ? "A" : who === "system" ? <IconHint size={14} /> : name ? [...name.trim()][0] ?? "?" : "你"}
     </span>
+  );
+}
+
+/** In-place edit of one's own message: Enter saves, Esc cancels (and only that). */
+function EditBox({ initial, onSave, onCancel }: { initial: string; onSave: (text: string) => void; onCancel: () => void }) {
+  const [text, setText] = useState(initial);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    el?.focus();
+    el?.setSelectionRange(el.value.length, el.value.length);
+  }, []);
+  const save = () => (text.trim() ? onSave(text.trim()) : undefined);
+  return (
+    <form className="treply tedit" data-esc-local onSubmit={(e) => (e.preventDefault(), save())}>
+      <textarea
+        ref={ref}
+        value={text}
+        rows={1}
+        aria-label="编辑评论"
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") (e.preventDefault(), e.stopPropagation(), onCancel());
+          else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) (e.preventDefault(), save());
+        }}
+      />
+      <button type="button" className="btn sm ghost" onClick={onCancel}>取消</button>
+      <button type="submit" className="btn sm primary" disabled={!text.trim() || text.trim() === initial}>保存</button>
+    </form>
   );
 }
 

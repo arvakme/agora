@@ -21,6 +21,8 @@
 .share-custom input { width: 72px; font-variant-numeric: tabular-nums; }
 .share-custom em { font-style: normal; color: var(--negative); font-size: var(--text-xs); }
 .share-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-4); }
+.share-note { margin: 0; color: var(--fg-subtle); font-size: var(--text-xs); line-height: 1.6; }
+.share-meta [data-full="true"] { color: var(--caution); }
 .share-busy { color: var(--fg-muted); font-size: var(--text-sm); }
 .share-err { margin: 0; color: var(--negative); font-size: var(--text-sm); overflow-wrap: anywhere; }
 .share-made { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }

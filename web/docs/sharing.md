@@ -1,22 +1,23 @@
 # 分享：经 Cloudflare Tunnel 让别人看画布和评论
 
-作者把一块画布分享出去，拿到链接的人（访客）只能**看这块画布、读评论、发评论和回复**。改图、会话、Agent、终端、项目文件一律只属于作者本机。分享走作者自己的公开域名（本机是 `quietharbor.de`），有效期由作者选，到期或撤销后链接立即失效，Cloudflare 上为它建的东西随之删除。
+作者把一块画布分享出去，拿到链接的人（访客）只能**看这块画布、读评论、发评论和回复，以及编辑、删除自己发的消息**。改图、会话、Agent、终端、项目文件一律只属于作者本机。分享走作者自己的公开域名（本机是 `quietharbor.de`），有效期由作者选，也可以限制最多被打开几次；到期或撤销后链接立即失效，Cloudflare 上为它建的东西随之删除。
 
 实现：`server/canvas/share.py`（分享记录、令牌、生命周期、限流、访客可见内容）、`server/canvas/share_gateway.py`（访客唯一能到达的网关）、`server/canvas/cloudflare.py`（真实的 DNS / 隧道提供者）、`server/canvas/project_router.py`（`/api/share`、评论合并、推送、网关与清扫的启动）、`agora_cli/share.py`（命令）；前端 `web/src/share/SharePanel.tsx`（作者的分享按钮与列表）、`web/src/guest/`（访客页）、`web/src/persist.ts` 的 `followProject`（作者页收访客评论）。测试 `tests/test_share.py`、`web/src/comments/threads.test.ts`。
 
 ## 1. 用法
 
-界面：顶栏「分享」→ 选画布、有效期（1 小时 / 1 天 / 7 天 / 自定义 1 分钟–90 天 / 直到撤销）→「创建链接」。链接**只显示这一次**（服务端只存令牌的哈希），复制后发给别人。下面的「当前分享」列出每个分享的剩余时间、访问次数、评论数和「撤销」；结束的分享留在「已结束」里。
+界面：顶栏「分享」→ 选画布、有效期（1 小时 / 1 天 / 7 天 / 自定义 1 分钟–90 天 / 直到撤销）、打开次数（不限次数 / 限制次数：最多打开 N 次，N 为 1–10000）→「创建链接」。链接**只显示这一次**（服务端只存令牌的哈希），复制后发给别人。下面的「当前分享」列出每个分享的剩余时间、打开次数（限制时是「打开 已用/上限」，用完变成提示色）、评论数和「撤销」；结束的分享留在「已结束」里。
 
 命令（在项目目录，或 `--project`）：
 
 ```bash
 agora share create --for 1d            # 默认分享聚焦的画布；--canvas <id|名字> 指定；--for 10m|2h|1d|7d|forever
-agora share list                       # 表格；--json 输出记录（不含哈希）
+agora share create --max-opens 5        # 最多打开 5 次（不写就是不限次数）
+agora share list                       # 表格（「打开」列是 已用/上限 或已用次数）；--json 输出记录（不含哈希）
 agora share revoke <id>                # 立即结束一个；--all 结束本项目全部有效分享
 ```
 
-退出码：0 成功 · 1 失败（信息在输出里）· 2 用法错误（时长、画布名）· 3 需要先 `agora up`（`create` 需要服务在跑：网关和隧道由它运行）。`list`、`revoke` 在服务没开时直接读写 `.agora/shares/`，`revoke` 自己完成 DNS 和隧道的清理。
+退出码：0 成功 · 1 失败（信息在输出里）· 2 用法错误（时长、画布名、打开次数）· 3 需要先 `agora up`（`create` 需要服务在跑：网关和隧道由它运行）。`list`、`revoke` 在服务没开时直接读写 `.agora/shares/`，`revoke` 自己完成 DNS 和隧道的清理。
 
 ## 2. 暴露方式：每个分享一个一级子域名
 
@@ -40,18 +41,18 @@ agora share revoke <id>                # 立即结束一个；--all 结束本项
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/s/{令牌}` | 验证令牌 → 设分享 cookie 和访客 id cookie（`agora_guest`，16 位随机）→ 303 到 `/`；访问次数 +1 |
+| GET | `/s/{令牌}` | 验证令牌 → 新访客计一次打开（§5.1；次数用完则 403「打开次数已用完」页）→ 设分享 cookie 和访客 id cookie（`agora_guest`，16 位随机）→ 303 到 `/`；访问次数 +1 |
 | GET | `/`、`/index.html` | 前端页面，注入 `<meta name="robots" content="noindex, nofollow">` 和 `<meta name="agora-guest">`（前端据此进访客模式） |
 | GET | `/assets/*` | 前端静态文件（只在 `web/dist/assets` 里，路径穿越被拒） |
 | GET | `/api/guest/state` | 被分享的那一块画布（只读）、它的评论线程、`me`（`guest:<id>`）、到期时间 |
-| POST | `/api/guest/comments` | `{op: "create", threadId, id, anchor, text, name}` 新线程 / `{op: "reply", threadId, id, text, name}` 回复 |
+| POST | `/api/guest/comments` | `{op: "create", threadId, id, anchor, text, name}` 新线程 / `{op: "reply", threadId, id, text, name}` 回复 / `{op: "edit", threadId, id, text}` 改自己的消息 / `{op: "delete", threadId, id}` 删自己的消息 / `{op: "restore", threadId, id, text, editedAt?}` 撤销删除（页面把原文送回）。edit / delete / restore 只对 `by.id` 等于 cookie 里访客 id 的消息生效，别人的（作者、Agent、其他访客）一律 403 `you can only change your own messages`；消息不存在或已删除再编辑是 404 |
 | GET | `/api/guest/events` | SSE：`threads`（线程变化，已脱敏）、`canvas`（作者改图后的新元素）、`ended`（撤销或到期，页面切到失效页） |
 
-**每个请求**先按 Host 找有效分享（找不到：403，连静态文件也不给）；`/s/` 之后的请求都要带这个分享的令牌 cookie，用 `hmac.compare_digest` 比对哈希（恒定时间）。
+**每个请求**先按 Host 找有效分享（找不到：403，连静态文件也不给）；`/s/` 之后的请求都要带这个分享的令牌 cookie，用 `hmac.compare_digest` 比对哈希（恒定时间）；限制了打开次数的分享还要求访客 id cookie 是它放进来过的（只拿到令牌 cookie 绕不过次数）。
 
-访客**不能**：改图（页面是 Excalidraw 的只读模式，且网关没有任何写画布的路由）、解决/重开线程、「交给 Agent」、撤销 Agent 的修改、看会话或轨迹、看进度指针（访客页不挂 `PointerLayer`，元素的 `customData` 整个去掉，所以 `codePaths` 也没有）、看本地路径（`root`、会话 id、turn id 都不下发）、访问 `/api/project`、`/api/agent`（包括终端和 `agora canvas apply` 用的桥接）、`/api/canvas`、`/api/share`、`/libraries`。
+访客**不能**：改图（页面是 Excalidraw 的只读模式，且网关没有任何写画布的路由）、改或删别人的消息、删除整条线程、解决/重开线程、「交给 Agent」、撤销 Agent 的修改、看会话或轨迹、看进度指针（访客页不挂 `PointerLayer`，元素的 `customData` 整个去掉，所以 `codePaths` 也没有）、看本地路径（`root`、会话 id、turn id 都不下发）、访问 `/api/project`、`/api/agent`（包括终端和 `agora canvas apply` 用的桥接）、`/api/canvas`、`/api/share`、`/libraries`。
 
-访客看到的线程经过 `guest_threads` 脱敏：消息只留 `id / author / text / at / tone / by`；非访客的身份 id（作者的 `mailto:邮箱`）换成 `member:<sha256 前 10 位>`，只保留显示名（git `user.name`）。
+访客看到的线程经过 `guest_threads` 脱敏：消息只留 `id / author / text / at / tone / by / editedAt / updatedAt / deleted`（线程另留 `updatedAt / deleted`，墓碑让访客页也把删掉的收起来）；非访客的身份 id（作者的 `mailto:邮箱`）换成 `member:<sha256 前 10 位>`，只保留显示名（git `user.name`）。
 
 **评论的身份**：访客第一次评论前填显示名（存在他浏览器的 localStorage，最多 40 字）；服务端写入时用 cookie 里的访客 id：`by: {id: "guest:<id>", name}`，和本机用户的评论同构（`author: "human"`），写进同一个 `threads/<canvasId>.json`，`participants` 自然包含访客。线程编号 `n` 由服务端按 `seq` 分配。锚点必须指向画布上存在的元素，数值必须有限；正文最多 4000 字。
 
@@ -59,11 +60,21 @@ agora share revoke <id>                # 立即结束一个；--all 结束本项
 
 访客和作者会同时写同一个线程文件，所以线程不再走整文件 CAS（`project-storage.md` §6 预留的方案）：
 
-- 访客：`store.thread_op`，在项目写锁里读最新文件、应用「新建线程 / 追加消息」、原子写回。
-- 作者页：保存线程改为 `POST /api/project/threads/{id}/merge`（`store.merge_threads`）：按 id 合并，作者页有的字段（resolved、消息改动）以作者页为准，磁盘上作者页没有的线程和消息（访客的）保留；两个新线程编号相撞时给作者页那条重新编号。合并从不返回 409，所以线程不会再弹「在别处被改过」。
-- 推送：每次合并或访客写入，服务端发 `threads` 事件；作者页经 `GET /api/project/events`（SSE）收到后并入内存里的线程（只加不删），访客页经 `/api/guest/events` 收到脱敏后的版本。作者改图保存（`PUT /canvases/{id}`）发 `canvas` 事件，访客页随之更新画面。
+- 访客：`store.thread_op`，在项目写锁里读最新文件、应用「新建线程 / 追加消息 / 编辑 / 删除 / 撤销删除」、原子写回。编辑、删除、撤销带 `actor`（`guest:<id>`），`thread_op` 自己比对消息的 `by.id`，不是本人就抛 `NotYours`（网关回 403）——检查在存储层，不只在网关。
+- 作者页：保存线程改为 `POST /api/project/threads/{id}/merge`（`store.merge_threads`）：按 id 合并，作者页有的字段（resolved、消息改动）以作者页为准，除非磁盘上那份的 `updatedAt` 更晚（访客刚改过或删过）；磁盘上作者页没有的线程和消息（访客的）保留；删除是墓碑（`deleted: true`，正文清空），旧副本合并不回来；两个新线程编号相撞时给作者页那条重新编号。合并从不返回 409，所以线程不会再弹「在别处被改过」。作者删除任何人的消息、删除整条线程都走这条路（格式见 [项目存储](project-storage.md#threadscanvasidjson)）。
+- 推送：每次合并或访客写入，服务端发 `threads` 事件；作者页经 `GET /api/project/events`（SSE）收到后并入内存里的线程（新的加进来；同一条取 `updatedAt` 更晚的一份，所以访客的编辑和删除也会同步过来），访客页经 `/api/guest/events` 收到脱敏后的版本。作者改图保存（`PUT /canvases/{id}`）发 `canvas` 事件，访客页随之更新画面。
 
-## 5. 有效期、撤销与清理
+## 5. 有效期、打开次数、撤销与清理
+
+### 5.1 打开次数
+
+- **计数口径**：访客经 `/s/{令牌}` 进入成功（令牌有效、没到期、没撤销、次数没用完）算一次打开。同一个浏览器（同一个 `agora_guest` cookie）再点链接、刷新页面都不另算；换浏览器、清掉 cookie 或无痕窗口算新访客。记录里 `opens` 是已用次数，`maxOpens` 是上限（`null` = 不限），`admitted` 是进来过的访客 id 的加盐 sha256 前 24 位（不对外返回）。原来的 `visits`（`/s/` 成功次数，含同一访客重复点击）和 `guests` 仍然记录。
+- **用完之后**：新访客点链接得到 403「这个分享链接的打开次数已用完」页，不设任何 cookie。只拿到令牌 cookie、没有被放进来过的访客 id 的请求，页面和接口一律 403。**已经进来的访客不会被踢出**：他们的页面、SSE 和评论照常，重新点链接也能进（不再计数）。想让所有人立刻失效就撤销分享。
+- **和频率限制的区别**：`/s/` 另有防刷的频率限制（同一网络地址每分钟 10 次，超过 429，见 §7），针对的是猜令牌和刷接口，与作者设的次数无关，也不计入打开次数。分享面板在创建时写明了这一点。
+- 不限次数的分享同样统计 `opens`，只是不拦。
+
+### 5.2 有效期、撤销与清理
+
 
 - **判定**：令牌检查本身就看到期时间，到点那一刻起所有请求 403，不依赖清扫。
 - **清扫**：项目服务每 5 秒清扫一次：结束到期的分享，重试没做完的清理。
@@ -76,7 +87,7 @@ agora share revoke <id>                # 立即结束一个；--all 结束本项
 
 | 内容 | 位置 | 进 git |
 |---|---|---|
-| 分享记录：id、画布、主机名、**令牌的 sha256**、创建/到期/结束时间、访问/访客/评论数、DNS 记录 id、隧道 id、待清理项 | `.agora/shares/shares.json` | 否：模板 `.gitignore` 有 `shares/`，目录里另有一个 `*` 的 `.gitignore`（旧项目的 `.agora/.gitignore` 没有这一行也照样忽略） |
+| 分享记录：id、画布、主机名、**令牌的 sha256**、创建/到期/结束时间、访问/访客/评论数、打开次数与上限、进来过的访客 id 哈希、DNS 记录 id、隧道 id、待清理项 | `.agora/shares/shares.json` | 否：模板 `.gitignore` 有 `shares/`，目录里另有一个 `*` 的 `.gitignore`（旧项目的 `.agora/.gitignore` 没有这一行也照样忽略） |
 | 令牌原文 | 不存。只在创建时返回一次 | — |
 | 隧道凭据与配置 | `~/.config/agora/tunnels/`（目录 700，凭据 600；`AGORA_CONFIG_DIR` 可改） | 否（不在项目里） |
 | Cloudflare API 凭据 | `AGORA_CF_API_TOKEN` + `AGORA_CF_ZONE_ID`；没有就用 `cloudflared tunnel login` 生成的 `~/.cloudflared/cert.pem` 里那个 zone 范围的令牌（与 `cloudflared tunnel route dns` 用的是同一个），Agora 不复制它 | 否 |
@@ -92,7 +103,8 @@ agora share revoke <id>                # 立即结束一个；--all 结束本项
 | 访客越权改图、调 Agent、开终端、读会话或项目文件 | 隧道只通到网关，作者的应用不在隧道后面；网关白名单之外一律 403；作者应用拒绝带 `cf-*` 头或 Host 是分享主机名的请求（防止配置失误或 DNS rebinding 把它暴露出去） |
 | 泄露本地信息 | 下发内容去掉 `customData`（代码路径）、会话/turn id、项目根路径；作者邮箱换成不透明 id；访客页不加载进度指针和会话 |
 | 刷评论 / 占资源 | 写每地址每分钟 20 次，读 120 次，SSE 连接每分钟 10 次、每个分享最多 50 条；正文 4000 字、名字 40 字上限；地址取 `CF-Connecting-IP` |
-| 冒充别的访客 | 访客 id 是网关发的随机 cookie，不签名；改 cookie 只能换一个 `guest:` 身份，显示名本来就是自填的，冒充不了作者（作者的 id 不是 `guest:`） |
+| 冒充别的访客 | 访客 id 是网关发的随机 cookie，不签名；改 cookie 只能换一个 `guest:` 身份，显示名本来就是自填的，冒充不了作者（作者的 id 不是 `guest:`）。编辑 / 删除按 cookie 里的访客 id 判断，要改别人的消息得先拿到对方的 cookie（HttpOnly，页面脚本读不到） |
+| 绕过打开次数 | 次数按访客 id 计，只对新 id 计数；限制次数的分享只服务它放进来过的 id，复制令牌 cookie 不够；伪造一个没放进来过的 id 也是 403。清 cookie 重进会占用一个新名额——这正是「每个浏览器算一次」的口径 |
 | 被搜索引擎收录 / 被嵌入 | `noindex` meta 与 `X-Robots-Tag`；`X-Frame-Options: DENY`、`frame-ancestors 'none'`；接口 `Cache-Control: no-store` |
 | Cloudflare 清理失败留下 DNS 记录 | 令牌已先失效；记录 id 留在 `cleanup` 里，清扫重试，列表可见 |
 
@@ -108,3 +120,8 @@ agora share revoke <id>                # 立即结束一个；--all 结束本项
 4. `agora share create --for 2m` → 访客打开（`12`）→ 到期后页面自动失效，清扫在到期后 0.3 秒结束分享并删掉 DNS 和隧道（`13`）。
 
 第一次尝试时 cloudflared 在这台机器上连不上 QUIC，45 秒超时，创建失败；隧道由清扫删除。之后固定用 HTTP/2。
+
+2026-09-28 修补轮（评论可删改、打开次数），用本地网关 harness 实测（真实的项目应用和分享网关，Cloudflare DNS / cloudflared 换成 `tests/test_share.py` 里的假实现，分享主机名落在 `*.localhost`），截图与记录在 `web/evidence/polish/`：
+
+5. 作者在分享面板选「限制次数 · 最多打开 2 次」（`11`）→ 访客甲进入、钉评论、改成「Redis 要不要用集群？」显示「已编辑」（`12`）、删除后提示条撤销、磁盘上先是墓碑再恢复原文（`13`）；访客在别人的消息上没有编辑 / 删除按钮（`14`），直接调接口删改作者或其他访客的消息都是 403（`15`）。
+6. 访客乙进入（第 2 次）→ 访客丙得到「打开次数已用完」页（`16`）；丙拿着复制来的令牌 cookie 调 `/api/guest/state` 仍是 403；乙带着自己的 cookie 再点链接照常进入，次数不变（`17`）；作者列表显示「打开 2/2」（`18`），`agora share list` 的「打开」列是 `2/2`（`19`）。

@@ -85,8 +85,6 @@
   --segment-on: #ffffff;
   --raised-on-surface: #f6f7f7;
   --canvas-bg: #ffffff;
-  /* Agora: comment-mode cursor (a cursor cannot read CSS variables, so the colour is baked in). */
-  --cursor-comment: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24'><path d='M4.5 19.5V12a7.5 7.5 0 1 1 7.5 7.5Z' fill='%237048b4' stroke='white' stroke-width='1.6' stroke-linejoin='round'/></svg>") 5 23;
 }
 
 /* ───────────── Dark ───────────── */
@@ -143,7 +141,6 @@
     --segment-on: #40474e;
     --raised-on-surface: #30363b;
     --canvas-bg: #e6ebef; /* invert(93%) hue-rotate(180deg) of this = #202428 */
-    --cursor-comment: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24'><path d='M4.5 19.5V12a7.5 7.5 0 1 1 7.5 7.5Z' fill='%23bea5f5' stroke='%23202428' stroke-width='1.6' stroke-linejoin='round'/></svg>") 5 23;
   }
 }
 :root[data-theme="dark"] {
@@ -198,7 +195,6 @@
   --well-on-surface: #353b41;
   --raised-on-surface: #30363b;
   --canvas-bg: #e6ebef; /* invert(93%) hue-rotate(180deg) of this = #202428 */
-  --cursor-comment: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24'><path d='M4.5 19.5V12a7.5 7.5 0 1 1 7.5 7.5Z' fill='%23bea5f5' stroke='%23202428' stroke-width='1.6' stroke-linejoin='round'/></svg>") 5 23;
 }
 
 /* ───────────── Theme-independent ───────────── */
