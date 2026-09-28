@@ -1,10 +1,12 @@
 // The top bar's ⋯ (web/docs/workbench-focus.md): everything that is a view setting rather than
-// work — layout, theme, the 工位视图, resolved comments on the canvas, canvas hints, and help.
+// work — layout, theme, the 工位视图 (and, on trial, its footprints and the 等你 notification:
+// web/docs/workstation.md「新想法」), resolved comments on the canvas, canvas hints, and help.
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { SPRING } from "../comments/motion";
 import { clock, useWorkstation } from "../workstation/clock";
-import { IconCheck, IconComment, IconHint, IconMore, IconUser } from "./icons";
+import { canNotify, notifyBlocked, setWaitNotify } from "../workstation/WaitNotifier";
+import { IconCheck, IconComment, IconHint, IconMessage, IconMore, IconPath, IconUser } from "./icons";
 import { prefs, usePrefs } from "./prefs";
 import { theme, useTheme, type ThemePref } from "./theme";
 import type { Preset } from "../workspace/layout";
@@ -73,6 +75,8 @@ export function ViewMenu({ onLayout, layouts }: { onLayout: (p: Preset) => void;
             </div>
             <hr />
             {sw(ws, "工位视图（小人）", <IconUser size={14} />, () => clock.setEnabled(!ws))}
+            {sw(p.footprints, "小人的脚印", <IconPath size={14} />, () => prefs.set({ footprints: !p.footprints }))}
+            {canNotify() && sw(p.notifyWait, notifyBlocked() ? "等你时通知我（浏览器已拦截）" : "等你时通知我", <IconMessage size={14} />, () => void setWaitNotify(!p.notifyWait))}
             {sw(p.showResolved, "显示已解决的评论", <IconCheck size={14} />, () => prefs.set({ showResolved: !p.showResolved }))}
             {sw(p.hints, "画布操作提示", <IconHint size={14} />, () => prefs.set({ hints: !p.hints }))}
             <hr />

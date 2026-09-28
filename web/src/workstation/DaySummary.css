@@ -1,0 +1,16 @@
+/* 今日小结 (web/docs/workstation.md「新想法」): a line-drawn card over the timeline strip — hairlines,
+ * outline icons in the accent, numbers in the text colour, the busiest node's name in accent ink,
+ * the waiting time in the warm "needs you" colour. Over the canvas dock (20), under menus (30). */
+.ws-day { position: fixed; z-index: 25; width: 236px; padding: 10px 12px 8px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--edge), var(--lift-2); color: var(--fg-muted); font-size: var(--text-sm); pointer-events: none; animation: ws-day-in var(--dur-glide) var(--ease-out) both; --icon: var(--accent); }
+@keyframes ws-day-in { from { opacity: 0; transform: translateY(3px); } }
+.ws-day-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.ws-day-h b { color: var(--fg); font-weight: var(--weight-strong); }
+.ws-day-h span { color: var(--fg-subtle); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.ws-day ul { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.ws-day li { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.ws-day li + li { border-top: 1px dashed var(--line); }
+.ws-day li b { color: var(--fg); font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; }
+.ws-day li[data-k="wait"] b { color: var(--caution); }
+.ws-day .ws-day-node { color: var(--accent-ink); }
+.ws-day-none { margin: 2px 0 4px; color: var(--fg-subtle); }
+@media (prefers-reduced-motion: reduce) { .ws-day { animation: none; } }
