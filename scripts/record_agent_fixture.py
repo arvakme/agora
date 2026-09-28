@@ -67,7 +67,12 @@ def argv(kind: str, prompt: str, model: str) -> list[str]:
 
 
 # ——— config trust entries: snapshot, then put back byte for byte ———
-TRUST_FILES = [HOME / ".claude.json", HOME / ".codex" / "config.toml", HOME / ".grok" / "trusted_folders.toml", HOME / ".grok" / "config.toml", HOME / ".claude" / "settings.json"]
+# Only the files these CLIs write a trust entry into, held in memory and never written anywhere else.
+# Never credential files (~/.codex/auth.json, ~/.grok/auth.json, Claude's keychain / .credentials.json,
+# tokens): they are not read, copied or snapshotted by this script.
+TRUST_FILES = [HOME / ".claude.json", HOME / ".codex" / "config.toml", HOME / ".grok" / "trusted_folders.toml"]
+CREDENTIALS = ("auth.json", ".credentials.json", "credentials.toml", "token")
+assert not any(any(c in p.name for c in CREDENTIALS) for p in TRUST_FILES)
 
 
 def snapshot() -> dict[Path, bytes | None]:
