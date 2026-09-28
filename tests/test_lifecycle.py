@@ -29,7 +29,7 @@ NID = "65b04644-6b78-49c7-b0df-b94f9d79a2fc"
 
 @pytest.fixture(autouse=True)
 def _no_cli_catalog(monkeypatch):
-    monkeypatch.setattr(agents, "check_effort", lambda *a: None)
+    monkeypatch.setattr(agents, "check_binding", lambda *a: None)
 
 
 @pytest.fixture

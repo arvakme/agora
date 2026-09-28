@@ -46,15 +46,24 @@ Agora 发出的消息末尾有一行隐藏页脚：`[[agora]] 来自 Agora · �
 | Pi | `message_end`（assistant）的 text 块 | `toolCall` / `tool_execution_end` | `agent_settled`；`stopReason` error/aborted、重试用尽 | 每条 assistant 消息的 `usage`（含 `cost.total`），累加 |
 | Codex | `item.completed` agent_message | `command_execution` started/completed，mcp/file_change | `turn.completed` / `turn.failed`、顶层 `error`（配置警告类 `error` item 不算失败） | `turn.completed.usage`（`input_tokens` 含缓存，报告时拆出 `cacheReadTokens`） |
 
-**模型与强度**（`GET /api/agent/catalog`，`server/canvas/agent_models.py`，缓存 10 分钟）：模型列表和**每个模型真实支持的强度档位**都从 CLI 自己或它自带的模型目录读，不写死通用词表。选择器里切换模型时强度列表随之更新，默认选中该模型的默认档；绑定时服务端再校验一次，档位不在该模型的集合里返回 `400`（`agents.check_effort`）。
+**模型与强度**（`GET /api/agent/catalog`，`server/canvas/agent_models.py`，缓存 10 分钟）：模型列表和**每个模型真实支持的强度档位**都从 CLI 自己或它自带的模型目录读，不写死通用词表。选择器里切换模型时强度列表随之更新，默认选中该模型的默认档；绑定时服务端再校验一次（`agents.check_binding`）：模型不在该 agent 允许的范围里（Pi 超出 `enabledModels`、Claude / Codex 不在各自目录里）或档位不在该模型的集合里，返回 `400` 并说明原因和可选项。
 
 | | 模型从哪来 | 每个模型的档位从哪来 | 默认档 | 读不到时 |
 |---|---|---|---|---|
 | Claude Code | SDK 的 `initialize` 控制请求：`claude -p --input-format stream-json --output-format stream-json` 发一条 `{"type":"control_request","request":{"subtype":"initialize"}}`，收到回复就结束进程（不发提示词，不调用模型）；回复里的 `models[]`（别名与完整 id、`resolvedModel`）。`~/.claude/settings.json` 的 `model` 排第一 | 同一回复里每个模型的 `supportedEffortLevels`（`supportsEffort` 为假的，如 haiku，没有档位）。实测 2.1.283：opus / sonnet / fable / opus-4-7 及以上 `low…max`，opus-4-6 与 sonnet-4-6 没有 `xhigh` | `settings.json` 的 `modelSettings.<模型>.effortLevel`（按别名或 `resolvedModel` 匹配），否则 `effortLevel`；都没有 = CLI 默认 | `claude --help` 里 `--effort` 的取值，对所有模型 |
-| Pi | `pi --mode rpc` 的 `get_available_models`；`settings.json` 的 `enabledModels` 排前、`defaultProvider/defaultModel` 为默认 | 每个模型的 `reasoning` 与 `thinkingLevelMap`，按 Pi 自己的规则（pi-ai `getSupportedThinkingLevels`）：不支持推理只有 `off`；映射为 `null` 的档不支持；`xhigh`、`max` 必须显式映射。顺序取 `pi --help` 的 `--thinking` | `defaultThinkingLevel` 按 Pi 的 `clampThinkingLevel` 夹到该模型支持的档（先往高、再往低） | `pi --list-models` 的 thinking 列（yes → `off…high`，no → `off`） |
+| Pi | `pi --mode rpc` 的 `get_available_models`（只含已配置凭据的模型），再按 Pi 自己的范围收窄，见下文「Pi 的模型范围」 | 每个模型的 `reasoning` 与 `thinkingLevelMap`，按 Pi 自己的规则（pi-ai `getSupportedThinkingLevels`）：不支持推理只有 `off`；映射为 `null` 的档不支持；`xhigh`、`max` 必须显式映射。顺序取 `pi --help` 的 `--thinking` | `defaultThinkingLevel` 按 Pi 的 `clampThinkingLevel` 夹到该模型支持的档（先往高、再往低） | `pi --list-models` 的 thinking 列（yes → `off…high`，no → `off`） |
 | Codex | `~/.codex/models_cache.json`，按其中 `priority` 排序，`visibility: hide` 的不列（除非 `config.toml` 指定） | 每个模型的 `supported_reasoning_levels`（实测：gpt-6-astra / sol、gpt-5.6-sol / terra 到 `ultra`，gpt-6-luna 等到 `max`，gpt-5.5 只到 `xhigh`） | `config.toml` 的 `model_reasoning_effort`（该模型支持时），否则模型的 `default_reasoning_level` | 没有档位可选，只用 CLI 默认 |
 
-没有已知默认档的模型在列表里多一项「CLI 默认」（不传强度参数）。解析函数是纯函数，测试用录制的输出（`tests/fixtures/efforts/`，`tests/test_agent_models.py`）。
+没有已知默认档的模型在列表里多一项「CLI 默认」（不传强度参数）。
+
+**Pi 的模型范围**（`agent_models.pi_settings` / `pi_scope`，照 Pi 0.87.1 源码移植：`dist/core/model-resolver.js` 的 `resolveModelScopeFromModels`、`main.js` 的 `buildSessionOptions`、`settings-manager.js` 的 `deepMergeSettings`、`trust-manager.js`；文档 `docs/settings.md`、`docs/configuration.md`、`docs/security.md`、`docs/cli.md` 的 `--models`）：
+
+- 设置来源：`$PI_CODING_AGENT_DIR`（默认 `~/.pi/agent`）的 `settings.json`，再叠加项目根的 `.pi/settings.json`。项目文件只在项目受信任时生效，按 Pi 非交互模式的规则：`trust.json` 里离项目最近的已保存决定，否则全局 `defaultProjectTrust: "always"`。叠加时对象逐键合并，数组整个替换，所以项目的 `enabledModels` 取代全局的，写 `[]` 则关掉范围。
+- 有 `enabledModels` 时只列它解析出的模型，也就是 Pi 自己切换模型时循环的那些：精确的 `provider/id` 或唯一的裸 id；含 `*` `?` `[` 的按 minimatch 通配（不区分大小写，匹配 `provider/id` 或 id；`*` 不跨 `/`，`**` 跨，支持 `{a,b}`）；其余按 id / 名称子串模糊匹配（优先不带日期的别名）。可带 `:<档位>` 后缀，作为该模型的默认档。解析只在可用模型里进行，匹配不到的模式忽略。默认模型：`defaultProvider/defaultModel` 在范围内就用它，否则范围里第一个。
+- 没有 `enabledModels` 时列出全部可用模型，去掉不适合交互会话的变体（OpenRouter 的 `:batch`）；只有明确写出这类 id 的模式才保留它。
+- 每个模型的默认档：模式后缀 → `modelThinkingLevels["provider/id"]` → `defaultThinkingLevel`，再按上表夹到它支持的档。
+
+**选择器**（`web/src/session/Picker.tsx`，逻辑在 `pickerModel.ts`）：三个 agent 的模型和强度用同一个组件。按钮显示友好名称（CLI 给的 `displayName` / `name` / `display_name`），完整 id 作次要文字。选项不超过 8 个时是普通列表；更多时顶部加搜索框，多个词逐个匹配完整 id 和名称：子串优先，也忽略分隔符（`opus55`），4 个字符以上可以按子序列匹配。分组：「已启用」（Pi 的 `enabledModels`）或「常用」（Claude 的 `settings.json` 模型与 opus / sonnet / haiku 等别名、Codex 按 priority 的前 6 个）在前；其余按 provider 分组，默认折叠（当前选中项所在的组展开），输入查询后所有命中的组都展开。键盘：↓ / ↑ / Enter / 空格打开，↑↓ / Home / End 移动，Enter 选中或展开组，→ / ← 展开 / 折叠组，Esc 关闭。Pi 的选择器下方用一行说明范围来自哪里。解析函数是纯函数，测试用录制的输出（`tests/fixtures/efforts/`，`tests/test_agent_models.py`）。
 
 一个会话同时只跑一轮无头续接，后来的消息排队；「停止」取消当前一轮。
 

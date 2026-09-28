@@ -726,19 +726,21 @@ def install_skill(root: Path, agents: list[str], copy: bool = False) -> list[dic
 
 
 # ——— model catalogs ———
-_catalog_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_catalog_cache: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
 
 
-def catalog(ttl_s: float = 600) -> dict[str, Any]:
+def catalog(root: Path | None = None, ttl_s: float = 600) -> dict[str, Any]:
     """Agents Agora can bind a session to, their models and each model's effort levels (cached).
 
-    Every list is read from the CLI or its own model catalog (agent_models.py)."""
+    Every list is read from the CLI or its own model catalog (agent_models.py). ``root`` is the
+    project: Pi's model scope can come from its ``.pi/settings.json``."""
     out = {}
     for kind in KINDS:
-        hit = _catalog_cache.get(kind)
+        key = (kind, str(root) if root is not None and kind == "pi" else "")
+        hit = _catalog_cache.get(key)
         if hit is None or time.time() - hit[0] > ttl_s:
-            hit = (time.time(), agent_models.SOURCES[kind](child_env()))
-            _catalog_cache[kind] = hit
+            hit = (time.time(), agent_models.SOURCES[kind](child_env(), root))
+            _catalog_cache[key] = hit
         out[kind] = {
             "kind": kind,
             "name": NAMES[kind],
@@ -748,11 +750,17 @@ def catalog(ttl_s: float = 600) -> dict[str, Any]:
     return out
 
 
-def check_effort(kind: str, model: str, effort: str) -> None:
-    """Refuse an effort level the chosen model does not take (ValueError → 400)."""
-    if not effort or kind not in KINDS:
+def check_binding(kind: str, model: str, effort: str, root: Path | None = None) -> None:
+    """Refuse a model outside what the agent may run (Pi: its enabledModels scope) or an effort
+    level the chosen model does not take (ValueError → 400)."""
+    if kind not in KINDS or not (model or effort):
         return
-    entry = catalog()[kind]
+    entry = catalog(root)[kind]
+    why = agent_models.model_refusal(entry, model)
+    if why:
+        raise ValueError(why)
+    if not effort:
+        return
     allowed = agent_models.efforts_for(entry, model)
     if allowed is None:  # a model the catalog does not list: the CLI's own vocabulary
         allowed = entry.get("efforts") or []
@@ -772,7 +780,7 @@ __all__ = [
     "NativeMissing",
     "PiBackend",
     "catalog",
-    "check_effort",
+    "check_binding",
     "check_native",
     "child_env",
     "find_log",
