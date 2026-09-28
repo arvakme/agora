@@ -62,7 +62,8 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
     });
     const textId = oldText?.id ?? text?.id;
     const others = (el.boundElements ?? []).filter((b) => b.type !== "text");
-    put({ ...container, boundElements: [...(textId ? [{ id: textId, type: "text" as const }] : []), ...others] } as El);
+    // customData (a node's codePaths and childCanvas) is not geometry or style: it must survive the rebuild.
+    put({ ...container, ...(el.customData ? { customData: el.customData } : {}), boundElements: [...(textId ? [{ id: textId, type: "text" as const }] : []), ...others] } as El);
     if (text) put({ ...text, id: textId!, containerId: el.id, frameId: el.frameId } as El);
     if (patch.x !== undefined || patch.y !== undefined || patch.width !== undefined || patch.height !== undefined) geometryChanged.add(el.id);
   };
@@ -78,7 +79,7 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
     const text = built.find((e) => e.type === "text");
     const textId = oldText?.id ?? text?.id;
     if (oldText && !text) put({ ...oldText, isDeleted: true });
-    put({ ...arrow, boundElements: text ? [{ id: textId!, type: "text" }] : [] } as El);
+    put({ ...arrow, ...(a.customData ? { customData: a.customData } : {}), boundElements: text ? [{ id: textId!, type: "text" }] : [] } as El);
     if (text) put({ ...text, id: textId!, containerId: a.id } as El);
   };
 
