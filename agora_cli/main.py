@@ -353,8 +353,12 @@ def up(p: Project, dev: bool, web_port: int = 0) -> tuple[dict[str, Any], bool]:
             )
         stale = p.state()
         if stale:  # half-dead leftovers from a crash
-            stop((stale.get("vite") or {}).get("pid"), 2)
-            stop(stale.get("pid"), 2)
+            # Only this project's own serve process (checked by its command line) and its vite are
+            # stopped: a `cp -r` of a running project carries the original's server.json along, and
+            # that server belongs to the original.
+            if p.is_serve(stale.get("pid") or 0):
+                stop((stale.get("vite") or {}).get("pid"), 2)
+                stop(stale.get("pid"), 2)
             p.state_file.unlink(missing_ok=True)
         return start(p, dev, web_port), False
 

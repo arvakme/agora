@@ -337,7 +337,9 @@ class AgentHub:
             # The log may have moved since (Pi migration, Codex archiving): follow it to the new place.
             lv.located_at = time.time()
             again = agents.locate_log(b["agent"], b["nativeId"], self.store.root, hint=(b.get("log") or {}).get("path"))
-            if again.path is not None and again.path != lv.tail.path:
+            if again.path != lv.tail.path:
+                # Moved, or gone while followed (Claude's cleanup, a deleted file): look it up again
+                # below, which reports a missing log instead of following a file that is not there.
                 lv.tail = None
         if lv.tail is None:
             look = agents.locate_log(b["agent"], b["nativeId"], self.store.root, hint=(b.get("log") or {}).get("path"))

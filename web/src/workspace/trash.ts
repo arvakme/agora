@@ -14,7 +14,8 @@ export type TrashItem = {
   title: string;
   /** The workspace.json entry and where its tab was, as the page sent them. */
   entry: Doc | null;
-  place: { groupId: string; index: number; docIndex?: number } | null;
+  /** Its place in the list (`docIndex`), and its tab's group and position if it had a tab. */
+  place: { groupId?: string; index?: number; docIndex?: number } | null;
   files: { rel: string; name: string }[];
   /** canvas: sessions linked to it (they stay in the workspace); shares ended when it was deleted. */
   linked?: string[];

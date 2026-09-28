@@ -177,7 +177,7 @@ def session_history(store, local, trash, *, home: Path | None = None) -> dict[st
         head = (store.read_session(sid) or ({}, ""))[0].get("session") or {}
         row(sid, agent=b.get("agent"), model=b.get("model"), effort=b.get("effort"), nativeId=b.get("nativeId"), started=b.get("started"), canvasId=head.get("canvasId"), createdAt=b.get("createdAt") or head.get("createdAt"))
         rows[sid].setdefault("state", "listed")
-    registry = local.registry.binds(pid)
+    registry = local.registry.binds(pid, local.instance_id() or None)  # this copy's records; other copies list their own
     for sid, e in registry.items():
         if sid not in rows:
             row(sid, state="registry", agent=e.get("agent"), model=e.get("model"), effort=e.get("effort"), nativeId=e.get("nativeId"), canvasId=e.get("canvasId"), topic=e.get("topic"), root=e.get("root"), logPath=e.get("logPath"))

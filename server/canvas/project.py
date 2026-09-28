@@ -566,8 +566,8 @@ class ProjectStore:
             self._atomic(path, dump_json(cur))
             return cur
 
-    def set_native(self, id: str, native_id: str) -> dict[str, Any]:
-        """Record the CLI's session id once (Codex only learns it on the first run)."""
+    def set_native(self, id: str, native_id: str, *, reason: str = "first-run") -> dict[str, Any]:
+        """Record the CLI's session id once (Claude / Pi: assigned at binding; Codex: learnt on the first run)."""
         path = self._path("binding", id)
         with self._locked():
             cur = self.read_binding(id)
@@ -577,7 +577,7 @@ class ProjectStore:
                 return cur
             if cur.get("nativeId"):
                 raise Locked(f"session {id} is bound to native session {cur['nativeId']}")
-            cur = {**cur, "nativeId": native_id, "natives": [*(cur.get("natives") or []), {"id": native_id, "at": int(time.time() * 1000), "reason": "first-run"}]}
+            cur = {**cur, "nativeId": native_id, "natives": [*(cur.get("natives") or []), {"id": native_id, "at": int(time.time() * 1000), "reason": reason}]}
             self._atomic(path, dump_json(cur))
             return cur
 

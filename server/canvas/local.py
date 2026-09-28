@@ -143,10 +143,14 @@ class Registry:
         hits = [i for i, r in last.items() if r == root]
         return hits[-1] if hits else None
 
-    def binds(self, project_id: str) -> dict[str, dict[str, Any]]:
-        """Latest ``bind`` / ``rebind`` / ``import`` per Agora session id (later events win)."""
+    def binds(self, project_id: str, instance_id: str | None = None) -> dict[str, dict[str, Any]]:
+        """Latest ``bind`` / ``rebind`` / ``import`` per Agora session id (later events win), of one
+        copy of the project when ``instance_id`` is given (copies share session ids: a fork in a
+        copy must not stand for the original's session)."""
         out: dict[str, dict[str, Any]] = {}
         for e in self.events(project_id, ("bind", "rebind", "import")):
+            if instance_id is not None and e.get("instanceId") != instance_id:
+                continue
             sid = e.get("sessionId")
             if isinstance(sid, str) and e.get("agent"):
                 out[sid] = {**out.get(sid, {}), **e}
@@ -342,7 +346,8 @@ def session_origins(store, local: Local) -> dict[str, dict[str, Any]]:
         if not isinstance(sid, str) or sid in bindings:
             continue
         if binds is None:
-            binds = local.registry.binds(local.project_id())
+            # This copy's own records first (git clean -fdx); another copy's say who else owns it.
+            binds = {**local.registry.binds(local.project_id()), **local.registry.binds(local.project_id(), local.instance_id() or None)}
         rec = binds.get(sid)
         listed = {k: d.get(k) for k in ("agent", "model", "effort", "nativeId", "canvasId", "topic") if d.get(k)}
         if rec is None:

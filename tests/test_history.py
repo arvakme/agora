@@ -237,8 +237,10 @@ def test_doctor_puts_back_bindings_and_records_after_git_clean(store, home):
 
     check = agora("doctor", cwd=store.root, home=home)
     assert check.returncode == 1 and "agora doctor --fix" in check.stdout, check.stdout
+    shutil.rmtree(store.root / ".claude", ignore_errors=True)  # the skill link is an ignored file too
     fixed = agora("doctor", "--fix", cwd=store.root, home=home)
-    assert "放回了" in fixed.stdout and "cleanupPeriodDays" in fixed.stdout, fixed.stdout
+    assert "放回了" in fixed.stdout and "cleanupPeriodDays" in fixed.stdout and "重新链接了 agora-canvas skill" in fixed.stdout, fixed.stdout
+    assert (store.root / ".claude" / "skills" / "agora-canvas").is_symlink()
     assert Local(ProjectStore(store.root)).instance_id() == iid  # same copy: socket, tunnel, backups line up
     after = {p.name: p.read_bytes() for p in (store.dir / "sessions").glob("*.*")}
     assert after == before  # records and binding exactly as they were
@@ -265,3 +267,35 @@ def test_history_cli_lists_and_restores_a_version(store, home):
     r = agora("history", "canvases/c1.excalidraw", "--restore", at, cwd=store.root, home=home)
     assert r.returncode == 0, r.stderr
     assert json.loads((store.dir / "canvases" / "c1.excalidraw").read_text())["elements"][0]["id"] == "box1"
+
+
+def test_a_log_deleted_while_followed_is_reported_missing(store, home, monkeypatch):
+    """Claude's cleanup can run while the server is up: the follower notices within a relocation."""
+    from server.canvas import sessions
+
+    log = claude_log(home, store.root, NID, [("hi", "hello")])
+    store.bind("s-1", agent="claude", native_id=NID, started=True)
+    hub = AgentHub(store)
+    lv = hub._get("s-1")
+    hub._follow("s-1", lv)
+    assert hub.status("s-1")["native"] is None
+    log.unlink()
+    monkeypatch.setattr(sessions, "RELOCATE_S", 0)
+    hub._follow("s-1", lv)
+    st = hub.status("s-1")
+    assert st["native"]["state"] == "missing" and st["native"]["blocking"] is True
+    assert any(i.get("text") == "hello" for i in lv.items.values())  # what was shown stays
+
+
+def test_history_does_not_list_a_copy_s_fork_as_this_project_s_session(store, home):
+    """Copies share session ids: the registry row for a session is this copy's record, not a fork's."""
+    loc = Local(store)
+    pid = store.info()["id"]
+    claude_log(home, store.root, "orig-1", [("讨论", "好")], footer={"canvas": "c1", "session": "s-x", "project": pid})
+    loc.note("bind", sessionId="s-x", agent="claude", nativeId="orig-1")
+    loc.registry.append("rebind", projectId=pid, instanceId="another-copy", root="/elsewhere", sessionId="s-x", agent="claude", nativeId="fork-9")
+    h = session_history(store, loc, Trash(store))
+    rows = [r for r in h["rows"] if r.get("sessionId") == "s-x"]
+    assert len(rows) == 1 and rows[0]["nativeId"] == "orig-1" and rows[0]["turns"] == 1
+    assert "orig-1" not in {r["nativeId"] for r in h["found"]}  # one row, not a registry row plus a find
+
