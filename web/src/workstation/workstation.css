@@ -128,30 +128,45 @@
 
 /* ── timeline ── */
 .ws-tl { flex: none; position: relative; min-width: 0; border-top: 1px solid var(--line); background: var(--bg); font-size: var(--text-sm); }
-.ws-bar { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 6px 0 12px; }
+/* the strip's own width decides what fits (it is narrow when the window is split), not the window's:
+ * a container query. Order of giving way: the activity bar (.mini), then the count's words, the status words shrink throughout. */
+.ws-bar { container: wsbar / inline-size; display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 6px 0 12px; }
+.ws-bar [data-open] { flex: none; }
 .ws-bar .ttl { display: inline-flex; align-items: center; gap: 6px; color: var(--fg-muted); white-space: nowrap; font-size: var(--text-xs); }
 .ws-bar .ttl:hover { color: var(--fg); }
 /* a fixed width, so the strip beside it never shifts when the words change */
-.ws-bar .stt { flex: none; width: clamp(150px, 26%, 300px); display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.ws-bar .stt { flex: 0 1 auto; width: clamp(150px, 26%, 300px); display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
 .ws-bar .stt b { color: var(--fg); font-weight: var(--weight-medium); }
 .ws-bar .stt b.rp { color: var(--accent-ink); }
 .ws-bar .stt[data-k="wait"] b { color: var(--caution); }
 .ws-bar .stt > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ws-tl i.live, .ws-tl .state[data-mode="live"] i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--positive-dot); }
 .ws-tl i.dot-c { flex: none; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--caution); }
-.ws-tl .mini { position: relative; flex: 1; min-width: 120px; height: 22px; cursor: ew-resize; touch-action: none; user-select: none; outline: none; border-radius: 2px; }
+.ws-tl .mini { position: relative; flex: 1; min-width: 0; height: 22px; cursor: ew-resize; touch-action: none; user-select: none; outline: none; border-radius: 2px; }
 .ws-tl .mini:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .ws-tl .mini .mini-cv { position: absolute; inset: 0; width: 100%; height: 100%; }
 .ws-tl .mini .mph { position: absolute; left: 0; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--fg); will-change: transform; }
 .ws-tl .mini .mph[data-replay] { background: var(--accent); }
 /* a fixed width too (like .stt): when 「● 1 等你」 or a count comes or goes, the bar between keeps its
  * width — the live playhead sits at its right end, so a narrower bar made it jump ~45 px */
-.ws-cnt { flex: none; box-sizing: border-box; width: clamp(150px, 26%, 240px); overflow: hidden; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px 0 5px; border-radius: var(--r-sm); color: var(--fg-muted); font-size: var(--text-xs); white-space: nowrap; }
+.ws-cnt { flex: 0 1 auto; min-width: 0; box-sizing: border-box; width: clamp(150px, 26%, 240px); overflow: hidden; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px 0 5px; border-radius: var(--r-sm); color: var(--fg-muted); font-size: var(--text-xs); white-space: nowrap; }
 .ws-cnt .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ws-cnt .num { display: none; }
 .ws-cnt .stack, .ws-cnt .need { flex: none; }
 .ws-cnt:hover, .ws-cnt[aria-pressed="true"] { background: var(--raised); color: var(--fg); }
 .ws-cnt .stack .agent-avatar { box-shadow: 0 0 0 1.5px var(--bg), inset 0 0 0 1px var(--avatar-edge); }
 .ws-cnt .need { display: inline-flex; align-items: center; gap: 4px; color: var(--caution); }
+/* not enough room for the activity bar: it goes first; the status words take its room */
+@container wsbar (max-width: 620px) {
+  .ws-tl .mini { display: none; }
+  .ws-bar .stt { flex: 1 1 0; width: auto; }
+}
+/* narrower still: the count keeps its avatars, the number and 「等你」, and drops the words */
+@container wsbar (max-width: 460px) {
+  .ws-cnt { width: auto; flex: none; padding: 0 6px 0 5px; }
+  .ws-cnt .n { display: none; }
+  .ws-cnt .num { display: inline; }
+}
 
 .run-av-wrap { position: relative; display: inline-flex; flex: none; }
 .run-pbadge { position: absolute; right: -4px; top: -3px; display: grid; place-items: center; width: 10px; height: 10px; border-radius: 50%; background: var(--avatar-tile); box-shadow: 0 0 0 1.5px var(--bg); overflow: hidden; }
