@@ -161,7 +161,7 @@ def shell_facts(item: dict[str, Any], root: str | None) -> dict[str, Any]:
         kinds = [got or "commands"]
     act = "read" if kinds and all(k == "read" for k in kinds) else "search" if kinds and all(k in ("read", "search") for k in kinds) else "commands"
     out = str(item.get("formatted_output") or item.get("aggregated_output") or "")
-    return tool_facts(act, reads=reads, spawn=spawn_in_output(out))
+    return tool_facts(act, reads=reads, spawn=spawn_in_output(out, item.get("command")))
 
 
 def project(rec: dict[str, Any], st: State) -> Out:

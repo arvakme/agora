@@ -205,9 +205,14 @@ def shell_reads(command: Any, root: str | None = None, cwd: str | None = None) -
 SPAWN = re.compile(r"\btask=(T-[0-9a-zA-Z]+)\s+pane=([0-9A-Fa-f-]{36})")
 
 
-def spawn_in_output(text: Any) -> dict[str, str] | None:
-    """A Seedmux dispatch in a tool's output: ``smx-team spawn/assign`` prints ``task=T-xx pane=<UUID>``."""
+def spawn_in_output(text: Any, command: Any = None) -> dict[str, str] | None:
+    """A Seedmux dispatch in a tool's output: ``smx-team spawn/assign`` prints ``task=T-xx pane=<UUID>``.
+    Only trusted when the call's own command ran ``smx-team`` (a ``cat`` / ``grep`` of an old log
+    that happens to contain the line is not a dispatch); ``command=None`` = unknown → not trusted."""
     if not isinstance(text, str):
+        return None
+    cmd = command[-1] if isinstance(command, list) and command else command
+    if not isinstance(cmd, str) or "smx-team" not in cmd:
         return None
     m = SPAWN.search(text)
     return {"taskId": m.group(1), "pane": m.group(2).upper(), "via": "seedmux"} if m else None

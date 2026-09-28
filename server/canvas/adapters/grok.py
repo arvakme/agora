@@ -113,6 +113,8 @@ def project(rec: dict[str, Any], st: State) -> Out:
         facts = classify(name, tm.get("kind") or u.get("kind"), args, st.root)
         tool: dict[str, Any] = {"name": name, "input": _summary(args), "args": _full(args), **{k: v for k, v in facts.items()}}
         x.setdefault("tools", {})[tid] = name
+        if isinstance(args, dict) and isinstance(args.get("command"), str):
+            x.setdefault("cmds", {})[tid] = args["command"]
         items.append({"id": tid, "kind": "tool", "at": at, "tool": tool})
     elif t == "tool_call_update":
         tid = str(u.get("toolCallId"))
@@ -130,7 +132,7 @@ def project(rec: dict[str, Any], st: State) -> Out:
         if diffs and not err:
             op = "write" if x.get("tools", {}).get(tid) == "write" else "edit"
             done["files"] = [{"path": rel_path(str(p), st.root), "op": op} for p in dict.fromkeys(diffs)]
-        sp = spawn_in_output(str(out or ""))
+        sp = spawn_in_output(str(out or ""), ro.get("command") or x.get("cmds", {}).get(tid))
         if sp:
             done["spawn"] = sp
         items.append({"id": tid, "kind": "tool", "at": at, "endAt": at, "tool": done})

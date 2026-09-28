@@ -126,12 +126,12 @@ def classify(name: str, args: Any, root: str | None, cwd: str | None = None) -> 
     return tool_facts(act, files=fs, reads=reads, waits_user=waits, spawn=spawn)
 
 
-def result_spawn(rec: dict[str, Any], output: str) -> dict[str, Any] | None:
+def result_spawn(rec: dict[str, Any], output: str, command: str | None) -> dict[str, Any] | None:
     """The child a finished tool call started: an ``Agent`` result's ``agentId``, or a Seedmux ticket in a Bash output."""
     r = rec.get("toolUseResult")
     if isinstance(r, dict) and isinstance(r.get("agentId"), str) and r.get("agentId"):
         return {"childKind": "claude", "childId": r["agentId"], "via": "native", **({"state": str(r["status"])} if r.get("status") else {})}
-    return spawn_in_output(output)
+    return spawn_in_output(output, command)
 
 
 def _facts_only(facts: dict[str, Any]) -> dict[str, Any]:
@@ -164,7 +164,8 @@ def project(rec: dict[str, Any], st: State) -> Out:
                 st.pending.discard(tid)
                 out = text_of(b.get("content")) or (b.get("content") if isinstance(b.get("content"), str) else "")
                 done: dict[str, Any] = {"output": _full(str(out)), "isError": bool(b.get("is_error"))}
-                sp = result_spawn(rec, str(out)) if len(results) == 1 else spawn_in_output(str(out))
+                cmd = st.extra.get("cmd", {}).pop(tid, None)
+                sp = result_spawn(rec, str(out), cmd) if len(results) == 1 else spawn_in_output(str(out), cmd)
                 if sp:
                     done["spawn"] = sp
                 items.append({"id": tid, "kind": "tool", "at": at, "endAt": at, "tool": done})
@@ -191,6 +192,8 @@ def project(rec: dict[str, Any], st: State) -> Out:
                 name = str(b.get("name"))
                 st.pending.add(tid)
                 tool: dict[str, Any] = {"name": name, "input": _summary(b.get("input")), "args": _full(b.get("input"))}
+                if name == "Bash" and isinstance(b.get("input"), dict) and isinstance(b["input"].get("command"), str) and "smx-team" in b["input"]["command"]:
+                    st.extra.setdefault("cmd", {})[tid] = b["input"]["command"]  # its output may name a Seedmux ticket
                 facts = classify(name, b.get("input"), st.root, rec.get("cwd") if isinstance(rec.get("cwd"), str) else None)
                 if facts.get("files"):
                     tool["files"] = facts["files"]

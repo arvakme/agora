@@ -339,9 +339,9 @@ def attach(runs: dict[str, dict[str, Any]], *, root: str | None, store: Any, dep
                 krun["id"] = f"smx:{tid}"
                 krun["tier"] = "T3"
                 krun.pop("nativeId", None)
-            if ref.meta.get("receiptsOnly") or krun["state"] in ("unknown", "idle"):
-                # Seedmux's own verdict when there is no fresher evidence (a log being written, a CLI turn end).
-                krun["state"] = rc["state"] if rc["state"] != "unknown" or ref.meta.get("receiptsOnly") else krun["state"]
+            if ref.meta.get("receiptsOnly") or krun["state"] not in ("running", "waiting"):
+                # Seedmux's own verdict, unless the worker's log shows it working or waiting right now.
+                krun["state"] = rc["state"]
             krun["receipt"] = rc
             if rc.get("repliedAt"):
                 krun["timeline"]["moments"].append({"kind": "receipt", "at": rc["repliedAt"], "taskId": tid, "state": rc["state"]})
