@@ -13,6 +13,7 @@
 //     backwards, a long gap) they are reset to the target, so a paused frame is always the exact pose.
 // Times are milliseconds; lengths are figure units (1 unit = 1 CSS px at scale 1), ground y = 0, up −y.
 
+import type { Gesture } from "./gestures";
 import type { Leg, Route } from "./route";
 
 export type Pt = { x: number; y: number };
@@ -543,8 +544,8 @@ export function poseTargets(pose: Pose, t: number, since: number, o: { still: bo
       T.tilt = -10 + osc(3.2, 2);
       T.lean = -1.5;
       break;
-    case "wait": // a raised hand, waving a little
-      T.near = [5.6 + osc(1.1, 1.8), -17.2];
+    case "wait": // a raised hand, held still: ./gestures.ts waves it every 6–8 s
+      T.near = [5.6, -17.2];
       T.far = [-0.4, 18.2];
       T.tilt = -8;
       T.lean = -2;
@@ -586,14 +587,15 @@ export function poseTargets(pose: Pose, t: number, since: number, o: { still: bo
       break;
   }
   if (o.conflict) {
-    // blocked: a visible bump when both reach the same file, then keep going, flagged
+    // blocked: a visible bump when both reach the same file, then keep going, flagged — the recoil
+    // (leaning back, hands up) blends in and out with the bump, so the hands never jump to it
     T.mark = "!";
     const bump = o.bump ?? 0;
     if (bump > 0) {
-      T.lean = -9 * bump;
-      T.near = [7, 2.4 - 7 * bump];
-      T.far = [4.7, 4.7 - 5.8 * bump];
-      T.tilt = -12 * bump;
+      T.lean = mix(T.lean, -9, bump);
+      T.near = [mix(T.near[0], 7, bump), mix(T.near[1], -4.6, bump)];
+      T.far = [mix(T.far[0], 4.7, bump), mix(T.far[1], -1.1, bump)];
+      T.tilt = mix(T.tilt, -12, bump);
     }
   }
   // from Loom's arm to ours
@@ -601,6 +603,13 @@ export function poseTargets(pose: Pose, t: number, since: number, o: { still: bo
   T.near = [T.near[0] * k, T.near[1] * k];
   T.far = [T.far[0] * k, T.far[1] * k];
   return T;
+}
+
+/** A pose's targets with a gesture over them (./gestures.ts): hand targets by their weights and
+ * offsets, lean and tilt added, what is in hand. (Facing, hips and feet are solve's.) */
+export function withGesture(T: Targets, G: Gesture): Targets {
+  const hand = (p: [number, number], to: readonly [number, number] | undefined, w = 0, add?: readonly [number, number]): [number, number] => [mix(p[0], to?.[0] ?? p[0], w) + (add?.[0] ?? 0), mix(p[1], to?.[1] ?? p[1], w) + (add?.[1] ?? 0)];
+  return { ...T, near: hand(T.near, G.near, G.nearW, G.nearAdd), far: hand(T.far, G.far, G.farW, G.farAdd), lean: T.lean + (G.lean ?? 0), tilt: T.tilt + (G.tilt ?? 0), prop: G.prop !== undefined ? G.prop : T.prop };
 }
 
 /** A worker's springs (smooth hands, lean, head tilt, sway), kept per run between frames. */
@@ -655,6 +664,17 @@ export type Joints = {
   walking: boolean;
   /** 0 → 1 getting onto a ladder, 1 on it (the feet are off the ground), 1 → 0 getting off. */
   climb: number;
+  /** From ./gestures.ts, for the drawing (./figureNode.ts): the whole figure scaled about its feet and
+   * raised (a landing), the head turned toward a point (figure space), the screen flashing (a save),
+   * a command's verdict on the terminal, a page in the near hand (taking one: on its way from the hand that gives it). */
+  scale?: number;
+  lift?: number;
+  look?: Pt | null;
+  flash?: number;
+  result?: { ok: boolean; a: number };
+  hold?: number;
+  holdFrom?: Pt;
+  holdU?: number;
 };
 
 /**
@@ -665,7 +685,7 @@ export type Joints = {
  * blends at human speed. They are reset only on a real jump (`reset`: a seek or scrub, or the tab
  * coming back after a long pause), so a paused frame is exact and live updates blend.
  */
-export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolean; pose: Pose; since: number; dock: Pt; trip: Trip | null; k?: number; gaze?: Pt | null; still: boolean; conflict?: boolean; bump?: number; unknownReceipt?: boolean; coarse?: boolean; readingWhileWalking?: boolean }, sp: Springs): Joints {
+export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolean; pose: Pose; since: number; dock: Pt; trip: Trip | null; k?: number; gaze?: Pt | null; still: boolean; conflict?: boolean; bump?: number; unknownReceipt?: boolean; coarse?: boolean; readingWhileWalking?: boolean; gest?: Gesture }, sp: Springs): Joints {
   const { t, still } = o;
   const wall = o.wall ?? t;
   const k = o.k ?? 1;
@@ -686,7 +706,7 @@ export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolea
     const hang = 0.887 * (RIG.upper + RIG.fore);
     T = { near: [1 - 0.5 * feet[0].x * f, hang], far: [0.2 - 0.5 * feet[1].x * f, hang], lean: mix(3, 5, climb), tilt: 0, sway: 0, prop: o.readingWhileWalking && climb < 0.5 ? "carry" : null, mark: null, facing: 1 };
   } else {
-    T = poseTargets(o.pose, wall, o.since, { still, conflict: o.conflict, bump: o.bump, unknownReceipt: o.unknownReceipt, coarse: o.coarse });
+    T = poseTargets(o.pose, wall, o.since, { still, conflict: o.conflict, bump: o.gest?.bump ?? o.bump, unknownReceipt: o.unknownReceipt, coarse: o.coarse });
     if (T.facing === -1) f = -1;
     if (o.gaze) {
       // a glance: turned toward what it looks at, head tipped up or down to it
@@ -695,11 +715,19 @@ export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolea
       const head = root.y - (RIG.hip + RIG.torso + RIG.head) * k;
       T.tilt = clamp((Math.atan2(o.gaze.y - head, Math.abs(dx) + k) * 180) / Math.PI, -30, 30);
     }
+    // a gesture: facing a sub-agent handing something over, or turned round to the person
+    if (o.gest?.face) f = o.gest.face;
+    else if (o.gest?.turn) f = f === 1 ? -1 : 1;
     feet = [
       { x: RIG.stance * f, y: 0 },
       { x: -RIG.stance * f, y: 0 },
     ];
   }
+  // Gestures (./gestures.ts) over the pose; sitting on the node's edge moves the feet out over it.
+  const G = o.gest;
+  const sit = G?.sit?.w ? G.sit : null;
+  if (G) T = withGesture(T, G);
+  if (sit) feet = feet.map((p, i) => ({ x: mix(p.x, sit.feet[i].x * f, sit.w), y: mix(p.y, sit.feet[i].y, sit.w) }));
   // Without an explicit wall-clock step (tests, one-off solves), fall back to the timeline step.
   const dt = o.dt ?? (sp.t == null ? -1 : (t - sp.t) / 1000);
   const jump = still || !!o.reset || sp.t == null || dt < 0 || dt > 1;
@@ -741,8 +769,9 @@ export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolea
   }
   const L = (x: number) => x * f;
   const px = L(sway);
-  // on a ladder the knees bend: the hips sink to the climbing height
-  const py = -(trip ? trip.hip : RIG.hip) + bob * 0.6;
+  // on a ladder the knees bend: the hips sink to the climbing height (a gesture's crouch lowers them;
+  // sitting puts them on the node's edge)
+  const py = mix(-(trip ? trip.hip : RIG.hip) + bob * 0.6 + (G?.crouch ?? 0), -(sit?.hip ?? 0), sit?.w ?? 0);
   const leanR = (lean * Math.PI) / 180;
   const nx = px + Math.sin(leanR) * RIG.torso * f;
   const ny = py - Math.cos(leanR) * RIG.torso;
@@ -789,5 +818,13 @@ export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolea
     markMuted: !!T.markMuted,
     walking: !!trip,
     climb,
+    scale: G?.scale,
+    lift: G?.lift,
+    look: G?.look,
+    flash: G?.flash,
+    result: G?.result,
+    hold: G?.hold,
+    holdFrom: G?.holdFrom,
+    holdU: G?.holdU,
   };
 }
