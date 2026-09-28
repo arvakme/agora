@@ -302,8 +302,17 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 @keyframes pin-set { from { transform: scale(0.86) } }
 .pin:hover .pin-body, .pin.draft .pin-body { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--accent-ring), var(--lift-1); }
 .pin[data-active="true"] .pin-body { box-shadow: 0 0 0 2px var(--accent-soft), var(--lift-2); }
-.pin[data-resolved="true"] .pin-body { background: var(--surface); box-shadow: inset 0 0 0 30px var(--positive-wash), 0 0 0 2px var(--surface), var(--lift-1); color: var(--positive); --icon: var(--positive); transform: scale(0.85); }
-.pin[data-status="lost"] .pin-body { background: var(--surface); color: var(--caution); --icon: var(--caution); box-shadow: var(--lift-1); outline: 1.5px dashed var(--caution); outline-offset: 1px; }
+/* Resolved threads (only with 「显示已解决的评论」): quiet — a hollow graphite outline, ✓ and the number
+ * small, ~60% opacity, never purple, always under the open pins. */
+.pin[data-resolved="true"] { z-index: 0; opacity: 0.6; transition: opacity var(--dur-tap) var(--ease-out); }
+.pin[data-resolved="true"]:hover { opacity: 0.9; }
+.pin:not([data-resolved="true"]) { z-index: 1; }
+.pin[data-resolved="true"] .pin-body { grid-auto-flow: column; gap: 1px; background: var(--bg); box-shadow: inset 0 0 0 1.25px var(--fg-muted); color: var(--fg-muted); --icon: var(--fg-muted); font-size: 10px; transform: scale(0.82); animation: none; }
+.pin[data-resolved="true"] .pin-body em { font-style: normal; font-variant-numeric: tabular-nums; }
+.resolved-tip { position: absolute; z-index: 6; max-width: 260px; padding: 6px 10px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--edge), var(--lift-2); pointer-events: none; }
+.resolved-tip p { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-size: var(--text-sm); }
+.resolved-tip span { color: var(--fg-subtle); font-size: var(--text-xs); }
+.repin-hint { position: absolute; z-index: 6; top: 60px; left: 50%; transform: translateX(-50%); padding: 6px 12px; border-radius: var(--r-pill); background: var(--surface); box-shadow: inset 0 0 0 1px var(--accent-ring), var(--lift-2); color: var(--fg); font-size: var(--text-sm); white-space: nowrap; pointer-events: none; }
 .pin-orbit { position: absolute; left: -5px; bottom: -5px; width: 38px; height: 38px; border-radius: 50%; pointer-events: none; border: 1.5px dashed var(--accent); animation: spin 3s linear infinite; }
 @keyframes spin { to { rotate: 1turn } }
 .parked-hint, .mode-hint {
@@ -395,7 +404,23 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .ditem[data-active="true"]::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
 .ditem-pin { flex: none; display: grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; border-radius: 50% 50% 50% 4px; background: var(--accent-fill); color: var(--accent-fg); --icon: var(--accent-fg); font-size: var(--text-xs); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
 .ditem-pin[data-resolved="true"] { background: var(--positive-wash); color: var(--positive); --icon: var(--positive); }
-.ditem-pin[data-status="lost"] { background: var(--well); color: var(--caution); --icon: var(--caution); }
+.ditem-pin[data-resolved="true"] { background: var(--bg); box-shadow: inset 0 0 0 1.25px var(--fg-muted); color: var(--fg-muted); --icon: var(--fg-muted); }
+.ditem-pin[data-lost] { background: var(--well); box-shadow: none; }
+.ditem-warn { width: 6px; height: 6px; border-radius: 50%; background: var(--fg-faint); }
+.ditem-warn[data-open] { background: var(--caution-dot); }
+.ditem-n { color: var(--fg-muted); font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; }
+.ditem-acts { display: flex; gap: var(--space-3); overflow: hidden; padding: 0 var(--space-5) var(--space-4) 46px; }
+.drawer-bar { gap: var(--space-4); flex-wrap: wrap; }
+.drawer-sw { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; color: var(--fg-muted); font-size: var(--text-xs); }
+.drawer-sw:hover { color: var(--fg); }
+.drawer-sw .sw { position: relative; width: 24px; height: 14px; flex: none; border-radius: var(--r-pill); background: var(--line-strong); transition: background var(--dur-tap) var(--ease-out); }
+.drawer-sw .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); box-shadow: var(--lift-1); transition: transform var(--dur-glide) var(--ease-out); }
+.drawer-sw[aria-checked="true"] .sw { background: var(--accent-fill); }
+.drawer-sw[aria-checked="true"] .sw::after { transform: translateX(10px); }
+.drawer-group { margin-top: var(--space-6); border-top: 1px solid var(--line); padding-top: var(--space-4); }
+.drawer-group h3 { margin: 0 var(--space-7) var(--space-2); color: var(--fg-subtle); font-size: 12px; font-weight: var(--weight-medium); }
+.drawer-group h3 em { font-style: normal; color: var(--fg-faint); font-variant-numeric: tabular-nums; }
+.drawer-group > p { margin: 0 var(--space-7) var(--space-3); color: var(--fg-subtle); font-size: var(--text-xs); line-height: 1.5; }
 .ditem-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .ditem-meta { display: flex; gap: var(--space-4); align-items: center; min-width: 0; }
 .ditem-meta .anchor-tag { flex: 0 1 auto; }
@@ -568,3 +593,45 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .hs-toggle { font: inherit; color: inherit; padding: 0; background: none; border: 0; cursor: pointer; }
 .hs-loading { margin: var(--space-6); font-size: var(--text-sm); color: var(--fg-muted); }
 .lp-list .lp-empty { list-style: none; }
+
+/* ——— workbench focus (docs/workbench-focus.md): ⋯ view menu, quiet dock, hints only when useful ——— */
+.view-menu { position: relative; flex: none; }
+.view-pop { right: 0; top: calc(100% + 6px); min-width: 252px; transform-origin: top right; }
+.menu .menu-title { margin: var(--space-3) var(--space-4) var(--space-2); color: var(--fg-subtle); font-size: 11px; }
+.menu hr { height: 1px; margin: var(--space-2) 0; border: 0; background: var(--line); }
+.menu .vm-seg { display: flex; margin: 0 var(--space-3) var(--space-2); }
+.menu .vm-seg button { flex: 1; justify-content: center; min-height: 0; height: 24px; padding: 0 8px; border-radius: var(--r-pill); font-size: var(--text-xs); }
+.menu .vm-seg button[data-on="true"] { background: var(--segment-on); box-shadow: var(--lift-1); color: var(--fg); }
+.menu .vm-seg button:hover { color: var(--fg); background: transparent; }
+.menu .vm-seg button[data-on="true"]:hover { background: var(--segment-on); }
+.menu .sw { margin-left: auto; position: relative; width: 26px; height: 16px; flex: none; border-radius: var(--r-pill); background: var(--line-strong); transition: background var(--dur-tap) var(--ease-out); }
+.menu .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--surface); box-shadow: var(--lift-1); transition: transform var(--dur-glide) var(--ease-out); }
+.menu [aria-checked="true"] > .sw { background: var(--accent-fill); }
+.menu [aria-checked="true"] > .sw::after { transform: translateX(10px); }
+.menu .menu-count { margin-left: auto; font-style: normal; color: var(--fg-faint); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.help-scrim { position: fixed; z-index: 44; }
+.help-pop { position: fixed; z-index: 45; right: 12px; top: 58px; width: 380px; padding: var(--space-3) var(--space-4) var(--space-4); }
+.help-pop dl { margin: 0; display: grid; gap: 6px; }
+.help-pop dl > div { display: grid; grid-template-columns: 96px 1fr; gap: 8px; font-size: var(--text-sm); }
+.help-pop dt kbd { display: inline-block; padding: 0 6px; border-radius: var(--r-xs); background: var(--well); color: var(--fg); font: var(--text-xs) var(--font-sans); }
+.help-pop dd { margin: 0; color: var(--fg-muted); }
+.help-note { margin: var(--space-4) 0 0; color: var(--fg-subtle); font-size: var(--text-xs); line-height: 1.6; }
+
+.dock { gap: 4px; padding: 4px; box-shadow: var(--edge), var(--lift-1); }
+.dock .dock-seg { padding: 2px; }
+.dock .dock-seg button { height: 26px; padding: 0 10px; gap: 5px; font-size: var(--text-sm); }
+.dock-count { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border-radius: var(--r-pill); color: var(--fg-muted); font-size: var(--text-sm); --icon: var(--fg-muted); transition: background var(--dur-tap) var(--ease-out), color var(--dur-tap) var(--ease-out); }
+.dock-count:hover, .dock-count[data-on="true"] { background: var(--raised); color: var(--fg); --icon: var(--accent); }
+.dock-count em { min-width: 16px; height: 16px; padding: 0 4px; display: inline-grid; place-items: center; border-radius: var(--r-pill); background: var(--accent-wash); color: var(--accent-ink); font: var(--weight-strong) 11px/1 var(--font-sans); font-style: normal; font-variant-numeric: tabular-nums; }
+/* Excalidraw's hint line under the toolbar: only on an empty canvas, or when asked for in ⋯. */
+.canvas-view:not([data-hints]) .excalidraw .HintViewer { display: none; }
+/* a blank canvas: dots, three steps, from a sample (state e); clicks elsewhere still draw */
+.empty-cv { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; pointer-events: none; }
+.empty-cv-box { display: flex; flex-direction: column; align-items: center; gap: var(--space-5); max-width: 540px; padding: 0 var(--space-6); text-align: center; }
+.empty-cv-box .dither-field { width: 220px; height: 110px; }
+.empty-cv h3 { margin: 0; font-size: var(--text-lg); font-weight: var(--weight-strong); }
+.empty-cv ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); margin: 0; padding: 0; list-style: none; text-align: left; }
+.empty-cv li { padding: 10px 12px; border-radius: var(--r-lg); box-shadow: var(--edge); background: var(--bg); color: var(--fg-muted); font-size: var(--text-sm); line-height: 1.5; }
+.empty-cv li b { display: block; margin-bottom: 2px; color: var(--fg); font-weight: var(--weight-strong); }
+.empty-cv li i { display: block; color: var(--accent); font-style: normal; font-weight: var(--weight-strong); }
+.empty-cv button { pointer-events: auto; }

@@ -13,9 +13,12 @@ export const CONFLICT_WINDOW_MS = 10 * 60_000;
 /** A conflict stays on screen this long after its later write. */
 export const CONFLICT_SHOW_MS = 60 * 60_000;
 
-/** Which sessions get a pointer: running, recently active, or the one the person follows. */
-export function activeSessions(ids: string[], info: (id: string) => { lastAt: number; running: boolean }, now: number, followed?: string | null): string[] {
-  return ids.filter((id) => id === followed || info(id).running || now - info(id).lastAt <= ACTIVE_MS);
+/**
+ * Which sessions count as active: running, or recently active. The session the person focused
+ * last gets no exception — that exception kept 「Pi App.tsx 10:03」 on the diagram for seven hours.
+ */
+export function activeSessions(ids: string[], info: (id: string) => { lastAt: number; running: boolean }, now: number): string[] {
+  return ids.filter((id) => info(id).running || now - info(id).lastAt <= ACTIVE_MS);
 }
 
 /** Only what happened up to `at` (replay); everything when `at` is null. */

@@ -28,7 +28,6 @@ const dur = (ms: number) => {
   const s = Math.round(ms / 1000);
   return s < 60 ? `${s} 秒` : s < 3600 ? `${Math.floor(s / 60)} 分 ${String(s % 60).padStart(2, "0")} 秒` : `${Math.floor(s / 3600)} 小时 ${Math.floor((s % 3600) / 60)} 分`;
 };
-const base = (p: string) => p.split("/").pop() || p;
 
 /** What a run is doing at t, in a few words (lane names, the strip's state). */
 export function nowText(run: AgentRun, t: number, placeOf?: (path: string) => string | undefined): { k: string; text: string } {

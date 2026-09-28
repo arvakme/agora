@@ -4,10 +4,12 @@ import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useRef, useState } from "react";
 import { resolveAnchor } from "../canvas/anchors";
 import { layoutPins, sceneBlocks } from "./pinLayout";
-import { IconCheck, IconClose, IconHint, IconPlus } from "../app/icons";
-import { useThreads, type Anchor, type ThreadStore } from "./threads";
+import { IconCheck, IconClose, IconPlus } from "../app/icons";
+import { identity, useThreads, type Anchor, type Thread, type ThreadStore } from "./threads";
+import { pinnable } from "./visibility";
+import { usePrefs } from "../app/prefs";
 import type { CanvasViewState } from "../canvas/CanvasView";
-import { Composer, ThreadCard } from "./ThreadCard";
+import { ago, Composer, ThreadCard } from "./ThreadCard";
 import { Aim, snap } from "./Aim";
 import { dismissUndo, runUndo, useUndo } from "./undo";
 import { SPRING } from "./motion";
@@ -26,10 +28,18 @@ type Props = {
   draft: Draft | null;
   setDraft: (d: Draft | null) => void;
   onCreated: () => void;
+  /** A resolved pin was clicked: show that thread in the comment list's 已解决 tab. */
+  onOpenResolved?: (threadId: string) => void;
+  /** 「重新钉到…」: the next element picked becomes this thread's anchor. */
+  repin?: string | null;
+  onRepinned?: () => void;
 };
 
-export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreated }: Props) {
-  const { threads: list, activeId } = useThreads(store);
+export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreated, onOpenResolved, repin, onRepinned }: Props) {
+  const { threads: all, activeId } = useThreads(store);
+  const { showResolved } = usePrefs();
+  // Open threads only by default; resolved ones as quiet pins when asked for; lost anchors never.
+  const list = useMemo(() => pinnable(all, (t) => resolveAnchor(t.anchor, view.map), showResolved), [all, view.map, showResolved]);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [miss, setMiss] = useState<{ x: number; y: number; k: number } | null>(null);
   const leaveTimer = useRef(0);
@@ -59,21 +69,28 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
   const { pins, landing } = layoutPins(list, view, blocks);
   const resolved = pins.map((r) => ({ ...r, p: { x: snap(r.p.x), y: snap(r.p.y) } }));
   const shownId = activeId ?? hoverId;
-  const shown = resolved.find((r) => r.t.id === shownId);
+  const shown = resolved.find((r) => r.t.id === shownId && !r.t.resolved);
+  const quiet = resolved.find((r) => r.t.id === hoverId && r.t.resolved && r.t.id !== activeId);
 
   return (
     <div className="comment-layer" ref={layer}>
-      {mode === "comment" && (
+      {(mode === "comment" || repin) && (
         <Aim
           view={view}
           landing={landing}
           onMiss={(at) => setMiss({ ...at, k: Date.now() })}
           onPick={(anchor) => {
             store.close();
+            if (repin) {
+              store.reanchor(repin, anchor);
+              onRepinned?.();
+              return;
+            }
             setDraft({ anchor, text: "" });
           }}
         />
       )}
+      {repin && <div className="repin-hint">点一个元素，把 #{store.thread(repin)?.n} 钉到它上面 · Esc 取消</div>}
       {miss && (
         <div key={miss.k} className="miss" style={{ left: miss.x, top: miss.y }} onAnimationEnd={() => setMiss(null)}>
           点在一个元素上
@@ -92,11 +109,18 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
             onPointerDown={(e) => e.stopPropagation()}
             onPointerEnter={() => hover(t.id)}
             onPointerLeave={() => hover(null)}
-            onClick={() => store.open(t.id)}
-            aria-label={`线程 ${t.n}${t.resolved ? "（已解决）" : ""}${st.status === "lost" ? "（锚点已失效）" : ""}`}
+            onClick={() => (t.resolved ? onOpenResolved?.(t.id) : store.open(t.id))}
+            aria-label={`线程 ${t.n}${t.resolved ? "（已解决）" : ""}`}
           >
             <span className="pin-body">
-              {st.status === "lost" ? <IconHint size={14} /> : t.resolved ? <IconCheck size={14} /> : t.n}
+              {t.resolved ? (
+                <>
+                  <IconCheck size={12} />
+                  <em>{t.n}</em>
+                </>
+              ) : (
+                t.n
+              )}
             </span>
             {t.agent === "running" && <span className="pin-orbit" />}
           </button>
@@ -116,6 +140,7 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
           />
         )}
       </AnimatePresence>
+      <AnimatePresence>{quiet && !draft && <ResolvedTip key={quiet.t.id} t={quiet.t} at={quiet.p} />}</AnimatePresence>
       {draft && <DraftPin at={landing(draft.anchor)} />}
       <AnimatePresence>
         {draft && (
@@ -136,6 +161,18 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
       </AnimatePresence>
       <UndoToast canvasId={store.canvasId} />
     </div>
+  );
+}
+
+/** Hovering a resolved pin: its first line, and who resolved it when. */
+function ResolvedTip({ t, at }: { t: Thread; at: { x: number; y: number } }) {
+  const who = t.resolvedBy ? (t.resolvedBy.id === identity()?.id ? "你" : t.resolvedBy.name) : "你";
+  const when = t.resolvedAt ?? t.updatedAt;
+  return (
+    <motion.div className="resolved-tip" role="tooltip" style={{ left: at.x + 30, top: at.y - 6 }} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, transition: { duration: 0.12 } }} transition={{ duration: 0.18 }}>
+      <p>{t.messages[0]?.text.split("\n")[0]}</p>
+      <span>已解决 · {who}{when ? ` · ${ago(when)}` : ""} · 点开在评论列表里看</span>
+    </motion.div>
   );
 }
 

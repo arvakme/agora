@@ -11,10 +11,13 @@
 import { ConflictNotice } from "../multi/ConflictNotice";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { IconCheck, IconChevron, IconCommentSolid, IconCopy, IconGauge, IconLock, IconMessage, IconPath, IconTarget, IconUndo } from "../app/icons";
+import { IconCheck, IconChevron, IconCode, IconCommentSolid, IconCopy, IconLayers, IconLock, IconMore, IconPath, IconTarget, IconUndo } from "../app/icons";
+import { useReplay, useReplayAt, useTick } from "../workstation/clock";
+import { hhmmss } from "../workstation/axis";
+import { useRuns } from "../workstation/runs/store";
 import { Markdown } from "./markdown";
-import { ProcessFold, TrajectoryView, UsageMeta } from "./TrajectoryView";
-import { buildTurns, sumUsage, type TrajTurn } from "./trajectoryModel";
+import { ProcessFold, TrajectoryView } from "./TrajectoryView";
+import { buildTurns, fmtCost, fmtDuration, fmtTokens, sumUsage, type TrajTurn } from "./trajectoryModel";
 import { SPRING } from "../comments/motion";
 import { Composer } from "./Composer";
 import { AGENT_KINDS, AGENT_NAMES, agents, effortChoices, useAgents, type AgentKind, type Catalog, type TerminalApp, type TerminalApps } from "./agents";
@@ -171,23 +174,30 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
         : null;
   return (
     <div className="sp">
-      <div className="sp-choose">
-        <h2>这个会话用哪个 Agent？</h2>
-        <p>会话就是它自己的原生会话：在这里讨论「{canvasTitle ?? "画布"}」，也能随时在终端里接着做 coding。选定后不能更改。</p>
+      <div className="sp-choose sp-choose2">
+        <h2>选一个 agent 来讨论「{canvasTitle ?? "这张图"}」</h2>
+        <p>它会一直是这个会话的 agent：先在图上和你讨论架构，再去写代码；你在图上看得到它在哪干活。选定后不能更改。</p>
         {waiting && (
           <p className="notice" data-tone="caution">
             <b>在等你</b>
             <span>有一条画布评论在等这个会话，选好后会自动交给它。</span>
           </p>
         )}
-        <div className="sp-agents" role="radiogroup" aria-label="Agent">
-          {AGENT_KINDS.map((k) => (
-            <button key={k} role="radio" aria-checked={kind === k} data-on={kind === k} disabled={cat ? !cat[k].installed : false} onClick={() => setKind(k)}>
-              <AgentAvatar kind={k} size={40} />
-              <span>{AGENT_NAMES[k]}</span>
-              {cat && !cat[k].installed && <em>未安装</em>}
-            </button>
-          ))}
+        <div className="sp-cards" role="radiogroup" aria-label="Agent">
+          {AGENT_KINDS.map((k) => {
+            const e = cat?.[k];
+            const def = e ? e.default || e.featured[0] || "默认模型" : "";
+            return (
+              <button key={k} role="radio" aria-checked={kind === k} data-on={kind === k} disabled={cat ? !cat[k].installed : false} onClick={() => setKind(k)}>
+                <AgentAvatar kind={k} size={32} />
+                <span className="sp-card-t">
+                  <b>{AGENT_NAMES[k]}</b>
+                  <span>{AGENT_BLURB[k]}{def ? ` · ${e?.names?.[def] ?? def}` : ""}</span>
+                </span>
+                {cat && !cat[k].installed && <em>未安装</em>}
+              </button>
+            );
+          })}
         </div>
         <div className="sp-choose-row">
           <Picker label="模型" value={model} onChange={setModel} groups={models} disabled={!c} placeholder="搜索模型或 provider" />
@@ -207,10 +217,14 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
           <button className="btn primary" disabled={busy || !cat} onClick={() => void start()}>用 {AGENT_NAMES[kind]} 开始</button>
           {waiting && <button className="btn ghost" onClick={() => agentChoice.resolve(sessionId, undefined)}>先不交</button>}
         </div>
+        <p className="sp-choose-later">也可以直接在右边画，之后再开会话。</p>
       </div>
     </div>
   );
 }
+
+/** What each agent is good for, in one line (the picker's cards). */
+const AGENT_BLURB: Record<AgentKind, string> = { pi: "快，适合边画边聊", claude: "擅长大改动，能派子代理", codex: "适合按清单写代码和测试" };
 
 function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTitles: Record<string, string> }) {
   const { sessions: all, turns: canvasTurns } = useSessions();
@@ -224,6 +238,14 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   const [termMsg, setTermMsg] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [view, setView] = useState<"chat" | "trajectory">("chat");
+  // Replay (the timeline dragged into the past): the pane shows the trajectory, later steps greyed.
+  const replay = useReplay();
+  const replayAt = useReplayAt();
+  const autoTraj = useRef(false);
+  useEffect(() => {
+    if (replay && view === "chat") (autoTraj.current = true), setView("trajectory");
+    if (!replay && autoTraj.current) (autoTraj.current = false), setView("chat");
+  }, [!!replay]);
   const [focusTurn, setFocusTurn] = useState<{ n: number; key: number } | null>(null);
   const canvasTitle = canvasTitles[session.canvasId];
   const inflight = ag.inflight[sessionId];
@@ -340,51 +362,53 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   const totalMs = turns.some((t) => t.durationMs != null) ? turns.reduce((n, t) => n + (t.durationMs ?? 0), 0) : null;
   return (
     <div className="sp" data-agent={binding.agent}>
-      <header className="sp-head">
-        <AgentAvatar kind={binding.agent} size={32} />
-        <div className="sp-title">
-          <h2 title={binding.nativeId ? `原生会话 ${binding.nativeId}` : "原生会话 id 在第一轮后生成"}>{AGENT_NAMES[binding.agent]}</h2>
-          <p className="sp-meta">
-            <span className="sp-lock" title="创建会话时选定，不能更改">
-              <IconLock size={12} />
-              {binding.model || "默认模型"}{binding.effort ? ` · ${binding.effort}` : ""}
-            </span>
-            <span className="sp-sep" aria-hidden>·</span>
-            <select value={session.canvasId} onChange={(e) => sessions.relink(sessionId, e.target.value)} aria-label="关联画布" title="这个会话默认改的画布">
-              {Object.entries(canvasTitles).map(([id, t]) => <option key={id} value={id}>{t}</option>)}
-              {!canvasTitles[session.canvasId] && <option value={session.canvasId}>{session.canvasId ? "已删除的画布" : "未关联画布"}</option>}
-            </select>
-            {binding.nativeId && <code className="sp-native" title="原生会话 id">{binding.nativeId.slice(0, 8)}</code>}
-          </p>
-        </div>
+      {/* One line: the model (fixed at creation) and the canvas; the name is already on the tab. */}
+      <header className="sp-head sp-head1">
+        <span className="sp-lock" title="创建会话时选定，不能更改">
+          <IconLock size={12} />
+          {binding.model || "默认模型"}{binding.effort ? ` · ${binding.effort}` : ""}
+        </span>
+        <span className="sp-sep" aria-hidden>·</span>
+        <label className="sp-cv" title="这个会话默认改的画布">
+          <i className="sp-cv-sq" aria-hidden />
+          <select value={session.canvasId} onChange={(e) => sessions.relink(sessionId, e.target.value)} aria-label="关联画布">
+            {Object.entries(canvasTitles).map(([id, t]) => <option key={id} value={id}>{t}</option>)}
+            {!canvasTitles[session.canvasId] && <option value={session.canvasId}>{session.canvasId ? "已删除的画布" : "未关联画布"}</option>}
+          </select>
+        </label>
+        <span className="grow" />
+        <button className="icon-btn sm" aria-pressed={view === "trajectory"} data-on={view === "trajectory"} onClick={() => setView(view === "trajectory" ? "chat" : "trajectory")} title={view === "trajectory" ? "回到对话" : "轨迹：每一步做了什么"} aria-label="轨迹">
+          <IconPath size={16} />
+        </button>
+        <button
+          className="icon-btn sm"
+          disabled={inSeedmux || (!status?.terminal.alive && !!status?.running) || stuck}
+          onClick={() => void openTerminal()}
+          title={inSeedmux ? "在 Seedmux 里切到这个 pane 继续" : status?.terminal.alive ? `再开一个 ${TERM_APP_NAME[termApp]} 窗口连到同一个终端` : status?.running ? "这一轮结束后再打开" : `在 ${TERM_APP_NAME[termApp]} 中打开，直接在里面做 coding`}
+          aria-label="在终端打开"
+        >
+          <TerminalAppIcon app={inSeedmux ? "seedmux" : termApp} />
+        </button>
         <div className="sp-term">
-          {inSeedmux ? (
-            <button className="btn sm quiet sp-term-btn" disabled title="在 Seedmux 里切到这个 pane 继续">
-              <TerminalAppIcon app="seedmux" /><span className="sp-btn-label">在 Seedmux 中</span>
-            </button>
-          ) : (
-            <button
-              className="btn sm quiet sp-term-btn"
-              disabled={(!status?.terminal.alive && !!status?.running) || stuck}
-              onClick={() => void openTerminal()}
-              title={status?.terminal.alive ? `再开一个 ${TERM_APP_NAME[termApp]} 窗口连到同一个终端` : status?.running ? "这一轮结束后再打开" : `用 ${TERM_APP_NAME[termApp]} 打开这个会话，直接在里面做 coding`}
-            >
-              <TerminalAppIcon app={termApp} /><span className="sp-btn-label">{status?.terminal.alive ? "新窗口" : `在 ${TERM_APP_NAME[termApp]} 中打开`}</span>
-            </button>
-          )}
-          <button className="btn sm quiet sp-term-more" aria-haspopup="menu" aria-expanded={termMenu} aria-label="选择终端" title="选择在哪个终端打开" onClick={() => setTermMenu((v) => !v)}>
-            <IconChevron size={12} open={termMenu} />
+          <button className="icon-btn sm" aria-haspopup="dialog" aria-expanded={termMenu} aria-label="用量与更多" title="用量、会话 id、在哪个终端打开" onClick={() => setTermMenu((v) => !v)}>
+            <IconMore size={16} />
           </button>
           <AnimatePresence>
             {termMenu && (
-              <motion.div
-                className="menu sp-term-menu"
-                role="menu"
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -2, transition: { duration: 0.1 } }}
-                transition={SPRING}
-              >
+              <motion.div className="menu sp-term-menu sp-stats" role="dialog" aria-label="用量与更多" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -2, transition: { duration: 0.1 } }} transition={SPRING}>
+                <dl>
+                  <dt>轮数</dt>
+                  <dd>{turns.length} 轮</dd>
+                  <dt>耗时</dt>
+                  <dd>{totalMs != null ? fmtDuration(totalMs) : "—"}</dd>
+                  <dt>花费</dt>
+                  <dd>{fmtCost(total.cost)}</dd>
+                  <dt>tokens</dt>
+                  <dd>{fmtTokens(total.input)} 入 · {fmtTokens(total.output)} 出{total.cacheRead != null && total.input ? ` · 缓存 ${Math.round((total.cacheRead / (total.input + total.cacheRead)) * 100)}%` : ""}</dd>
+                  <dt>会话 id</dt>
+                  <dd className="mono">{binding.nativeId ? binding.nativeId.slice(0, 8) : "第一轮后生成"}</dd>
+                </dl>
+                <hr />
                 <p className="menu-title">在哪里打开</p>
                 {(["kitty", "seedmux"] as const).map((app) => {
                   const off = app === "seedmux" ? apps && !apps.seedmux.available : apps && !apps.kitty;
@@ -401,12 +425,11 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
                     >
                       <span className="menu-check">{termApp === app && <IconCheck size={14} />}</span>
                       <TerminalAppIcon app={app} />
-                      {TERM_APP_NAME[app]}
+                      在 {TERM_APP_NAME[app]} 中打开
                       {off && <em className="menu-note">{app === "seedmux" ? "不可用" : "用终端"}</em>}
                     </button>
                   );
                 })}
-                <hr />
                 <button role="menuitem" disabled={inSeedmux || (!status?.terminal.alive && !!status?.running)} onClick={() => void copyOpen()} title="Seedmux 不可用时：在 Seedmux 或任意终端里新开 pane 粘贴运行">
                   <span className="menu-check" />
                   <IconCopy size={16} />
@@ -441,30 +464,10 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           {status?.terminal.alive && termMsg && <span className="sp-attach-msg">{termMsg}{status.terminal.clients ? ` · ${status.terminal.clients} 个窗口` : ""}</span>}
         </div>
       )}
-      <div className="sp-bar">
-        <div className="seg" role="radiogroup" aria-label="视图">
-          <button role="radio" aria-checked={view === "chat"} data-on={view === "chat"} onClick={() => setView("chat")}>
-            {view === "chat" && <motion.span layoutId={`sp-view-${sessionId}`} className="seg-bg" transition={SPRING} />}
-            <IconMessage size={14} />
-            <span>对话</span>
-          </button>
-          <button role="radio" aria-checked={view === "trajectory"} data-on={view === "trajectory"} onClick={() => setView("trajectory")}>
-            {view === "trajectory" && <motion.span layoutId={`sp-view-${sessionId}`} className="seg-bg" transition={SPRING} />}
-            <IconPath size={14} />
-            <span>轨迹</span>
-          </button>
-        </div>
-        {turns.length > 0 && (
-          <p className="sp-total" title="这个会话累计（只算日志里记下的）">
-            <IconGauge size={14} />
-            <span>{turns.length} 轮</span>
-            <UsageMeta usage={total} durationMs={totalMs} compact />
-          </p>
-        )}
-      </div>
+      {replay && view === "trajectory" && <p className="sp-replay-note">回放到 {hhmmss(replayAt!)}：灰色的是之后发生的。拖时间线或点一段跳到那一刻。</p>}
       {view === "trajectory" ? (
         <div className="sp-traj">
-          <TrajectoryView sessionId={sessionId} turns={turns} focusTurn={focusTurn} agent={binding.agent} />
+          <TrajectoryView sessionId={sessionId} turns={turns} focusTurn={focusTurn} agent={binding.agent} cutoff={replay ? replayAt : null} />
         </div>
       ) : (
         <div className="sp-scroll" ref={scroll}>
@@ -475,9 +478,10 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
             </div>
           )}
           <Conversation sessionId={sessionId} turns={turns} changes={changes} canvasTitles={canvasTitles} flash={flash} onTrajectory={(n) => (setView("trajectory"), setFocusTurn({ n, key: Date.now() }))} />
+          {working && <LiveLine sessionId={sessionId} />}
         </div>
       )}
-      {line && (
+      {line && !(status?.running && !status?.held) && (
         <div className="notice sp-status" data-tone={status?.held ? "caution" : status?.error && !working ? "error" : undefined}>
           <i className="dot" data-tone={status?.held ? "held" : status?.error && !working ? "error" : "ok"} />
           <span>{line}</span>
@@ -515,6 +519,9 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           agentName={AGENT_NAMES[binding.agent]}
           route={status?.terminal.alive ? "terminal" : "headless"}
           onSend={send}
+          working={working}
+          onStop={status?.running ? () => void agents.interrupt(sessionId) : undefined}
+          onTerminal={() => void openTerminal()}
         />
       )}
     </div>
@@ -641,11 +648,11 @@ function Conversation({ sessionId, turns, changes, canvasTitles, flash, onTrajec
       {turns.map((t) => (
         <article key={t.n} className="ds-convo-turn">
           <header className="ds-convo-head">
-            <b>第 {t.n} 轮</b>
+            <button onClick={() => onTrajectory(t.n)} title="在轨迹里看这一轮">
+              第 {t.n} 轮 · {clock(t.startedAt)}
+              {t.running ? " · 进行中" : t.durationMs != null && t.durationMs > 20_000 ? ` · 用时 ${fmtDuration(t.durationMs)}` : ""}
+            </button>
             {t.source === "terminal" && <span className="ds-tag">终端</span>}
-            <time>{clock(t.startedAt)}</time>
-            <UsageMeta model={t.model} effort={t.effort} usage={t.usage} durationMs={t.durationMs} compact />
-            <button onClick={() => onTrajectory(t.n)} title="在轨迹里看这一轮">轨迹</button>
           </header>
           {t.user && (
             <div className="ds-user" data-source={t.user.source}>
@@ -669,48 +676,83 @@ const kindLabel = (t: Turn) => {
   return anim ? "动画未挂载" : "改图未执行";
 };
 
+/**
+ * A canvas change as one line: 「改了画布 · 新建子图「API 服务」：4 个节点…」. Hovering the line
+ * shows 撤销 / 在画布中高亮 and lights the elements; ▸ opens the list of changes.
+ */
 function TurnCard({ t, canvasTitle, flash }: { t: Turn; canvasTitle?: string; flash: boolean }) {
+  const [open, setOpen] = useState(false);
   const hover = (ids: string[] | undefined) => highlight.set(ids?.length ? { canvasId: t.canvasId, ids } : null);
   const touched = t.steps.find((x) => x.kind === "apply")?.elements ?? [];
   const api = canvases.get(t.canvasId)?.api;
   const detail = t.steps.map((s) => s.detail).filter(Boolean).join(" · ");
+  const summary = t.reply?.changes?.length ? `${t.request}` : t.reply?.text ?? t.request;
+  const undone = !!t.reply?.undone;
   return (
-    <article className="sp-change" data-status={t.status} data-turn={t.id} data-flash={flash} onPointerEnter={() => hover(touched)} onPointerLeave={() => hover(undefined)}>
-      {t.origin.kind === "comment" && (
-        <button className="chip sp-origin" onClick={() => t.origin.kind === "comment" && ui.openThread(t.canvasId, t.origin.threadId)} title={`来自「${canvasTitle ?? "画布"}」的评论 #${t.origin.threadN}，点击在画布中打开`}>
-          <IconCommentSolid size={12} />
-          <span>#{t.origin.threadN} · {t.origin.anchor}</span>
+    <article className="sp-change sp-change1" data-status={t.status} data-turn={t.id} data-flash={flash} data-open={open} data-tone={t.reply?.tone} onPointerEnter={() => hover(touched)} onPointerLeave={() => hover(undefined)}>
+      <div className="sp-line">
+        <button className="sp-line-main" onClick={() => setOpen(!open)} aria-expanded={open} title={detail || summary}>
+          <IconLayers size={14} />
+          <b>{kindLabel(t)}</b>
+          {t.origin.kind === "comment" && <span className="sp-origin-n">#{t.origin.threadN}</span>}
+          <span className="sp-line-text" data-undone={undone || undefined}>{summary}</span>
         </button>
-      )}
-      <div className="sp-change-head">
-        <span className="sp-change-kind">{kindLabel(t)}</span>
-        <span className="sp-change-title">{t.request}</span>
-        <time>{clock(t.startedAt)}</time>
+        <span className="sp-line-acts">
+          {t.origin.kind === "comment" && (
+            <button className="sp-line-act" onClick={() => t.origin.kind === "comment" && ui.openThread(t.canvasId, t.origin.threadId)} title={`来自「${canvasTitle ?? "画布"}」的评论 #${t.origin.threadN}：${t.origin.anchor}`}>
+              <IconCommentSolid size={12} />
+            </button>
+          )}
+          {t.reply?.batchId && !undone && (
+            <button className="sp-line-act" disabled={!api} onClick={() => api && undoTurn(api, t.id)} title="撤销这次修改">
+              <IconUndo size={14} />
+            </button>
+          )}
+          {touched.length > 0 && !undone && (
+            <button
+              className="sp-line-act"
+              title="在画布中高亮"
+              onClick={() => {
+                ui.focusPane(t.canvasId);
+                highlight.set({ canvasId: t.canvasId, ids: touched });
+                setTimeout(() => highlight.get()?.ids === touched && highlight.set(null), 2600);
+              }}
+            >
+              <IconTarget size={14} />
+            </button>
+          )}
+        </span>
+        {undone && <span className="sp-undone">已撤销</span>}
+        <IconChevron open={open} />
       </div>
-      <AnimatePresence>
-        {t.reply && (
-          <motion.div className="sp-change-body" data-tone={t.reply.tone} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
-            {t.reply.changes ? <ul data-undone={!!t.reply.undone}>{t.reply.changes.map((c, i) => <li key={i}>{c}</li>)}</ul> : <p>{t.reply.text}</p>}
+      <AnimatePresence initial={false}>
+        {open && t.reply && (
+          <motion.div className="sp-change-body" data-tone={t.reply.tone} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0, transition: { duration: 0.12 } }} transition={SPRING}>
+            {t.reply.changes ? <ul data-undone={undone}>{t.reply.changes.map((c, i) => <li key={i}>{c}</li>)}</ul> : <p>{t.reply.text}</p>}
             {t.reply.undoError && <p className="sp-warn">{t.reply.undoError}</p>}
-            <div className="sp-change-actions">
-              {t.reply.batchId && (t.reply.undone ? <span className="sp-undone">已撤销</span> : <button className="btn sm ghost" disabled={!api} onClick={() => api && undoTurn(api, t.id)}><IconUndo size={14} />撤销这次修改</button>)}
-              {touched.length > 0 && !t.reply.undone && (
-                <button
-                  className="btn sm ghost"
-                  onClick={() => {
-                    ui.focusPane(t.canvasId);
-                    highlight.set({ canvasId: t.canvasId, ids: touched });
-                    setTimeout(() => highlight.get()?.ids === touched && highlight.set(null), 2600);
-                  }}
-                >
-                  <IconTarget size={14} />在画布中高亮
-                </button>
-              )}
-              <time title={detail}>{t.endedAt ? fmt(t.endedAt - t.startedAt) : ""}</time>
-            </div>
+            <time title={detail}>{clock(t.startedAt)}{t.endedAt ? ` · ${fmt(t.endedAt - t.startedAt)}` : ""}</time>
           </motion.div>
         )}
       </AnimatePresence>
+      {t.reply?.undoError && !open && <p className="sp-warn">{t.reply.undoError}</p>}
     </article>
+  );
+}
+
+/** While the agent works: one line saying what it does right now (from the 工位视图's run), and where. */
+function LiveLine({ sessionId }: { sessionId: string }) {
+  const runs = useRuns();
+  const now = useTick(500);
+  const run = runs.byId.get(sessionId);
+  const g = run?.segs.find((s) => s.start <= now && now < s.end) ?? run?.segs.at(-1);
+  if (!g) return null;
+  const wait = g.kind === "wait";
+  const what = wait ? "在等你回复" : g.kind === "write" ? `正在写 ${g.path ?? ""}` : g.kind === "read" ? `正在读 ${g.path ?? ""}` : g.kind === "exec" ? `正在跑 ${g.cmd ?? ""}` : g.kind === "delegate" ? `正在${g.label}` : "正在想";
+  return (
+    <div className="sp-live" data-k={g.kind}>
+      {g.kind === "write" ? <IconCode size={14} /> : <i className="dot" data-tone={wait ? "held" : "ok"} />}
+      <span className="sp-live-text">{what}</span>
+      <span className="sp-live-el">{fmtDuration(Math.max(0, now - g.start))}</span>
+    </div>
   );
 }

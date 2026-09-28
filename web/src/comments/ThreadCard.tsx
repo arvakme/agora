@@ -105,7 +105,7 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
           )}
         </AnimatePresence>
       </div>
-      {full && !t.resolved && <Reply onSend={(text) => store.reply(t.id, { author: "you", text })} />}
+      {full && <Reply resolved={t.resolved} onSend={(text) => store.reply(t.id, { author: "you", text })} />}
     </motion.div>
   );
 }
@@ -249,7 +249,8 @@ function EditBox({ initial, onSave, onCancel }: { initial: string; onSave: (text
   );
 }
 
-function Reply({ onSend }: { onSend: (text: string) => void }) {
+/** Replying to a resolved thread reopens it (the store does that; the placeholder says so). */
+function Reply({ onSend, resolved }: { onSend: (text: string) => void; resolved?: boolean }) {
   const [text, setText] = useState("");
   const send = () => {
     if (!text.trim()) return;
@@ -261,7 +262,7 @@ function Reply({ onSend }: { onSend: (text: string) => void }) {
       <textarea
         value={text}
         rows={1}
-        placeholder="回复…"
+        placeholder={resolved ? "回复会重新打开这条评论…" : "回复…"}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && (e.preventDefault(), send())}
       />

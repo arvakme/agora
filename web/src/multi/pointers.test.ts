@@ -41,9 +41,9 @@ describe("sessionPointers / stacks", () => {
 });
 
 describe("activeSessions", () => {
-  it("keeps running, recent and followed sessions", () => {
+  it("keeps running and recent sessions; the last focused one gets no exception (no stale pointer)", () => {
     const info = (id: string) => ({ a: { lastAt: 0, running: true }, b: { lastAt: 100 * MIN, running: false }, c: { lastAt: 0, running: false }, d: { lastAt: 0, running: false } })[id]!;
-    expect(activeSessions(["a", "b", "c", "d"], info, 110 * MIN, "d")).toEqual(["a", "b", "d"]);
+    expect(activeSessions(["a", "b", "c", "d"], info, 110 * MIN)).toEqual(["a", "b"]);
   });
 });
 
