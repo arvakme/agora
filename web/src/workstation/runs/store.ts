@@ -7,7 +7,7 @@ import { useSyncExternalStore } from "react";
 import { AGENT_NAMES, agents, fetchRuns, type AgentKind } from "../../session/agents";
 import { sessionNames } from "../../multi/writes";
 import { fromTree, runFromTranscript } from "./derive";
-import { scenario } from "./fixtures";
+import { longWindow, scenario, scratchRun } from "./fixtures";
 import { flatten, type WorkRun, type FlatRun } from "./types";
 
 export type Runs = { roots: WorkRun[]; flat: FlatRun[]; byId: Map<string, WorkRun>; at: number };
@@ -42,7 +42,7 @@ export function runName(sessionId: string, bound: Record<string, { agent: AgentK
 function compute(): Runs {
   const now = Date.now();
   if (MOCK) {
-    const roots = scenario(mockBase, now);
+    const roots = params.has("long") ? longWindow(now, 5, Number(params.get("long")) || 100) : [...scenario(mockBase, now), ...(params.has("scratch") ? [scratchRun(mockBase)] : [])];
     return { roots, flat: flatten(roots), byId: new Map(flatten(roots).map((f) => [f.run.id, f.run])), at: now };
   }
   const st = agents.get();

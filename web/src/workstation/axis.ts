@@ -64,8 +64,16 @@ export function buildAxis(intervals: readonly (readonly [number, number])[], now
   return { start: pieces[0].a, end: now, pieces, pps, width, toPx, fromPx, gapAt: (t) => pieces.find((p) => p.kind !== "act" && t > p.a && t < p.b) ?? null };
 }
 
+const isWide = (c: string) => /[\u1100-\u11ff\u2e80-\ud7ff\uf900-\ufaff\uff00-\uffef]/.test(c);
+/** How wide a text is at `px` font size (no DOM: a CJK character is a full em, anything else ~0.58 em). */
+export const labelWidth = (text: string, px = 11) => [...text].reduce((w, c) => w + (isWide(c) ? px : px * 0.58), 0);
+/** A label in a box `width` px wide is drawn only when it fits whole (with `pad` px on each side): no clipping, no spill into the next one. */
+export const fitsLabel = (text: string, width: number, px = 11, pad = 6) => text.length > 0 && labelWidth(text, px) + 2 * pad <= width;
+/** A collapsed break's label (its name over its length) needs the wider of its two lines. */
+export const gapLabelFits = (name: string, length: string, width: number) => fitsLabel(labelWidth(name, 10.5) >= labelWidth(length, 10.5) ? name : length, width, 10.5, 4);
+
 export type Tick = { t: number; x: number; major: boolean; label: string };
-const STEPS_S = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 21600];
+const STEPS_S = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 21600, 43200, 86400];
 const pad = (n: number) => String(n).padStart(2, "0");
 export const hhmmss = (t: number) => {
   const d = new Date(t);
@@ -91,8 +99,8 @@ export function ticks(A: Axis, fmt: (t: number) => string = hhmmss): Tick[] {
     for (let k = Math.ceil((p.a - off) / step) * step + off; k <= p.b; k += step) {
       const x = A.toPx(k);
       const isMaj = Math.round((k - off) / 1000) % major === 0;
-      const text = isMaj ? fmt(k) : step / 1000 * ppsS >= 46 ? `:${pad(new Date(k).getSeconds())}` : "";
-      const w = isMaj ? 56 : 22;
+      const text = isMaj ? (major >= 86400 ? `${new Date(k).getMonth() + 1}/${new Date(k).getDate()}` : fmt(k)) : step / 1000 * ppsS >= 46 ? `:${pad(new Date(k).getSeconds())}` : "";
+      const w = text ? labelWidth(text, 10.5) + 8 : 0;
       let label = "";
       if (text && x - w / 2 >= lastR + 10 && x - w / 2 >= Math.max(0, p.x0 - 4) && x + w / 2 <= Math.min(A.width, p.x1 + 4)) {
         label = text;

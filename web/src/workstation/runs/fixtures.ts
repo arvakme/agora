@@ -191,3 +191,55 @@ export function crowd(at: number, nodes: string[], n = 18): WorkRun[] {
   }
   return out;
 }
+
+/**
+ * A long window (`?mock=runs&long`): `days` days of work ending at `now`, two top-level sessions with
+ * `subs` sub-agents between them, in a few working sessions a day with hours of nothing between —
+ * the timeline's breaks, labels and ticks at scale. Deterministic. Paths match the sample diagram.
+ */
+export function longWindow(now: number, days = 5, subs = 100): WorkRun[] {
+  const DAY = 86_400;
+  const at = now - days * DAY * 1000;
+  const files = ["server/app.py", "server/users.py", "server/db/models.py", "server/cache/session.py", "web/App.tsx", "server/payments/pay.py"];
+  const tops: WorkRun[] = ["pi", "claude"].map((agent, k) => ({ id: `long-${agent}`, agent, name: agent === "pi" ? "Pi" : "Claude Code", sessionId: `long-${agent}`, segs: [], receipts: [], running: false, lastAt: now, children: [] }));
+  for (let i = 0; i < subs; i++) {
+    const top = tops[i % 2];
+    const day = Math.floor((i / subs) * days);
+    const start = day * DAY + (i % 2) * 8 * 3600 + 600 + Math.floor(i / (2 * days)) * 260; // seconds after `at`: two working sessions a day, sub-agents back to back in each
+    const sub: WorkRun = {
+      id: `long-sub-${i}`,
+      agent: i % 3 ? "codex" : "claude",
+      name: `worker-${i + 1}`,
+      parentId: top.id,
+      via: "seedmux",
+      evidence: "seedmux",
+      task: `任务 ${i + 1}`,
+      segs: segs(at, [["read", start + 5, start + 60, { path: files[i % files.length] }], ["write", start + 60, start + 200, { path: files[(i + 2) % files.length] }], ["exec", start + 200, start + 230, { cmd: "pytest -q" }]]),
+      receipts: rc(at, [[start, "running"], [start + 240, "accepted"]]),
+      spawnAt: at + start * 1000,
+      doneAt: at + (start + 240) * 1000,
+      running: false,
+      lastAt: at + (start + 240) * 1000,
+      children: [],
+    };
+    top.children.push(sub);
+    top.segs.push(...segs(at, [["delegate", start - 2, start, { child: sub.id, label: sub.name }], ["think", start + 240, start + 250]]));
+  }
+  for (const t of tops) t.segs.sort((a, b) => a.start - b.start);
+  return tops;
+}
+
+/**
+ * A worker that reads a node's file, then writes 24 scratch files outside the project (absolute paths:
+ * an agent's scratchpad) and three new files under docs/new/ that no node claims, then goes back to a
+ * node's file (`?mock=runs&scratch`). It stays at its node while it writes the scratch files; the docs
+ * files send it to the 图外 tray and make the tray's suggestion.
+ */
+export function scratchRun(at: number): WorkRun {
+  const dir = "/private/tmp/claude-501/-Users-zhijie-Job-intern-yuanzhuoai-dev/41a8454c-c9cd-470c-b51d-c016c85aa068/scratchpad";
+  const list: S[] = [["think", 0, 2], ["read", 2, 5, { path: "server/app.py" }]];
+  for (let i = 0; i < 24; i++) list.push(["write", 5 + i, 6 + i, { path: `${dir}/probe-${i}.py` }]);
+  for (let i = 0; i < 3; i++) list.push(["write", 30 + i * 2, 31 + i * 2, { path: `docs/new/note-${i}.md` }]);
+  list.push(["write", 38, 41, { path: "server/users.py" }]);
+  return { id: "mock-scratch", agent: "claude", name: "Claude Code", sessionId: "mock-scratch", segs: segs(at, list), receipts: [], running: false, lastAt: at + 41_000, children: [] };
+}
