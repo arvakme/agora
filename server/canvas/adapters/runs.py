@@ -344,8 +344,9 @@ def build(ref: NativeRef, *, root: str | None, session_id: str | None = None, de
         from server.canvas.adapters import receipts as rc
 
         placed: set[str] = set()
+        scan = rc.Scan(root) if root else None  # the tickets folder and `git worktree list`, once per build
         while True:  # workers can have native sub-agents, which can dispatch workers again
-            new = rc.attach(runs, root=root, store=store, depth=depth, folded=folded, links=links, home=home, placed=placed, with_items=with_items)
+            new = rc.attach(runs, root=root, store=store, depth=depth, folded=folded, links=links, home=home, placed=placed, with_items=with_items, scan=scan)
             if not new:
                 break
             for kref, krun in new:

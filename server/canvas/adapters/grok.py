@@ -204,6 +204,9 @@ class GrokAdapter(Adapter):
                 out.append({"agent": "grok", "nativeId": Path(p).parent.name, "path": Path(p), "cwd": root})
         return out
 
+    def log_cwd(self, path: Path) -> str | None:
+        return session_cwd(path.parent)
+
     def sample_pattern(self, home: Path) -> str:
         return str(grok_home(home) / "sessions" / "*" / "*" / "updates.jsonl")
 

@@ -249,3 +249,29 @@ class Adapter:
     def log_format(self, path: Path) -> str | None:
         """The log's own format version, when it records one (Pi header ``version``…)."""
         return None
+
+    def log_cwd(self, path: Path) -> str | None:
+        """The working directory the log says the session ran in (None when it does not say)."""
+        return None
+
+
+def first_cwd(path: Path, lines: int = 60) -> str | None:
+    """The first ``cwd`` a JSONL log records in its first ``lines`` lines."""
+    import json
+
+    try:
+        with open(path, "rb") as fh:
+            for i, line in enumerate(fh):
+                if i >= lines:
+                    break
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(rec, dict):
+                    c = rec.get("cwd") or ((rec.get("payload") or {}).get("cwd") if isinstance(rec.get("payload"), dict) else None)
+                    if isinstance(c, str) and c:
+                        return c
+    except OSError:
+        return None
+    return None

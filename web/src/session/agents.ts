@@ -71,7 +71,10 @@ export type AgentRun = {
   childCount: number;
   /** Every run below this one (expanded or not): the page shows one level and folds the rest into this badge. */
   descendants: number;
+  /** The latest Seedmux ticket of this worker. */
   receipt?: Receipt;
+  /** Every ticket this worker session served (resume_session reuses one session), oldest first. */
+  receipts?: Receipt[];
   timeline: { segments: RunSegment[]; turns: { n: number; start: number; end: number }[]; moments: RunMoment[]; timesInferred?: boolean };
   items?: Item[];
 };

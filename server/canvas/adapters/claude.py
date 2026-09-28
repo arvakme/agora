@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from server.canvas import agent_models
-from server.canvas.adapters.base import valid_id, Adapter, tool_facts, NativeRef, ParentLink, VersionRange
+from server.canvas.adapters.base import first_cwd, valid_id, Adapter, tool_facts, NativeRef, ParentLink, VersionRange
 from server.canvas.adapters.tools import activity_of, shell_reads, spawn_in_output
 from server.canvas.adapters.common import (
     MAX_TEXT,
@@ -330,6 +330,9 @@ class ClaudeAdapter(Adapter):
             for p in glob.glob(str(projects_dir(home) / dir_name(root) / "*.jsonl")):
                 out.append({"agent": "claude", "nativeId": Path(p).stem, "path": Path(p), "cwd": root})
         return out
+
+    def log_cwd(self, path: Path) -> str | None:
+        return first_cwd(path)
 
     # ——— Projector ———
     # Record types (``record_type``) the projector turns into items, and those it skips on purpose
