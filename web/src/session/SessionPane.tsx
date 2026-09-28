@@ -18,6 +18,8 @@ import { SPRING } from "../comments/motion";
 import { Composer } from "./Composer";
 import { AGENT_KINDS, AGENT_NAMES, agents, effortChoices, useAgents, type AgentKind, type Catalog, type TerminalApp, type TerminalApps } from "./agents";
 import { AgentAvatar } from "./AgentAvatar";
+import { Picker } from "./Picker";
+import { effortGroups, modelGroups } from "./pickerModel";
 import { TerminalAppIcon } from "../app/terminals/TerminalAppIcon";
 import { undoTurn } from "./runTurn";
 import { sessions, useSessions, type Turn } from "./store";
@@ -81,7 +83,15 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
       setBusy(false);
     }
   };
-  const more = c ? c.models.filter((m) => !c.featured.includes(m)) : [];
+  const models = useMemo(() => modelGroups(c), [c]);
+  const efforts = useMemo(() => effortGroups(eff), [eff.levels.join(), eff.initial, eff.cliDefault]);
+  const scopeNote = !c
+    ? null
+    : c.scope?.kind === "enabledModels"
+      ? { text: `只列 Pi 设置里启用的 ${c.models.length} 个模型（enabledModels）`, title: c.scope.source ? `来自 ${c.scope.source}` : undefined }
+      : kind === "pi" && c.scope?.kind === "available"
+        ? { text: `Pi 没有设置 enabledModels：列出已配置凭据的 ${c.models.length} 个模型`, title: "在 ~/.pi/agent/settings.json 或项目 .pi/settings.json 里设置 enabledModels 可以收窄范围" }
+        : null;
   return (
     <div className="sp">
       <div className="sp-choose">
@@ -103,26 +113,18 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
           ))}
         </div>
         <div className="sp-choose-row">
-          <label>
-            模型
-            <select value={model} onChange={(e) => setModel(e.target.value)} disabled={!c} aria-label="模型">
-              {!c?.default && <option value="">CLI 默认</option>}
-              {c?.featured.map((m) => <option key={m} value={m}>{m}{m === c.default ? "（默认）" : ""}</option>)}
-              {more.length > 0 && (
-                <optgroup label="更多">
-                  {more.map((m) => <option key={m} value={m}>{m}</option>)}
-                </optgroup>
-              )}
-            </select>
-          </label>
-          <label>
-            强度
-            <select value={effort} onChange={(e) => setEffort(e.target.value)} disabled={!c || !eff.levels.length} aria-label="强度" title={eff.levels.length ? `${model || "默认模型"} 支持：${eff.levels.join(" / ")}` : "这个模型没有强度选项"}>
-              {(eff.cliDefault || !eff.levels.length) && <option value="">{eff.levels.length ? "CLI 默认" : "不支持"}</option>}
-              {eff.levels.map((x) => <option key={x} value={x}>{x}{x === eff.initial ? "（默认）" : ""}</option>)}
-            </select>
-          </label>
+          <Picker label="模型" value={model} onChange={setModel} groups={models} disabled={!c} placeholder="搜索模型或 provider" />
+          <Picker
+            label="强度"
+            value={effort}
+            onChange={setEffort}
+            groups={efforts}
+            disabled={!c || !eff.levels.length}
+            compact
+            title={eff.levels.length ? `${model || "默认模型"} 支持：${eff.levels.join(" / ")}` : "这个模型没有强度选项"}
+          />
         </div>
+        {scopeNote && <p className="sp-choose-note" title={scopeNote.title}>{scopeNote.text}</p>}
         {err && <p className="sp-warn">{err}</p>}
         <div className="sp-choose-go">
           <button className="btn primary" disabled={busy || !cat} onClick={() => void start()}>用 {AGENT_NAMES[kind]} 开始</button>

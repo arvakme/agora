@@ -78,6 +78,14 @@ export type CatalogEntry = {
   /** The level a model starts on ("" = leave it to the CLI). */
   modelDefaultEffort?: Record<string, string>;
   effortSource?: string;
+  /** Friendly names by model id (the CLI's display name). */
+  names?: Record<string, string>;
+  /** Provider by model id (Pi's `provider/…`); the picker groups the non-featured models by it. */
+  providers?: Record<string, string>;
+  /** Models a binding may use (the server refuses others); null = not known, not checked. */
+  allowed?: string[] | null;
+  /** Where the list comes from. Pi: `enabledModels` (its own scope) or every `available` model. */
+  scope?: { kind: "enabledModels" | "available" | "cli"; source?: string; patterns?: string[] };
 };
 export type Catalog = Record<AgentKind, CatalogEntry>;
 
