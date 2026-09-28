@@ -1,16 +1,17 @@
 /* 对小人说话 (web/docs/workstation.md「新想法」): a small card just under the selected figure's feet,
- * above the bubbles; a tail at its top left points up at the figure. Positioned by the frame loop
+ * above the bubbles, in an ink line (purple, as the figure it belongs to is selected); a tail at its
+ * top left points up at the figure. Positioned by the frame loop
  * (transform). */
-.ws-talk { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: auto; display: flex; flex-direction: column; gap: 4px; width: 232px; padding: 4px; border-radius: var(--r-lg); background: var(--surface); box-shadow: inset 0 0 0 1px var(--accent-ring), var(--lift-2); will-change: transform; animation: ws-talk-in var(--dur-glide) var(--ease-out) both; }
+.ws-talk { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: auto; display: flex; flex-direction: column; gap: 4px; width: 232px; padding: 4px; border-radius: var(--r-lg); background: var(--surface); box-shadow: 0 0 0 1px var(--accent); will-change: transform; animation: ws-talk-in var(--dur-glide) var(--ease-out) both; }
 @keyframes ws-talk-in { from { opacity: 0; } }
-.ws-talk::before { content: ""; position: absolute; left: 14px; top: -4px; width: 8px; height: 8px; background: inherit; box-shadow: -1px -1px 0 0 var(--accent-ring); transform: rotate(45deg); }
-.ws-talk input { position: relative; height: 26px; padding: 0 10px; border: 0; border-radius: var(--r-pill); background: var(--well-on-surface); color: var(--fg); font: inherit; font-size: var(--text-sm); outline: none; }
+.ws-talk::before { content: ""; position: absolute; left: 14px; top: -4px; width: 8px; height: 8px; background: var(--surface); box-shadow: -1px -1px 0 0 var(--accent); transform: rotate(45deg); }
+.ws-talk input { position: relative; height: 26px; padding: 0 10px; border: 0; border-radius: var(--r-sm); background: var(--surface); box-shadow: var(--box); color: var(--fg); font: inherit; font-size: var(--text-sm); outline: none; }
 .ws-talk input::placeholder { color: var(--fg-subtle); }
 .ws-talk input:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .ws-talk-sub, .ws-talk-err { margin: 0; padding: 2px 6px 3px; font-size: var(--text-xs); line-height: 1.45; }
 .ws-talk-sub { color: var(--fg-muted); }
-.ws-talk-sub button { margin-left: 6px; height: 20px; padding: 0 8px; border-radius: var(--r-pill); background: var(--accent-fill); color: var(--accent-fg); font-size: var(--text-xs); line-height: 20px; }
+.ws-talk-sub button { margin-left: 6px; height: 20px; padding: 0 8px; border-radius: var(--r-xs); background: var(--accent-fill); color: var(--accent-fg); font-size: var(--text-xs); line-height: 20px; }
 .ws-talk-sub button:hover { background: var(--accent-fill-hover); }
-.ws-talk-sub button:disabled { background: var(--well-on-surface); color: var(--fg-subtle); }
+.ws-talk-sub button:disabled { background: var(--surface); box-shadow: var(--box); color: var(--fg-subtle); }
 .ws-talk-err { color: var(--negative); }
 @media (prefers-reduced-motion: reduce) { .ws-talk { animation-duration: 150ms; } }

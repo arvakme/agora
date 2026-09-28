@@ -26,7 +26,7 @@
 
   /* Lines. One neutral hairline does almost everything. */
   --line: #eceef0;          /* column dividers, header underline, row divider, menu border */
-  --line-strong: #d5dadd;   /* hover border, drag outline, the outline of a control or card (--box) */
+  --line-strong: #79838a;   /* the outline of a control or card (--box), hover border, drag outline: >=3:1 on every ground (3.9 white, 3.4 --well) */
 
   /* Graphite chrome: the sidebar is graphite in BOTH themes (Marginalia .lib-sidebar). */
   --chrome-bg: #2b3035;
@@ -122,7 +122,7 @@
     --fg-subtle: #939ca2;
     --fg-faint: #5a6167;
     --line: #2c3136;
-    --line-strong: #3d444a;
+    --line-strong: #7f898f;
     --chrome-bg: #2b3035;
     --chrome-fg: #d9dee2;
     --chrome-muted: #98a0a6;
@@ -187,7 +187,7 @@
   --fg-subtle: #939ca2;
   --fg-faint: #5a6167;
   --line: #2c3136;
-  --line-strong: #3d444a;
+  --line-strong: #7f898f;
   --chrome-bg: #2b3035;
   --chrome-fg: #d9dee2;
   --chrome-muted: #98a0a6;
@@ -242,10 +242,10 @@
 :root {
   /* Type. System sans for all UI (CJK-first). Numbers stay in the sans with tabular-nums
    * (Marginalia counts and times). Mono is for code, source, commands and ids only;
-   * JetBrains Mono is Marginalia's code default (shared/appearance.ts). */
+   * The mono chain is local fonts only: nothing is fetched over the network for it. */
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Geist Mono", Menlo, "PingFang SC", monospace;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* Size scale: six steps. Marginalia's 11.5/12.5/13.5/14.5 half-steps fold into these. */
   --text-xs: 11px;   /* counts, kbd, section labels, dense meta */
