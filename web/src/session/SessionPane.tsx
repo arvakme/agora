@@ -10,14 +10,15 @@
 // output; every turn shows model, effort, tokens, time and cost when the log has them.
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { IconCheck, IconChevron, IconCommentSolid, IconCopy, IconGauge, IconLock, IconMessage, IconPath, IconTarget, IconTerminal, IconUndo } from "../app/icons";
+import { IconCheck, IconChevron, IconCommentSolid, IconCopy, IconGauge, IconLock, IconMessage, IconPath, IconTarget, IconUndo } from "../app/icons";
 import { Markdown } from "./markdown";
 import { ProcessFold, TrajectoryView, UsageMeta } from "./TrajectoryView";
 import { buildTurns, sumUsage, type TrajTurn } from "./trajectoryModel";
 import { SPRING } from "../comments/motion";
 import { Composer } from "./Composer";
-import { AGENT_KINDS, AGENT_NAMES, agents, useAgents, type AgentKind, type Catalog, type TerminalApp, type TerminalApps } from "./agents";
+import { AGENT_KINDS, AGENT_NAMES, agents, effortChoices, useAgents, type AgentKind, type Catalog, type TerminalApp, type TerminalApps } from "./agents";
 import { AgentAvatar } from "./AgentAvatar";
+import { TerminalAppIcon } from "../app/terminals/TerminalAppIcon";
 import { undoTurn } from "./runTurn";
 import { sessions, useSessions, type Turn } from "./store";
 import { agentChoice, canvases, highlight, ui } from "./ui";
@@ -60,9 +61,14 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
     void agents.catalog().then(setCat).catch((e) => setErr(String(e)));
   }, []);
   useEffect(() => {
-    if (cat) (setModel(cat[kind].default || cat[kind].featured[0] || ""), setEffort(""));
+    if (cat) setModel(cat[kind].default || cat[kind].featured[0] || "");
   }, [cat, kind]);
   const c = cat?.[kind];
+  // The levels this model really takes (from the CLI's own catalog); switching model starts on its default.
+  const eff = effortChoices(c, model);
+  useEffect(() => {
+    setEffort(eff.initial);
+  }, [c, model]);
   const start = async () => {
     setBusy(true);
     setErr(null);
@@ -90,7 +96,7 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
         <div className="sp-agents" role="radiogroup" aria-label="Agent">
           {AGENT_KINDS.map((k) => (
             <button key={k} role="radio" aria-checked={kind === k} data-on={kind === k} disabled={cat ? !cat[k].installed : false} onClick={() => setKind(k)}>
-              <AgentAvatar kind={k} />
+              <AgentAvatar kind={k} size={40} />
               <span>{AGENT_NAMES[k]}</span>
               {cat && !cat[k].installed && <em>未安装</em>}
             </button>
@@ -111,9 +117,9 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
           </label>
           <label>
             强度
-            <select value={effort} onChange={(e) => setEffort(e.target.value)} disabled={!c} aria-label="强度">
-              <option value="">默认{c?.defaultEffort ? `（${c.defaultEffort}）` : ""}</option>
-              {c?.efforts.map((x) => <option key={x} value={x}>{x}</option>)}
+            <select value={effort} onChange={(e) => setEffort(e.target.value)} disabled={!c || !eff.levels.length} aria-label="强度" title={eff.levels.length ? `${model || "默认模型"} 支持：${eff.levels.join(" / ")}` : "这个模型没有强度选项"}>
+              {(eff.cliDefault || !eff.levels.length) && <option value="">{eff.levels.length ? "CLI 默认" : "不支持"}</option>}
+              {eff.levels.map((x) => <option key={x} value={x}>{x}{x === eff.initial ? "（默认）" : ""}</option>)}
             </select>
           </label>
         </div>
@@ -248,7 +254,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   return (
     <div className="sp" data-agent={binding.agent}>
       <header className="sp-head">
-        <AgentAvatar kind={binding.agent} />
+        <AgentAvatar kind={binding.agent} size={32} />
         <div className="sp-title">
           <h2 title={binding.nativeId ? `原生会话 ${binding.nativeId}` : "原生会话 id 在第一轮后生成"}>{AGENT_NAMES[binding.agent]}</h2>
           <p className="sp-meta">
@@ -267,7 +273,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
         <div className="sp-term">
           {inSeedmux ? (
             <button className="btn sm quiet sp-term-btn" disabled title="在 Seedmux 里切到这个 pane 继续">
-              <IconTerminal size={16} /><span className="sp-btn-label">在 Seedmux 中</span>
+              <TerminalAppIcon app="seedmux" /><span className="sp-btn-label">在 Seedmux 中</span>
             </button>
           ) : (
             <button
@@ -276,7 +282,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
               onClick={() => void openTerminal()}
               title={status?.terminal.alive ? `再开一个 ${TERM_APP_NAME[termApp]} 窗口连到同一个终端` : status?.running ? "这一轮结束后再打开" : `用 ${TERM_APP_NAME[termApp]} 打开这个会话，直接在里面做 coding`}
             >
-              <IconTerminal size={16} /><span className="sp-btn-label">{status?.terminal.alive ? "新窗口" : `在 ${TERM_APP_NAME[termApp]} 中打开`}</span>
+              <TerminalAppIcon app={termApp} /><span className="sp-btn-label">{status?.terminal.alive ? "新窗口" : `在 ${TERM_APP_NAME[termApp]} 中打开`}</span>
             </button>
           )}
           <button className="btn sm quiet sp-term-more" aria-haspopup="menu" aria-expanded={termMenu} aria-label="选择终端" title="选择在哪个终端打开" onClick={() => setTermMenu((v) => !v)}>
@@ -307,6 +313,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
                       onClick={() => void openTerminal(app)}
                     >
                       <span className="menu-check">{termApp === app && <IconCheck size={14} />}</span>
+                      <TerminalAppIcon app={app} />
                       {TERM_APP_NAME[app]}
                       {off && <em className="menu-note">{app === "seedmux" ? "不可用" : "用终端"}</em>}
                     </button>
@@ -314,7 +321,8 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
                 })}
                 <hr />
                 <button role="menuitem" disabled={inSeedmux || (!status?.terminal.alive && !!status?.running)} onClick={() => void copyOpen()} title="Seedmux 不可用时：在 Seedmux 或任意终端里新开 pane 粘贴运行">
-                  <span className="menu-check"><IconCopy size={14} /></span>
+                  <span className="menu-check" />
+                  <IconCopy size={16} />
                   复制打开命令
                 </button>
               </motion.div>

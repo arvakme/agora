@@ -16,7 +16,7 @@ Agora 里的一个会话，就是用户选定的原生 coding agent 的一个原
 | 对话记录 | 以 CLI 自己的会话日志为准（见 §4），不另存一份；`.agora/sessions/<id>.jsonl` 只记这个会话里的画布修改（每次 `agora canvas apply/anim` 一条 turn，带整批撤销数据） |
 | 删除 | 删除会话同时删绑定文件；撤销删除时用原来的 agent / 模型 / 强度 / 原生 id 重新绑定 |
 
-会话面板只显示这一个 agent（名字就是 Pi / Claude Code / Codex，配各自的官方头像，来源与商标说明见 README「许可与致谢」；头像也用在选择 agent、tab、所有画布列表、进度指针标签、轨迹记录和评论线程里该会话的答复上）：「对话 / 轨迹」两种视图（见 §7）、它改画布的卡片（撤销、在画布中高亮）、状态行（处理中 / 排队原因 / 出错）、「在终端打开」。来自终端的轮次带「终端」标记。头部显示这个会话累计的轮数、tokens、耗时和花费。没有 @ 提及、没有派发步骤。
+会话面板只显示这一个 agent（名字就是 Pi / Claude Code / Codex，配各自的官方标志，来源与商标说明见 README「许可与致谢」；标志也用在选择 agent、tab、所有画布列表、进度指针标签、轨迹记录和评论线程里该会话的答复上）。所有位置都经过一个组件 `AgentAvatar`（`web/src/session/AgentAvatar.tsx`）：圆形底盘用主题 token（`--avatar-tile` 加 `--avatar-edge` 发丝线，亮色浅灰、暗色石墨），标志居中、不加阴影或光晕；Pi 与 Claude Code 是矢量（Pi 的单色徽标随主题取 `#111` / `#f6f6f6`），Codex 是 64/128px 两档位图按尺寸 × 设备像素比取用；尺寸 16（tab、行内）、26（评论线程里与人的头像并列）、32（会话头部）、40（选择卡片）：「对话 / 轨迹」两种视图（见 §7）、它改画布的卡片（撤销、在画布中高亮）、状态行（处理中 / 排队原因 / 出错）、「在终端打开」。来自终端的轮次带「终端」标记。头部显示这个会话累计的轮数、tokens、耗时和花费。没有 @ 提及、没有派发步骤。
 
 **画布评论「交给 Agent」**：交给这块画布上**最近活动**的已绑定会话（最近一次收发、改图或绑定的时间）。画布上还没有已绑定会话时，打开（或复用）一个未绑定会话让用户选 agent，选好后自动交出；选「先不交」则在线程里留一条系统消息。Agent 收到的是线程全文 + 锚点名字和 id（`web/src/comments/handoff.ts`）；它的最终答复贴回线程，线程消息链接到会话和它最后一次改图（撤销按钮撤的是那一批；一次评论里改了多批时，前面的批次在会话里逐条撤销）。
 
@@ -40,7 +40,15 @@ Agora 里的一个会话，就是用户选定的原生 coding agent 的一个原
 | Pi | `message_end`（assistant）的 text 块 | `toolCall` / `tool_execution_end` | `agent_settled`；`stopReason` error/aborted、重试用尽 | 每条 assistant 消息的 `usage`（含 `cost.total`），累加 |
 | Codex | `item.completed` agent_message | `command_execution` started/completed，mcp/file_change | `turn.completed` / `turn.failed`、顶层 `error`（配置警告类 `error` item 不算失败） | `turn.completed.usage`（`input_tokens` 含缓存，报告时拆出 `cacheReadTokens`） |
 
-模型列表（`GET /api/agent/catalog`）：Pi 用 `pi --list-models`，`~/.pi/agent/settings.json` 的 `enabledModels`（用户经 Magpie 网关的模型）排在前面、`defaultProvider/defaultModel` 为默认；Claude Code 给别名 `opus` / `sonnet` / `haiku`，加上 `~/.claude/settings.json` 的 `model`；Codex 读 `~/.codex/models_cache.json` 的 slug 和 `config.toml` 的 `model` / `model_reasoning_effort`。强度词表按 CLI：Claude `low…max`，Pi `off…max`，Codex `minimal…xhigh`；空 = CLI 默认。
+**模型与强度**（`GET /api/agent/catalog`，`server/canvas/agent_models.py`，缓存 10 分钟）：模型列表和**每个模型真实支持的强度档位**都从 CLI 自己或它自带的模型目录读，不写死通用词表。选择器里切换模型时强度列表随之更新，默认选中该模型的默认档；绑定时服务端再校验一次，档位不在该模型的集合里返回 `400`（`agents.check_effort`）。
+
+| | 模型从哪来 | 每个模型的档位从哪来 | 默认档 | 读不到时 |
+|---|---|---|---|---|
+| Claude Code | SDK 的 `initialize` 控制请求：`claude -p --input-format stream-json --output-format stream-json` 发一条 `{"type":"control_request","request":{"subtype":"initialize"}}`，收到回复就结束进程（不发提示词，不调用模型）；回复里的 `models[]`（别名与完整 id、`resolvedModel`）。`~/.claude/settings.json` 的 `model` 排第一 | 同一回复里每个模型的 `supportedEffortLevels`（`supportsEffort` 为假的，如 haiku，没有档位）。实测 2.1.283：opus / sonnet / fable / opus-4-7 及以上 `low…max`，opus-4-6 与 sonnet-4-6 没有 `xhigh` | `settings.json` 的 `modelSettings.<模型>.effortLevel`（按别名或 `resolvedModel` 匹配），否则 `effortLevel`；都没有 = CLI 默认 | `claude --help` 里 `--effort` 的取值，对所有模型 |
+| Pi | `pi --mode rpc` 的 `get_available_models`；`settings.json` 的 `enabledModels` 排前、`defaultProvider/defaultModel` 为默认 | 每个模型的 `reasoning` 与 `thinkingLevelMap`，按 Pi 自己的规则（pi-ai `getSupportedThinkingLevels`）：不支持推理只有 `off`；映射为 `null` 的档不支持；`xhigh`、`max` 必须显式映射。顺序取 `pi --help` 的 `--thinking` | `defaultThinkingLevel` 按 Pi 的 `clampThinkingLevel` 夹到该模型支持的档（先往高、再往低） | `pi --list-models` 的 thinking 列（yes → `off…high`，no → `off`） |
+| Codex | `~/.codex/models_cache.json`，按其中 `priority` 排序，`visibility: hide` 的不列（除非 `config.toml` 指定） | 每个模型的 `supported_reasoning_levels`（实测：gpt-6-astra / sol、gpt-5.6-sol / terra 到 `ultra`，gpt-6-luna 等到 `max`，gpt-5.5 只到 `xhigh`） | `config.toml` 的 `model_reasoning_effort`（该模型支持时），否则模型的 `default_reasoning_level` | 没有档位可选，只用 CLI 默认 |
+
+没有已知默认档的模型在列表里多一项「CLI 默认」（不传强度参数）。解析函数是纯函数，测试用录制的输出（`tests/fixtures/efforts/`，`tests/test_agent_models.py`）。
 
 一个会话同时只跑一轮无头续接，后来的消息排队；「停止」取消当前一轮。
 
@@ -78,7 +86,7 @@ agora canvas schema ops|anim          # 精确 JSON Schema
 
 ## 4. 在终端打开与双向同步
 
-**终端**：「在终端打开」是一个下拉（按钮 + ▾），选 **Kitty** 或 **Seedmux**，选择记在浏览器 `localStorage`（`agora.terminalApp`，默认 Kitty）。
+**终端**：「在终端打开」是一个下拉（按钮 + ▾），选 **Kitty** 或 **Seedmux**（按钮和菜单项用两个应用自己的图标，取自本机应用包，见 README「许可与致谢」），选择记在浏览器 `localStorage`（`agora.terminalApp`，默认 Kitty）。
 
 - **Kitty**：每个项目一个独立的 tmux 服务器 `tmux -L agora-<项目路径哈希>`，配置用 `.agora/run/tmux.conf`（不读 `~/.tmux.conf`），每个会话一个 tmux 会话 `agora-<会话 id>`，pane 里直接跑 §2 的交互式续接命令（不经 shell）：CLI 退出 = tmux 会话结束 = 不再持有。打开时创建或复用这个 pane，用 Kitty（`kitty --detach`）打开窗口，没有 Kitty 用 macOS Terminal（`osascript`），并在面板上给出 attach 命令（复制时带 `env -u TMUX`，在 tmux 或 Seedmux 的 pane 里也能直接运行）。
 - **Seedmux**（`server/canvas/seedmux.py`）：经 Seedmux **官方控制桥**新开一个 pane，CLI 直接跑在里面，不经 Agora 的 tmux。桥是 Seedmux 自带、在应用内文档（`Seedmux.app/Contents/Resources/team/references/operations.md`）里写明的本机 HTTP 接口：配置 `~/Library/Application Support/Seedmux/team-bridge.json`（`port`、`token`，可用 `SEEDMUX_TEAM_BRIDGE_PATH` 覆盖），请求头 `X-Token`；Agora 只调 `GET /panes`（探测可用）和 `POST /spawn {cwd, launch, focus, direction}`，这也是它的 `smx-team` CLI 开 pane 用的那个调用。不走 `smx-team spawn` 的派工流程（不写工单、不发信封）。Seedmux 把 `launch` 敲进新 pane 的登录 shell，Agora 给的是 `cd <项目> && exec env -u <嵌套标记> AGORA_*=… PATH=<Agora bin>:"$PATH" <§2 的交互式命令>`：`exec` 让 pane 就是这个 CLI，CLI 退出时 pane 自动消失；保留 pane 自己的 PATH（实测 Seedmux 不会把这种 pane 识别成 agent pane，岛上没有它的状态，不影响同步）。

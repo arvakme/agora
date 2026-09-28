@@ -324,7 +324,7 @@ function RecordRow({ sessionId, r, selected, onSelect, agent }: { sessionId: str
     <div className="ds-rec" data-selected={selected} data-kind={r.kind} data-error={r.isError}>
       <button className="ds-rec-line" onClick={onSelect} aria-expanded={selected}>
         <span className="ds-rec-i">#{r.index}</span>
-        <span className="ds-rec-kind">{r.kind === "message" && agent && <AgentAvatar kind={agent} size="xs" />}{KIND[r.kind]}</span>
+        <span className="ds-rec-kind">{r.kind === "message" && agent && <AgentAvatar kind={agent} size={16} />}{KIND[r.kind]}</span>
         <span className="ds-rec-text">{r.kind === "tool" ? <span className="ds-mono">{r.text}</span> : r.text || "（空）"}</span>
         <span className="ds-rec-time">{r.running ? "…" : r.durationMs != null ? fmtDuration(r.durationMs) : clock(r.at)}</span>
       </button>

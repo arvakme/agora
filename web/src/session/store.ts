@@ -60,6 +60,12 @@ export type SerialBatch = { before: [string, El | null][]; after: [string, numbe
 type State = { sessions: Record<string, Session>; turns: Record<string, Turn>; batches: Record<string, SerialBatch> };
 
 let state: State = { sessions: {}, turns: {}, batches: {} };
+/**
+ * Sessions created on this page whose agent is not chosen yet. A draft lives in memory only: it
+ * is not saved (persisted() leaves it out) until commit(), when its agent is bound. Sessions
+ * loaded from the project are never drafts, whatever their state.
+ */
+const drafts = new Set<string>();
 const listeners = new Set<() => void>();
 const set = (next: State) => {
   state = next;
@@ -75,11 +81,25 @@ export const sessions = {
   hydrate: (s: State) => set(s),
   reset: () => set({ sessions: {}, turns: {}, batches: {} }),
 
-  create(canvasId: string, id = uid("s")): Session {
+  create(canvasId: string, id = uid("s"), opts: { draft?: boolean } = {}): Session {
     const s: Session = { id, canvasId, createdAt: Date.now(), turnIds: [] };
+    if (opts.draft) drafts.add(id);
     set({ ...state, sessions: { ...state.sessions, [id]: s } });
     return s;
   },
+  isDraft: (id: string) => drafts.has(id),
+  /** The draft's agent was chosen: from now on it is a real session and is saved. */
+  commit(id: string) {
+    if (drafts.delete(id)) set({ ...state });
+  },
+  /** Drop a draft (closing it before an agent was chosen). Does nothing to a saved session. */
+  discardDraft(id: string) {
+    if (!drafts.delete(id) || !state.sessions[id] || state.sessions[id].turnIds.length) return;
+    const { [id]: _, ...rest } = state.sessions;
+    set({ ...state, sessions: rest });
+  },
+  /** What gets written to the project: everything except drafts. */
+  persisted: (): State => (drafts.size ? { ...state, sessions: Object.fromEntries(Object.entries(state.sessions).filter(([id]) => !drafts.has(id))) } : state),
   relink: (id: string, canvasId: string) => set({ ...state, sessions: { ...state.sessions, [id]: { ...state.sessions[id], canvasId } } }),
   /** The session a canvas's comments report into for eval runs (the first one linked to it; created on demand). */
   forCanvas(canvasId: string): Session {

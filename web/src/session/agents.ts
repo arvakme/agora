@@ -63,7 +63,35 @@ export type Status = {
 /** Where「在终端打开」opens: Kitty (Agora's tmux pane in a Kitty window) or a new Seedmux pane. */
 export type TerminalApp = "kitty" | "seedmux";
 export type TerminalApps = { kitty: boolean; seedmux: { available: boolean; reason?: string } };
-export type Catalog = Record<AgentKind, { kind: AgentKind; name: string; installed: boolean; default: string; models: string[]; featured: string[]; efforts: string[]; defaultEffort: string }>;
+export type CatalogEntry = {
+  kind: AgentKind;
+  name: string;
+  installed: boolean;
+  default: string;
+  models: string[];
+  featured: string[];
+  /** Every level any listed model takes (the CLI's vocabulary when nothing more is known). */
+  efforts: string[];
+  defaultEffort: string;
+  /** Levels per model, read from the CLI's own catalog (server/canvas/agent_models.py); "" = no --model. */
+  modelEfforts?: Record<string, string[]>;
+  /** The level a model starts on ("" = leave it to the CLI). */
+  modelDefaultEffort?: Record<string, string>;
+  effortSource?: string;
+};
+export type Catalog = Record<AgentKind, CatalogEntry>;
+
+/**
+ * The effort picker for one model: the levels that model really takes and the one to start on.
+ * `cliDefault` adds a "CLI 默认" choice (value "") when Agora does not know the model's default.
+ */
+export function effortChoices(entry: CatalogEntry | undefined, model: string): { levels: string[]; initial: string; cliDefault: boolean } {
+  if (!entry) return { levels: [], initial: "", cliDefault: true };
+  const levels = entry.modelEfforts?.[model] ?? entry.efforts;
+  const def = entry.modelDefaultEffort?.[model] ?? "";
+  const initial = levels.includes(def) ? def : "";
+  return { levels, initial, cliDefault: initial === "" };
+}
 /** A message Agora sent that has not finished yet (comment hand-offs wait on it). */
 export type Inflight = { sendId: string; sessionId: string; canvasId: string; threadId?: string; threadN?: number; anchor?: string; turnIds: string[] };
 

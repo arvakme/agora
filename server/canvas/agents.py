@@ -30,11 +30,11 @@ import shutil
 import signal
 import subprocess
 import time
-import tomllib
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+from server.canvas import agent_models
 from server.canvas.runner import (
     KILL_GRACE_S,
     STDOUT_LIMIT,
@@ -54,12 +54,6 @@ AGENT_BIN = REPO / "bin"
 
 KINDS = ("pi", "claude", "codex")
 NAMES = {"pi": "Pi", "claude": "Claude Code", "codex": "Codex"}
-# Effort vocabulary per CLI ("" = the CLI's own default).
-EFFORTS = {
-    "claude": ("low", "medium", "high", "xhigh", "max"),
-    "pi": ("off", "minimal", "low", "medium", "high", "xhigh", "max"),
-    "codex": ("minimal", "low", "medium", "high", "xhigh"),
-}
 SESSION_TIMEOUT_S = 30 * 60
 
 # Runtime markers of whatever agent or tmux started the Agora server. Inherited, they make a
@@ -626,75 +620,36 @@ def install_skill(root: Path, agents: list[str], copy: bool = False) -> list[dic
 _catalog_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
-def _pi_catalog() -> dict[str, Any]:
-    settings: dict[str, Any] = {}
-    try:
-        settings = json.loads((Path.home() / ".pi" / "agent" / "settings.json").read_text())
-    except (OSError, json.JSONDecodeError):
-        pass
-    enabled = [str(m) for m in settings.get("enabledModels") or []]
-    listed: list[str] = []
-    if shutil.which("pi"):
-        try:
-            out = subprocess.run(["pi", "--list-models"], capture_output=True, text=True, timeout=20, env=child_env()).stdout
-            for line in out.splitlines()[1:]:
-                parts = line.split()
-                if len(parts) >= 2:
-                    listed.append(f"{parts[0]}/{parts[1]}")
-        except (OSError, subprocess.SubprocessError):
-            pass
-    default = f"{settings['defaultProvider']}/{settings['defaultModel']}" if settings.get("defaultProvider") and settings.get("defaultModel") else ""
-    models = list(dict.fromkeys([*enabled, *([default] if default else []), *listed]))
-    return {"default": default, "models": models, "featured": enabled or models[:6], "defaultEffort": settings.get("defaultThinkingLevel") or ""}
-
-
-def _claude_catalog() -> dict[str, Any]:
-    default = ""
-    try:
-        default = str(json.loads((Path.home() / ".claude" / "settings.json").read_text()).get("model") or "")
-    except (OSError, json.JSONDecodeError):
-        pass
-    models = list(dict.fromkeys([*([default] if default else []), "opus", "sonnet", "haiku"]))
-    return {"default": default, "models": models, "featured": models, "defaultEffort": ""}
-
-
-def _codex_catalog() -> dict[str, Any]:
-    home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
-    default, effort = "", ""
-    try:
-        cfg = tomllib.loads((home / "config.toml").read_text())
-        default, effort = str(cfg.get("model") or ""), str(cfg.get("model_reasoning_effort") or "")
-    except (OSError, tomllib.TOMLDecodeError):
-        pass
-    models: list[str] = []
-    try:
-        cache = json.loads((home / "models_cache.json").read_text())
-        for m in cache.get("models", cache) if isinstance(cache, dict) else cache:
-            slug = m.get("slug") if isinstance(m, dict) else None
-            if slug and "review" not in slug:
-                models.append(str(slug))
-    except (OSError, json.JSONDecodeError, AttributeError):
-        pass
-    models = list(dict.fromkeys([*([default] if default else []), *models]))
-    return {"default": default, "models": models, "featured": models[:6], "defaultEffort": effort}
-
-
 def catalog(ttl_s: float = 600) -> dict[str, Any]:
-    """Agents Agora can bind a session to, their models and effort levels (cached)."""
+    """Agents Agora can bind a session to, their models and each model's effort levels (cached).
+
+    Every list is read from the CLI or its own model catalog (agent_models.py)."""
     out = {}
-    for kind, fn in (("pi", _pi_catalog), ("claude", _claude_catalog), ("codex", _codex_catalog)):
+    for kind in KINDS:
         hit = _catalog_cache.get(kind)
         if hit is None or time.time() - hit[0] > ttl_s:
-            hit = (time.time(), fn())
+            hit = (time.time(), agent_models.SOURCES[kind](child_env()))
             _catalog_cache[kind] = hit
         out[kind] = {
             "kind": kind,
             "name": NAMES[kind],
             "installed": shutil.which({"pi": "pi", "claude": "claude", "codex": "codex"}[kind]) is not None,
-            "efforts": list(EFFORTS[kind]),
             **hit[1],
         }
     return out
+
+
+def check_effort(kind: str, model: str, effort: str) -> None:
+    """Refuse an effort level the chosen model does not take (ValueError → 400)."""
+    if not effort or kind not in KINDS:
+        return
+    entry = catalog()[kind]
+    allowed = agent_models.efforts_for(entry, model)
+    if allowed is None:  # a model the catalog does not list: the CLI's own vocabulary
+        allowed = entry.get("efforts") or []
+    if effort not in allowed:
+        choices = "、".join(allowed) if allowed else "（这个模型没有强度选项）"
+        raise ValueError(f"{NAMES[kind]} 的 {model or '默认模型'} 不支持强度 {effort}；可选：{choices}")
 
 
 __all__ = [
@@ -706,6 +661,7 @@ __all__ = [
     "CodexBackend",
     "PiBackend",
     "catalog",
+    "check_effort",
     "child_env",
     "find_log",
     "interactive_argv",

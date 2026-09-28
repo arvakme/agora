@@ -84,6 +84,11 @@
    * in dark those two are 2% apart, so the selected segment is one step up from the track. */
   --segment-on: #ffffff;
   --raised-on-surface: #f6f7f7;
+  /* Agora: agent avatar tile (AgentAvatar) — a quiet disc under each agent's own mark, and the ink of
+  * marks that follow the theme (Pi's badge is #111 on light, #f6f6f6 on dark, per pi.dev/favicon.svg). */
+  --avatar-tile: #eef1f2;
+  --avatar-edge: #dfe3e6;
+  --avatar-ink: #111111;
   --canvas-bg: #ffffff;
 }
 
@@ -140,6 +145,9 @@
     --well-on-surface: #353b41;
     --segment-on: #40474e;
     --raised-on-surface: #30363b;
+    --avatar-tile: #353b41;
+    --avatar-edge: #454c53;
+    --avatar-ink: #f6f6f6;
     --canvas-bg: #e6ebef; /* invert(93%) hue-rotate(180deg) of this = #202428 */
   }
 }
@@ -194,6 +202,9 @@
   --segment-on: #40474e;
   --well-on-surface: #353b41;
   --raised-on-surface: #30363b;
+  --avatar-tile: #353b41;
+  --avatar-edge: #454c53;
+  --avatar-ink: #f6f6f6;
   --canvas-bg: #e6ebef; /* invert(93%) hue-rotate(180deg) of this = #202428 */
 }
 

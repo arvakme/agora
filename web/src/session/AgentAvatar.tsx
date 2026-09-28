@@ -1,34 +1,31 @@
-// The three agents' own marks (bundled with the app, never loaded from the network), so a
-// session, tab, pointer label or trajectory row says at a glance which CLI it is.
-// Sources and trademark note: README「许可与致谢」.
-import claudeCode from "../app/agents/claude-code.svg";
-import codex from "../app/agents/codex.png";
-import pi from "../app/agents/pi.png";
+// Every place that shows which agent a session is (agent picker, session header, tabs, 所有画布,
+// pointer labels, trajectory rows, comment replies) goes through AgentAvatar: one disc on the
+// theme's avatar tile (--avatar-tile + hairline), with the agent's own mark on it — vector for
+// Pi and Claude Code, a 64/128px raster pair for Codex — so it stays sharp at 16–40px on 2x/3x
+// screens and reads in both themes. Marks and sources: ../app/agents/marks.tsx.
+import { ClaudeMark, CodexMark, PiMark } from "../app/agents/marks";
 import { AGENT_NAMES, useAgents, type AgentKind } from "./agents";
 
-export const AGENT_AVATARS: Record<AgentKind, string> = { pi, claude: claudeCode, codex };
+/** 16 tabs / inline rows · 20 compact lists · 26 beside people's avatars in threads · 32 session header · 40 agent picker. */
+export type AvatarSize = 16 | 20 | 26 | 32 | 40;
 
-/** 26px by default (design system §9 avatar); `sm` 20px, `xs` 16px for tabs and inline rows. */
-export function AgentAvatar({ kind, size, label }: { kind: AgentKind; size?: "sm" | "xs"; label?: boolean }) {
-  const px = size === "xs" ? 16 : size === "sm" ? 20 : 26;
+export function AgentAvatar({ kind, size = 32, label }: { kind: AgentKind; size?: AvatarSize; label?: boolean }) {
   return (
-    <img
-      className="avatar agent-avatar"
-      data-size={size}
+    <span
+      className="agent-avatar"
       data-agent={kind}
-      src={AGENT_AVATARS[kind]}
-      width={px}
-      height={px}
-      alt={label ? AGENT_NAMES[kind] : ""}
+      style={{ "--av": `${size}px` } as React.CSSProperties}
+      role={label ? "img" : undefined}
+      aria-label={label ? AGENT_NAMES[kind] : undefined}
       aria-hidden={label ? undefined : true}
-      draggable={false}
-      decoding="async"
-    />
+    >
+      {kind === "pi" ? <PiMark /> : kind === "claude" ? <ClaudeMark /> : <CodexMark px={size} />}
+    </span>
   );
 }
 
-/** A session tab's mark: its agent once bound, the plain tab dot before that. */
+/** A session tab's mark: its agent once bound, the plain tab dot before that (a draft). */
 export function SessionMark({ sessionId }: { sessionId: string }) {
   const kind = useAgents().bindings[sessionId]?.agent;
-  return kind ? <AgentAvatar kind={kind} size="xs" label /> : <span className="wm-tab-dot" />;
+  return kind ? <AgentAvatar kind={kind} size={16} label /> : <span className="wm-tab-dot" />;
 }
