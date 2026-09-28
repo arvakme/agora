@@ -281,7 +281,7 @@ function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflic
   const icon = Ic ? <Ic size={14} /> : null;
   let body: ReactNode;
   if (kind === "walk" && back) body = <>{icon}<span className="v">走回</span><span>{par!.name}</span><span className="el">交结果</span></>;
-  else if (kind === "walk") body = <>{icon}<span className="v">走去</span><span>{place(st.at)}</span>{g?.path && <span className="el">要{g.kind === "write" ? "写" : "读"} {base(g.path)}</span>}</>;
+  else if (kind === "walk") body = <>{icon}<span className="v">走去</span><span>{place(st.at)}</span>{g?.path && <span className="el">要{g.kind === "write" ? "写" : g.kind === "exec" ? "跑" : "读"} {base(g.path)}</span>}</>;
   else if (kind === "handoff") body = <>{icon}<span className="v">交给 {par?.name}</span><span className="el">{run.via === "seedmux" ? "声明完成 ≠ 验收" : "结果回到父会话"}</span></>;
   else if (kind === "unknown") body = <span className="el">只有回执，看不到它在做什么</span>;
   else if (kind === "idle") body = <>{icon}<span className="v">空闲</span><span className="el">这一轮做完了</span></>;

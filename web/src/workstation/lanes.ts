@@ -90,10 +90,10 @@ export function buildLane(sessionId: string, items: readonly Item[], opts: { liv
         const kind: SegKind = it.tool?.waitsUser ? "wait" : (KIND[toolActivity(it)] ?? "exec");
         const dur = r.durationMs ?? (r.running ? now - r.at : MIN_TOOL_MS);
         const file = it.tool?.files?.[0]?.path;
-        const path = kind === "write" ? file : kind === "read" ? (it.tool?.reads?.[0] ?? readPath(it.tool?.input, opts.root)) : file;
+        const path = kind === "write" ? file : kind === "read" ? (it.tool?.reads?.[0] ?? readPath(it.tool?.input, opts.root)) : (file ?? (kind === "exec" ? it.tool?.on?.[0] : undefined));
         const verb = SEG_NAMES[kind];
         const input = (it.tool?.input ?? "").replace(/\s+/g, " ").trim();
-        return { sessionId, kind, start: r.at, end: r.at + Math.max(dur, MIN_TOOL_MS), turn: t.n, itemId: it.id, ...(path ? { path } : {}), ...(input && !path ? { input } : {}), ...on, label: path ? `${verb} ${base(path)}` : `${verb} · ${it.tool?.name ?? "工具"} ${it.tool?.input ?? ""}`.trim() } as Seg;
+        return { sessionId, kind, start: r.at, end: r.at + Math.max(dur, MIN_TOOL_MS), turn: t.n, itemId: it.id, ...(path ? { path } : {}), ...(input && (!path || kind === "exec") ? { input } : {}), ...on, label: path ? `${verb} ${base(path)}` : `${verb} · ${it.tool?.name ?? "工具"} ${it.tool?.input ?? ""}`.trim() } as Seg;
       })
       .sort((a, b) => a.start - b.start);
     // Parallel calls in one step are shown one after another: a worker does one thing at a time.

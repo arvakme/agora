@@ -704,7 +704,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
     const other = c ? runs.flat.find((x) => x.run.id === c.runs.find((id) => id !== f.run.id)) : undefined;
     const checked = g.verifies ? runs.flat.find((x) => x.run.id === g.verifies) : undefined;
     const child = g.child ? runs.byId.get(g.child) : undefined;
-    const what = g.path ? <div className="what mono">{g.path}</div> : g.cmd ? <div className="what mono">$ {g.cmd}</div> : g.kind === "wait" ? <div className="what">问：{g.question ?? "—"}</div> : child ? <div className="what">{child.name}：{child.task ?? "—"}</div> : null;
+    const what = g.kind === "exec" && g.cmd ? <div className="what mono">$ {g.cmd}</div> : g.path ? <div className="what mono">{g.path}</div> : g.cmd ? <div className="what mono">$ {g.cmd}</div> : g.kind === "wait" ? <div className="what">问：{g.question ?? "—"}</div> : child ? <div className="what">{child.name}：{child.task ?? "—"}</div> : null;
     return (
       <div className="tip" style={{ left: Math.max(8, Math.min(innerWidth - TIP_W - 8, tip.x - TIP_W / 2)), top: tip.y - 4 }} onPointerEnter={keepTip} onPointerLeave={hideTipSoon}>
         <h4>
