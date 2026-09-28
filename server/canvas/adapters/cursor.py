@@ -33,7 +33,8 @@ from typing import Any
 
 from server.canvas.adapters.base import Adapter, NativeRef, ParentLink, VersionRange, tool_facts, valid_id
 from server.canvas.adapters.common import MAX_TEXT, LogLookup, Out, State, _clip, _end, _full, _start, _summary, read_jsonl, rel_path, user_item
-from server.canvas.adapters.tools import activity_of, patch_files, prompt_names_ticket, replies_to_ticket, shell_reads
+from server.canvas.adapters.shell_files import shell_tool
+from server.canvas.adapters.tools import activity_of, patch_files, prompt_names_ticket, replies_to_ticket
 
 STEP_MS = 20_000  # inferred time between two records of a turn, at most
 TICKET_PAD_S = 120  # a worker's transcript is written to after its ticket was created (minus this)
@@ -113,6 +114,7 @@ def classify(name: str, args: Any, root: str | None) -> dict[str, Any]:
     n = (name or "").lower()
     act = ACTIVITY.get(n) or activity_of(name)
     reads: list[str] = []
+    on: list[str] = []
     files: list[dict[str, str]] = []
     path = a.get("path") if isinstance(a.get("path"), str) and a.get("path") else None
     if n in READS and path:
@@ -124,12 +126,12 @@ def classify(name: str, args: Any, root: str | None) -> dict[str, Any]:
         files = patch_files(args if isinstance(args, str) else a.get("patch") or a.get("input"), root)
     elif n in SHELLS:
         cwd = a.get("working_directory") if isinstance(a.get("working_directory"), str) and a.get("working_directory") else root
-        got, reads = shell_reads(a.get("command"), root, cwd)
-        act = got or act
+        got, reads, shell_fs, on = shell_tool(a.get("command"), root, cwd)
+        act, files = got or act, shell_fs or files
     elif n in ("grep", "rg") and path and "." in path.rstrip("/").rsplit("/", 1)[-1]:
         reads = [rel_path(path, root)]
     spawn = {"childKind": "cursor", "via": "native", **({"role": str(a["subagent_type"])} if a.get("subagent_type") else {})} if n in ("task", "subagent") else None
-    return tool_facts(act, files=files, reads=reads, waits_user=act == "questions", spawn=spawn)
+    return tool_facts(act, files=files, reads=reads, waits_user=act == "questions", spawn=spawn, on=on)
 
 
 def project(rec: dict[str, Any], st: State) -> Out:

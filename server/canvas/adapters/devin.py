@@ -39,7 +39,8 @@ from typing import Any
 
 from server.canvas.adapters.base import Adapter, VersionRange, tool_facts, valid_id
 from server.canvas.adapters.common import MAX_TEXT, LogLookup, Out, State, _clip, _end, _full, _ms, _start, _summary, _usage, rel_path, text_of, user_item
-from server.canvas.adapters.tools import activity_of, prompt_names_ticket, replies_to_ticket, shell_reads, spawn_in_output
+from server.canvas.adapters.shell_files import shell_tool
+from server.canvas.adapters.tools import activity_of, prompt_names_ticket, replies_to_ticket, spawn_in_output
 
 DB = "sessions.db"
 TICKET_PAD_S = 120  # a worker session is active after its ticket was created (minus this)
@@ -114,6 +115,7 @@ def classify(name: str, args: Any, root: str | None) -> dict[str, Any]:
     n = (name or "").lower()
     act = ACTIVITY.get(n) or activity_of(name)
     reads: list[str] = []
+    on: list[str] = []
     files: list[dict[str, str]] = []
     p = next((a[k] for k in ("file_path", "notebook_path", "path") if isinstance(a.get(k), str) and a.get(k)), None)
     if n in WRITES and p:
@@ -122,13 +124,13 @@ def classify(name: str, args: Any, root: str | None) -> dict[str, Any]:
         reads = [rel_path(p, root)]
     elif n == "exec":
         cwd = a.get("workdir") if isinstance(a.get("workdir"), str) and a.get("workdir") else root
-        got, reads = shell_reads(a.get("command"), root, cwd)
-        act = got or act
+        got, reads, shell_fs, on = shell_tool(a.get("command"), root, cwd)
+        act, files = got or act, shell_fs or files
     elif n == "grep" and p and "." in p.rstrip("/").rsplit("/", 1)[-1]:
         reads = [rel_path(p, root)]
     role = a.get("profile") or a.get("subagent_type")
     spawn = {"childKind": "devin", "via": "native", **({"role": str(role)} if role else {})} if n == "run_subagent" else None
-    return tool_facts(act, files=files, reads=reads, waits_user=act == "questions", spawn=spawn)
+    return tool_facts(act, files=files, reads=reads, waits_user=act == "questions", spawn=spawn, on=on)
 
 
 def project(rec: dict[str, Any], st: State) -> Out:

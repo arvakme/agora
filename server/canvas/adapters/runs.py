@@ -217,7 +217,7 @@ def timeline(kind: str, path: Path | None, root: str | None, *, child: bool = Fa
         kind_ = "wait" if tool.get("waitsUser") else SEG_KIND.get(str(tool.get("activity") or "tools"), "exec")
         files = tool.get("files") or []
         reads = tool.get("reads") or []
-        p = (files[0]["path"] if files else None) if kind_ == "write" else (reads[0] if kind_ == "read" and reads else (files[0]["path"] if files else None))
+        p = (files[0]["path"] if files else None) if kind_ == "write" else (reads[0] if kind_ == "read" and reads else (files[0]["path"] if files else (tool.get("on") or [None])[0]))
         end = it.get("endAt") or it["at"]
         seg = {"kind": kind_, "start": it["at"], "end": max(end, it["at"] + MIN_TOOL_MS), "itemId": it["id"], "turn": turn_of(it["at"]), "label": f"{tool.get('name') or '工具'} {str(tool.get('input') or '')[:80]}".strip()}
         if p:

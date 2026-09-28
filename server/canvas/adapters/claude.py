@@ -18,7 +18,8 @@ from typing import Any, Callable
 
 from server.canvas import agent_models
 from server.canvas.adapters.base import first_cwd, valid_id, Adapter, tool_facts, NativeRef, ParentLink, VersionRange
-from server.canvas.adapters.tools import activity_of, shell_reads, spawn_in_output
+from server.canvas.adapters.shell_files import shell_tool
+from server.canvas.adapters.tools import activity_of, spawn_in_output
 from server.canvas.adapters.common import (
     MAX_TEXT,
     LogLookup,
@@ -109,6 +110,7 @@ def classify(name: str, args: Any, root: str | None, cwd: str | None = None) -> 
     fs = files(name, args, root)
     act = activity_of(name)
     reads: list[str] = []
+    on: list[str] = []
     waits = False
     spawn = None
     if name in ("Read", "NotebookRead"):
@@ -117,13 +119,13 @@ def classify(name: str, args: Any, root: str | None, cwd: str | None = None) -> 
     elif name == "Grep" and isinstance(a.get("path"), str) and "." in a["path"].rsplit("/", 1)[-1]:
         reads = [rel_path(a["path"], root)]
     elif name == "Bash":
-        got, reads = shell_reads(a.get("command"), root, cwd or root)
-        act = got or act
+        got, reads, shell_fs, on = shell_tool(a.get("command"), root, cwd or root)
+        act, fs = got or act, shell_fs or fs
     elif name in ("Agent", "Task"):
         spawn = {"childKind": "claude", "via": "native", **({"role": str(a["subagent_type"])} if a.get("subagent_type") else {})}
     elif name in ("AskUserQuestion", "ExitPlanMode"):
         act, waits = "questions", True
-    return tool_facts(act, files=fs, reads=reads, waits_user=waits, spawn=spawn)
+    return tool_facts(act, files=fs, reads=reads, waits_user=waits, spawn=spawn, on=on)
 
 
 def result_spawn(rec: dict[str, Any], output: str, command: str | None) -> dict[str, Any] | None:
