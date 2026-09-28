@@ -135,50 +135,6 @@ def node_for(path: str, links: list[tuple[str, list[str]]]) -> str | None:
     return best[1] if best else None
 
 
-_layout: dict[str, tuple[float, list[str], set[str]]] = {}
-LAYOUT_TTL_S = 10.0
-
-
-def _repo_layout(root: str) -> tuple[list[str], set[str]]:
-    """The repository's work trees and the project's top-level entries (a few seconds old at most)."""
-    hit = _layout.get(root)
-    if hit and time.monotonic() - hit[0] < LAYOUT_TTL_S:
-        return hit[1], hit[2]
-    from server.canvas.adapters.receipts import worktrees  # receipts imports this module
-
-    try:
-        tops = {n for n in os.listdir(root) if not n.startswith(".")}
-    except OSError:
-        tops = set()
-    trees = worktrees(root)
-    _layout[root] = (time.monotonic(), trees, tops)
-    return trees, tops
-
-
-def repo_relative(path: str, root: str | None) -> str:
-    """An absolute path inside another work tree of the project's repository, relative to that work tree
-    (so it maps like the project's own file). A work tree deleted after its merge is recognised as a
-    sibling of a live one whose remainder starts at a top-level entry of the project. Anything else —
-    a relative path, a path outside the repository — comes back unchanged."""
-    if not root or not path.startswith("/"):
-        return path
-    p = os.path.normpath(path)
-    trees, tops = _repo_layout(root)
-    for wt in trees:
-        if p == wt:
-            return ""
-        if p.startswith(wt.rstrip("/") + "/"):
-            return p[len(wt.rstrip("/")) + 1 :]
-    for wt in trees:
-        parent = os.path.dirname(wt.rstrip("/"))
-        if not p.startswith(parent.rstrip("/") + "/"):
-            continue
-        gone, _, rest = p[len(parent.rstrip("/")) + 1 :].partition("/")
-        if rest and rest.split("/")[0] in tops and not os.path.exists(os.path.join(parent, gone)):
-            return rest
-    return path
-
-
 # ——— one run's timeline ———
 # Timelines are cached until their log changes; the cache holds each run's items, so it is bounded
 # by the size of the logs behind it (review P2-6), least recently used first out.
@@ -330,7 +286,7 @@ def run_of(ref: NativeRef, root: str | None, *, depth: int, links: list | None =
     if links:
         for s in tl["segments"]:
             if s.get("path"):
-                n = node_for(repo_relative(s["path"], root), links)
+                n = node_for(s["path"], links)
                 if n:
                     s["node"] = n
     a = ADAPTERS.get(ref.kind)
