@@ -1,6 +1,6 @@
 /* 工位视图 (docs/workstation.md; design-system.md v0.2): graphite figures, the one purple for
  * writing, caution for waiting on the person. No glow, no gradient; motion off with reduced motion. */
-.ws-layer { position: absolute; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; --ws-ink: var(--fg); }
+.ws-layer { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; --ws-ink: var(--fg); }
 .ws-ui { pointer-events: auto; }
 .ws-worker { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; width: 32px; padding: 0; background: none; will-change: transform; }
 .ws-fig { position: relative; }

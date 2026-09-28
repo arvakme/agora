@@ -1,6 +1,14 @@
 /* Progress pointer on the canvas (design-system.md v0.2, app/tokens.css).
  * One purple: the pointer's icon, ring and the one primary button in the path editor. */
-.ptr-layer { position: absolute; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
+/* Below Excalidraw's UI (its islands are z-index 4 in the same stacking context), above the scene
+ * (canvases 1–2), clipped around every panel (canvas/chrome.ts). The path editor is our own
+ * popover the person opened, so it sits above the UI in its own layer. */
+.ptr-layer { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
+.ptr-edit-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+.ptr-edge { position: absolute; left: 0; top: 0; display: inline-flex; align-items: center; gap: 2px; height: 28px; padding: 0 var(--space-3) 0 var(--space-2); border-radius: var(--r-pill); background: var(--surface); box-shadow: 0 0 0 1px var(--accent-ring), var(--lift-2); color: var(--accent); }
+.ptr-edge:hover { background: var(--raised); }
+.ptr-edge .agent-avatar + .agent-avatar { margin-left: -5px; box-shadow: 0 0 0 1.5px var(--surface); border-radius: 50%; }
+.ptr-edge-arrow { margin-left: 2px; }
 .ptr-ui { pointer-events: auto; }
 
 .ptr-ring { position: absolute; left: 0; top: 0; border-radius: var(--r-sm); box-shadow: 0 0 0 2px var(--accent); background: var(--accent-wash); pointer-events: none; }

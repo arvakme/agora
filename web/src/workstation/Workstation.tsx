@@ -6,7 +6,8 @@
 import { useMemo, useRef, useState } from "react";
 import { IconClose, IconHistory, IconPause, IconPlay, IconUser } from "../app/icons";
 import type { CanvasViewState } from "../canvas/CanvasView";
-import { footprint, inflate } from "../canvas/clearance";
+import { footprint, inflate, type Box } from "../canvas/clearance";
+import { clipPath } from "../canvas/chrome";
 import { live } from "../canvas/scene";
 import { effectiveLinks } from "../nested/graph";
 import { useNested } from "../nested/store";
@@ -67,7 +68,7 @@ export function WorkstationToggle({ canvasId }: { canvasId: string }) {
 }
 
 /** The workers, drawn over the diagram. */
-export function Workers({ view }: { view: CanvasViewState }) {
+export function Workers({ view, chrome = [] }: { view: CanvasViewState; chrome?: Box[] }) {
   const replay = useReplay();
   const still = prefersReducedMotion();
   const now = useNow(true);
@@ -124,7 +125,7 @@ export function Workers({ view }: { view: CanvasViewState }) {
   const snap = (v: number) => Math.round(v * dpr) / dpr;
   const ease = (x: number) => (x < 0.5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2);
   return (
-    <div className="ws-layer">
+    <div className="ws-layer" style={{ clipPath: clipPath({ x: 0, y: 0, w: a.width, h: a.height }, chrome) }}>
       {(count.get(OUTSIDE) ?? 0) > 0 && (
         <span className="ws-desk" style={{ transform: `translate(${snap(a.width - 76 - ((count.get(OUTSIDE) ?? 1) - 1) * (FIGURE.W + 4) - 10)}px, ${snap(a.height - 170 + FIGURE.H)}px)` }}>
           图外

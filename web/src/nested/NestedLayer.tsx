@@ -8,6 +8,8 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { IconEnter, IconHint, IconNested, IconSparkles } from "../app/icons";
 import type { CanvasViewState } from "../canvas/CanvasView";
 import { bbox, codePathsOf, isShape, labelOf, live, type El } from "../canvas/scene";
+import { clipPath } from "../canvas/chrome";
+import type { Box } from "../canvas/clearance";
 import { threadStores } from "../comments/threads";
 import { useSessionFolds } from "../multi/writes";
 import { agents } from "../session/agents";
@@ -36,12 +38,13 @@ function useOpenBelow(ids: string[]): Record<string, number> {
 export type ChildInfo = { title: string; open: number; stale?: Staleness };
 
 /** Marker per node with a child canvas; `info` says which children exist (owner page or share guest). */
-export function ChildMarkers({ view, canvasId, info, onEnter }: { view: CanvasViewState; canvasId: string; info: (child: string) => ChildInfo | null; onEnter: (child: string) => void }) {
+export function ChildMarkers({ view, canvasId, info, onEnter, chrome = [] }: { view: CanvasViewState; canvasId: string; info: (child: string) => ChildInfo | null; onEnter: (child: string) => void; chrome?: Box[] }) {
   const a = view.appState;
   const z = a.zoom.value;
   const nodes = view.elements.filter((e) => live(e) && childOf(e) && (isShape(e) || e.type === "frame") && childOf(e) !== canvasId);
+  const clip = useMemo(() => clipPath({ x: 0, y: 0, w: a.width, h: a.height }, chrome), [a.width, a.height, chrome]);
   return (
-    <div className="nest-layer">
+    <div className="nest-layer" style={{ clipPath: clip }}>
       {nodes.map((e) => {
         const child = childOf(e)!;
         const i = info(child);
@@ -72,7 +75,7 @@ export function ChildMarkers({ view, canvasId, info, onEnter }: { view: CanvasVi
 }
 
 /** The owner page's markers: children that exist in this workspace, their open comments, staleness. */
-export function OwnerChildMarkers({ view, canvasId }: { view: CanvasViewState; canvasId: string }) {
+export function OwnerChildMarkers({ view, canvasId, chrome }: { view: CanvasViewState; canvasId: string; chrome?: Box[] }) {
   const st = useNested();
   const folds = useSessionFolds();
   const writes = useMemo(() => folds.flatMap((f) => f.files), [folds]);
@@ -91,6 +94,7 @@ export function OwnerChildMarkers({ view, canvasId }: { view: CanvasViewState; c
     <ChildMarkers
       view={view}
       canvasId={canvasId}
+      chrome={chrome}
       info={(k) => (st.scenes.has(k) ? { title: st.titles[k] ?? k, open: (below[k] ?? [k]).reduce((n, id) => n + (counts[id] ?? 0), 0), stale: stale[k] } : null)}
       onEnter={(k) => nav.go(canvasId, k)}
     />
