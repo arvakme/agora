@@ -634,6 +634,9 @@ class ProjectStore:
         Returns (file, version, the thread)."""
         path = self._path("threads", id)
         with self._locked():
+            if not self._path("canvas", id).exists():
+                # The canvas went to the trash (or never was): no new threads file for it.
+                raise NotFound(f"canvas {id}")
             raw = self._bytes(path)
             data = json.loads(raw) if raw else {"seq": 0, "threads": []}
             threads: list[dict[str, Any]] = data.setdefault("threads", [])

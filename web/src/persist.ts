@@ -9,6 +9,7 @@
 import { createClient } from "./project/client";
 import { foldSessions, sessionRecords, threadsFromFile, threadsToFile, type Logged, type Person, type SessionsState, type ThreadsFile } from "./project/format";
 import { markImported, readLegacy } from "./project/legacy";
+import { trash, type Restored } from "./workspace/trash";
 import { threadStores, type ThreadSnapshot } from "./comments/threads";
 import type { El } from "./canvas/scene";
 import type { Binding } from "./session/agents";
@@ -152,6 +153,7 @@ export function followProject(onShares?: () => void) {
   es.onmessage = (e) => {
     const ev = JSON.parse(e.data) as { t: string; canvasId?: string; data?: ThreadsFile; version?: string };
     if (ev.t === "shares") return onShares?.();
+    if (ev.t === "trash") return void trash.refresh();
     if (ev.t !== "threads" || !ev.canvasId || !ev.data) return;
     const store = threadStores.get(ev.canvasId);
     const snap = threadsFromFile(ev.data);
@@ -164,10 +166,11 @@ export function followProject(onShares?: () => void) {
 
 function syncSessions(st: SessionsState) {
   latestSessions = st;
+  // A session gone from the page went to the trash (the server moved its files): nothing to write.
   for (const id of [...logged.keys()])
     if (!st.sessions[id]) {
       logged.delete(id);
-      void project.write(`session:${id}`, { op: { kind: "delete", path: `/sessions/${id}` } });
+      project.forget(`session:${id}`);
     }
   for (const s of Object.values(st.sessions)) {
     const prev = logged.get(s.id);
@@ -214,16 +217,41 @@ function flush(key: string) {
   timers.delete(key);
   if (v) write(key, v());
 }
-/** Drop a pending write and the stored files (a deleted canvas must not be written back by a late save). */
-export function discard(key: string) {
-  clearTimeout(timers.get(key));
-  timers.delete(key);
-  pending.delete(key);
-  if (!key.startsWith("canvas:")) return Promise.resolve();
-  const id = key.slice("canvas:".length);
-  project.forget(`canvas:${id}`);
-  project.forget(`threads:${id}`);
-  return project.write(`canvas:${id}`, { op: { kind: "delete", path: `/canvases/${id}` } }).then(() => project.seen(`threads:${id}`, null));
+/** Send every debounced save now and wait until all writes are through (before moving files to the trash). */
+export async function flushSaves() {
+  [...pending.keys()].forEach(flush);
+  await project.idle();
+}
+
+/** A canvas went to the trash: no late save may write it back, and its files are gone from `canvases/`. */
+export function dropCanvas(id: string) {
+  clearTimeout(timers.get(`canvas:${id}`));
+  timers.delete(`canvas:${id}`);
+  pending.delete(`canvas:${id}`);
+  for (const slot of [`canvas:${id}`, `threads:${id}`]) {
+    project.forget(slot);
+    project.seen(slot, null);
+  }
+}
+
+/** A canvas came back from the trash: this page knows its files again (the next save is not a conflict). */
+export function adoptCanvas(id: string, c: NonNullable<Restored["canvas"]>): { elements: El[]; threads?: ThreadSnapshot } {
+  const elements = (c.scene.elements ?? []) as El[];
+  const threads = threadsFromFile(c.threads?.data as ThreadsFile | undefined);
+  project.seen(`canvas:${id}`, c.version);
+  project.seen(`threads:${id}`, c.threads?.version ?? null);
+  project.remember(`canvas:${id}`, JSON.stringify(elements));
+  if (threads) project.remember(`threads:${id}`, JSON.stringify(threadsToFile(threads)));
+  return { elements, threads };
+}
+
+/** A session came back from the trash: its record as the page's session state, and what its log holds. */
+export function adoptSession(id: string, s: NonNullable<Restored["session"]>): SessionsState {
+  const folded = foldSessions({ [id]: s } as Parameters<typeof foldSessions>[0]);
+  const l = folded.logged.get(id);
+  if (l) logged.set(id, l);
+  project.seen(`session:${id}`, s.version);
+  return folded.state;
 }
 
 /** A file under .agora/ → the slot that writes it (undefined: not one this page writes). */

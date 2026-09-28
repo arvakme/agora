@@ -1,7 +1,7 @@
 // Workspace model rules: naming without gaps, close vs. open, group kinds and placement.
 import { describe, expect, it } from "vitest";
 import { group, groups, moveTab, type Node } from "./layout.ts";
-import { closeTab, groupKind, homeGroup, isNamed, migrateDocs, nextTitle, openIds, openTab, placement, savedWorkspace, sessionTitles, topicOf, UNTITLED_CANVAS, type Doc, type SessionDoc } from "./model.ts";
+import { closeTab, groupKind, homeGroup, isNamed, listGroups, migrateDocs, nextTitle, openIds, openTab, placement, savedWorkspace, sessionTitles, topicOf, UNTITLED_CANVAS, type Doc, type SessionDoc } from "./model.ts";
 
 const kinds: Record<string, "canvas" | "session"> = { c1: "canvas", c2: "canvas", c3: "canvas", p1: "session", p2: "session" };
 const kindOf = (id: string) => kinds[id];
@@ -143,6 +143,26 @@ describe("savedWorkspace session identity", () => {
     expect(out.docs[0]).toEqual({ id: "c1", kind: "canvas", title: "A" });
     expect(out.docs[1]).toEqual({ id: "p-s1", kind: "session", sessionId: "s1", title: "", topic: "加 Kafka", canvasId: "c1", agent: "claude", model: "haiku", nativeId: "n-1", createdAt: 5, started: true });
     expect(out.docs[2]).toEqual(docs[2]); // nothing known here now: kept as saved
+  });
+});
+
+describe("listGroups (所有画布)", () => {
+  it("sessions of a trashed canvas wait under their own heading; truly unlinked ones apart", () => {
+    const docs: Doc[] = [
+      { id: "c1", kind: "canvas", title: "A" },
+      { id: "p-a", kind: "session", sessionId: "a", title: "" },
+      { id: "p-b", kind: "session", sessionId: "b", title: "" },
+      { id: "p-c", kind: "session", sessionId: "c", title: "" },
+    ];
+    const canvasOf = (d: SessionDoc) => ({ a: "c1", b: "c2", c: "" })[d.sessionId as "a" | "b" | "c"];
+    const g = listGroups(docs, canvasOf, new Set(["c2"]));
+    expect(g.canvases.map((x) => [x.canvas.id, x.sessions.map((s) => s.sessionId)])).toEqual([["c1", ["a"]]]);
+    expect(g.waiting.map((s) => s.sessionId)).toEqual(["b"]);
+    expect(g.unlinked.map((s) => s.sessionId)).toEqual(["c"]);
+    // c2 restored (same id): b is back under it
+    const back = listGroups([...docs, { id: "c2", kind: "canvas", title: "B" }], canvasOf, new Set());
+    expect(back.canvases.find((x) => x.canvas.id === "c2")!.sessions.map((s) => s.sessionId)).toEqual(["b"]);
+    expect(back.waiting).toEqual([]);
   });
 });
 

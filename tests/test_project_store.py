@@ -224,9 +224,10 @@ async def test_routes_roundtrip_and_409(tmp_path):
         assert snap["canvases"]["c1"]["threads"]["data"]["seq"] == 1
         assert snap["sessions"]["s1"]["state"]["turns"] == {"t1": {"id": "t1"}}
         assert (await c.put("/api/project/canvases/..bad", json={"data": {}, "base": None})).status_code == 400
-        assert (await c.delete("/api/project/canvases/c1")).status_code == 200
+        assert (await c.post("/api/project/trash/canvas/c1", json={})).status_code == 200  # deleting = into the trash
         assert not (root / ".agora" / "threads" / "c1.json").exists()
-        assert (await c.delete("/api/project/sessions/s1")).status_code == 200
+        assert (await c.post("/api/project/trash/session/s1", json={})).status_code == 200
+        assert not (root / ".agora" / "sessions" / "s1.jsonl").exists()
         assert (await c.post("/api/project/import", json={"workspace": {}})).status_code == 409  # workspace.json exists
         assert "前端还没有构建" in (await c.get("/")).text
 

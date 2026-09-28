@@ -74,10 +74,11 @@ def test_binding_api_locks_and_goes_with_the_session(store):
     assert c.put("/api/agent/sessions/s-a", json={"agent": "claude", "model": "opus", "effort": "high"}).status_code == 409
     assert c.put("/api/agent/sessions/s-b", json={"agent": "codex"}).json()["nativeId"] is None  # Codex assigns its own
     assert (store.root / ".claude" / "skills" / "agora-canvas").exists()  # skill linked on demand
-    assert c.delete("/api/project/sessions/s-a").json() == {"ok": True, "terminalClosed": False}
-    assert store.read_binding("s-a") is None
-    # Undoing the delete re-binds the same native session.
-    assert c.put("/api/agent/sessions/s-a", json={"agent": "claude", "model": "sonnet", "effort": "high", "nativeId": "n-x"}).json()["nativeId"] == "n-x"
+    native = store.read_binding("s-a")["nativeId"]
+    m = c.post("/api/project/trash/session/s-a", json={}).json()
+    assert m["terminalClosed"] is False and store.read_binding("s-a") is None  # the binding goes to the trash with it
+    # Restoring brings the same binding back: the same native session, nothing re-bound.
+    assert c.post(f"/api/project/trash/{m['trashId']}/restore").json()["binding"]["nativeId"] == native
 
 
 # ——— headless routing ———

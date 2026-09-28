@@ -7,7 +7,9 @@ import { replayEval, runEval, TASKS, type EvalProgress, type EvalRow } from "../
 import { buildFixture } from "../eval/fixture";
 import { IconClose, IconCols, IconComment, IconGrid, IconHint, IconLayers, IconList, IconPlus, IconPointer, IconRows, IconSelect, IconSingle, IconTrash, IconWorkspace } from "./icons";
 import { ThemeButton } from "./ThemeButton";
-import { ackChange, discard, PERSIST, project, reloadFromDisk, save, slotFile, type LocalChange } from "../persist";
+import { ackChange, adoptCanvas, adoptSession, dropCanvas, flushSaves, PERSIST, project, reloadFromDisk, save, slotFile, type LocalChange } from "../persist";
+import { trash, type Restored } from "../workspace/trash";
+import { TrashPanel } from "../workspace/TrashPanel";
 import { byId, type El } from "../canvas/scene";
 import { SessionPane } from "../session/SessionPane";
 import { sessions, type Session, type Turn } from "../session/store";
@@ -65,10 +67,8 @@ const sessionMeta = (sessionId: string) => {
     ...(b ? { agent: b.agent, model: b.model || undefined, effort: b.effort || undefined, nativeId: b.nativeId ?? undefined, started: b.started } : {}),
   };
 };
-/** What one delete removed, kept in memory for a single undo. */
-type Removed =
-  | { kind: "canvas"; doc: CanvasDoc; index: number; at: { groupId: string; index: number } | null; elements: readonly El[]; store?: ThreadStore }
-  | { kind: "session"; doc: SessionDoc; name: string; index: number; at: { groupId: string; index: number } | null; session?: Session; turns: Turn[]; binding?: Binding };
+/** The toast after a delete: the item is in the trash (restore = undo, also after a reload), or moving it failed. */
+type Removed = { title: string; trashId?: string; error?: string };
 
 export function App({ boot }: { boot: Boot }) {
   // prepareBoot (main.tsx) has settled the workspace; nothing here writes to a store while rendering.
@@ -88,6 +88,9 @@ export function App({ boot }: { boot: Boot }) {
   const [removed, setRemoved] = useState<Removed | null>(null);
   const [recoveredNote, setRecoveredNote] = useState(boot.recovered);
   const [change, setChange] = useState<LocalChange | null | undefined>(boot.change);
+  const [panel, setPanel] = useState<"trash" | null>(null);
+  const [panelFocus, setPanelFocus] = useState<string | undefined>();
+  useEffect(() => void trash.refresh(), []);
   const [evalProgress, setEvalProgress] = useState<EvalProgress | null>(null);
   const handles = useRef(new Map<string, CanvasHandle>());
   const [, bump] = useState(0);
@@ -324,62 +327,104 @@ export function App({ boot }: { boot: Boot }) {
     if (editing === id) setEditing(null);
   };
 
-  /** Delete = gone from the workspace, with one undo. Confirmation happens in the 所有画布 list. */
-  const remove = (id: string) => {
+  /**
+   * Delete = into the trash (web/docs/workspace-model.md §1): the item leaves the workspace, its
+   * files move to `.agora/trash/` on the server, and the toast's 撤销 restores it from there — so it
+   * still works after a reload, for 30 days, from 回收站. Confirmation happens in the 所有画布 list.
+   */
+  const remove = async (id: string) => {
     const doc = docOf(id);
     if (!doc) return;
     if (doc.kind === "canvas" && canvasDocs.length === 1) return; // keep one canvas
     const at = placement(root, id);
     const index = docs.indexOf(doc);
+    const title = names[id] ?? doc.title;
+    // The entry as workspace.json has it now (with the session's identity), for the restore.
+    const entry = savedWorkspace({ docs: [doc], root, focused }, () => false, sessionMeta).docs[0];
+    // Everything typed so far reaches the files first, so the trash holds the latest version.
+    if (PERSIST) await flushSaves();
     if (at) close(id);
     setDocs((ds) => ds.filter((d) => d.id !== id));
+    // What the page had, to put back if the server could not move it.
+    const keptCanvas = { elements: scenes.current.get(id) ?? [], store: stores.current.get(id) };
+    const keptSession = { state: sessions.get(), binding: doc.kind === "session" ? agents.get().bindings[doc.sessionId] : undefined };
     if (doc.kind === "canvas") {
-      setRemoved({ kind: "canvas", doc, index, at, elements: scenes.current.get(id) ?? [], store: stores.current.get(id) });
       scenes.current.delete(id);
       stores.current.delete(id);
       threadStores.delete(id);
-      if (PERSIST) void discard(`canvas:${id}`);
+      if (PERSIST) dropCanvas(id);
       if (lastCanvas === id) setLastCanvas(canvasDocs.find((d) => d.id !== id)!.id);
     } else {
       const st = sessions.get();
-      const session = st.sessions[doc.sessionId];
-      const turns = (session?.turnIds ?? []).map((t) => st.turns[t]).filter(Boolean);
-      setRemoved({ kind: "session", doc, name: names[id] ?? doc.title, index, at, session, turns, binding: agents.get().bindings[doc.sessionId] });
       const { [doc.sessionId]: _, ...rest } = st.sessions;
       const keptTurns = Object.fromEntries(Object.entries(st.turns).filter(([, t]) => t.sessionId !== doc.sessionId));
       sessions.hydrate({ ...st, sessions: rest, turns: keptTurns });
+      agents.forget(doc.sessionId); // the progress pointer moves on to another session
+    }
+    if (!PERSIST) return setRemoved({ title });
+    try {
+      const m = await trash.put(doc.kind, doc.kind === "canvas" ? id : doc.sessionId, { entry, place: at && { ...at, docIndex: index }, title });
+      setRemoved({ title, trashId: m.trashId });
+    } catch (e) {
+      // Nothing moved: put it back on the page as it was, and say why.
+      setDocs((ds) => (ds.some((d) => d.id === id) ? ds : [...ds.slice(0, index), doc, ...ds.slice(index)]));
+      if (doc.kind === "canvas") {
+        scenes.current.set(id, keptCanvas.elements);
+        if (keptCanvas.store) stores.current.set(id, keptCanvas.store), threadStores.set(id, keptCanvas.store);
+      } else {
+        const cur = sessions.get();
+        sessions.hydrate({ ...cur, sessions: { ...cur.sessions, ...keptSession.state.sessions }, turns: { ...cur.turns, ...keptSession.state.turns } });
+        if (keptSession.binding) agents.hydrateBindings({ [doc.sessionId]: keptSession.binding });
+      }
+      if (at) setRoot((r) => openTab(r, id, at.groupId, at.index));
+      setRemoved({ title, error: (e as Error).message });
     }
   };
-  const undoRemove = () => {
-    const r = removed;
-    if (!r) return;
-    setRemoved(null);
+
+  /** Put a restored trash item back into the workspace: its entry at its old place, its content on the page. */
+  const applyRestored = (r: Restored) => {
+    const m = r.item;
+    if (m.kind === "canvas" && r.canvas) {
+      const { elements, threads } = adoptCanvas(r.id, r.canvas);
+      scenes.current.set(r.id, elements);
+      const st = createThreadStore(r.id, threads);
+      stores.current.set(r.id, st);
+      threadStores.set(r.id, st);
+      if (PERSIST) st.subscribe(() => persistCanvas(r.id));
+    } else if (m.kind === "session") {
+      if (r.session) {
+        const got = adoptSession(r.id, r.session);
+        const cur = sessions.get();
+        sessions.hydrate({ sessions: { ...cur.sessions, ...got.sessions }, turns: { ...cur.turns, ...got.turns }, batches: { ...cur.batches, ...got.batches } });
+      }
+      if (r.binding) agents.hydrateBindings({ [r.id]: r.binding });
+    }
+    const docId = m.kind === "canvas" ? r.id : sessionDocId(r.id);
+    const entry: Doc = (m.entry as Doc | null) ?? (m.kind === "canvas" ? { id: r.id, kind: "canvas", title: m.title || r.id } : { id: docId, kind: "session", sessionId: r.id, title: "" });
     setDocs((ds) => {
-      const next = ds.filter((d) => d.id !== r.doc.id);
-      next.splice(Math.min(r.index, next.length), 0, r.doc);
-      return next;
+      if (ds.some((d) => d.id === docId)) return ds;
+      const i = Math.min(m.place?.docIndex ?? ds.length, ds.length);
+      return [...ds.slice(0, i), entry, ...ds.slice(i)];
     });
-    if (r.kind === "canvas") {
-      scenes.current.set(r.doc.id, r.elements);
-      if (r.store) stores.current.set(r.doc.id, r.store), threadStores.set(r.doc.id, r.store);
-      persistCanvas(r.doc.id);
-    } else if (r.session) {
-      const st = sessions.get();
-      sessions.hydrate({ ...st, sessions: { ...st.sessions, [r.session.id]: r.session }, turns: { ...st.turns, ...Object.fromEntries(r.turns.map((t) => [t.id, t])) } });
-      // Deleting the session removed its agent binding on disk; bind the same native session again.
-      const b = r.binding;
-      if (b) void agents.bind(r.session.id, b.agent, b.model, b.effort, b.nativeId, b.started).catch(() => {});
-    }
-    if (r.at) {
-      const at = r.at;
-      setRoot((root) => openTab(root, r.doc.id, at.groupId, at.index));
-      setFocused(r.doc.id);
+    const place = m.place;
+    setRoot((root) => (place && groups(root).some((g) => g.id === place.groupId) ? openTab(root, docId, place.groupId, place.index) : root));
+    if (place) setFocused(docId);
+    return docId;
+  };
+  const restore = async (trashId: string) => {
+    try {
+      const r = await trash.restore(trashId);
+      const docId = applyRestored(r);
+      if (!r.item.place) openDoc(docId);
+      setRemoved(null);
+    } catch (e) {
+      setRemoved({ title: "", error: `恢复失败：${(e as Error).message}` });
     }
   };
-  // The undo offer lasts a while, then the delete is final.
+  // The toast lasts a while; after that the item stays in 回收站 (restorable from there).
   useEffect(() => {
     if (!removed) return;
-    const t = setTimeout(() => setRemoved(null), 12000);
+    const t = setTimeout(() => setRemoved(null), removed.error ? 20000 : 12000);
     return () => clearTimeout(t);
   }, [removed]);
 
@@ -423,6 +468,7 @@ export function App({ boot }: { boot: Boot }) {
       ui.openSession(s.id);
       return wait;
     };
+    ui.openTrash = (trashId) => (setPanelFocus(trashId), setListOpen(null), setPanel("trash"));
     ui.trashSession = (sessionId) => {
       const doc = docsRef.current.find((d) => d.kind === "session" && d.sessionId === sessionId);
       if (doc) setListOpen({ confirm: doc.id });
@@ -513,7 +559,8 @@ export function App({ boot }: { boot: Boot }) {
                 canvasOf={sessionCanvas}
                 commentCount={(id) => storeFor(id).get().threads.length}
                 onOpen={(id) => (openDoc(id), setListOpen(null))}
-                onRemove={(id) => (remove(id), setListOpen({}))}
+                onRemove={(id) => (void remove(id), setListOpen({}))}
+                onTrash={() => (setListOpen(null), setPanelFocus(undefined), setPanel("trash"))}
                 onNew={(sample) => (addCanvas({ sample }), setListOpen(null))}
                 onDismiss={() => setListOpen(null)}
               />
@@ -624,12 +671,18 @@ export function App({ boot }: { boot: Boot }) {
         )}
         </>}
         {removed && (
-          <motion.div className="toast" role="status" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
-            <span>已删除「{removed.kind === "session" ? removed.name : removed.doc.title}」</span>
-            <button className="btn sm ghost" onClick={undoRemove}>撤销</button>
+          <motion.div className="toast" role={removed.error ? "alert" : "status"} data-tone={removed.error ? "error" : undefined} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
+            {removed.error ? (
+              <span>{removed.title ? `没能删除「${removed.title}」：` : ""}{removed.error}</span>
+            ) : (
+              <span>已移到回收站「{removed.title}」</span>
+            )}
+            {removed.trashId && <button className="btn sm ghost" onClick={() => void restore(removed.trashId!)}>撤销</button>}
             <button className="icon-btn sm muted" aria-label="关闭提示" onClick={() => setRemoved(null)}><IconClose size={14} /></button>
           </motion.div>
         )}
+        {panel === "trash" && <TrashPanel focus={panelFocus} titles={names} canvasTitles={canvasTitles} onRestore={(id) => void restore(id)} onDismiss={() => setPanel(null)} />}
+
         {evalProgress && <pre className="eval-log">{evalProgress.log.slice(-14).join("\n")}</pre>}
       </div>
     </MotionConfig>
