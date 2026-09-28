@@ -24,7 +24,8 @@ import { ancestry, descendants } from "../nested/graph";
 import { canvasFromUrl, nav, nested, urlFor } from "../nested/store";
 import { isEditableTarget, markBackHintSeen, upOnKey } from "../nested/up";
 import { sessionNames } from "../multi/writes";
-import { setWorkstationRoot } from "../workstation/Workstation";
+import { setRunsRoot } from "../workstation/runs/store";
+import { WorkerDefs } from "../workstation/RunAvatar";
 import { BENCH, installBench } from "../bench/bench";
 import { ShareButton } from "../share/SharePanel";
 import { Workspace } from "../workspace/Workspace";
@@ -117,7 +118,7 @@ export function App({ boot }: { boot: Boot }) {
   const nestedBooted = useRef(false);
   if (!nestedBooted.current) {
     nestedBooted.current = true;
-    setWorkstationRoot(boot.project?.root ?? "");
+    setRunsRoot(boot.project?.root ?? "");
     nested.reset(
       scenes.current,
       Object.fromEntries(initial.docs.filter((d) => d.kind === "canvas").map((d) => [d.id, d.title])),
@@ -697,6 +698,7 @@ export function App({ boot }: { boot: Boot }) {
   return (
     <MotionConfig reducedMotion="user">
       <div className="app" data-mode={mode}>
+        <WorkerDefs />
         <header className="topbar">
           <span className="brand"><IconWorkspace size={18} />Agora</span>
           {boot.project && <span className="project-name" title={boot.project.root}>{boot.project.name}</span>}

@@ -79,7 +79,7 @@ export function PointerLayer({ api, view, chrome = [] }: { api: ExcalidrawImpera
   const ag = useAgents();
   const folds = useSessionFolds();
   const st = useNested();
-  const at = useReplayAt(true);
+  const at = useReplayAt();
   const label = useSessionLabel();
   const links = useMemo(() => effectiveLinks(view.id, new Map(st.scenes).set(view.id, view.elements)), [view.id, view.elements, st.scenes]);
   const minute = Math.floor((at ?? Date.now()) / 60_000);

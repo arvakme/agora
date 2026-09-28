@@ -9,6 +9,8 @@ import { buildArrow, buildShape, type El } from "../canvas/scene";
 import { handleEvent, type AgentKind, type Item } from "../session/agents";
 
 const spec = new URLSearchParams(location.search).get("bench");
+/** `&bare`: no 工位视图 overlay and no timeline at all — the baseline the overlay's cost is measured against. */
+export const BENCH_BARE = !!spec && new URLSearchParams(location.search).has("bare");
 export const BENCH = spec ? { agents: Number(spec.split("x")[0]) || 18, elements: Number(spec.split("x")[1]) || 500 } : null;
 
 /** A seeded PRNG, so every run of the bench draws the same scene and the same work. */
