@@ -159,7 +159,7 @@ type AgentRun = {
 
 - **只读**（用户定）：`~/.seedmux/team/tasks/T-*/meta.json` 与 `delivery.json` 的核心键（`META_KEYS`、`DELIVERY_KEYS`）、`reply.md` 的前 1200 字节，外加每 15 秒至多一次 `GET /panes`（找没写 sid 的 worker 的 pane）。绝不 send / capture / spawn / wake。只收 `meta.cwd` 在项目根、它的 git worktree（`git worktree list`）或其子目录下的工单。`AGORA_SEEDMUX_TASKS` 可改目录，`AGORA_SEEDMUX_PANES=0` 关掉 `/panes`（测试用）。
 - **连到父 run**，证据从强到弱：
-  1. 父 run 自己的日志里，`smx-team spawn/assign` 打印的 `task=T-xx pane=<UUID>`（工具事实的 `spawn.taskId`；`toolCallId` 就是那次 Bash 调用）；
+  1. 父 run 自己的日志里，`smx-team spawn/assign` 打印的 `task=T-xx pane=<UUID>`（工具事实的 `spawn.taskId`；`toolCallId` 就是那次 Bash 调用）。只认命令里跑了 `smx-team` 的那次调用的输出：`cat` / `grep` 旧日志打印出来的同样一行不算；
   2. `meta.from_pane` 是 Agora 记下的持有这个会话的 Seedmux pane（`.agora/run/seedmux/agora-<sid>.json`），或是树里某个 worker 的 `to_pane`（worker 派出的 worker）；
   3. `inferred`：`from_pane` 为空（派发者在 Agora 自己的 tmux 里）、cwd 对得上、在主会话活跃期间（首条记录到末条后 5 分钟）创建，且当时没有这个项目的别的 Agora 会话活跃。
 - **worker 本身**：`delivery.sid`（或 `native.sid`、`/panes` 里 `to_pane` 的 sid）加上它的 CLI 有 T1/T2 适配器、找得到日志 → 带完整轨迹的原生 run（`tier: "T2"`，它的原生子 agent 继续展开）；否则是 `smx:T-xx`（`tier: "T3"`，`kind` 是工单的 agent 名），只有状态和回执。v1 里 Devin、Cursor、Grok 的 worker 都是后者。
