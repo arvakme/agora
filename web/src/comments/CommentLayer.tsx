@@ -1,9 +1,11 @@
-// Pins over one canvas + the thread card / composer anchored to them.
+// Pins over one canvas + the thread card / composer anchored to them. While an agent works on a
+// comment, a line joins its pin to the worker, and a check pops on the pin when it answers
+// (../workstation/CommentWork.tsx).
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useRef, useState } from "react";
 import { resolveAnchor } from "../canvas/anchors";
-import { layoutPins, sceneBlocks } from "./pinLayout";
+import { layoutPins, PIN, sceneBlocks } from "./pinLayout";
 import { IconCheck, IconClose, IconPlus } from "../app/icons";
 import { identity, useThreads, type Anchor, type Thread, type ThreadStore } from "./threads";
 import { pinnable } from "./visibility";
@@ -13,6 +15,7 @@ import { ago, Composer, ThreadCard } from "./ThreadCard";
 import { Aim, snap } from "./Aim";
 import { dismissUndo, runUndo, useUndo } from "./undo";
 import { SPRING } from "./motion";
+import { CommentWork, useMockThreads } from "../workstation/CommentWork";
 
 /** An unsent comment: where it is pinned and what has been typed so far. */
 export type Draft = { anchor: Anchor; text: string };
@@ -66,7 +69,9 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
   };
 
   const blocks = useMemo(() => sceneBlocks(view), [view.elements, view.map, a.scrollX, a.scrollY, a.zoom.value]);
-  const { pins, landing } = layoutPins(list, view, blocks);
+  // the dev mock's comment (?mock=runs): a pin to show, never opened or saved
+  const mock = useMockThreads(view.map);
+  const { pins, landing } = layoutPins(mock.length ? [...list, ...mock] : list, view, blocks);
   const resolved = pins.map((r) => ({ ...r, p: { x: snap(r.p.x), y: snap(r.p.y) } }));
   const shownId = activeId ?? hoverId;
   const shown = resolved.find((r) => r.t.id === shownId && !r.t.resolved);
@@ -97,6 +102,7 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
         </div>
       )}
       {resolved.map(({ t, st, p }) => {
+        const fake = mock.includes(t);
         return (
           <button
             key={t.id}
@@ -105,11 +111,12 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
             data-resolved={t.resolved}
             data-status={st.status}
             data-running={t.agent === "running"}
+            data-mock={fake || undefined}
             style={{ transform: `translate3d(${p.x}px, ${p.y}px, 0)` }}
             onPointerDown={(e) => e.stopPropagation()}
-            onPointerEnter={() => hover(t.id)}
+            onPointerEnter={() => !fake && hover(t.id)}
             onPointerLeave={() => hover(null)}
-            onClick={() => (t.resolved ? onOpenResolved?.(t.id) : store.open(t.id))}
+            onClick={() => (fake ? undefined : t.resolved ? onOpenResolved?.(t.id) : store.open(t.id))}
             aria-label={`线程 ${t.n}${t.resolved ? "（已解决）" : ""}`}
           >
             <span className="pin-body">
@@ -126,6 +133,7 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
           </button>
         );
       })}
+      <CommentWork canvasId={view.id} pins={resolved.map(({ t, p }) => ({ n: t.n, ids: t.anchor.ids, x: (p.x + PIN / 2) / a.zoom.value - a.scrollX, y: (p.y - PIN / 2) / a.zoom.value - a.scrollY }))} />
       <AnimatePresence>
         {shown && !draft && (
           <ThreadCard
