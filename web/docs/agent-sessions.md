@@ -2,9 +2,9 @@
 
 Agora 里的一个会话，就是用户选定的原生 coding agent 的一个原生会话。没有「主控」和「worker」之分：在会话里和它讨论架构，它通过 agora-canvas skill 读图、改图、做算法动画；想直接写代码时「在终端打开」，同一个原生会话在终端里接着用，两边说的话互相同步。
 
-只支持三个 agent：**Pi**、**Claude Code**、**Codex**。
+只支持三个 agent：**Pi**、**Claude Code**、**Codex**（适配器注册表里的 T1；每个 CLI 的知识在 `server/canvas/adapters/<kind>.py`，档位、工具事实、子 agent、漂移检测与怎么加新 CLI 见 [CLI 适配层](cli-adapters.md)）。
 
-实现：`server/canvas/agents.py`（三个后端、命令、日志位置、模型目录、skill 安装）、`server/canvas/transcript.py`（日志 → 会话记录）、`server/canvas/sessions.py`（路由、跟随、终端、画布桥接）、`server/canvas/terminal.py`（tmux）、`server/canvas/agent_router.py`（`/api/agent`）、`agora_cli/canvas.py`（`agora canvas` / `agora skill`）、`skills/agora-canvas/`；前端 `web/src/session/agents.ts`（事件流与发送）、`agentBridge.ts`（在页面上执行改图）、`SessionPane.tsx`。
+实现：`server/canvas/agents.py`（入口：无头后端、命令、日志位置、模型目录、skill 安装，转发到适配器）、`server/canvas/transcript.py`（日志 → 会话记录）、`server/canvas/sessions.py`（路由、跟随、终端、画布桥接）、`server/canvas/terminal.py`（tmux）、`server/canvas/agent_router.py`（`/api/agent`）、`agora_cli/canvas.py`（`agora canvas` / `agora skill`）、`skills/agora-canvas/`；前端 `web/src/session/agents.ts`（事件流与发送）、`agentBridge.ts`（在页面上执行改图）、`SessionPane.tsx`。
 
 ## 1. 会话模型
 
@@ -135,6 +135,8 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/catalog` | 三个 agent 的安装状态、模型、强度 |
+| GET | `/adapters` | 每个有适配器的 CLI 的 `AgentInfo`：档位、测过的版本、能力、日志目录、删除命令、漂移提示（[CLI 适配层 §5](cli-adapters.md#5-接口)） |
+| GET | `/runs?session=…` | 会话的 run 树：它自己、原生子 agent（以及 v2 的 Seedmux worker），每个带时间线（[CLI 适配层 §5](cli-adapters.md#5-接口)） |
 | PUT | `/sessions/{id}` | 绑定 `{agent, model, effort, nativeId?}`；不同选择 409 |
 | GET | `/sessions/{id}` | 状态（绑定、运行、排队、终端） |
 | POST | `/sessions/{id}/send` | `{text, canvasId?, context?}` → `{sendId, route: terminal\|headless}` |
