@@ -1,7 +1,7 @@
 // Renders an eval run (eval/runs/<runId>.jsonl, written by the in-app runner) as Markdown.
 // Usage: npm run eval:report [-- eval/runs/<runId>.jsonl]   (defaults to the latest run)
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 type Row = {
   task: string; run: number; status: string; valid: boolean; fresh: boolean; correct: boolean;
@@ -16,8 +16,12 @@ const yn = (b: boolean | null) => (b === null ? "–" : b ? "✓" : "✗");
 const s = (ms: number) => (ms / 1000).toFixed(1);
 const usd = (n: number) => `$${n.toFixed(4)}`;
 
+// Relative to web/, so the committed report does not carry a local absolute path.
+const shown = relative(new URL("..", import.meta.url).pathname, resolve(file));
 const out = [
-  `Run: \`${file}\``,
+  `Run: \`${shown}\``,
+  "",
+  "基线：每次规划走 `POST /api/canvas/turns` → 一次性 `claude -p --json-schema`，在中性的空临时目录里运行（不继承仓库或项目上下文），不经过 Agent 会话。",
   "",
   "| 任务 | 次 | 通过校验 | 新鲜度 | 改对元素 | 误伤 | 撤销还原 | 耗时 s | 花费 | 操作 | 判定依据 |",
   "|---|---|---|---|---|---|---|---|---|---|---|",
