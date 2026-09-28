@@ -65,6 +65,7 @@ agora canvas apply --base r-… [--note "…"] <<'JSON'   # 类型化改图，�
 JSON
 agora canvas anim <<'JSON' … JSON     # 挂载算法动画
 agora canvas schema ops|anim          # 精确 JSON Schema
+agora canvas child create --parent c1 --node api   # 节点展开成子画布（见 nested-canvas.md）
 ```
 
 退出码：0 成功 · 1 被拒（invalid / stale / error，见输出）· 2 用法错误 · 3 需要服务或打开的页面。
