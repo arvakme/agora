@@ -2,7 +2,7 @@
 // the sessions store, so it is tested without the canvas (boot.test.ts).
 import type { El } from "../canvas/scene";
 import type { ThreadSnapshot } from "../comments/threads";
-import type { FileError, ProjectInfo } from "../persist";
+import type { FileError, LocalChange, ProjectInfo } from "../persist";
 import { sessions } from "../session/store";
 import { group, moveTab, type Node } from "../workspace/layout";
 import { migrateDocs, recoverWorkspace, SAMPLE_CANVAS, sessionDocId, type Doc } from "../workspace/model";
@@ -19,6 +19,8 @@ export type Boot = {
   firstRun?: boolean;
   /** The list was rebuilt from the files on disk (recovery mode), and why. */
   recovered?: { canvases: number; sessions: number; why: "missing" | "unreadable" };
+  /** This copy of the project was moved, copied or freshly cloned since the page last looked. */
+  change?: LocalChange | null;
 };
 
 /** First run: the sample canvas on the left, a draft session docked on the right. Later canvases start blank. */
@@ -42,7 +44,10 @@ export function prepareBoot(boot: Boot): Boot {
   let workspace = boot.workspace;
   let firstRun = false;
   let recovered: Boot["recovered"];
-  const onDisk = Object.keys(boot.canvases);
+  // Unreadable canvas files (a merge conflict, no permission) are on disk too: they count against
+  // the first run and are listed (flagged) in recovery mode, never written from this page.
+  const unreadable = (boot.errors ?? []).filter((e) => e.kind === "canvas" && e.id && !boot.canvases[e.id]).map((e) => e.id!);
+  const onDisk = [...Object.keys(boot.canvases), ...unreadable];
   if (!workspace) {
     if (boot.empty !== false || !onDisk.length) {
       // Only a project the server calls empty gets the sample (and even then c1 is written with
@@ -52,14 +57,15 @@ export function prepareBoot(boot: Boot): Boot {
     } else {
       // workspace.json missing, empty or unreadable, canvases on disk: rebuild the list from them.
       const list = Object.values(sessions.get().sessions).map((s) => ({ id: s.id, canvasId: s.canvasId }));
-      workspace = recoverWorkspace(onDisk, list);
+      workspace = recoverWorkspace(onDisk, list, unreadable);
       recovered = { canvases: onDisk.length, sessions: list.length, why: boot.errors?.some((e) => e.file === "workspace.json") ? "unreadable" : "missing" };
     }
   }
   const docs = migrateDocs(workspace.docs);
-  // A session listed without its record (.agora/sessions/ lost): shown unlinked, not saved, never
-  // re-attached to some canvas (docs/workspace-model.md; the record may still come back).
-  for (const d of docs) if (d.kind === "session" && !sessions.get().sessions[d.sessionId]) sessions.create("", d.sessionId, { placeholder: true });
+  // A session listed without its record (.agora/sessions/ lost, a fresh clone): its canvas comes
+  // from the entry itself (workspace.json carries it); older entries without one are shown
+  // unlinked. Nothing is saved for it until something happens in it (docs/workspace-model.md §7).
+  for (const d of docs) if (d.kind === "session" && !sessions.get().sessions[d.sessionId]) sessions.create(d.canvasId ?? "", d.sessionId, { placeholder: true, createdAt: d.createdAt });
   return { ...boot, workspace: { ...workspace, docs }, firstRun, recovered };
 }
 

@@ -54,4 +54,30 @@ describe("prepareBoot", () => {
     sessions.relink("s-lost", "c2"); // the person links it: now it is saved
     expect(sessions.persisted().sessions["s-lost"].canvasId).toBe("c2");
   });
+
+  // Phase 1: workspace.json carries each session's canvas (and agent), so a fresh clone keeps the
+  // link instead of showing the session unlinked (experiment B2).
+  it("a listed session without its record keeps the canvas its entry records", () => {
+    const ws = {
+      v: 2 as const,
+      docs: [
+        { id: "c1", kind: "canvas" as const, title: "A" },
+        { id: "c2", kind: "canvas" as const, title: "B" },
+        { id: "p-s-b", kind: "session" as const, sessionId: "s-b", title: "", canvasId: "c2", agent: "claude" as const, nativeId: "n-1", createdAt: 42 },
+      ],
+      root: { kind: "group" as const, id: "g", tabs: ["c1"], active: "c1" },
+      focused: "c1",
+    };
+    prepareBoot({ workspace: ws, canvases: { c1: canvas(), c2: canvas() }, empty: false });
+    expect(sessions.get().sessions["s-b"]).toMatchObject({ canvasId: "c2", createdAt: 42 });
+    expect(sessions.isPlaceholder("s-b")).toBe(true); // still nothing written until something happens
+  });
+
+  // Review P2-5: workspace.json missing and the only canvas on disk unreadable: that is not a first
+  // run (the sample would be written as the only listed canvas and the real one orphaned).
+  it("an unreadable canvas on disk counts: recovery mode lists it flagged, no sample", () => {
+    const b = prepareBoot({ canvases: {}, empty: false, errors: [{ file: "canvases/c7.excalidraw", error: "merge-conflict", line: 3, kind: "canvas", id: "c7" }] });
+    expect(b.firstRun).toBe(false);
+    expect(b.workspace!.docs).toEqual([{ id: "c7", kind: "canvas", title: "已恢复画布 c7（文件读不了）" }]);
+  });
 });

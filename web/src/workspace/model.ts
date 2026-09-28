@@ -6,8 +6,14 @@ export type CanvasDoc = { id: string; kind: "canvas"; title: string };
 /**
  * A session's `title` is the name the person gave it ("" = automatic: agent name + topic, see
  * sessionTitles). `topic` is taken once from its first message (topicOf).
+ *
+ * The rest is the session's identity, committed with workspace.json so a fresh clone or another
+ * machine still knows what it was (web/docs/workspace-model.md §7): the canvas it belongs to, the
+ * agent / model / effort it was bound to and its native session id. No conversation content.
+ * Filled in from this page's session store and bindings when the workspace is saved.
  */
-export type SessionDoc = { id: string; kind: "session"; sessionId: string; title: string; topic?: string };
+export type SessionMeta = { canvasId?: string; agent?: "pi" | "claude" | "codex"; model?: string; effort?: string; nativeId?: string | null; createdAt?: number; started?: boolean };
+export type SessionDoc = { id: string; kind: "session"; sessionId: string; title: string; topic?: string } & SessionMeta;
 /** Everything that exists in the workspace, open or closed. Open = has a tab in the layout tree. */
 export type Doc = CanvasDoc | SessionDoc;
 export type DocKind = Doc["kind"];
@@ -106,7 +112,7 @@ export const isNamed = (d: SessionDoc) => !!d.title && !LEGACY_SESSION.test(d.ti
  * else "<agent>" / "<agent> · <topic>", or "新会话" while no agent is chosen. Automatic names
  * that collide get a suffix ("Claude Code · 加 Kafka 2"); there is no global counter.
  */
-export function sessionTitles(docs: Doc[], info: (sessionId: string) => { agent?: string } | undefined): Record<string, string> {
+export function sessionTitles(docs: Doc[], info: (sessionId: string, doc: SessionDoc) => { agent?: string } | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   const sessionDocs = docs.filter((d): d is SessionDoc => d.kind === "session");
   const taken = sessionDocs.filter(isNamed).map((d) => d.title);
@@ -115,7 +121,7 @@ export function sessionTitles(docs: Doc[], info: (sessionId: string) => { agent?
       out[d.id] = d.title;
       continue;
     }
-    const agent = info(d.sessionId)?.agent;
+    const agent = info(d.sessionId, d)?.agent;
     const base = agent ? (d.topic ? `${agent} · ${d.topic}` : agent) : DRAFT_SESSION;
     out[d.id] = nextTitle(taken, base, true);
     taken.push(out[d.id]);
@@ -162,7 +168,21 @@ export function topicOf(text: string | undefined, maxCols = 18): string {
  * What workspace.json holds: every doc except draft sessions (no agent chosen yet, created on
  * this page). Their tabs are left out of the saved layout too; nothing else is dropped.
  */
-export function savedWorkspace(ws: { docs: Doc[]; root: Node; focused: string }, isDraft: (sessionId: string) => boolean): { v: 2; docs: Doc[]; root: Node; focused: string } {
+export function savedWorkspace(
+  ws: { docs: Doc[]; root: Node; focused: string },
+  isDraft: (sessionId: string) => boolean,
+  meta: (sessionId: string) => SessionMeta | undefined = () => undefined,
+): { v: 2; docs: Doc[]; root: Node; focused: string } {
+  // Each session entry carries its identity as it is now (what is not known stays as saved).
+  const withMeta = (d: Doc): Doc => {
+    if (d.kind !== "session") return d;
+    const m = meta(d.sessionId);
+    if (!m) return d;
+    const next: SessionDoc = { ...d };
+    for (const [k, v] of Object.entries(m) as [keyof SessionMeta, unknown][]) if (v !== undefined && v !== "" && v !== null) (next as Record<string, unknown>)[k] = v;
+    return next;
+  };
+  ws = { ...ws, docs: ws.docs.map(withMeta) };
   const drafts = ws.docs.filter((d) => d.kind === "session" && isDraft(d.sessionId)).map((d) => d.id);
   if (!drafts.length) return { v: 2, ...ws };
   let root: Node = ws.root;
@@ -180,10 +200,10 @@ export const RECOVERED_CANVAS = "已恢复画布";
  * of starting over with the sample (which would overwrite `c1`). Canvases get "已恢复画布 <id>"
  * (renamable), sessions keep their automatic names; only the first canvas is opened.
  */
-export function recoverWorkspace(canvasIds: string[], sessionList: { id: string; canvasId: string }[]): { v: 2; docs: Doc[]; root: Node; focused: string } {
+export function recoverWorkspace(canvasIds: string[], sessionList: { id: string; canvasId: string }[], unreadable: string[] = []): { v: 2; docs: Doc[]; root: Node; focused: string } {
   const ids = [...canvasIds].sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
   const docs: Doc[] = [
-    ...ids.map((id): CanvasDoc => ({ id, kind: "canvas", title: `${RECOVERED_CANVAS} ${id}` })),
+    ...ids.map((id): CanvasDoc => ({ id, kind: "canvas", title: `${RECOVERED_CANVAS} ${id}${unreadable.includes(id) ? "（文件读不了）" : ""}` })),
     ...sessionList.map((s): SessionDoc => ({ id: sessionDocId(s.id), kind: "session", sessionId: s.id, title: "" })),
   ];
   return { v: 2, docs, root: group(ids.slice(0, 1), ids[0] ?? ""), focused: ids[0] ?? "" };

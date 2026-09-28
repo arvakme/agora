@@ -158,3 +158,10 @@
 .sp-lost-list code { font-size: var(--text-xs, 12px); }
 .sp-lost-go { display: flex; gap: var(--space-3); }
 .sp-lost-note { margin: 0 var(--space-3) var(--space-2); }
+
+/* A session with no binding here (another machine, lost binding, another copy): a read-only card in
+   place of the agent picker (SessionPane.tsx OriginCard). */
+.sp-origin-head { display: flex; align-items: center; gap: var(--space-5); margin-bottom: var(--space-6); }
+.sp-origin-head h2 { margin: 0 0 var(--space-2); }
+.sp-origin-head .sp-meta { margin: 0; }
+.sp-lost-title b[data-tone="caution"] { color: var(--caution); }

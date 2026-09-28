@@ -39,6 +39,9 @@ export function createClient({ base = "/api/project", fetchImpl = (u, i) => fetc
   const chains = new Map<string, Promise<void>>();
   const held = new Map<string, Pending>();
   const blocked = new Map<string, string>();
+  /** Last body the server took (or the page loaded) per slot, and the one on its way: unchanged saves send nothing. */
+  const written = new Map<string, string>();
+  const sending = new Map<string, string>();
   let status: Status = { conflicts: [], offline: false, saving: 0, failed: [], blocked: [] };
   let keepalive = false;
   const listeners = new Set<() => void>();
@@ -121,6 +124,23 @@ export function createClient({ base = "/api/project", fetchImpl = (u, i) => fetc
     seen: (slot: string, version: string | null) => void versions.set(slot, version),
     version: (slot: string) => versions.get(slot),
     write: (slot: string, p: Pending) => run(slot, p),
+    /**
+     * Write `op` unless the file already holds `compare` (or it is on its way). What the file holds
+     * moves only once the server took the write: a refused one (disk full, 410) is sent again by
+     * the next save even when nothing changed since.
+     */
+    writeIfChanged(slot: string, compare: string, op: Op) {
+      if (written.get(slot) === compare || sending.get(slot) === compare) return Promise.resolve();
+      sending.set(slot, compare);
+      return run(slot, { op }).then(() => {
+        if (sending.get(slot) === compare) sending.delete(slot);
+        if (!held.has(slot) && !blocked.has(slot)) written.set(slot, compare);
+      });
+    },
+    /** The file holds `compare` (loaded, or merged in from elsewhere). */
+    remember: (slot: string, compare: string) => void written.set(slot, compare),
+    /** Forget what the file holds (it was deleted or moved away). */
+    forget: (slot: string) => void (written.delete(slot), sending.delete(slot)),
     /** Send the held write of every failed slot again (or only `slot`). */
     retry(slot?: string) {
       const slots = status.failed.map((f) => f.slot).filter((s) => !slot || s === slot);

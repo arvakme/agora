@@ -316,8 +316,42 @@ def _pi_sessions(home: Path) -> Path:
     return Path(os.environ.get("PI_CODING_AGENT_SESSION_DIR") or home / ".pi" / "agent" / "sessions")
 
 
-def locate_log(kind: str, native_id: str | None, root: Path | str | None = None, home: Path | None = None) -> LogLookup:
-    """Find a native session's log, preferring the copy that belongs to ``root`` (the project)."""
+def _codex_home(home: Path) -> Path:
+    return Path(os.environ.get("CODEX_HOME") or home / ".codex")
+
+
+def codex_state_rollout(native_id: str, home: Path | None = None) -> Path | None:
+    """Codex's own index (``state_5.sqlite``, ``threads.rollout_path``), opened read-only: it still
+    knows a rollout that moved out of the dated ``sessions/`` folders (archive, storage migration)."""
+    import sqlite3
+
+    db = _codex_home(home or Path.home()) / "state_5.sqlite"
+    if not db.exists():
+        return None
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=1)
+        try:
+            row = con.execute("select rollout_path from threads where id = ?", (native_id,)).fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return None
+    p = Path(row[0]) if row and row[0] else None
+    return p if p is not None and p.exists() else None
+
+
+def _hinted(hint: str | Path | None, native_id: str) -> Path | None:
+    """The path the binding last saw the log at, if it is still there and still names this session."""
+    p = Path(hint) if hint else None
+    return p if p is not None and native_id in p.name and p.exists() else None
+
+
+def locate_log(kind: str, native_id: str | None, root: Path | str | None = None, home: Path | None = None, hint: str | Path | None = None) -> LogLookup:
+    """Find a native session's log. Claude and Pi: the copy under ``root`` (the project) first — it
+    is the one the CLI resumes —, then a unique copy anywhere (Claude resumes it globally). Codex:
+    the rollout glob, then the path the binding last saw (``hint``), then Codex's own index.
+    Several copies with none of them the project's → ``ambiguous`` (never guessed: the CLI might
+    resume another one); Pi only under another directory → ``elsewhere``."""
     if not native_id:
         return LogLookup("missing")
     home = home or Path.home()
@@ -340,10 +374,75 @@ def locate_log(kind: str, native_id: str | None, root: Path | str | None = None,
             return LogLookup("ambiguous", None, tuple(hits))
         return LogLookup("elsewhere" if hits else "missing", None, tuple(hits))
     if kind == "codex":
-        base = Path(os.environ.get("CODEX_HOME") or home / ".codex") / "sessions"
+        base = _codex_home(home) / "sessions"
         hits = sorted(Path(p) for p in glob.glob(str(base / "*" / "*" / "*" / f"rollout-*-{glob.escape(native_id)}.jsonl")))
-        return LogLookup("found", hits[-1], tuple(hits)) if hits else LogLookup("missing")
+        if hits:
+            return LogLookup("found", hits[-1], tuple(hits))
+        known = _hinted(hint, native_id) or codex_state_rollout(native_id, home)
+        return LogLookup("found", known, (known,)) if known else LogLookup("missing")
     raise ValueError(f"unknown agent {kind!r}")
+
+
+def migrate_pi_log(src: Path, new_root: Path | str) -> Path:
+    """Move a Pi session log to the folder of the project's new root and point its header at it.
+
+    Pi's ``--session-id`` only looks in the current directory's folder, and its print mode refuses
+    a log whose recorded ``cwd`` no longer exists; moving the file and rewriting the first line's
+    ``cwd`` is what makes it resumable again (measured 2026-09-28, experiment A3). The new file is
+    written next to its destination and swapped in atomically; the old one is kept as
+    ``<name>.agora-moved.bak`` (Pi's lookup ignores that name). Refuses to overwrite an existing
+    log at the destination. Any failure leaves the original in place."""
+    raw = src.read_bytes()
+    first, sep, rest = raw.partition(b"\n")
+    head = json.loads(first)
+    if not isinstance(head, dict) or head.get("type") != "session":
+        raise ValueError(f"{src} does not start with a Pi session header")
+    head["cwd"] = str(new_root)
+    dst_dir = src.parent.parent / pi_dir_name(new_root)
+    dst = dst_dir / src.name
+    if dst.exists():
+        raise ValueError(f"{dst} already exists")
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    tmp = dst_dir / f".{src.name}.agora.tmp"
+    try:
+        with open(tmp, "wb") as fh:
+            fh.write(json.dumps(head, ensure_ascii=False, separators=(",", ":")).encode() + sep + rest)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, dst)
+        os.replace(src, src.with_name(src.name + ".agora-moved.bak"))
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        if dst.exists() and src.exists():
+            dst.unlink()  # roll back: the original is still where it was
+        raise
+    return dst
+
+
+def new_native_since(kind: str, root: Path | str, since: float, taken: set[str], home: Path | None = None) -> str | None:
+    """A native session started in ``root`` at/after ``since`` that no Agora session owns yet: what an
+    interactive fork (or Codex's first interactive run) created. Oldest first."""
+    home = home or Path.home()
+    if kind == "codex":
+        return next((tid for tid, _ in codex_rollouts_since(Path(root), since, home) if tid not in taken), None)
+    if kind == "claude":
+        pattern = str(home / ".claude" / "projects" / claude_dir_name(root) / "*.jsonl")
+    elif kind == "pi":
+        pattern = str(_pi_sessions(home) / pi_dir_name(root) / "*.jsonl")
+    else:
+        raise ValueError(f"unknown agent {kind!r}")
+    found = []
+    for p in glob.glob(pattern):
+        try:
+            if os.path.getctime(p) < since - 2:
+                continue
+        except OSError:
+            continue
+        name = Path(p).stem
+        nid = name.rsplit("_", 1)[-1] if kind == "pi" else name
+        if nid not in taken:
+            found.append((os.path.getctime(p), nid))
+    return sorted(found)[0][1] if found else None
 
 
 def claude_log(native_id: str, home: Path | None = None, root: Path | str | None = None) -> Path | None:
@@ -580,7 +679,9 @@ class ClaudeCodeBackend(_CliBackend):
     def args(self, req: RunRequest) -> list[str]:
         o = req.options
         args = [*self.cmd, "-p", "--output-format", "stream-json", "--verbose"]
-        if o.session:
+        if o.fork_from:
+            args += ["--resume", o.fork_from, "--fork-session"]
+        elif o.session:
             # Only a session that never ran is created with --session-id; any other is resumed,
             # and a missing log then fails loudly in the CLI ("No conversation found") instead of
             # starting a new, empty conversation under the same id.
@@ -603,7 +704,9 @@ class PiBackend(_CliBackend):
     def args(self, req: RunRequest) -> list[str]:
         o = req.options
         args = [*self.cmd, "-p", "--mode", "json"]
-        if o.session:
+        if o.fork_from:
+            args += ["--fork", o.fork_path or o.fork_from]
+        elif o.session:
             args += ["--session-id", o.session]
         if o.model:
             args += ["--model", o.model]
@@ -624,6 +727,8 @@ class CodexBackend(_CliBackend):
 
     def args(self, req: RunRequest) -> list[str]:
         o = req.options
+        if o.fork_from:
+            raise ValueError("Codex 只能在终端里分叉（codex fork）：点「在终端打开」")
         args = [*self.cmd, "exec"]
         if o.session:
             args += ["resume", o.session]
@@ -639,10 +744,14 @@ BACKEND_CLASSES: dict[str, type[_CliBackend]] = {"claude": ClaudeCodeBackend, "p
 
 
 # ——— interactive resume (terminal pane) ———
-def interactive_argv(kind: str, native_id: str | None, model: str | None, effort: str | None, *, new: bool = False, root: Path | str | None = None) -> list[str]:
+def interactive_argv(kind: str, native_id: str | None, model: str | None, effort: str | None, *, new: bool = False, root: Path | str | None = None, fork: dict[str, Any] | None = None) -> list[str]:
     """The CLI's interactive command that continues ``native_id`` (or starts it when ``new``: the
-    session never ran). Callers check the log first (``check_native``); Pi has no resume-only
-    flag, so for Pi that check is the only guard against a silent new session."""
+    session never ran; or forks ``fork["from"]`` into a new native session). Callers check the log
+    first (``check_native``); Pi has no resume-only flag, so for Pi that check is the only guard
+    against a silent new session."""
+    if fork:
+        base = {"claude": ["claude", "--resume", fork["from"], "--fork-session"], "pi": ["pi", "--fork", fork.get("path") or fork["from"]], "codex": ["codex", "fork", fork["from"]]}[kind]
+        return [*base, *interactive_argv(kind, None, model, effort)[1:]]
     if kind == "claude":
         args = ["claude"]
         if native_id:
@@ -786,4 +895,6 @@ __all__ = [
     "find_log",
     "interactive_argv",
     "locate_log",
+    "migrate_pi_log",
+    "new_native_since",
 ]

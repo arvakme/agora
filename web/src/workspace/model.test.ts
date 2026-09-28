@@ -128,3 +128,21 @@ describe("savedWorkspace", () => {
     expect(savedWorkspace({ docs, root: g, focused: "c1" }, () => false)).toEqual({ v: 2, docs, root: g, focused: "c1" });
   });
 });
+
+// Phase 1: a session's identity is committed with workspace.json (no conversation content), so a
+// fresh clone knows which agent it was and which canvas it belongs to.
+describe("savedWorkspace session identity", () => {
+  it("fills each session entry with its canvas and binding, leaves canvases and unknown fields alone", () => {
+    const docs: Doc[] = [
+      { id: "c1", kind: "canvas", title: "A" },
+      { id: "p-s1", kind: "session", sessionId: "s1", title: "", topic: "加 Kafka" },
+      { id: "p-s2", kind: "session", sessionId: "s2", title: "", canvasId: "c1", agent: "pi" },
+    ];
+    const meta = (sid: string) => (sid === "s1" ? { canvasId: "c1", agent: "claude" as const, model: "haiku", effort: "", nativeId: "n-1", createdAt: 5, started: true } : undefined);
+    const out = savedWorkspace({ docs, root: group(["c1"]), focused: "c1" }, () => false, meta);
+    expect(out.docs[0]).toEqual({ id: "c1", kind: "canvas", title: "A" });
+    expect(out.docs[1]).toEqual({ id: "p-s1", kind: "session", sessionId: "s1", title: "", topic: "加 Kafka", canvasId: "c1", agent: "claude", model: "haiku", nativeId: "n-1", createdAt: 5, started: true });
+    expect(out.docs[2]).toEqual(docs[2]); // nothing known here now: kept as saved
+  });
+});
+

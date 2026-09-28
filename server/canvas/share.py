@@ -288,8 +288,17 @@ class ShareManager:
 
     @property
     def tunnel_name(self) -> str:
-        pid = str(self.store.info()["id"]).replace("-", "")[:8]
-        return f"agora-share-{pid}"
+        """``agora-share-<project id>-<instance id>``: two copies or worktrees of one project each
+        get their own tunnel, so ending one's last share never tears down the other's."""
+        from server.canvas.local import Local
+
+        iid = Local(self.store).instance_id().replace("-", "")[:6]
+        return f"{self.legacy_tunnel_name}-{iid}" if iid else self.legacy_tunnel_name
+
+    @property
+    def legacy_tunnel_name(self) -> str:
+        """The name builds before instance ids used (shared by every copy of the project)."""
+        return f"agora-share-{str(self.store.info()['id']).replace('-', '')[:8]}"
 
     def _tunnel_files(self, tunnel_id: str) -> tuple[Path, Path]:
         d = self.config_dir / "tunnels"
@@ -497,9 +506,13 @@ class ShareManager:
         _, tunnels = self.providers()
         try:
             tid = tunnels.find(self.tunnel_name)
-            if tid:
-                tunnels.delete(tid)
-                for f in self._tunnel_files(tid):
+            # A tunnel under the old shared name is deleted only when this copy's own share records
+            # name it (another copy may be using a tunnel of that name).
+            ours = {s.tunnelId for s in self.shares if s.tunnelId}
+            legacy = tunnels.find(self.legacy_tunnel_name) if self.legacy_tunnel_name != self.tunnel_name else None
+            for t in [x for x in (tid, legacy if legacy in ours else None) if x]:
+                tunnels.delete(t)
+                for f in self._tunnel_files(t):
                     f.unlink(missing_ok=True)
             self.tunnel_dirty = False
         except Exception:

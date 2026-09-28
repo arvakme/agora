@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from server.canvas import agents, schemas
+from server.canvas.local import Local
 from server.canvas.model_view import model_view, versions
 from server.canvas.project import ProjectStore
 from server.canvas.runner import ExecOptions, RunRequest, make_backend
@@ -41,6 +42,7 @@ from server.canvas.terminal import TerminalError, Terminals
 from server.canvas.transcript import MARKER, State, Tail, project, split_agora
 
 TICK_S = 0.4
+RELOCATE_S = 5.0  # how often a followed log is looked up again (it may have moved: Pi migration, a fork)
 TYPING_HOLD_S = 4.0
 PANE_BOOT_S = 6.0  # a freshly opened pane gets this long to start its CLI before the first paste
 DELIVERY_CONFIRM_S = 30.0
@@ -56,6 +58,15 @@ class NoPage(RuntimeError):
 
 class Busy(RuntimeError):
     pass
+
+
+class Copied(RuntimeError):
+    """The session came along with a copy of the project (``cp -r``): the original copy still uses
+    its native session, so this one is read-only until the person forks it here."""
+
+    def __init__(self, sid: str, info: dict[str, Any]) -> None:
+        self.info = {**info, "sessionId": sid}
+        super().__init__(f"这个会话是从 {info.get('from')} 复制过来的，原来那份项目还在用它的原生会话；要在这里接着用，先「在这里分叉继续」。")
 
 
 def agora_prompt(body: str, *, canvas_id: str | None, canvas_name: str | None, extra: str = "", session_id: str | None = None, project_id: str | None = None) -> str:
@@ -177,6 +188,7 @@ class Live:
     activity: str | None = None
     last_error: str | None = None
     native: dict[str, Any] | None = None  # the native log is missing / ambiguous / elsewhere (agents.NativeMissing.public)
+    located_at: float = 0.0  # when the followed log was last looked up
 
 
 class Subscriber:
@@ -193,11 +205,15 @@ class Subscriber:
 
 
 class AgentHub:
-    def __init__(self, store: ProjectStore, *, terminals: Terminals | None = None, backend_factory=make_backend) -> None:
+    def __init__(self, store: ProjectStore, *, terminals: Terminals | None = None, backend_factory=make_backend, local: Local | None = None) -> None:
         self.store = store
-        self.terms = terminals or Terminals(store.root, store.run_dir)
+        self.local = local or Local(store)
+        self.terms = terminals or Terminals(store.root, store.run_dir, socket=self.local.socket())
         self.make_backend = backend_factory
         self.live: dict[str, Live] = {}
+        # Sessions moved to the trash while this server runs: a headless turn that finishes later
+        # must not write their native id, usage or status back (restore takes them off the list).
+        self.dropped: set[str] = set()
         self.subs: list[Subscriber] = []
         self.bridge_waits: dict[str, asyncio.Future] = {}
         self._loop_task: asyncio.Task | None = None
@@ -235,7 +251,7 @@ class AgentHub:
             running = asyncio.get_running_loop()
         except RuntimeError:
             running = None
-        if self._loop is not None and running is not self._loop:
+        if self._loop is not None and running is not self._loop and not self._loop.is_closed():
             self._loop.call_soon_threadsafe(self._fanout, ev)
         else:
             self._fanout(ev)
@@ -267,6 +283,7 @@ class AgentHub:
             "t": "status",
             "sessionId": sid,
             "binding": b,
+            "copy": self.local.copies().get(sid),
             "native": lv.native,
             "running": lv.running,
             "busy": lv.state.busy,
@@ -285,6 +302,8 @@ class AgentHub:
         return out
 
     def _status(self, sid: str) -> None:
+        if sid in self.dropped:
+            return
         self.broadcast(self.status(sid))
 
     # ——— transcript ———
@@ -302,8 +321,15 @@ class AgentHub:
         if not b or not b.get("nativeId"):
             return
         lv.state.root = str(self.store.root)
+        if lv.tail is not None and time.time() - lv.located_at > RELOCATE_S:
+            # The log may have moved since (Pi migration, Codex archiving): follow it to the new place.
+            lv.located_at = time.time()
+            again = agents.locate_log(b["agent"], b["nativeId"], self.store.root, hint=(b.get("log") or {}).get("path"))
+            if again.path is not None and again.path != lv.tail.path:
+                lv.tail = None
         if lv.tail is None:
-            look = agents.locate_log(b["agent"], b["nativeId"], self.store.root)
+            look = agents.locate_log(b["agent"], b["nativeId"], self.store.root, hint=(b.get("log") or {}).get("path"))
+            lv.located_at = time.time()
             problem = None
             if look.state != "found" and binding_started(b):
                 problem = agents.NativeMissing(b["agent"], b["nativeId"], look).public()
@@ -317,8 +343,11 @@ class AgentHub:
             # that one, which is also the one the CLI resumes, and say so instead of picking silently.
             lv.native = agents.duplicates_note(b["agent"], b["nativeId"], look)
             self._status(sid)
-            if b.get("started") is not True and not self.store.gone():
-                self.store.mark_started(sid)  # the log exists: from now on only ever resumed
+            if not self.store.gone():
+                if b.get("started") is not True:
+                    self.store.mark_started(sid)  # the log exists: from now on only ever resumed
+                if (b.get("log") or {}).get("path") != str(look.path):
+                    self.store.set_log(sid, str(look.path))
         recs = lv.tail.read()
         if not recs:
             return
@@ -377,7 +406,7 @@ class AgentHub:
 
     def _record_run(self, sid: str, lv: Live, send_id: str, started: float, result: dict[str, Any] | None) -> None:
         usage = (result or {}).get("usage")
-        if not isinstance(usage, dict):
+        if not isinstance(usage, dict) or sid in self.dropped:
             return
         it = {"id": f"run-{send_id}", "kind": "run", "at": int(time.time() * 1000), "startAt": int(started * 1000), "usage": usage}
         with self._follow_lock:
@@ -416,13 +445,21 @@ class AgentHub:
                     lv.pane_since = None
                 self._status(sid)
             # Codex assigns its id when the interactive session starts: adopt the new rollout.
-            if b["agent"] == "codex" and not b.get("nativeId") and lv.pane_since:
+            if b["agent"] == "codex" and not b.get("nativeId") and not b.get("pendingFork") and lv.pane_since:
                 taken = {x.get("nativeId") for x in bound.values()}
                 for tid, _ in agents.codex_rollouts_since(self.store.root, lv.pane_since):
                     if tid not in taken:
                         self.store.set_native(sid, tid)
+                        self.note_bind(sid, "bind")
                         self._status(sid)
                         break
+            # An interactive fork (``claude --fork-session``, ``pi --fork``, ``codex fork``) writes a new
+            # native session in this project: adopt it as the session's native id.
+            if b.get("pendingFork") and lv.pane_since:
+                taken = {x.get("nativeId") for x in bound.values() if x.get("nativeId")} | {b["pendingFork"].get("from")}
+                new = agents.new_native_since(b["agent"], self.store.root, lv.pane_since, {t for t in taken if t})
+                if new:
+                    self.adopt_fork(sid, new)
             self._follow(sid, lv)
 
     async def _tick_async(self) -> None:
@@ -479,8 +516,18 @@ class AgentHub:
 
     # ——— sending ———
     def check_native(self, sid: str, b: dict[str, Any]) -> None:
-        """Refuse to resume a session whose native log is gone (``agents.NativeMissing``)."""
+        """Refuse to resume a session whose native log is gone (``agents.NativeMissing``), or one
+        that came along with a copy of the project and has not been forked here (``Copied``)."""
         lv = self._get(sid)
+        copy = self.local.copies().get(sid)
+        if copy is not None:
+            raise Copied(sid, copy)
+        fork = b.get("pendingFork")
+        if fork:  # the fork's source must still be there; the session's own id is replaced by the fork
+            src = fork.get("path")
+            if not (src and Path(src).exists()) and agents.locate_log(b["agent"], fork.get("from"), None).path is None:
+                raise agents.NativeMissing(b["agent"], fork.get("from") or "", agents.LogLookup("missing"))
+            return
         try:
             agents.check_native(b["agent"], b.get("nativeId"), binding_started(b), self.store.root)
         except agents.NativeMissing as e:
@@ -493,7 +540,13 @@ class AgentHub:
 
     def send(self, sid: str, prompt: str) -> dict[str, Any]:
         self.ensure_started()
-        self.check_native(sid, self.binding(sid))
+        b = self.binding(sid)
+        if sid in self.local.copies():
+            raise Copied(sid, self.local.copies()[sid])
+        if not self.terms.alive(sid):
+            # A live pane already holds the native session (delivery pastes into it, never starts a
+            # CLI): only a headless turn needs the log check — same rule as the page's composer.
+            self.check_native(sid, b)
         lv = self._get(sid)
         p = Pending(send_id=f"m-{secrets.token_hex(5)}", prompt=prompt, at=time.time())
         lv.last_error = None
@@ -529,11 +582,14 @@ class AgentHub:
             if self.terms.alive(sid):  # someone opened the terminal meanwhile
                 lv.pane.append(p)
                 continue
+            fork = b.get("pendingFork")
             try:
                 self.check_native(sid, b)
-            except agents.NativeMissing as e:
+                if fork and b["agent"] == "codex":
+                    raise ValueError("Codex 只能在终端里分叉（codex fork）：点「在终端打开」，在终端里接着说")
+            except (agents.NativeMissing, Copied, ValueError) as e:
                 lv.last_error = str(e)
-                self.broadcast({"t": "done", "sessionId": sid, "sendId": p.send_id, "text": "", "error": str(e), "route": "headless", "native": e.public()})
+                self.broadcast({"t": "done", "sessionId": sid, "sendId": p.send_id, "text": "", "error": str(e), "route": "headless", **({"native": e.public()} if isinstance(e, agents.NativeMissing) else {})})
                 self._status(sid)
                 continue
             backend = self.make_backend(b["agent"])
@@ -541,7 +597,15 @@ class AgentHub:
                 schema=None,
                 system=None,
                 prompt=p.prompt,
-                options=ExecOptions(backend=b["agent"], model=b.get("model") or "", effort=b.get("effort") or None, session=b.get("nativeId"), new_session=not binding_started(b)),
+                options=ExecOptions(
+                    backend=b["agent"],
+                    model=b.get("model") or "",
+                    effort=b.get("effort") or None,
+                    session=None if fork else b.get("nativeId"),
+                    new_session=not binding_started(b),
+                    fork_from=(fork or {}).get("from"),
+                    fork_path=(fork or {}).get("path"),
+                ),
                 cwd=str(self.store.root),
                 env=self.env_for(sid),
             )
@@ -570,9 +634,15 @@ class AgentHub:
                 self.broadcast({"t": "done", "sessionId": sid, "sendId": p.send_id, "text": "", "error": "已停止", "route": "headless"})
                 self._status(sid)
                 raise
+            if sid in self.dropped:  # trashed while the turn ran: nothing is written for it any more
+                return
             native = (result or {}).get("session")
-            if native and not b.get("nativeId"):
+            if fork:
+                if native and native != fork.get("from") and result and not result.get("error"):
+                    self.adopt_fork(sid, native)
+            elif native and not b.get("nativeId"):
                 self.store.set_native(sid, native)
+                self.note_bind(sid, "bind")
             if native and result and not result.get("error") and not self.store.gone():
                 self.store.mark_started(sid)
             # Let the log catch up so the transcript shows the turn before "done".
@@ -613,7 +683,7 @@ class AgentHub:
             raise Busy("这个会话正在无头运行一轮，结束后再在终端打开")
         if not self.terms.alive(sid):
             self.check_native(sid, b)
-        argv = agents.interactive_argv(b["agent"], b.get("nativeId"), b.get("model") or None, b.get("effort") or None, new=not binding_started(b), root=self.store.root)
+        argv = agents.interactive_argv(b["agent"], b.get("nativeId"), b.get("model") or None, b.get("effort") or None, new=not binding_started(b), root=self.store.root, fork=b.get("pendingFork"))
         env = {**self.env_for(sid, canvas_id), "PATH": agents.child_env()["PATH"]}
         if app == "seedmux":
             try:
@@ -639,9 +709,63 @@ class AgentHub:
         lv.pane_alive, lv.pane_since = False, None
         self._status(sid)
 
+    # ——— identity (registry, forks) ———
+    def note_bind(self, sid: str, t: str, **extra: Any) -> None:
+        """Record the session's identity in the machine registry (ids, paths, titles; no content)."""
+        b = self.store.read_binding(sid) or {}
+        head = (self.store.read_session(sid) or ({}, ""))[0].get("session") or {}
+        topic = next((d.get("topic") for d in (self.store.read_workspace_quiet() or {}).get("docs") or [] if isinstance(d, dict) and d.get("sessionId") == sid), None)
+        self.local.note(
+            t,
+            sessionId=sid,
+            agent=b.get("agent"),
+            model=b.get("model"),
+            effort=b.get("effort"),
+            nativeId=b.get("nativeId"),
+            started=b.get("started"),
+            canvasId=head.get("canvasId"),
+            topic=topic or None,
+            logPath=(b.get("log") or {}).get("path"),
+            **extra,
+        )
+
+    def fork(self, sid: str, source: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Continue a session here as a fork of its native session (``pendingFork``: the next run —
+        a message, or the terminal — creates the new native id). For a session this copy brought
+        along (``copies.json``), or — with ``source`` {agent, model, effort, nativeId} — one known
+        only from the registry (another copy of the project on this machine)."""
+        b = self.store.read_binding(sid)
+        if b is None:
+            if not source or source.get("agent") not in agents.KINDS or not source.get("nativeId"):
+                raise LookupError(f"session {sid} has no agent binding here, and no source to fork was given")
+            b = self.store.bind(sid, agent=source["agent"], model=source.get("model") or "", effort=source.get("effort") or "", at=int(time.time() * 1000), started=False)
+            src_id = str(source["nativeId"])
+        else:
+            src_id = b.get("nativeId") or ""
+            if not src_id:
+                raise ValueError("这个会话还没有原生会话，不需要分叉")
+        look = agents.locate_log(b["agent"], src_id, None)
+        path = look.path or (look.candidates[0] if look.candidates else None)
+        if path is None:
+            raise agents.NativeMissing(b["agent"], src_id, look)
+        self.store.set_fork(sid, src_id, str(path), reason="copy")
+        self.local.drop_copy(sid)
+        self.note_bind(sid, "rebind", reason="fork-pending", forkFrom=src_id)
+        self._status(sid)
+        return self.store.read_binding(sid) or {}
+
+    def adopt_fork(self, sid: str, native_id: str) -> None:
+        """The fork ran: the session now continues ``native_id`` (the old id stays in ``natives``)."""
+        self.store.rebind(sid, native_id, reason="fork", started=True)
+        lv = self._get(sid)
+        lv.tail, lv.native = None, None
+        self.note_bind(sid, "rebind", reason="fork")
+        self._status(sid)
+
     async def forget(self, sid: str) -> bool:
         """The session was deleted: stop its headless turn, close its terminal pane (Agora's tmux
         or Seedmux) and drop its runtime state. Returns whether a pane was closed."""
+        self.dropped.add(sid)
         lv = self.live.pop(sid, None)
         if lv is not None:
             lv.headless.clear()
@@ -652,6 +776,12 @@ class AgentHub:
         if alive:
             await asyncio.to_thread(self.terms.kill, sid)
         return alive
+
+    def revive(self, sid: str) -> None:
+        """A trashed session came back (restore): follow and report it again."""
+        self.dropped.discard(sid)
+        self.live.pop(sid, None)
+        self._status(sid)
 
     # ——— canvas bridge ———
     def executor(self) -> Subscriber | None:
@@ -736,7 +866,3 @@ def _compact(ev: dict[str, Any]) -> dict[str, Any]:
     if "input" in ev:
         out["input"] = json.dumps(ev["input"], ensure_ascii=False)[:400]
     return out
-
-
-def terminals_for(root: Path) -> Terminals:
-    return Terminals(root, root / ".agora" / "run")

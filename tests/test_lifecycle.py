@@ -341,3 +341,119 @@ def test_send_route_puts_ids_in_the_footer(store, home):
             time.sleep(0.05)
     pid = store.info()["id"].replace("-", "")[:8]
     assert f"session=s-f project={pid}" in backend.calls[0].prompt
+
+
+# ——— independent review of phase 0 ———
+def test_review_p1_1_a_rebind_carrying_a_native_id_skips_the_catalog_check(store, monkeypatch):
+    """Undo / restore / import bind a native session that already exists with the model it ran with;
+    a catalog that no longer offers that model (Pi enabledModels changed, CLI missing) must not
+    refuse it and lose the link. A new binding is still checked."""
+
+    def refuse(*a):
+        raise ValueError("not in enabledModels")
+
+    monkeypatch.setattr(agents, "check_binding", refuse)
+    c = app_client(store)
+    r = c.put("/api/agent/sessions/s-back", json={"agent": "pi", "model": "gone/model", "effort": "high", "nativeId": NID, "started": True})
+    assert r.status_code == 200 and r.json()["nativeId"] == NID and r.json()["started"] is True
+    assert c.put("/api/agent/sessions/s-new", json={"agent": "pi", "model": "gone/model"}).status_code == 400
+
+
+def test_review_p2_1_started_is_inferred_for_bindings_written_before_it_existed(store):
+    def legacy(sid: str) -> None:
+        (store.dir / "sessions" / f"{sid}.agent.json").write_text(json.dumps({"agent": "claude", "model": "", "effort": "", "nativeId": NID, "createdAt": 1}))
+
+    legacy("s-idle")  # record there, no turns, no headless runs: it never ran
+    store.append_session("s-idle", [{"t": "session", "session": {"id": "s-idle", "canvasId": "c1"}}], base=None)
+    legacy("s-turn")  # a canvas turn: it ran
+    store.append_session("s-turn", [{"t": "session", "session": {"id": "s-turn"}}, {"t": "turn", "turn": {"id": "t-1"}}], base=None)
+    legacy("s-run")  # a headless run recorded its usage: it ran
+    store.append_session("s-run", [{"t": "session", "session": {"id": "s-run"}}], base=None)
+    (store.run_dir / "usage").mkdir(parents=True, exist_ok=True)
+    (store.run_dir / "usage" / "s-run.jsonl").write_text('{"id":"run-1"}\n')
+    legacy("s-lost")  # no record to check: assume it ran (never re-create a lost session)
+    got = {sid: b["started"] for sid, b in store.bindings().items()}
+    assert got == {"s-idle": False, "s-turn": True, "s-run": True, "s-lost": True}
+    assert store.read_binding("s-idle")["started"] is False
+    assert binding_started(store.read_binding("s-idle")) is False
+
+
+def test_review_p2_4_deleted_agora_dir_and_remounts(store, monkeypatch):
+    ident = store._identity()
+    # Same inode on another device (a network share or disk remounted) with the same project id: fine.
+    monkeypatch.setattr(store, "_identity", lambda: (ident[0] + 1, ident[1]))
+    assert store.gone() is None
+    # Another inode: another directory.
+    monkeypatch.setattr(store, "_identity", lambda: (ident[0] + 1, ident[1] + 1))
+    assert "换成了另一个目录" in store.gone()
+    monkeypatch.undo()
+    store._ident = ident  # the simulated remount above moved it
+    import shutil
+
+    shutil.rmtree(store.dir)
+    why = store.gone()
+    assert why and "被删除了" in why and "移" not in why.split("：")[0]
+    c = app_client(ProjectStore(store.root))  # a new server recreates it; the old one only refuses
+    assert c.get("/api/project/health").json()["gone"] is None
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permissions")
+def test_review_p2_6_an_unreadable_canvas_is_reported_not_a_500(store):
+    store.write("canvas", "c2", {"elements": []}, base=None)
+    path = store.dir / "canvases" / "c2.excalidraw"
+    os.chmod(path, 0)
+    try:
+        r = app_client(store).get("/api/project/snapshot")
+    finally:
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+    assert r.status_code == 200
+    errs = {e["file"]: e for e in r.json()["errors"]}
+    assert errs["canvases/c2.excalidraw"]["error"] == "unreadable" and set(r.json()["canvases"]) == {"c1"}
+
+
+def test_review_p2_6_agent_routes_answer_410_when_the_project_moved(store, tmp_path):
+    c = app_client(store)
+    store.root.rename(tmp_path / "elsewhere")
+    r = c.put("/api/agent/sessions/s-g", json={"agent": "claude"})
+    assert r.status_code == 410 and r.json()["gone"] is True
+
+
+async def test_review_p2_6_a_turn_that_ends_after_its_session_was_trashed_writes_nothing(store, home):
+    gate = asyncio.Event()
+
+    class Slow:
+        async def run(self, req):
+            yield {"t": "start", "at": 0}
+            await gate.wait()
+            yield {"t": "result", "at": 1, "raw": "late", "usage": {"costUsd": 0.01}, "session": "codex-thread-1"}
+
+    hub = AgentHub(store, backend_factory=lambda kind: Slow())
+    store.bind("s-c", agent="codex")
+    try:
+        hub.send("s-c", "long task")
+        await asyncio.sleep(0.2)
+        run = hub.live["s-c"].run
+        (store.dir / "sessions" / "s-c.agent.json").unlink()  # moved to the trash meanwhile
+        await hub.forget("s-c")
+        gate.set()
+        await asyncio.sleep(0.2)
+        assert run.done()
+        assert not (store.run_dir / "usage" / "s-c.jsonl").exists()
+        assert "s-c" not in hub.live
+    finally:
+        await hub.close()
+
+
+async def test_review_p2_6_a_live_pane_takes_messages_even_when_the_log_is_ambiguous(store, home, tmp_path):
+    terms = FakeTerms()
+    hub = AgentHub(store, terminals=terms)
+    store.bind("s-a", agent="claude", native_id=NID)
+    claude_file(home, tmp_path / "x")
+    claude_file(home, tmp_path / "y")  # two copies, neither this project's: ambiguous
+    try:
+        with pytest.raises(NativeMissing):
+            hub.send("s-a", "hi")  # headless would resume one of them blindly: refused
+        terms.open.add("s-a")  # the pane holds the session: delivery pastes into it
+        assert hub.send("s-a", "hi")["route"] == "terminal"
+    finally:
+        await hub.close()

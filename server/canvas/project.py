@@ -43,6 +43,8 @@ GITIGNORE = """\
 sessions/
 run/
 shares/
+local/
+trash/
 *.tmp
 *.lock
 """
@@ -253,6 +255,7 @@ class ProjectStore:
         self.dir = self.root / DIRNAME
         self._lock = threading.RLock()
         self._ident: tuple[int, int] | None = self._identity()
+        self._pid: str | None = self._project_id() if self._ident else None
 
     # ——— the project directory is still where it was ———
     def _identity(self) -> tuple[int, int] | None:
@@ -262,19 +265,32 @@ class ProjectStore:
             return None
         return (st.st_dev, st.st_ino)
 
+    def _project_id(self) -> str | None:
+        try:
+            return tomllib.loads((self.dir / "config.toml").read_text()).get("project", {}).get("id")
+        except (OSError, tomllib.TOMLDecodeError):
+            return None
+
     def gone(self) -> str | None:
         """Why this project can no longer be written (moved, renamed, deleted), or None.
-        Compares the directory at ``root`` with the one the store was opened on (path and
-        inode), and needs ``.agora/`` to still be there."""
+        Compares the directory at ``root`` with the one the store was opened on: another inode
+        means another directory. The same inode on another device is a remount (network share,
+        external disk) when ``config.toml`` still names the same project. ``.agora/`` deleted
+        under a running server is its own case (the project did not move)."""
         now = self._identity()
         if now is None:
             return f"项目目录 {self.root} 不在了（被移走、改名或删除）"
         if self._ident is None:
             self._ident = now
-        elif now != self._ident:
+            self._pid = self._project_id()
+        elif now[1] != self._ident[1]:
             return f"项目目录 {self.root} 已经换成了另一个目录（原来的被移走或改名）"
+        elif now[0] != self._ident[0]:
+            if self._pid is None or self._project_id() != self._pid:
+                return f"项目目录 {self.root} 已经换成了另一个目录（设备变了，项目 id 也对不上）"
+            self._ident = now  # remounted: same directory, same project
         if not self.dir.is_dir():
-            return f"{self.dir} 不在了"
+            return f"{self.dir} 被删除了（项目目录还在）：这个服务不会重建它；重新运行 `agora up`（会重建 .agora/，已提交的内容用 git 找回）"
         return None
 
     def check_alive(self) -> None:
@@ -301,6 +317,8 @@ class ProjectStore:
             )
         if not (self.dir / ".gitignore").exists():
             self._atomic(self.dir / ".gitignore", GITIGNORE.encode())
+        if self._pid is None:
+            self._pid = self._project_id()
         return created
 
     def exists(self) -> bool:
@@ -321,6 +339,14 @@ class ProjectStore:
             "config": cfg,
             "me": local_person(self.root).as_dict(),
         }
+
+    def read_workspace_quiet(self) -> dict[str, Any] | None:
+        """workspace.json, or None when it is missing or unreadable (never raises)."""
+        try:
+            got = self.read("workspace")
+        except (OSError, ValueError):
+            return None
+        return got[0] if got and isinstance(got[0], dict) else None
 
     def is_empty(self) -> bool:
         return not (self.dir / "workspace.json").exists() and not any((self.dir / "canvases").glob("*.excalidraw"))
@@ -456,7 +482,7 @@ class ProjectStore:
     # creation and never changed, plus the CLI's own session id (set once).
     def read_binding(self, id: str) -> dict[str, Any] | None:
         raw = self._bytes(self._path("binding", id))
-        return None if raw is None else json.loads(raw)
+        return None if raw is None else self._with_started(id, json.loads(raw))
 
     def bindings(self) -> dict[str, dict[str, Any]]:
         out = {}
@@ -464,10 +490,32 @@ class ProjectStore:
             id = p.name.removesuffix(".agent.json")
             if ID_RE.match(id):
                 try:
-                    out[id] = json.loads(p.read_bytes())
+                    out[id] = self._with_started(id, json.loads(p.read_bytes()))
                 except (OSError, json.JSONDecodeError):
                     continue
         return out
+
+    def _with_started(self, id: str, b: dict[str, Any]) -> dict[str, Any]:
+        """Bindings written before ``started`` existed: infer it. A session with canvas turns in its
+        record or headless runs in ``run/usage`` has run; one whose record is there and shows
+        neither never did (its pre-assigned id may still be created). Only when the record itself
+        is missing is it taken as started (resuming a lost session must not start a new one)."""
+        if "started" in b or not isinstance(b, dict):
+            return b
+        rec = self._path("session", id)
+        try:
+            raw = rec.read_bytes()
+        except OSError:
+            return {**b, "started": True}
+        ran = bool(fold_session(self._session_lines(raw))["turns"])
+        if not ran:
+            try:
+                ran = any(line.strip() for line in (self.run_dir / "usage" / f"{id}.jsonl").read_bytes().splitlines())
+            except FileNotFoundError:
+                ran = False
+            except OSError:
+                ran = True
+        return {**b, "started": ran}
 
     def bind(self, id: str, *, agent: str, model: str = "", effort: str = "", native_id: str | None = None, at: int | None = None, started: bool | None = None) -> dict[str, Any]:
         """Create the binding, or confirm an identical one. A different agent/model/effort → ``Locked``."""
@@ -489,6 +537,8 @@ class ProjectStore:
             # delete binds the same native session again): it counts as started unless the caller
             # knows better (the undone binding's own ``started``).
             data = {"agent": agent, "model": model or "", "effort": effort or "", "nativeId": native_id, "createdAt": at or 0, "started": bool(native_id) if started is None else bool(started)}
+            if native_id:
+                data["natives"] = [{"id": native_id, "at": at or 0, "reason": "bind"}]
             self._atomic(path, dump_json(data))
             return data
 
@@ -515,8 +565,49 @@ class ProjectStore:
                 return cur
             if cur.get("nativeId"):
                 raise Locked(f"session {id} is bound to native session {cur['nativeId']}")
-            cur = {**cur, "nativeId": native_id}
+            cur = {**cur, "nativeId": native_id, "natives": [*(cur.get("natives") or []), {"id": native_id, "at": int(time.time() * 1000), "reason": "first-run"}]}
             self._atomic(path, dump_json(cur))
+            return cur
+
+    def rebind(self, id: str, native_id: str | None, *, reason: str, started: bool) -> dict[str, Any]:
+        """Point the session at another native session — only through a recorded recovery: a fork
+        (a copy continued here, a Pi log that could not be moved), or a new native session carrying
+        a summary of a lost one. The old id stays in ``natives``; the agent, model and effort do not
+        change. ``native_id`` None: the CLI assigns it on the next run (Codex)."""
+        path = self._path("binding", id)
+        with self._locked():
+            cur = self.read_binding(id)
+            if cur is None:
+                raise ValueError(f"session {id} has no agent binding")
+            natives = [*(cur.get("natives") or ([{"id": cur["nativeId"], "at": cur.get("createdAt") or 0, "reason": "bind"}] if cur.get("nativeId") else []))]
+            if native_id:
+                natives.append({"id": native_id, "at": int(time.time() * 1000), "reason": reason})
+            cur = {k: v for k, v in cur.items() if k not in ("pendingFork", "log")}
+            cur.update(nativeId=native_id, started=bool(started), natives=natives)
+            self._atomic(path, dump_json(cur))
+            return cur
+
+    def set_fork(self, id: str, from_native: str, path: str | None, *, reason: str) -> dict[str, Any]:
+        """The next run continues ``from_native`` as a fork (a new native id with its full history):
+        Claude ``--resume … --fork-session``, Pi ``--fork <log>``, Codex ``codex fork`` (terminal)."""
+        bpath = self._path("binding", id)
+        with self._locked():
+            cur = self.read_binding(id)
+            if cur is None:
+                raise ValueError(f"session {id} has no agent binding")
+            cur = {**cur, "pendingFork": {"from": from_native, "path": path, "reason": reason, "at": int(time.time() * 1000)}}
+            self._atomic(bpath, dump_json(cur))
+            return cur
+
+    def set_log(self, id: str, log_path: str) -> dict[str, Any] | None:
+        """Remember where the native log was last found (the locator tries it first)."""
+        bpath = self._path("binding", id)
+        with self._locked():
+            cur = self.read_binding(id)
+            if cur is None or (cur.get("log") or {}).get("path") == log_path:
+                return cur
+            cur = {**cur, "log": {"path": log_path, "seenAt": int(time.time() * 1000)}}
+            self._atomic(bpath, dump_json(cur))
             return cur
 
     # ——— comment threads by operation (several writers: the owner's page and share guests) ———
@@ -604,7 +695,11 @@ class ProjectStore:
         """``read``, but a file that is not valid JSON (a git merge conflict, a bad edit) is
         reported in ``errors`` instead of failing the whole snapshot."""
         path = self._path(kind, id)
-        raw = self._bytes(path)
+        try:
+            raw = self._bytes(path)
+        except OSError as e:  # no permission, an I/O error: this file is reported, the rest still loads
+            errors.append({"file": self._rel(path), "error": "unreadable", "detail": e.strerror or type(e).__name__, "kind": kind, "id": id})
+            return None
         if raw is None:
             return None
         try:
@@ -636,7 +731,11 @@ class ProjectStore:
             id = p.name.removesuffix(".jsonl")
             if not ID_RE.match(id):
                 continue
-            folded, v = self.read_session(id) or ({}, "")
+            try:
+                folded, v = self.read_session(id) or ({}, "")
+            except OSError as e:
+                errors.append({"file": self._rel(p), "error": "unreadable", "detail": e.strerror or type(e).__name__, "kind": "session", "id": id})
+                continue
             sessions[id] = {"state": folded, "version": v}
         bindings = self.bindings()
         return {

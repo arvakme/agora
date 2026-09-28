@@ -65,3 +65,11 @@ async def app_client(require_services: None) -> AsyncIterator[tuple]:
             transport=transport, base_url="http://test"
         ) as client:
             yield app, client
+
+
+@pytest.fixture(autouse=True)
+def _agora_state_dir(tmp_path_factory, monkeypatch):
+    """Machine-local Agora state (instance registry, server records, backups) goes to a temporary
+    directory in every test, never to ~/.local/state/agora."""
+    if "AGORA_STATE_DIR" not in os.environ or not os.environ["AGORA_STATE_DIR"].startswith(str(tmp_path_factory.getbasetemp())):
+        monkeypatch.setenv("AGORA_STATE_DIR", str(tmp_path_factory.mktemp("agora-state")))

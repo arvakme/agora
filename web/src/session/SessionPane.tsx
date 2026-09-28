@@ -23,7 +23,7 @@ import { effortGroups, modelGroups } from "./pickerModel";
 import { TerminalAppIcon } from "../app/terminals/TerminalAppIcon";
 import { undoTurn } from "./runTurn";
 import { sessions, useSessions, type Turn } from "./store";
-import { agentChoice, canvases, highlight, ui } from "./ui";
+import { agentChoice, canvases, draftText, highlight, ui } from "./ui";
 import "./session.css";
 
 const fmt = (ms: number) => (ms < 10000 ? `${(ms / 1000).toFixed(1)}s` : ms < 60000 ? `${Math.round(ms / 1000)}s` : `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`);
@@ -35,8 +35,84 @@ export function SessionPane({ sessionId, canvasTitles }: { sessionId: string; ca
   const session = all[sessionId];
   if (!session) return <div className="sp-empty">会话不存在</div>;
   const binding = ag.bindings[sessionId];
+  const origin = ag.origins[sessionId];
+  // A session made on another machine, or whose binding is only in this machine's registry: never
+  // the agent picker (that would start a new, unrelated conversation under its name).
+  if (!binding && origin && origin.state !== "copy") return <OriginCard sessionId={sessionId} origin={origin} canvasTitles={canvasTitles} />;
   if (!binding) return <Chooser sessionId={sessionId} canvasTitle={canvasTitles[session.canvasId]} />;
   return <AgentSession sessionId={sessionId} canvasTitles={canvasTitles} />;
+}
+
+/** Start a new session of the same agent and model on a canvas, and open it (the old one stays as it is). */
+async function freshSession(canvasId: string, agent: AgentKind, model = "", effort = "", firstText?: string) {
+  const s = sessions.create(canvasId, undefined, { draft: true });
+  await agents.bind(s.id, agent, model, effort);
+  if (firstText) draftText.set(s.id, firstText);
+  ui.openSession(s.id);
+  return s.id;
+}
+
+/**
+ * A listed session with no binding on this machine (server/canvas/local.py `session_origins`):
+ * - recoverable: this machine's registry still has its binding (`.agora/sessions/` was lost) → 恢复;
+ * - other-copy: another copy of the project here owns it → 在这里分叉继续;
+ * - foreign: made on another machine → read-only card; 在这里开新会话 (same canvas and agent).
+ */
+function OriginCard({ sessionId, origin, canvasTitles }: { sessionId: string; origin: import("../persist").Origin; canvasTitles: Record<string, string> }) {
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const agent = (origin.agent ?? "claude") as AgentKind;
+  const name = AGENT_NAMES[agent];
+  const canvasId = origin.canvasId ?? sessions.get().sessions[sessionId]?.canvasId ?? "";
+  const canvas = canvasTitles[canvasId];
+  const act = async (f: () => Promise<unknown>) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await f();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const restore = () => act(() => agents.bind(sessionId, agent, origin.model ?? "", origin.effort ?? "", origin.nativeId ?? null, origin.started ?? !!origin.nativeId));
+  const fork = () => act(() => agents.fork(sessionId, origin));
+  const fresh = () => act(() => freshSession(canvasTitles[canvasId] ? canvasId : Object.keys(canvasTitles)[0] ?? "", agent, origin.model, origin.effort));
+  const [title, text] =
+    origin.state === "recoverable"
+      ? ["可以恢复", `这个 ${name} 会话在本机的注册表里有记录，但项目里的绑定不见了（.agora/sessions/ 被清掉？）。${origin.log === "found" ? "原生对话还在，恢复后照常续接。" : "原生对话在这台机器上没找到；恢复后只能查看 Agora 保存的轨迹。"}`]
+      : origin.state === "other-copy"
+        ? ["属于另一份副本", `这个 ${name} 会话由本机的另一份项目（${origin.root}）在用。两份项目不能续接同一个原生会话：可以在这里分叉一份继续（保留之前的对话）。`]
+        : ["来自另一台机器", `这个 ${name} 会话是在另一台机器上（或别的位置）建的，对话记录不在这台机器上。`];
+  return (
+    <div className="sp">
+      <div className="sp-choose sp-origin" data-state={origin.state}>
+        <div className="sp-origin-head">
+          <AgentAvatar kind={agent} size={40} />
+          <div>
+            <h2>{origin.topic ? `${name} · ${origin.topic}` : name}</h2>
+            <p className="sp-meta">
+              <span className="sp-lock"><IconLock size={12} />{origin.model || "默认模型"}{origin.effort ? ` · ${origin.effort}` : ""}</span>
+              <span className="sp-sep" aria-hidden>·</span>
+              <span>{canvas ? `画布「${canvas}」` : canvasId ? "画布不在这个工作区" : "未关联画布"}</span>
+              {origin.nativeId && <code className="sp-native" title="原生会话 id">{origin.nativeId.slice(0, 8)}</code>}
+            </p>
+          </div>
+        </div>
+        <p className="notice" data-tone={origin.state === "foreign" ? "caution" : undefined}>
+          <b>{title}</b>
+          <span>{text}</span>
+        </p>
+        {err && <p className="sp-warn">{err}</p>}
+        <div className="sp-choose-go">
+          {origin.state === "recoverable" && <button className="btn primary" disabled={busy} onClick={() => void restore()}>恢复这个会话</button>}
+          {origin.state === "other-copy" && <button className="btn primary" disabled={busy} onClick={() => void fork()}>在这里分叉继续</button>}
+          <button className={origin.state === "foreign" ? "btn primary" : "btn ghost"} disabled={busy} onClick={() => void fresh()}>在这里开新会话</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /** Where「在终端打开」opens, remembered per browser (a convenience; the default is Kitty). */
@@ -240,9 +316,13 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   };
 
   const inSeedmux = !!status?.terminal.alive && status.terminal.app === "seedmux";
+  // Copied along with the project (cp -r): read-only until forked here. A pending fork: the next
+  // message (Claude, Pi) or the terminal (all three; Codex only there) continues it as a new native session.
+  const copyOf = status?.copy ?? null;
+  const fork = binding.pendingFork ?? null;
   // The native log is gone / ambiguous: read-only, no terminal, no sending (never a silent new conversation).
   const native = status?.native ?? null;
-  const stuck = !!native?.blocking && !status?.terminal.alive;
+  const stuck = (!!native?.blocking && !status?.terminal.alive && !fork) || !!copyOf;
   const line = status?.held
     ? `排队中：${status.held}`
     : status?.running
@@ -406,7 +486,15 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           <span>{native.message}</span>
         </div>
       )}
-      {stuck && native ? (
+      {fork && !copyOf && (
+        <div className="notice sp-lost-note" role="status">
+          <b>分叉</b>
+          <span>{binding.agent === "codex" ? "Codex 只能在终端里分叉：点「在终端打开」，在终端里接着说；新的原生会话会自动接到这里。" : `下一条消息会从原来的会话（${fork.from.slice(0, 8)}）分出一个新的原生会话继续，之前的对话都在。`}</span>
+        </div>
+      )}
+      {copyOf ? (
+        <CopyCard sessionId={sessionId} copy={copyOf} agent={binding.agent} />
+      ) : stuck && native ? (
         <NativeMissing sessionId={sessionId} canvasId={session.canvasId} problem={native} agent={binding.agent} model={binding.model} effort={binding.effort} />
       ) : (
         <Composer
@@ -417,6 +505,34 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           onSend={send}
         />
       )}
+    </div>
+  );
+}
+
+/** Brought along by `cp -r`: the original copy still resumes this native session. Fork it here, or leave it to the original. */
+function CopyCard({ sessionId, copy, agent }: { sessionId: string; copy: NonNullable<import("./agents").Status["copy"]>; agent: AgentKind }) {
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const fork = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await agents.fork(sessionId);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="sp-lost" role="status" data-state="copy">
+      <p className="sp-lost-title"><b data-tone="caution">来自 {copy.from} 的副本</b> · 只读</p>
+      <p>原来那份项目还在用这个 {AGENT_NAMES[agent]} 会话。两份项目不能续接同一个原生会话：在这里分叉一份继续（新的原生会话，之前的对话都在），或者留给原来那份。</p>
+      {err && <p className="sp-warn">{err}</p>}
+      <div className="sp-lost-go">
+        <button className="btn primary sm" disabled={busy} onClick={() => void fork()}>在这里分叉继续</button>
+        <button className="btn ghost sm" disabled={busy} onClick={() => ui.trashSession(sessionId)} title="从这份副本里移到回收站；原来那份不受影响">留给原来那份</button>
+      </div>
     </div>
   );
 }

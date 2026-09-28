@@ -24,8 +24,8 @@ export function AgentAvatar({ kind, size = 32, label }: { kind: AgentKind; size?
   );
 }
 
-/** A session tab's mark: its agent once bound, the plain tab dot before that (a draft). */
-export function SessionMark({ sessionId }: { sessionId: string }) {
-  const kind = useAgents().bindings[sessionId]?.agent;
+/** A session tab's mark: its agent once bound (or the agent its entry records, for a session made elsewhere), the plain tab dot before that (a draft). */
+export function SessionMark({ sessionId, fallback }: { sessionId: string; fallback?: AgentKind }) {
+  const kind = useAgents().bindings[sessionId]?.agent ?? fallback;
   return kind ? <AgentAvatar kind={kind} size={16} label /> : <span className="wm-tab-dot" />;
 }
