@@ -3,13 +3,17 @@
 //
 //   - A top-level worker appears when its work starts, at the first node it will work on in that
 //     stretch, and walks to the node of each file it reads or writes (moves start as the call
-//     starts). After a minute with nothing going on it leaves the canvas (fades out); when work
-//     starts again it reappears where that work is. So it never stands at a stale place.
+//     starts) — except a short read (a glance: under GLANCE_MS with the reads right after it at that
+//     node, no write or command there), which it looks over at from where it stands. After a minute
+//     with nothing going on it leaves the canvas (fades out); when work starts again it reappears
+//     where that work is. So it never stands at a stale place.
 //   - A sub-agent appears at its dispatcher's spot when dispatched, walks to its own files, and
 //     when it reports back walks to the dispatcher, hands over, and fades out. A receipts-only
 //     worker never moves.
 // Places are node element ids or OUTSIDE (the 图外 tray next to the diagram).
-import { planWalk, WALK_MAX_MS, type Move, type Pose, type Pt, type WalkPlan } from "./rig";
+import { REF_K } from "./docks";
+import { planTrip, SUB_SCALE, type Move, type Pose, type Pt, type Trip } from "./rig";
+import type { Leg, Route } from "./route";
 import { receiptAt, type WorkRun, type ReceiptState, type RunSeg } from "./runs/types";
 
 export const OUTSIDE = "\u0000outside";
@@ -19,8 +23,13 @@ export const HANDOFF_MS = 1100;
 export const FADE_MS = 800;
 /** A worker fades in when it appears (never pops in). */
 export const APPEAR_MS = 320;
+/** A read shorter than this (with the reads right after it at the same node), with no write or command
+ * there, is a glance: the worker looks over from where it stands instead of walking there. */
+export const GLANCE_MS = 2500;
 
 export type Located = { place: string; portal?: { canvasId: string; label: string } };
+/** Where a worker stands: its place and its feet (world coordinates). */
+export type Spot = { place: string; at: Pt };
 /** A project-relative file → the node it belongs to on this canvas (null = outside the diagram). */
 export type Locate = (path: string) => Located | null;
 
@@ -28,8 +37,8 @@ export type Ctx = {
   locate: Locate;
   /** The dock (feet position, world coordinates) at a place. */
   dock: (place: string) => Pt;
-  /** Waypoints for a walk from a to b around the nodes in the way (none: straight). */
-  route?: (a: Pt, b: Pt) => Pt[];
+  /** The way from one spot to another on this canvas (./route.ts on its walk map); without it, straight across and up or down. */
+  route?: (from: Spot, to: Spot) => Route;
   reduced: boolean;
   /** The dispatcher of a sub-agent, to find where it was and where to hand back. */
   run: (id: string) => WorkRun | undefined;
@@ -41,10 +50,12 @@ export type RunState = {
   fade: number;
   at: string;
   from: string;
-  /** The walk in progress or the last one, when walking is on. */
-  walk: WalkPlan | null;
-  /** 0 → 1 along the current walk; 1 once arrived. */
+  /** The trip in progress or the last one, when walking is on. */
+  trip: Trip | null;
+  /** 0 → 1 along the current trip; 1 once arrived. */
   w: number;
+  /** Reading a node it stays away from (a short read): it looks over there from where it stands. */
+  glance?: { place: string };
   seg: RunSeg | null;
   pose: Pose;
   /** ms into the current segment. */
@@ -57,6 +68,39 @@ export type RunState = {
 };
 
 const where = (ctx: Ctx, s: RunSeg): Located | null => (s.path ? (ctx.locate(s.path) ?? { place: OUTSIDE }) : null);
+
+/** Whether segs[i], at `place`, is a glance: it and the segments right after it at that place are all
+ * reads, together shorter than GLANCE_MS. (A later write or command there, or a longer read, walks.) */
+function glanced(ctx: Ctx, segs: readonly RunSeg[], i: number, place: string): boolean {
+  let j = i;
+  while (j + 1 < segs.length && where(ctx, segs[j + 1])?.place === place) j++;
+  return segs.slice(i, j + 1).every((g) => g.kind === "read") && segs[j].end - segs[i].start < GLANCE_MS;
+}
+
+/** From `from`, along a run's segments up to t: the moves to each new place (not for a glance), where it
+ * is, and what it glances at, if anything, at t. */
+function follow(ctx: Ctx, segs: readonly RunSeg[], t: number, from: Located, sub: boolean) {
+  let at = from.place;
+  let portal = from.portal;
+  let glance: RunState["glance"];
+  const moves: Move[] = [];
+  for (let i = 0; i < segs.length; i++) {
+    const g = segs[i];
+    if (g.start > t) break;
+    const w = where(ctx, g);
+    if (!w) continue;
+    if (w.place !== at) {
+      if (glanced(ctx, segs, i, w.place)) {
+        if (t < g.end) glance = { place: w.place };
+        continue;
+      }
+      moves.push({ from: at, to: w.place, t: g.start, slot: 0, ...(sub ? { sub } : {}) });
+    }
+    at = w.place;
+    portal = w.portal;
+  }
+  return { at, portal, glance, moves };
+}
 
 /** Work stretches: segments split where nothing happened for longer than IDLE_LEAVE_MS. */
 export function bursts(segs: readonly RunSeg[]): RunSeg[][] {
@@ -90,31 +134,24 @@ function compute(run: WorkRun, t: number, ctx: Ctx): RunState {
   const parent = run.parentId ? ctx.run(run.parentId) : undefined;
   const receipt = receiptAt(run, t);
   const seg = run.segs.find((g) => g.start <= t && t < g.end) ?? null;
-  const moves: Move[] = [];
+  let moves: Move[] = [];
   let at: string;
   let portal: Located["portal"];
+  let glance: RunState["glance"];
   let present = true;
   let fade = 1;
   let handoff = false;
 
   if (parent) {
     // A sub-agent starts where its dispatcher was when it sent it.
-    at = run.spawnAt != null ? stateAt(parent, run.spawnAt, ctx).at : OUTSIDE;
+    ({ at, portal, glance, moves } = follow(ctx, run.segs, t, { place: run.spawnAt != null ? stateAt(parent, run.spawnAt, ctx).at : OUTSIDE }, true));
     if (run.spawnAt == null || t < run.spawnAt) present = false;
     else fade = Math.min(1, (t - run.spawnAt) / APPEAR_MS);
-    for (const g of run.segs) {
-      if (g.start > t) break;
-      const w = where(ctx, g);
-      if (!w) continue;
-      if (w.place !== at) moves.push({ from: at, to: w.place, t: g.start, slot: 0 });
-      at = w.place;
-      portal = w.portal;
-    }
     if (run.doneAt != null && t >= run.doneAt) {
       let arrive = run.doneAt;
       if (!run.coarse) {
         const pAt = stateAt(parent, run.doneAt, ctx).at;
-        moves.push({ from: at, to: pAt, t: run.doneAt, slot: 0, ret: true });
+        moves.push({ from: at, to: pAt, t: run.doneAt, slot: 0, ret: true, sub: true });
         if (walkOn) arrive = planFor(moves[moves.length - 1], ctx).t1;
         at = pAt;
         portal = undefined;
@@ -137,17 +174,7 @@ function compute(run: WorkRun, t: number, ctx: Ctx): RunState {
       // It appears where this stretch's work first lands (else where the last one ended).
       const first = b.map((g) => where(ctx, g)).find(Boolean);
       const prev = bi > 0 ? [...bs[bi - 1]].reverse().map((g) => where(ctx, g)).find(Boolean) : null;
-      const home = first ?? prev ?? { place: OUTSIDE };
-      at = home.place;
-      portal = home.portal;
-      for (const g of b) {
-        if (g.start > t) break;
-        const w = where(ctx, g);
-        if (!w) continue;
-        if (w.place !== at) moves.push({ from: at, to: w.place, t: g.start, slot: 0 });
-        at = w.place;
-        portal = w.portal;
-      }
+      ({ at, portal, glance, moves } = follow(ctx, b, t, first ?? prev ?? { place: OUTSIDE }, false));
       const lastEnd = Math.max(...b.filter((g) => g.start <= t).map((g) => g.end));
       const idle = t - lastEnd;
       fade = Math.min(1, (t - b[0].start) / APPEAR_MS);
@@ -158,11 +185,11 @@ function compute(run: WorkRun, t: number, ctx: Ctx): RunState {
     }
   }
 
-  let walk: WalkPlan | null = null;
+  let trip: Trip | null = null;
   let w = 1;
   if (walkOn && moves.length) {
-    walk = planFor(moves[moves.length - 1], ctx);
-    w = t >= walk.t1 ? 1 : Math.min(0.999, Math.max(0, (t - walk.t0) / (walk.t1 - walk.t0)));
+    trip = planFor(moves[moves.length - 1], ctx);
+    w = t >= trip.t1 ? 1 : Math.min(0.999, Math.max(0, (t - trip.t0) / (trip.t1 - trip.t0)));
   }
   let pose: Pose = w < 1 ? "walk" : seg ? seg.kind : "idle";
   if (handoff) pose = "handoff";
@@ -172,8 +199,9 @@ function compute(run: WorkRun, t: number, ctx: Ctx): RunState {
     fade,
     at,
     from: moves.length ? moves[moves.length - 1].from : at,
-    walk,
+    trip,
     w,
+    ...(glance && w >= 1 ? { glance } : {}),
     seg,
     pose,
     since: seg ? t - seg.start : 0,
@@ -184,22 +212,32 @@ function compute(run: WorkRun, t: number, ctx: Ctx): RunState {
   };
 }
 
-const plans = new Map<string, WalkPlan>();
-/** The footstep plan of a move between two docks, around the nodes in the way (memoised; docks move when the diagram does). */
-export function planFor(m: Move, ctx: Pick<Ctx, "dock" | "route">): WalkPlan {
+const trips = new WeakMap<object, Map<string, Trip>>();
+const STRAIGHT = {};
+/** The trip of a move between two docks, along the canvas's walk map (memoised per map: docks move
+ * when the diagram does). Planned for the figure's size at the reference view (a sub-agent's is smaller). */
+export function planFor(m: Move, ctx: Pick<Ctx, "dock" | "route">): Trip {
   const a = ctx.dock(m.from);
   const b = ctx.dock(m.to);
-  const key = `${m.t}|${a.x},${a.y}|${b.x},${b.y}|${ctx.route ? 1 : 0}`;
-  let p = plans.get(key);
+  let byMove = trips.get(ctx.route ?? STRAIGHT);
+  if (!byMove) trips.set(ctx.route ?? STRAIGHT, (byMove = new Map()));
+  const key = `${m.t}|${m.sub ? 1 : 0}|${m.from}|${m.to}|${a.x},${a.y}|${b.x},${b.y}`;
+  let p = byMove.get(key);
   if (!p) {
-    if (plans.size > 4000) plans.clear();
-    plans.set(key, (p = planWalk(m, a, b, ctx.route?.(a, b) ?? [])));
+    if (byMove.size > 4000) byMove.clear();
+    const rt = ctx.route ? ctx.route({ place: m.from, at: a }, { place: m.to, at: b }) : straight(a, b);
+    byMove.set(key, (p = planTrip(m, rt, a, REF_K * (m.sub ? SUB_SCALE : 1))));
   }
   return p;
 }
 
-/** How long before a place change the figure may still be walking (for "is anything moving" checks). */
-export const WALK_SLACK_MS = WALK_MAX_MS + 600;
+/** Without a walk map: across at the start's height, then up or down. */
+function straight(a: Pt, b: Pt): Route {
+  const legs: Leg[] = [];
+  if (a.x !== b.x) legs.push({ kind: "walk", a, b: { x: b.x, y: a.y }, temp: false });
+  if (a.y !== b.y) legs.push({ kind: "climb", a: { x: b.x, y: a.y }, b, temp: false });
+  return { legs, len: Math.abs(b.x - a.x) + Math.abs(b.y - a.y) };
+}
 
 export type WriteConflict = { path: string; start: number; end: number; runs: [string, string] };
 /** Two runs (sub-agents included) writing the same file at overlapping times. Pure; computed on data changes. */

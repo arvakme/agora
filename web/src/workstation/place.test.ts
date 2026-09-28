@@ -29,7 +29,7 @@ describe("stateAt: a session's worker", () => {
     expect(s).toMatchObject({ at: "db", from: "api", pose: "walk" });
     expect(s.w).toBeGreaterThan(0);
     expect(s.w).toBeLessThan(1);
-    const w = s.walk!;
+    const w = s.trip!;
     expect(stateAt(r, w.t1 + 1, c)).toMatchObject({ at: "db", pose: "write", w: 1 });
     expect(stateAt(r, 10 * S, c)).toMatchObject({ at: "db", pose: "wait" });
   });
@@ -53,10 +53,10 @@ describe("stateAt: a session's worker", () => {
     expect(stateAt(r, end + IDLE_LEAVE_MS + FADE_MS + 1, c).present).toBe(false);
     const back = run([...r.segs, seg("read", 200, 205, "server/db/x.py")]);
     // a new stretch: appears at its first place, no walk from where it left
-    expect(stateAt(back, 201 * S, ctx([back]))).toMatchObject({ present: true, at: "db", pose: "read", w: 1, walk: null });
+    expect(stateAt(back, 201 * S, ctx([back]))).toMatchObject({ present: true, at: "db", pose: "read", w: 1, trip: null });
   });
   it("reduced motion: never walks", () => {
-    expect(stateAt(r, 6.2 * S, ctx([r], true))).toMatchObject({ at: "db", pose: "write", w: 1, walk: null });
+    expect(stateAt(r, 6.2 * S, ctx([r], true))).toMatchObject({ at: "db", pose: "write", w: 1, trip: null });
   });
   it("names the child canvas when the file lies below the node", () => {
     const p = run([seg("write", 0, 5, "orders/service.py")]);
@@ -87,7 +87,7 @@ describe("stateAt: sub-agents (the prototype's scenario)", () => {
     const back = stateAt(codex, done + 10, c);
     expect(back.pose).toBe("walk");
     expect(back.at).toBe(stateAt(pi, done, c).at);
-    const arrive = back.walk!.t1;
+    const arrive = back.trip!.t1;
     expect(stateAt(codex, arrive + 10, c).pose).toBe("handoff");
     expect(stateAt(codex, arrive + HANDOFF_MS + FADE_MS + 10, c).present).toBe(false);
   });

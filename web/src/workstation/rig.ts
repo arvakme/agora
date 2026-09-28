@@ -7,11 +7,13 @@
 // (first written for the 工位视图 prototype, then ported here).
 //
 // What keeps replay exact:
-//   - WHAT a worker does and WHERE its feet are is a pure function of the timeline time t
-//     (stateAt in ./place.ts, planWalk / feetAt here). Scrubbing to t and playing up to t agree.
+//   - WHAT a worker does and WHERE its hands and feet are is a pure function of the timeline time t
+//     (stateAt in ./place.ts, planTrip / tripAt here). Scrubbing to t and playing up to t agree.
 //   - Springs only smooth hands, lean and head between those targets. On a jump (seek, time going
 //     backwards, a long gap) they are reset to the target, so a paused frame is always the exact pose.
 // Times are milliseconds; lengths are figure units (1 unit = 1 CSS px at scale 1), ground y = 0, up −y.
+
+import type { Leg, Route } from "./route";
 
 export type Pt = { x: number; y: number };
 
@@ -117,147 +119,375 @@ export function ik(rx: number, ry: number, tx: number, ty: number, a: number, b:
   return { jx: rx + a * Math.cos(ang), jy: ry + a * Math.sin(ang), ex: rx + (dx / d0) * d, ey: ry + (dy / d0) * d };
 }
 
-export const RIG = { hip: 21, thigh: 11.6, shin: 11.2, torso: 15, upper: 8.4, fore: 8.2, head: 8.6, stance: 2.6 };
+/**
+ * Proportions in figure units: Loom Studio's line figure (docs/workstation.md §小人) at 0.936 of its
+ * size, head excepted, so the top of the head stays 53.8 above the ground, where it has always been
+ * (bubbles hang their tails there). `shin` runs from the knee to the sole (the IK target on the
+ * ground); the drawn shin stops `ankle` above the sole, where the `foot` starts. `head` is the head's
+ * radius (the neck is head + 0.6).
+ */
+export const RIG = { hip: 25.45, thigh: 12.54, shin: 13.76, ankle: 1.4, foot: 5.05, torso: 15.35, upper: 9.36, fore: 8.8, head: 6.2, stance: 2.6 };
 const smooth = (u: number) => u * u * (3 - 2 * u);
+const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+const mix = (a: number, b: number, u: number) => a + (b - a) * u;
 
-/** One walk from one dock to another, starting at t (ms). `slot` is the spot at the destination. */
-export type Move = { from: string; to: string; t: number; slot: number; fromSlot?: number; ret?: boolean };
-export type Step = { foot: 0 | 1; t0: number; t1: number; from: Pt; to: Pt };
-export type WalkPlan = { a: Pt; b: Pt; f: 1 | -1; steps: Step[]; t0: number; t1: number; dist: number; path: Pt[] };
+/** One trip from one place to another, starting at t (ms). `slot` is the spot at the destination; `sub`: a sub-agent's (drawn SUB_SCALE smaller). */
+export type Move = { from: string; to: string; t: number; slot: number; fromSlot?: number; ret?: boolean; sub?: boolean };
 
-/** World px per ms (cruising). */
+/** Sub-agents are drawn this much smaller than the agent that sent them. */
+export const SUB_SCALE = 0.8;
+/** World px per ms at the natural pace: walking (floors and bridges) and climbing. */
 export const WALK_SPEED = 0.15;
-export const WALK_MIN_MS = 700;
-export const WALK_MAX_MS = 2600;
+export const CLIMB_SPEED = 0.09;
+/** A whole trip — the turn at set-off to the last foot down — takes this long at least and at most:
+ * a longer way goes faster (longer and quicker steps), a shorter one slower. */
+export const TRIP_MIN_MS = 700;
+export const TRIP_MAX_MS = 2400;
 /** How long a turn takes (from facing one way to the other, through edge-on). */
 export const TURN_MS = 200;
 /** A beat to turn and shift weight before the first step: the turn is over before a foot lifts. */
 export const SET_OFF_MS = 240;
+/** A climb shorter than this (world px) is a step between floors: walked, no ladder. */
+export const STEP_MAX = 12;
 
-/** Progress along the path at time fraction u: sine ease-in-out (starts and stops gently). */
-const ease = (u: number) => (1 - Math.cos(Math.PI * u)) / 2;
-/** Its inverse: the time fraction at which progress p is reached. */
-const easeInv = (p: number) => Math.acos(1 - 2 * Math.max(0, Math.min(1, p))) / Math.PI;
+// The gait, in figure units (× the trip's k for world px).
+const STRIDE = 15; // between footfalls at the natural pace (Loom's 15.3)
+const LIFT = 3.4; // how high a swinging foot comes up (and how far a hand or foot comes off a ladder)
+const RUNG = 5.5; // rung spacing, about: a ladder's rungs split its height evenly
+const GAP = 4; // the body keeps this far off a ladder it climbs; hands and feet reach forward to it
+const POST = 22; // the rails reach this far above the upper floor: a handhold getting on and off
+const GRAB_MS = 150; // hands and feet go onto a ladder over this much either side of where the climb starts (and off it where it ends)
+const RAMP = 0.3; // a walk or a climb gathers speed over this share of its time, and slows over as much
+const A_MAX = 0.005; // world px/ms²: no walk or climb gathers speed (or slows) harder — under 1.4 px of change a frame at 60 fps
+/** How far the shoulders sit below the top of the torso. */
+const SHOULDER = 2.2;
 
-/** A point `s` along a polyline (and the length). */
-function along(path: Pt[]): { len: number; at: (s: number) => Pt } {
-  const seg = path.slice(1).map((p, i) => Math.hypot(p.x - path[i].x, p.y - path[i].y));
-  const len = seg.reduce((n, x) => n + x, 0);
+/** A foot (or a hand on a ladder), world coordinates. `lift`: 0 planted or holding … 1 fully off, mid-move. */
+export type Foot = Pt & { lift: number };
+type Swing = { foot: 0 | 1; t0: number; t1: number; from: Pt; to: Pt; up: number };
+/** One ladder's holds: rung j at y = bot − j·sp (0 the lower floor, n the upper one, top the rails' ends).
+ * A limb holds every R-th rung, a diagonal pair moving while the other holds; hands hold m rungs over
+ * the feet; `hip`: the hips' height above the feet on it (figure units, knees bent). */
+type Rungs = { bot: number; sp: number; n: number; top: number; R: number; m: number; hip: number };
+type Span = { t0: number; t1: number; a: Pt; b: Pt; f: 1 | -1 };
+type WalkPhase = Span & { kind: "walk"; feet: [Foot, Foot]; steps: Swing[]; bumps: { lo: number; hi: number; dy: number }[] };
+/** A climb up or down the ladder at x; hands and feet go onto it over `on` ms either side of t0 and off it over `off` ms either side of t1. */
+type ClimbPhase = Span & { kind: "climb"; x: number; rungs: Rungs; on: number; off: number };
+/** A stretch of a trip, t0 → t1, the root going from a to b, starting and ending at rest. */
+type Phase = WalkPhase | ClimbPhase;
+/** What a trip draws while it is walked: bridges (level, across a gap) and ladders (rails from `bottom`
+ * up to `top`, rungs at `rungs`); `temp`: a scaffold's, not a connector's. */
+export type Bridge = { a: Pt; b: Pt; temp: boolean };
+export type Ladder = { x: number; top: number; bottom: number; rungs: number[]; temp: boolean };
+/** A move planned along its route: t0 → t1 (the turn at set-off included), a → b, for a figure drawn at k world px per figure unit. */
+export type Trip = { t0: number; t1: number; a: Pt; b: Pt; f: 1 | -1; k: number; phases: Phase[]; bridges: Bridge[]; ladders: Ladder[] };
+/** A worker on a trip at t: root and feet (world), its hands' holds while on a ladder, how far into the
+ * climbing stance it is (0 walking … 1 on the ladder), its hip height (figure units) and facing. */
+export type TripPose = { root: Pt; feet: [Foot, Foot]; hands: [Foot, Foot] | null; climb: number; hip: number; f: 1 | -1 };
+
+/** Progress 0 → 1 over time fraction u: from rest, gathering speed evenly over the first RAMP of the
+ * time, cruising, slowing evenly to rest over the last — the speed never jumps, and for its duration no
+ * smooth start and stop pushes less hard (1 / (RAMP·(1 − RAMP)) × length / duration²). */
+function prog(u: number): number {
+  const a = RAMP;
+  const up = (x: number) => (x < a ? (x * x) / (2 * a) : x - a / 2);
+  const v = clamp(u, 0, 1);
+  return (v <= 1 - a ? up(v) : 1 - a - up(1 - v)) / (1 - a);
+}
+/** When progress p is reached (prog's inverse). */
+function progAt(p: number): number {
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    if (prog(mid) < p) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/**
+ * The rung a limb holds while its resting point is at rung z (fractional): the nearest of its own rungs
+ * (every R-th from `from`), moving on to the next one while z crosses the middle half between them — a
+ * smooth move, off the ladder by `up` 0 → 1 → 0 — within lo…hi.
+ */
+function holdAt(z: number, from: number, R: number, lo: number, hi: number): { j: number; up: number; lift: number } {
+  const q = (z - from) / R - 0.25;
+  const i = Math.floor(q);
+  const fr = q - i;
+  const a = from + R * i;
+  const src = clamp(a, lo, hi);
+  const dst = clamp(a + R, lo, hi);
+  const j = clamp(a + R * (fr < 0.5 ? smooth(fr / 0.5) : 1), lo, hi);
+  // between two rungs it is off the ladder (lift > 0 however close to one it is); on a rung, 0
+  const up = j > src && j < dst ? Math.sin((Math.PI * (j - src)) / (dst - src)) : 0;
+  return { j, up, lift: up ? Math.max(1e-3, up) : 0 };
+}
+
+/** Hands and feet on the ladder at x with the body at height y: the near hand moves with the far foot,
+ * the far hand with the near foot, the pairs taking turns; a limb between rungs comes off toward the body. */
+function holds(r: Rungs, x: number, f: 1 | -1, y: number, k: number): { feet: [Foot, Foot]; hands: [Foot, Foot] } {
+  const z = (r.bot - y) / r.sp;
+  const at = (h: { j: number; up: number; lift: number }): Foot => ({ x: x - f * h.up * LIFT * k, y: r.bot - h.j * r.sp, lift: h.lift });
+  const half = r.R / 2;
   return {
-    len,
-    at(s: number) {
-      let left = Math.max(0, Math.min(len, s));
-      for (let i = 0; i < seg.length; i++) {
-        if (left <= seg[i] || i === seg.length - 1) {
-          const k = seg[i] ? left / seg[i] : 0;
-          return { x: path[i].x + (path[i + 1].x - path[i].x) * k, y: path[i].y + (path[i + 1].y - path[i].y) * k };
-        }
-        left -= seg[i];
-      }
-      return path[path.length - 1];
-    },
+    feet: [at(holdAt(z, 0, r.R, 0, r.n)), at(holdAt(z, half, r.R, 0, r.n))],
+    hands: [at(holdAt(z + r.m, (half + r.m) % r.R, r.R, 1, r.top)), at(holdAt(z + r.m, r.m % r.R, r.R, 1, r.top))],
   };
 }
 
-/**
- * Footstep plan for one move (pure): after a short set-off, n steps of equal length along the path
- * (through `via`, the waypoints around nodes in the way) so the last one lands on the dock, then a
- * short closing step. Step times follow an ease-in-out curve, so the walk starts and stops gently
- * instead of at constant speed. Feet are planted except while they swing.
- */
-export function planWalk(m: Move, a: Pt, b: Pt, via: Pt[] = []): WalkPlan {
-  const path = [a, ...via, b];
-  const P = along(path);
-  const dist = P.len;
-  const dur = Math.max(WALK_MIN_MS, Math.min(WALK_MAX_MS, (dist / WALK_SPEED) * 1.25));
-  const n = Math.max(2, Math.round(dist / 16));
-  const dx = b.x - a.x;
-  const f: 1 | -1 = Math.abs(dx) < 8 ? 1 : dx > 0 ? 1 : -1;
-  const start = m.t + SET_OFF_MS;
-  const time = (k: number) => start + dur * easeInv(k / n);
-  const steps: Step[] = [];
-  let feet: Pt[] = [
-    { x: a.x + RIG.stance * f, y: a.y },
-    { x: a.x - RIG.stance * f, y: a.y },
-  ];
-  for (let k = 1; k <= n; k++) {
-    const foot = (k % 2) as 0 | 1; // far foot leads
-    const p = P.at((dist * k) / n);
-    const to = k === n ? { x: b.x + (foot ? -1 : 1) * RIG.stance * f, y: b.y } : p;
-    steps.push({ foot, t0: time(k - 1), t1: time(k), from: feet[foot], to });
-    feet = feet.map((x, i) => (i === foot ? to : x));
-  }
-  const last = steps[steps.length - 1].foot;
-  const other = (1 - last) as 0 | 1;
-  const close = { x: b.x + (other ? -1 : 1) * RIG.stance * f, y: b.y };
-  const sd = Math.max(120, (dur / n) * 1.4);
-  steps.push({ foot: other, t0: start + dur, t1: start + dur + sd, from: feet[other], to: close });
-  return { a, b, f, steps, t0: m.t, t1: start + dur + sd, dist, path };
+/** The rungs of a ladder from y0 to y1 for a figure at k world px per unit, its limbs reaching R rungs a move. */
+function rungsOf(y0: number, y1: number, k: number, R: number): Rungs {
+  const bot = Math.max(y0, y1);
+  const H = bot - Math.min(y0, y1);
+  const n = Math.max(1, Math.round(H / (RUNG * k)));
+  const sp = H / n;
+  // hips low enough that a foot at the bottom of its reach (R/4 rungs under the body) still gets there
+  const hip = Math.min(0.8 * RIG.hip, 0.97 * (RIG.thigh + RIG.shin) - (R / 4) * (sp / k));
+  const hand = hip + RIG.torso - SHOULDER + 0.5 * (RIG.upper + RIG.fore);
+  return { bot, sp, n, top: n + Math.max(1, Math.round((POST * k) / sp)), R, m: Math.max(1, Math.round((hand * k) / sp)), hip };
 }
 
-/** Walk progress at t along the plan (0 → 1, eased), for bubbles and tests. */
-export const walkProgress = (plan: WalkPlan, t: number) => (t <= plan.t0 + SET_OFF_MS ? 0 : t >= plan.t1 ? 1 : ease(Math.min(1, (t - plan.t0 - SET_OFF_MS) / (plan.t1 - plan.t0 - SET_OFF_MS))));
-
-/**
- * Waypoints around the nodes a straight walk from a to b would cross (a simple hop over them):
- * docks sit on nodes' top edges, so the walk rises above the highest box in the way and comes
- * down at the destination. `boxes` are node boxes in world coordinates. Pure.
- */
-export function routeAround(a: Pt, b: Pt, boxes: readonly { x: number; y: number; w: number; h: number }[], clearance = 18): Pt[] {
-  const on = (p: Pt, r: { x: number; y: number; w: number; h: number }) => p.x >= r.x - 2 && p.x <= r.x + r.w + 2 && p.y >= r.y - 2 && p.y <= r.y + r.h + 2;
-  const hits = boxes.filter((r) => {
-    if (on(a, r) || on(b, r)) return false;
-    const i = { x: r.x - 6, y: r.y - 6, w: r.w + 12, h: r.h + 12 };
-    // segment / rectangle intersection by sampling (boxes are few; this runs once per walk plan)
-    for (let k = 1; k < 24; k++) {
-      const x = a.x + ((b.x - a.x) * k) / 24;
-      const y = a.y + ((b.y - a.y) * k) / 24;
-      if (x >= i.x && x <= i.x + i.w && y >= i.y && y <= i.y + i.h) return true;
-    }
-    return false;
+/** A walk from a to b (root) over level legs and steps: footsteps, and the body's rise over each step. */
+function walkPhase(legs: readonly Leg[], a: Pt, b: Pt, f: 1 | -1, feet: [Foot, Foot], t0: number, t1: number, stride: number, k: number): WalkPhase {
+  const dir = Math.sign(b.x - a.x);
+  const L = Math.abs(b.x - a.x);
+  const along = (x: number) => clamp((x - a.x) * dir, 0, L);
+  // a step between floors: the feet come down on the new floor past it; the body rises (or sinks)
+  // over a stretch around it, never at once
+  const ups = legs.filter((l) => l.kind === "climb").map((l) => ({ at: along(l.a.x), dy: l.b.y - l.a.y }));
+  const bumps = ups.map((s) => {
+    const w = Math.min(L, Math.max(24, 4.5 * Math.abs(s.dy)));
+    const lo = clamp(s.at - w / 2, 0, L - w);
+    return { lo, hi: lo + w, dy: s.dy };
   });
-  if (!hits.length) return [];
-  const top = Math.min(a.y, b.y, ...hits.map((r) => r.y)) - clearance;
-  return [
-    { x: a.x, y: top },
-    { x: b.x, y: top },
-  ];
+  const floor = (d: number) => a.y + ups.reduce((n, s) => n + (d >= s.at ? s.dy : 0), 0);
+  const T = t1 - t0;
+  const when = (d: number) => t0 + T * progAt(L ? d / L : 0);
+  const st = RIG.stance * k;
+  const steps: Swing[] = [];
+  const cur: Pt[] = [feet[0], feet[1]];
+  const swing = (foot: 0 | 1, s0: number, s1: number, to: Pt) => {
+    const d = Math.hypot(to.x - cur[foot].x, to.y - cur[foot].y);
+    steps.push({ foot, t0: s0, t1: s1, from: cur[foot], to, up: LIFT * k * clamp(d / stride, 0.3, 1) });
+    cur[foot] = to;
+  };
+  const home = (foot: 0 | 1): Pt => ({ x: b.x + (foot ? -st : st) * f, y: b.y });
+  if (L > 0) {
+    // n equal steps, the far foot first: each lands half a step ahead of the body and is lifted half a
+    // step behind it; the last lands on its spot at the end and the other foot closes up
+    const n = Math.max(1, Math.round(L / stride));
+    const D = L / n;
+    for (let i = 1; i <= n; i++) {
+      const foot = (i % 2) as 0 | 1;
+      swing(foot, when(Math.max(0, (i - 1.5) * D)), when((i - 0.5) * D), i < n ? { x: a.x + dir * i * D, y: floor(i * D) } : home(foot));
+    }
+    const other = (n % 2 ? 0 : 1) as 0 | 1;
+    swing(other, when((n - 0.5) * D), t1, home(other));
+  } else if (b.y !== a.y) {
+    // up or down a step where it stands: the far foot, then the near one
+    swing(1, t0, t0 + 0.6 * T, home(1));
+    swing(0, t0 + 0.4 * T, t1, home(0));
+  }
+  return { kind: "walk", t0, t1, a, b, f, feet, steps, bumps };
 }
 
-export type Foot = Pt & { lift: number };
-/** Where both feet are at time t during a walk (pure), which one swings, and how far through its swing. */
-export function feetAt(plan: WalkPlan, t: number): { feet: [Foot, Foot]; swing: -1 | 0 | 1; phase: number } {
-  const first = (foot: 0 | 1) => plan.steps.find((s) => s.foot === foot)!.from;
-  const feet: [Foot, Foot] = [
-    { ...first(0), lift: 0 },
-    { ...first(1), lift: 0 },
-  ];
-  let swing: -1 | 0 | 1 = -1;
-  let phase = 0;
-  for (const s of plan.steps) {
-    if (t >= s.t1) {
-      feet[s.foot] = { ...s.to, lift: 0 };
+/** The feet at the end of a walk: each where its last step put it. */
+function lastFeet(ph: WalkPhase): [Foot, Foot] {
+  const out: [Foot, Foot] = [ph.feet[0], ph.feet[1]];
+  for (const s of ph.steps) out[s.foot] = { ...s.to, lift: 0 };
+  return out;
+}
+
+/**
+ * Durations for stretches of natural durations `nat` (the body covering `len` world px in each) that
+ * fill `B` ms: one factor for all, except that none may gather speed harder than A_MAX — those keep
+ * the shortest duration that allows and the rest share what is left (if even that cannot fit, one
+ * factor for all).
+ */
+function fit(nat: readonly number[], len: readonly number[], B: number): number[] {
+  const min = len.map((l) => Math.sqrt(l / (RAMP * (1 - RAMP) * A_MAX)));
+  const held = nat.map(() => false);
+  for (let n = 0; n <= nat.length; n++) {
+    const left = B - min.reduce((a, x, i) => a + (held[i] ? x : 0), 0);
+    const rest = nat.reduce((a, x, i) => a + (held[i] ? 0 : x), 0);
+    if (left <= 0 || !rest) break;
+    const s = rest / left;
+    const fast = nat.map((x, i) => !held[i] && x / s < min[i]);
+    if (!fast.some(Boolean)) return nat.map((x, i) => (held[i] ? min[i] : x / s));
+    fast.forEach((v, i) => v && (held[i] = true));
+  }
+  const all = nat.reduce((a, x) => a + x, 0);
+  return nat.map((x) => (x * B) / all);
+}
+
+/**
+ * A move's trip along its route (pure). Runs of level legs are walked (a step under STEP_MAX included:
+ * the feet come down on the new floor, the body rises or sinks with them); a climb is climbed: the worker
+ * walks up to the ladder and stops GAP off it, facing it from the side it came from, reaches for the rungs
+ * and climbs hand over hand (a diagonal pair at a time), then steps off onto the other floor and walks on.
+ * Every walk and climb starts and ends at rest — hands and feet go onto the ladder as the walk slows and
+ * the climb starts, and off it as the climb ends and the next walk starts — so the body's speed never
+ * jumps. Natural durations from WALK_SPEED and CLIMB_SPEED; the whole trip, set-off included, is kept
+ * within TRIP_MIN_MS…TRIP_MAX_MS by one factor (fit: none gathers speed harder than A_MAX) — faster
+ * means quicker and longer steps, on a ladder reaching further rungs. `k`: world px per figure unit.
+ */
+export function planTrip(m: Move, rt: Route, from: Pt, k = 1): Trip {
+  const legs = rt.legs;
+  const b = legs.length ? legs[legs.length - 1].b : from;
+  const trip: Trip = { t0: m.t, t1: m.t, a: from, b, f: 1, k, phases: [], bridges: [], ladders: [] };
+  if (!legs.length) return trip;
+  // runs of legs, walked (level ones and steps) or climbed; a ladder is always walked to and from
+  const runs: { climb: boolean; legs: Leg[] }[] = [];
+  for (let i = 0; i < legs.length; ) {
+    let j = i + 1;
+    if (legs[i].kind === "climb") while (j < legs.length && legs[j].kind === "climb") j++;
+    const part = legs.slice(i, j);
+    const climb = part[0].kind === "climb" && Math.abs(part[part.length - 1].b.y - part[0].a.y) >= STEP_MAX;
+    const last = runs[runs.length - 1];
+    if (!climb && last && !last.climb) last.legs.push(...part);
+    else runs.push({ climb, legs: part });
+    i = j;
+  }
+  if (runs[0].climb) runs.unshift({ climb: false, legs: [] });
+  if (runs[runs.length - 1].climb) runs.push({ climb: false, legs: [] });
+  const dirOf = (r: { legs: Leg[] } | undefined) => (r?.legs.length ? Math.sign(r.legs[r.legs.length - 1].b.x - r.legs[0].a.x) : 0);
+  // a ladder is faced from the side it is come to (else the side it is left for)
+  const face = runs.map((r, i) => (r.climb ? dirOf(runs[i - 1]) || dirOf(runs[i + 1]) || 1 : 1) as 1 | -1);
+  // where the body goes: along each walk, and GAP off a ladder's line (never further back than it came)
+  const G = GAP * k;
+  const path: { a: Pt; b: Pt }[] = [];
+  let at = from;
+  for (let i = 0; i < runs.length; i++) {
+    const r = runs[i];
+    const e = r.legs.length ? r.legs[r.legs.length - 1].b : runs[i + 1] ? at : b;
+    const lx = runs[i + 1]?.climb ? runs[i + 1].legs[0].a.x : undefined;
+    const x = r.climb ? at.x : lx !== undefined ? lx - face[i + 1] * Math.min(G, Math.abs(lx - at.x)) : e.x;
+    path.push({ a: at, b: { x, y: e.y } });
+    at = path[i].b;
+  }
+  const steps = (r: { legs: Leg[] }) => r.legs.reduce((n, l) => n + (l.kind === "climb" ? Math.abs(l.b.y - l.a.y) : 0), 0);
+  const len = runs.map((r, i) => (r.climb ? Math.abs(path[i].b.y - path[i].a.y) : Math.abs(path[i].b.x - path[i].a.x) + steps(r)));
+  // beside a ladder a walk takes long enough for hands and feet to get on or off, even standing
+  const nat = runs.map((r, i) => (r.climb ? len[i] / CLIMB_SPEED : Math.max(len[i] / WALK_SPEED, runs[i - 1]?.climb || runs[i + 1]?.climb ? 2 * GRAB_MS : 0)));
+  const N = nat.reduce((n, x) => n + x, 0);
+  const D = clamp(N, TRIP_MIN_MS - SET_OFF_MS, TRIP_MAX_MS - SET_OFF_MS);
+  const dur = fit(nat, len, D);
+  const st = RIG.stance * k;
+  let t = m.t + SET_OFF_MS;
+  let feet: [Foot, Foot] | null = null;
+  for (let i = 0; i < runs.length; i++) {
+    const r = runs[i];
+    const { a, b: e } = path[i];
+    const T = dur[i];
+    // quicker than natural: longer steps as well as quicker ones (on a ladder, reaching further rungs)
+    const pace = T ? Math.sqrt(nat[i] / T) : 1;
+    if (!r.climb) {
+      if (T > 0) {
+        const f = (Math.sign(e.x - a.x) || (runs[i + 1]?.climb ? face[i + 1] : 0) || trip.phases[trip.phases.length - 1]?.f || 1) as 1 | -1;
+        const start: [Foot, Foot] = feet ?? [
+          { x: a.x + st * f, y: a.y, lift: 0 },
+          { x: a.x - st * f, y: a.y, lift: 0 },
+        ];
+        const ph = walkPhase(r.legs, a, e, f, start, t, t + T, STRIDE * k * clamp(pace, 0.7, 1.6), k);
+        trip.phases.push(ph);
+        feet = lastFeet(ph);
+      }
+      t += T;
       continue;
     }
-    if (t > s.t0) {
-      const u = smooth((t - s.t0) / (s.t1 - s.t0));
-      feet[s.foot] = { x: s.from.x + (s.to.x - s.from.x) * u, y: s.from.y + (s.to.y - s.from.y) * u, lift: Math.sin(Math.PI * u) * 4.5 };
-      swing = s.foot;
-      phase = u;
+    const x = r.legs[0].a.x;
+    const rungs = rungsOf(a.y, e.y, k, pace >= 1.25 ? 6 : 4);
+    trip.phases.push({ kind: "climb", t0: t, t1: t + T, a, b: e, f: face[i], x, rungs, on: 0, off: 0 });
+    // off it at the ladder's foot (or top), on the floor there
+    feet = [
+      { x, y: e.y, lift: 0 },
+      { x, y: e.y, lift: 0 },
+    ];
+    t += T;
+    // drawn while walked: rails and rungs, the topmost leg's rails reaching POST above the upper floor
+    const upper = rungs.bot - rungs.n * rungs.sp;
+    for (const l of r.legs) {
+      const lo = Math.min(l.a.y, l.b.y);
+      const hi = Math.max(l.a.y, l.b.y);
+      const top = lo <= upper + 1e-6 ? rungs.bot - rungs.top * rungs.sp : lo;
+      const ys: number[] = [];
+      for (let j = 1; j <= rungs.top; j++) {
+        const y = rungs.bot - j * rungs.sp;
+        if (y < hi - 1e-6 && y >= top - 1e-6) ys.push(y);
+      }
+      trip.ladders.push({ x, top, bottom: hi, rungs: ys, temp: l.temp });
     }
-    break;
   }
-  return { feet, swing, phase };
+  const ph = trip.phases;
+  ph[ph.length - 1].t1 = trip.t1 = m.t + SET_OFF_MS + D;
+  // hands and feet go onto and off each ladder around the climb's ends, within the walks either side
+  ph.forEach((c, i) => {
+    if (c.kind !== "climb") return;
+    c.on = Math.min(GRAB_MS, 0.45 * (ph[i - 1].t1 - ph[i - 1].t0), 0.45 * (c.t1 - c.t0));
+    c.off = Math.min(GRAB_MS, 0.45 * (ph[i + 1].t1 - ph[i + 1].t0), 0.45 * (c.t1 - c.t0));
+  });
+  trip.f = ph[0].f;
+  trip.bridges = legs.filter((l) => l.kind === "bridge").map((l) => ({ a: l.a, b: l.b, temp: l.temp }));
+  return trip;
 }
 
-/**
- * Where the body is along a walk at t: on the path at the eased progress — a continuous glide,
- * so the body never lurches with each step; the feet are planted and swing around it.
- */
-export function rootAt(plan: WalkPlan, t: number): Pt {
-  if (t <= plan.t0) return plan.a;
-  if (t >= plan.t1) return plan.b;
-  return along(plan.path).at(plan.dist * walkProgress(plan, t));
+/** Where a walk or a climb has everything at t (hands and feet on the ladder while climbing). */
+function poseIn(x: Phase, t: number, k: number): TripPose {
+  const u = x.t1 > x.t0 ? clamp((t - x.t0) / (x.t1 - x.t0), 0, 1) : 1;
+  if (x.kind === "climb") {
+    const root = { x: x.a.x, y: mix(x.a.y, x.b.y, prog(u)) };
+    const h = holds(x.rungs, x.x, x.f, root.y, k);
+    return { root, feet: h.feet, hands: h.hands, climb: 1, hip: x.rungs.hip, f: x.f };
+  }
+  const L = Math.abs(x.b.x - x.a.x);
+  const d = L * prog(u);
+  const root = L ? { x: x.a.x + Math.sign(x.b.x - x.a.x) * d, y: x.a.y + x.bumps.reduce((n, s) => n + s.dy * smooth(clamp((d - s.lo) / (s.hi - s.lo), 0, 1)), 0) } : { x: x.a.x, y: mix(x.a.y, x.b.y, prog(u)) };
+  const feet: [Foot, Foot] = [x.feet[0], x.feet[1]];
+  for (const s of x.steps) {
+    if (t >= s.t1) feet[s.foot] = { ...s.to, lift: 0 };
+    else if (t > s.t0) {
+      const w = (t - s.t0) / (s.t1 - s.t0);
+      const v = smooth(w);
+      const lift = Math.sin(Math.PI * w);
+      feet[s.foot] = { x: mix(s.from.x, s.to.x, v), y: mix(s.from.y, s.to.y, v) - lift * s.up, lift: Math.max(1e-3, lift) };
+    }
+  }
+  return { root, feet, hands: null, climb: 0, hip: RIG.hip, f: x.f };
+}
+
+/** Phase i at t, with hands and feet going onto a ladder around a climb's start and off it around its end. */
+function poseAt(p: Trip, i: number, t: number): TripPose {
+  const x = p.phases[i];
+  const base = poseIn(x, t, p.k);
+  const blend = (a: Foot[], b: Foot[], w: number): [Foot, Foot] => [0, 1].map((n) => ({ x: mix(a[n].x, b[n].x, w), y: mix(a[n].y, b[n].y, w), lift: Math.max(a[n].lift, b[n].lift) })) as [Foot, Foot];
+  // how far onto the ladder: 0 → 1 over `on` either side of the climb's start, 1 → 0 around its end
+  const onto = (c: ClimbPhase, t: number) => (c.on && t < c.t0 + c.on ? smooth((t - c.t0 + c.on) / (2 * c.on)) : c.off && t > c.t1 - c.off ? smooth((c.t1 + c.off - t) / (2 * c.off)) : 1);
+  if (x.kind === "climb") {
+    const w = onto(x, t);
+    if (w >= 1) return base;
+    const ground = t < (x.t0 + x.t1) / 2 ? lastFeet(p.phases[i - 1] as WalkPhase) : (p.phases[i + 1] as WalkPhase).feet;
+    return { ...base, feet: blend(ground, base.feet, w), climb: w, hip: mix(RIG.hip, x.rungs.hip, w) };
+  }
+  const next = p.phases[i + 1];
+  const prev = p.phases[i - 1];
+  const c = next?.kind === "climb" && t > next.t0 - next.on ? next : prev?.kind === "climb" && t < prev.t1 + prev.off ? prev : null;
+  if (!c) return base;
+  const w = onto(c, t);
+  const h = holds(c.rungs, c.x, c.f, c === next ? c.a.y : c.b.y, p.k);
+  // stepping off, it faces the ladder until its hands are off, then turns to walk on
+  return { ...base, feet: blend(base.feet, h.feet, w), hands: h.hands, climb: w, hip: mix(RIG.hip, c.rungs.hip, w), f: c === prev ? c.f : base.f };
+}
+
+/** Where a worker on a trip is at t (pure): standing at the start before it sets off (turning to face
+ * the way), then phase by phase, standing at the end once it is there. */
+export function tripAt(p: Trip, t: number): TripPose {
+  const ph = p.phases;
+  if (!ph.length) return { root: p.a, feet: [{ ...p.a, lift: 0 }, { ...p.a, lift: 0 }], hands: null, climb: 0, hip: RIG.hip, f: p.f };
+  if (t <= ph[0].t0) return { ...poseAt(p, 0, ph[0].t0), root: p.a, f: p.f };
+  const i = ph.findIndex((x) => t < x.t1);
+  if (i < 0) return { ...poseAt(p, ph.length - 1, p.t1), root: p.b };
+  return poseAt(p, i, t);
 }
 
 export type Pose = "walk" | "read" | "write" | "exec" | "think" | "wait" | "idle" | "delegate" | "handoff" | "unknown";
@@ -273,75 +503,78 @@ export function poseTargets(pose: Pose, t: number, since: number, o: { still: bo
   // 16× replay does not make hands flicker. What the worker does comes from the timeline.
   const s = t / 1000;
   const osc = (period: number, amp: number, off = 0) => (o.still ? 0 : Math.sin((s / period + off) * 2 * Math.PI) * amp);
-  const T: Targets = { near: [1.6, 16.4], far: [-1.4, 16.6], lean: 0, tilt: 0, sway: osc(3.6, 0.7), prop: null, mark: null, facing: 1 };
+  // Hand targets are Loom's (for its arm, 19.4 long; scaled to ours at the end): the still pose, plus the loops.
+  const T: Targets = { near: [1.8, 18.4], far: [-1.2, 18.6], lean: 0, tilt: 0, sway: osc(3.6, 0.7), prop: null, mark: null, facing: 1 };
   switch (pose) {
     case "write": {
-      const tap = (off: number) => (o.still ? 0 : Math.max(0, Math.sin((s / 0.3 + off) * 2 * Math.PI)) * 1.6);
-      T.near = [13.5, 12 - tap(0)];
-      T.far = [10.5, 12.4 - tap(0.5)];
-      T.lean = 3;
-      T.tilt = 6;
+      // both hands on the keyboard at the standing desk, typing
+      const tap = (off: number) => (o.still ? 0 : Math.max(0, Math.sin((s / 0.3 + off) * 2 * Math.PI)) * 1.8);
+      T.near = [11, 13.5 - tap(0)];
+      T.far = [9.2, 14.2 - tap(0.5)];
+      T.lean = 6;
+      T.tilt = 8;
       T.prop = "laptop";
       T.sway = 0;
       break;
     }
     case "exec": {
-      // a gesture: reach out and press enter, then watch the run
+      // a gesture: reach out and press enter on the terminal, then watch the run
       const u = since / 1000;
       const press = o.still ? 0 : u < 0.7 ? Math.sin(Math.PI * (u / 0.7)) : Math.max(0, Math.sin(((u - 0.7) / 2.4) * 2 * Math.PI)) ** 8 * 0.6;
-      T.near = [8 + press * 8, 11 - press * 2];
-      T.far = [2.5, 13];
-      T.lean = 1 + press * 3;
-      T.tilt = 3;
+      T.near = [12.4 + press * 2.8, 13.2 - press * 1.6];
+      T.far = [6.8, 15.6];
+      T.lean = 3 + press * 2;
+      T.tilt = 5;
       T.prop = "terminal";
       T.sway = 0;
       break;
     }
-    case "read":
-      T.near = [8.6, 7 + osc(2.6, 0.5)];
-      T.far = [7, 8 + osc(2.6, 0.5)];
-      T.tilt = 10;
-      T.lean = 1.5;
+    case "read": // holds a page in both hands, head down
+      T.near = [8.4, 8.6 + osc(2.6, 0.6)];
+      T.far = [6.8, 9.6 + osc(2.6, 0.6)];
+      T.tilt = 14;
+      T.lean = 2;
       T.prop = "sheet";
       T.sway = osc(4, 0.4);
       break;
-    case "think":
-      T.near = [4.8, -2.4];
-      T.far = [3.2, 9.5];
-      T.tilt = -8 + osc(3.2, 2);
+    case "think": // chin in hand, looking up
+      T.near = [4.2, -3.4];
+      T.far = [4.6, 10.4];
+      T.tilt = -10 + osc(3.2, 2);
       T.lean = -1.5;
       break;
-    case "wait":
-      T.near = [10 + osc(1.1, 1.8), -15];
-      T.far = [0.5, 16];
-      T.tilt = -10;
+    case "wait": // a raised hand, waving a little
+      T.near = [5.6 + osc(1.1, 1.8), -17.2];
+      T.far = [-0.4, 18.2];
+      T.tilt = -8;
       T.lean = -2;
       T.mark = "?";
       break;
     case "idle":
-      T.near = [1.2, 16.6];
-      T.far = [-1.2, 16.6];
+      T.near = [1.1, 18.9];
+      T.far = [-1, 18.9];
       T.sway = osc(5, 0.9);
       break;
     case "delegate": // points: "you, go do this"
-      T.near = [13 + osc(0.9, 1), 0.5];
-      T.far = [2.5, 13];
-      T.lean = 2;
-      T.tilt = -4;
+      T.near = [17.6 + osc(0.9, 1), -0.6];
+      T.far = [0.8, 17.4];
+      T.lean = 3;
+      T.tilt = -3;
       T.sway = 0;
       break;
     case "handoff": // turn to the dispatcher and hold out the result
       T.facing = -1;
-      T.near = [12.5, 7.5];
-      T.far = [6, 9.5];
-      T.lean = 4;
-      T.tilt = 4;
+      T.near = [13.2, 6.8];
+      T.far = [11.6, 7.8];
+      T.lean = 5;
+      T.tilt = 5;
       T.prop = "carry";
       T.sway = 0;
       break;
     case "unknown":
-      T.near = [2.2, 14];
-      T.far = [-0.5, 14.5];
+      T.near = [2.2, 17.6];
+      T.far = [-0.6, 18.2];
+      T.tilt = 4;
       T.sway = osc(6, 0.6);
       // Known only by its receipts: it stays put with a grey ?.
       if (o.unknownReceipt || o.coarse) {
@@ -358,11 +591,15 @@ export function poseTargets(pose: Pose, t: number, since: number, o: { still: bo
     const bump = o.bump ?? 0;
     if (bump > 0) {
       T.lean = -9 * bump;
-      T.near = [6, 2 - 6 * bump];
-      T.far = [4, 4 - 5 * bump];
+      T.near = [7, 2.4 - 7 * bump];
+      T.far = [4.7, 4.7 - 5.8 * bump];
       T.tilt = -12 * bump;
     }
   }
+  // from Loom's arm to ours
+  const k = (RIG.upper + RIG.fore) / 19.4;
+  T.near = [T.near[0] * k, T.near[1] * k];
+  T.far = [T.far[0] * k, T.far[1] * k];
   return T;
 }
 
@@ -414,50 +651,53 @@ export type Joints = {
   turn: number;
   mark: Targets["mark"];
   markMuted: boolean;
+  /** On a trip (walking or climbing). */
   walking: boolean;
+  /** 0 → 1 getting onto a ladder, 1 on it (the feet are off the ground), 1 → 0 getting off. */
+  climb: number;
 };
 
 /**
- * Solve one worker at timeline time t: from its dock (standing) or its walk plan (walking), the
- * pose's targets and its springs. Springs integrate wall-clock time (`dt`, seconds), so a replay at
- * 16× still blends at human speed. They are reset only on a real jump (`reset`: a seek or scrub,
- * or the tab coming back after a long pause), so a paused frame is exact and live updates blend.
+ * Solve one worker at timeline time t: from its dock (standing) or its trip (walking, climbing), the
+ * pose's targets and its springs. `k`: world px per figure unit as drawn (a trip's feet and holds are
+ * world points). `gaze`: what it looks at while it stands there (a glance at another node: it turns to
+ * it, head tipped that way). Springs integrate wall-clock time (`dt`, seconds), so a replay at 16× still
+ * blends at human speed. They are reset only on a real jump (`reset`: a seek or scrub, or the tab
+ * coming back after a long pause), so a paused frame is exact and live updates blend.
  */
-export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolean; pose: Pose; since: number; dock: Pt; walk: WalkPlan | null; still: boolean; conflict?: boolean; bump?: number; unknownReceipt?: boolean; coarse?: boolean; readingWhileWalking?: boolean }, sp: Springs): Joints {
+export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolean; pose: Pose; since: number; dock: Pt; trip: Trip | null; k?: number; gaze?: Pt | null; still: boolean; conflict?: boolean; bump?: number; unknownReceipt?: boolean; coarse?: boolean; readingWhileWalking?: boolean }, sp: Springs): Joints {
   const { t, still } = o;
   const wall = o.wall ?? t;
-  const walking = !still && o.walk && t >= o.walk.t0 && t < o.walk.t1 ? o.walk : null;
-  let root: Pt;
-  let feet: Foot[];
-  let f: 1 | -1 = 1;
+  const k = o.k ?? 1;
+  const trip = !still && o.trip && t >= o.trip.t0 && t < o.trip.t1 ? tripAt(o.trip, t) : null;
+  const root: Pt = trip ? trip.root : { ...o.dock };
+  // a trip's feet and holds are world points: into figure space (from the root, in figure units)
+  const local = (p: Pt): Pt => ({ x: (p.x - root.x) / k, y: (p.y - root.y) / k });
+  const climb = trip?.climb ?? 0;
+  const hold = trip?.hands?.map(local);
+  let f: 1 | -1 = trip ? trip.f : 1;
+  let feet: Pt[];
   let bob = 0;
-  let swingFoot = -1;
-  let swingPhase = 0;
-  if (walking) {
-    const r = feetAt(walking, t);
-    feet = r.feet;
-    f = walking.f;
-    swingFoot = r.swing;
-    swingPhase = r.phase;
-    root = rootAt(walking, t);
-    bob = Math.min(2.2, (Math.abs(feet[0].x - feet[1].x) + Math.abs(feet[0].y - feet[1].y)) * 0.09);
-  } else {
-    root = { ...o.dock };
-    feet = [
-      { x: o.dock.x + RIG.stance, y: o.dock.y, lift: 0 },
-      { x: o.dock.x - RIG.stance, y: o.dock.y, lift: 0 },
-    ];
-  }
   let T: Targets;
-  if (walking) {
-    const sw = swingFoot === 0 ? Math.sin(Math.PI * swingPhase) : swingFoot === 1 ? -Math.sin(Math.PI * swingPhase) : 0;
-    T = { near: [-4.5 * sw, 15.8], far: [4.5 * sw, 15.8], lean: 3, tilt: 0, sway: 0, prop: o.readingWhileWalking ? "carry" : null, mark: null, facing: 1 };
-  } else T = poseTargets(o.pose, wall, o.since, { still, conflict: o.conflict, bump: o.bump, unknownReceipt: o.unknownReceipt, coarse: o.coarse });
-  if (!walking && T.facing === -1) {
-    f = -1;
+  if (trip) {
+    feet = trip.feet.map(local);
+    bob = (1 - climb) * Math.min(2.2, (Math.abs(feet[0].x - feet[1].x) + Math.abs(feet[0].y - feet[1].y)) * 0.09);
+    // arms swing against the legs (each hand opposite its foot); on a ladder they reach for the rungs
+    const hang = 0.887 * (RIG.upper + RIG.fore);
+    T = { near: [1 - 0.5 * feet[0].x * f, hang], far: [0.2 - 0.5 * feet[1].x * f, hang], lean: mix(3, 5, climb), tilt: 0, sway: 0, prop: o.readingWhileWalking && climb < 0.5 ? "carry" : null, mark: null, facing: 1 };
+  } else {
+    T = poseTargets(o.pose, wall, o.since, { still, conflict: o.conflict, bump: o.bump, unknownReceipt: o.unknownReceipt, coarse: o.coarse });
+    if (T.facing === -1) f = -1;
+    if (o.gaze) {
+      // a glance: turned toward what it looks at, head tipped up or down to it
+      const dx = o.gaze.x - root.x;
+      if (Math.abs(dx) > 1) f = dx < 0 ? -1 : 1;
+      const head = root.y - (RIG.hip + RIG.torso + RIG.head) * k;
+      T.tilt = clamp((Math.atan2(o.gaze.y - head, Math.abs(dx) + k) * 180) / Math.PI, -30, 30);
+    }
     feet = [
-      { x: o.dock.x - RIG.stance, y: o.dock.y, lift: 0 },
-      { x: o.dock.x + RIG.stance, y: o.dock.y, lift: 0 },
+      { x: RIG.stance * f, y: 0 },
+      { x: -RIG.stance * f, y: 0 },
     ];
   }
   // Without an explicit wall-clock step (tests, one-off solves), fall back to the timeline step.
@@ -501,22 +741,28 @@ export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolea
   }
   const L = (x: number) => x * f;
   const px = L(sway);
-  const py = -RIG.hip + bob * 0.6;
+  // on a ladder the knees bend: the hips sink to the climbing height
+  const py = -(trip ? trip.hip : RIG.hip) + bob * 0.6;
   const leanR = (lean * Math.PI) / 180;
   const nx = px + Math.sin(leanR) * RIG.torso * f;
   const ny = py - Math.cos(leanR) * RIG.torso;
   const shx = nx - L(0.4);
-  const shy = ny + 2.2;
+  const shy = ny + SHOULDER;
   const tiltR = (tilt * Math.PI) / 180;
   const hx = nx + L(0.8) + Math.sin(tiltR) * 2 * f;
   const hy = ny - RIG.head - 0.6 + Math.abs(Math.sin(tiltR)) * 0.8;
-  const k = (p: Foot) => ({ x: p.x - root.x, y: p.y - root.y - p.lift });
-  const fN = k(feet[0]);
-  const fF = k(feet[1]);
   const hipN = { x: px + L(0.8), y: py };
   const hipF = { x: px - L(0.8), y: py };
   const shN = { x: shx + L(0.6), y: shy };
   const shF = { x: shx - L(0.6), y: shy };
+  // the hands: the pose's (through the springs), drawn onto their holds while getting on a ladder
+  const reach = (h: number[], at: Pt | undefined): [number, number] => {
+    const x = shx + L(h[0]);
+    const y = shy + h[1];
+    return at ? [mix(x, at.x, climb), mix(y, at.y, climb)] : [x, y];
+  };
+  const [nhx, nhy] = reach(near, hold?.[0]);
+  const [fhx, fhy] = reach(far, hold?.[1]);
   return {
     root,
     f,
@@ -528,10 +774,10 @@ export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolea
     hy,
     shx,
     shy,
-    legN: ik(hipN.x, hipN.y, fN.x, fN.y, RIG.thigh, RIG.shin, -f),
-    legF: ik(hipF.x, hipF.y, fF.x, fF.y, RIG.thigh, RIG.shin, -f),
-    armN: ik(shN.x, shN.y, shx + L(near[0]), shy + near[1], RIG.upper, RIG.fore, f),
-    armF: ik(shF.x, shF.y, shx + L(far[0]), shy + far[1], RIG.upper, RIG.fore, f),
+    legN: ik(hipN.x, hipN.y, feet[0].x, feet[0].y, RIG.thigh, RIG.shin, -f),
+    legF: ik(hipF.x, hipF.y, feet[1].x, feet[1].y, RIG.thigh, RIG.shin, -f),
+    armN: ik(shN.x, shN.y, nhx, nhy, RIG.upper, RIG.fore, f),
+    armF: ik(shF.x, shF.y, fhx, fhy, RIG.upper, RIG.fore, f),
     hipN,
     hipF,
     shN,
@@ -541,6 +787,7 @@ export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolea
     turn: Math.max(-1, Math.min(1, turn)),
     mark: T.mark,
     markMuted: !!T.markMuted,
-    walking: !!walking,
+    walking: !!trip,
+    climb,
   };
 }

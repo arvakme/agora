@@ -16,6 +16,10 @@
 // (springs integrated on wall-clock time); bubbles fade + rise in and fade out; node strokes fade
 // and change colour over 300 ms; everything is placed at sub-pixel positions. Springs reset only on
 // a real jump in time (clock.gen: seek, scrub, back to live).
+// Trips (剖面, §2): a figure going to another node keeps to the arrows between them — the bridges and
+// ladders it walks are drawn while it walks them (fading in over 200 ms, out 300 ms after it gets
+// there; a scaffold's fainter and dashed; the selected figure's in purple), built with the snapshot
+// and faded by the frame job. A short read is a glance: a purple dashed line from the head to the node.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconCheck, IconCode, IconCpu, IconEye, IconHistory, IconMessage, IconPath, IconSend, IconTerminal } from "../app/icons";
 import type { CanvasViewState } from "../canvas/CanvasView";
@@ -32,7 +36,7 @@ import { figurePositions, focus, useFocus } from "./focus";
 import { frame } from "./frame";
 import { buildGeometry, type Geometry } from "./geometry";
 import { canvasWhere, conflictAt, OUTSIDE, stateAt, writeConflicts, type Ctx, type RunState, type WriteConflict } from "./place";
-import { Glide, makeSprings, solve, type Springs } from "./rig";
+import { Glide, makeSprings, RIG, solve, SUB_SCALE, type Springs, type Trip } from "./rig";
 import { RunAvatar } from "./RunAvatar";
 import { useRuns, type Runs } from "./runs/store";
 import { RECEIPT_NAMES, type FlatRun } from "./runs/types";
@@ -64,8 +68,16 @@ type Snap = {
   /** Deeper sub-agents folded into the +N over their depth-1 ancestor. */
   folded: Map<string, number>;
   tray: boolean;
+  /** Trips being walked (or about to be, or just done): their bridges and ladders are drawn. */
+  trips: { key: string; trip: Trip; sel: boolean }[];
 };
-const EMPTY: Snap = { t: 0, figs: [], bubbles: [], rings: [], tethers: [], chips: [], states: new Map(), byId: new Map(), folded: new Map(), tray: false };
+const EMPTY: Snap = { t: 0, figs: [], bubbles: [], rings: [], tethers: [], chips: [], states: new Map(), byId: new Map(), folded: new Map(), tray: false, trips: [] };
+/** A trip's bridges and ladders fade in over TRIP_IN_MS as it starts and out over TRIP_OUT_MS after it ends. */
+const TRIP_IN_MS = 200;
+const TRIP_OUT_MS = 300;
+/** The snapshot builds a trip's drawing this long before it starts (it is rebuilt only every SNAP_MS). */
+const TRIP_AHEAD_MS = 400;
+const tripAlpha = (p: Trip, t: number) => Math.max(0, Math.min(1, (t - p.t0) / TRIP_IN_MS, 1 - (t - p.t1) / TRIP_OUT_MS));
 
 /** Structure at time t: who is on the canvas, where, who gets a bubble, which nodes get a stroke. Pure. */
 export function snapshot(runs: Runs, t: number, ctx: Ctx, conflicts: WriteConflict[], figuresOn: boolean, selected: string | null): Snap {
@@ -108,21 +120,34 @@ export function snapshot(runs: Runs, t: number, ctx: Ctx, conflicts: WriteConfli
   );
   if (selected && drawn.has(selected) && !bubbles.includes(selected)) bubbles.push(selected);
   const tethers = figs.filter((x) => x.f.parent && drawn.has(x.f.parent.id) && (x.f.run.doneAt == null || t < x.f.run.doneAt)).map((x) => ({ child: x.f.run.id, parent: x.f.parent!.id }));
-  return { t, figs, bubbles, rings: ringsOf(present, states, conflicts, t), tethers, chips: [], states, byId, folded, tray: figs.some((x) => x.place === OUTSIDE) };
+  // the trips a drawn figure is on, just finished, or starts before the next snapshot
+  const trips: Snap["trips"] = [];
+  for (const x of figs) {
+    const seen = new Set<Trip>();
+    for (const u of [t - TRIP_OUT_MS, t, t + TRIP_AHEAD_MS]) {
+      const p = stateAt(x.f.run, u, ctx).trip;
+      if (!p || seen.has(p) || (!p.bridges.length && !p.ladders.length) || t < p.t0 - TRIP_AHEAD_MS || t > p.t1 + TRIP_OUT_MS) continue;
+      seen.add(p);
+      trips.push({ key: `${x.f.run.id}|${p.t0}`, trip: p, sel: x.f.run.id === selected });
+    }
+  }
+  return { t, figs, bubbles, rings: ringsOf(present, states, conflicts, t), tethers, chips: [], states, byId, folded, tray: figs.some((x) => x.place === OUTSIDE || states.get(x.f.run.id)!.glance?.place === OUTSIDE), trips };
 }
 
 /** The prototype's node rings: solid purple while someone writes there, warm while someone there
- * waits on you, dashed purple while someone reads, a quiet grey for other work; a two-agent write
- * conflict gets a wider warm ring. */
+ * waits on you, dashed purple while someone reads (or glances at it from elsewhere), a quiet grey for
+ * other work; a two-agent write conflict gets a wider warm ring. */
 export type RingTone = "write" | "wait" | "read" | "busy" | "conflict" | "sel" | "hover";
 function ringsOf(list: FlatRun[], states: Map<string, RunState>, conflicts: WriteConflict[], t: number): Snap["rings"] {
   const ks = new Map<string, string[]>();
   const clash = new Set<string>();
   for (const f of list) {
     const st = states.get(f.run.id)!;
-    if (st.at === OUTSIDE || st.pose === "idle" || st.pose === "walk" || !st.seg) continue;
-    ks.set(st.at, [...(ks.get(st.at) ?? []), st.seg.kind]);
-    if (conflictAt(conflicts, f.run.id, t)) clash.add(st.at);
+    // (the tray gets a ring only when glanced at: standing there, its own look says so)
+    const at = st.glance?.place ?? st.at;
+    if ((at === OUTSIDE && !st.glance) || st.pose === "idle" || st.pose === "walk" || !st.seg) continue;
+    ks.set(at, [...(ks.get(at) ?? []), st.seg.kind]);
+    if (conflictAt(conflicts, f.run.id, t)) clash.add(at);
   }
   const out: Snap["rings"] = [];
   for (const [place, k] of ks) {
@@ -130,6 +155,31 @@ function ringsOf(list: FlatRun[], states: Map<string, RunState>, conflicts: Writ
     else out.push({ place, tone: k.includes("write") ? "write" : k.includes("wait") ? "wait" : k.includes("read") ? "read" : "busy" });
   }
   return out;
+}
+
+/** A trip's bridges (a dashed line at the leg's height, a small post at each end) and ladders (two
+ * rails, rungs where hands and feet hold), world coordinates; a scaffold's fainter and dashed. Graphite,
+ * or purple for the selected figure's. */
+function TripShape({ trip: p, sel }: { trip: Trip; sel: boolean }) {
+  const ink = (temp: boolean) => (sel ? "var(--accent)" : temp ? "var(--fg-faint)" : "var(--fg-muted)");
+  const post = 5 * p.k;
+  const half = 2.6 * p.k;
+  return (
+    <>
+      {p.bridges.map((b, i) => (
+        <g key={`b${i}`} fill="none" stroke={ink(b.temp)} strokeLinecap="round">
+          <path d={`M${px(b.a.x)} ${px(b.a.y)}H${px(b.b.x)}`} strokeWidth={1.2} strokeDasharray={b.temp ? "2 4" : "5 3"} vectorEffect="non-scaling-stroke" />
+          <path d={`M${px(b.a.x)} ${px(b.a.y)}v${px(-post)}M${px(b.b.x)} ${px(b.b.y)}v${px(-post)}`} strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
+        </g>
+      ))}
+      {p.ladders.map((l, i) => (
+        <g key={`l${i}`} fill="none" stroke={ink(l.temp)} strokeLinecap="round">
+          <path d={`M${px(l.x - half)} ${px(l.top)}V${px(l.bottom)}M${px(l.x + half)} ${px(l.top)}V${px(l.bottom)}`} strokeWidth={1.2} strokeDasharray={l.temp ? "2 3" : undefined} vectorEffect="non-scaling-stroke" />
+          <path d={l.rungs.map((y) => `M${px(l.x - half)} ${px(y)}H${px(l.x + half)}`).join("")} strokeWidth={1} vectorEffect="non-scaling-stroke" />
+        </g>
+      ))}
+    </>
+  );
 }
 
 const KIND_ICON: Record<string, typeof IconEye> = { read: IconEye, write: IconCode, exec: IconTerminal, think: IconCpu, wait: IconMessage, idle: IconCheck, walk: IconPath, delegate: IconSend, handoff: IconSend };
@@ -276,6 +326,11 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
   const springs = useRef(new Map<string, Springs>());
   const offs = useRef(new Map<string, { x: Glide; y: Glide }>());
   const tethers = useRef(new Map<string, SVGPathElement>());
+  /** Each figure's glance line (head → the node it reads from afar), how visible it is (0–1, per frame) and where it last pointed. */
+  const gazeLayer = useRef<SVGGElement>(null);
+  const gazes = useRef(new Map<string, { el: SVGPathElement; vis: number; to: { x: number; y: number } | null; a: string }>());
+  /** The drawn trips' groups (bridges and ladders), faded per frame (with the opacity last set). */
+  const tripEls = useRef(new Map<string, { el: SVGGElement; a: string }>());
   /** Each drawn figure's head (world), its radius and whether a ! / ? mark sits over it, and its scale. */
   const heads = useRef(new Map<string, { x: number; y: number; r: number; mark: boolean; k: number; sc: number; walking: boolean; root: { x: number; y: number } }>());
   const bubbleEls = useRef(new Map<string, HTMLElement>());
@@ -312,6 +367,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
         nodes.current.delete(id);
         springs.current.delete(id);
         offs.current.delete(id);
+        gazes.current.get(id)?.el.remove();
+        gazes.current.delete(id);
       }
     for (const x of snap.figs) {
       const id = x.f.run.id;
@@ -319,6 +376,11 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
       const n = new FigureNode(id, x.f.run.agent, { parentAgent: x.f.parent?.agent, label: x.f.run.name });
       nodes.current.set(id, n);
       layer.appendChild(n.g);
+      // the glance line: purple dashes, as the prototype's gaze; hidden until the figure glances
+      const el = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      for (const [a, v] of Object.entries({ fill: "none", stroke: "var(--accent)", "stroke-width": "1.2", "stroke-dasharray": "3 3", "stroke-linecap": "round", "vector-effect": "non-scaling-stroke", opacity: "0" })) el.setAttribute(a, v);
+      gazeLayer.current?.appendChild(el);
+      gazes.current.set(id, { el, vis: 0, to: null, a: "0" });
     }
     const tl = tetherLayer.current!;
     const wantT = new Set(snap.tethers.map((x) => x.child));
@@ -339,6 +401,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
     () => () => {
       for (const n of nodes.current.values()) n.g.remove();
       nodes.current.clear();
+      for (const x of gazes.current.values()) x.el.remove();
+      gazes.current.clear();
       figurePositions.drop(view.id);
     },
     [],
@@ -430,15 +494,19 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
         const conflict = conflictAt(confRef.current, run.id, t);
         const bump = conflict && t - conflict.start < 800 ? Math.sin(Math.PI * Math.min(1, (t - conflict.start) / 800)) : 0;
         const fresh = sp.t === null;
-        const j = solve({ t, wall: now, dt: step, reset, pose: st.pose, since: st.since, dock: g.dock(st.at), walk: st.walk, still, conflict: !!conflict && !!st.seg, bump, unknownReceipt: st.receipt === "unknown", coarse: !!run.coarse, readingWhileWalking: st.seg?.kind === "read" }, sp);
-        const sub = x.f.depth > 0 ? 0.8 : 1;
+        const kk = k * (x.f.depth > 0 ? SUB_SCALE : 1);
+        // a glance: it looks at the middle of the node's top edge
+        const gb = st.glance ? g.boxOf(st.glance.place) : undefined;
+        const gaze = gb ? { x: gb.x + gb.w / 2, y: gb.y } : null;
+        const j = solve({ t, wall: now, dt: step, reset, pose: st.pose, since: st.since, dock: g.dock(st.at), trip: st.trip, k: kk, gaze, still, conflict: !!conflict && !!st.seg, bump, unknownReceipt: st.receipt === "unknown", coarse: !!run.coarse, readingWhileWalking: st.seg?.kind === "read" }, sp);
         // Side by side at a node: each figure has its own free spot (geometry.spots: along the top
-        // edge, else beside or under the node, clear of text and icons); the offset from the walk's
-        // dock glides, so an arrival or a departure never jumps.
+        // edge, else beside or under the node, clear of text and icons); the offset from the trip's
+        // dock glides — to 0 while it is on a trip, so it keeps to the bridges and ladders, and back
+        // to its spot after — so an arrival or a departure never jumps.
         let off = offs.current.get(run.id);
         if (!off) offs.current.set(run.id, (off = { x: new Glide(), y: new Glide() }));
         const d0 = g.dock(x.place);
-        const spot = g.spots(x.place, k, counts.get(x.place) ?? 1)[x.slot] ?? d0;
+        const spot = st.trip && t < st.trip.t1 ? d0 : (g.spots(x.place, k, counts.get(x.place) ?? 1)[x.slot] ?? d0);
         const ns = now / 1000;
         const jumpOff = still || fresh || reset;
         const dx = jumpOff ? off.x.reset(spot.x - d0.x, ns) : off.x.step(ns, spot.x - d0.x);
@@ -452,12 +520,33 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
           wy = xf.y;
           alpha *= xf.a;
         }
-        const kk = k * sub;
         n.place(wx, wy, kk, alpha, false, st.pose === "idle");
         n.draw(j, now, still);
-        heads.current.set(run.id, { x: wx + j.hx * kk, y: wy + j.hy * kk, r: 8.6 * kk, mark: !!j.mark, k: kk, sc: fsc, walking: j.walking, root: { x: wx, y: wy } });
+        heads.current.set(run.id, { x: wx + j.hx * kk, y: wy + j.hy * kk, r: RIG.head * kk, mark: !!j.mark, k: kk, sc: fsc, walking: j.walking, root: { x: wx, y: wy } });
         alphas.set(run.id, alpha / Math.max(0.001, st.fade));
         positions.set(run.id, { x: wx, y: wy });
+        // the glance line, from the edge of the head to the node (fading in and out over ~150 ms)
+        const gz = gazes.current.get(run.id);
+        if (gz) {
+          if (gaze) gz.to = gaze;
+          const vis = still || reset ? (gaze ? 1 : 0) : Math.max(0, Math.min(1, gz.vis + (gaze ? step / 0.15 : -step / 0.12)));
+          if (vis > 0 && gz.to) {
+            const hx = wx + j.hx * kk;
+            const hy = wy + j.hy * kk;
+            const r = Math.hypot(gz.to.x - hx, gz.to.y - hy) || 1;
+            const e = (RIG.head * kk) / r;
+            gz.el.setAttribute("d", `M${px(hx + (gz.to.x - hx) * e)} ${px(hy + (gz.to.y - hy) * e)}L${px(gz.to.x)} ${px(gz.to.y)}`);
+          }
+          const a = (vis * alpha).toFixed(3);
+          if (a !== gz.a) gz.el.setAttribute("opacity", (gz.a = a));
+          gz.vis = vis;
+        }
+      }
+      // bridges and ladders: built with the snapshot, faded here
+      for (const x of s.trips) {
+        const d = tripEls.current.get(x.key);
+        const a = tripAlpha(x.trip, t).toFixed(3);
+        if (d && a !== d.a) d.el.setAttribute("opacity", (d.a = a));
       }
       for (const tt of s.tethers) {
         const p = tethers.current.get(tt.child);
@@ -707,6 +796,21 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
             })}
           </g>
           <g ref={tetherLayer} className="ws-tethers" />
+          <g className="ws-trips">
+            {snap.trips.map((x) => (
+              <g
+                key={x.key}
+                opacity={0}
+                ref={(el) => {
+                  if (el) tripEls.current.set(x.key, { el, a: "0" });
+                  else tripEls.current.delete(x.key);
+                }}
+              >
+                <TripShape trip={x.trip} sel={x.sel} />
+              </g>
+            ))}
+          </g>
+          <g ref={gazeLayer} className="ws-gaze" />
           <g
             ref={figLayer}
             className="ws-figs"
