@@ -78,10 +78,12 @@ def test_doctor_exit_code_is_1_only_for_untrusted_degradation():
     assert doctor_agents_exit([{**deg, "installed": False}]) == 0
 
 
-def test_recorder_never_touches_credential_files():
+def test_recorder_never_touches_credential_files(monkeypatch):
     """Rule after review: only the config files a CLI edits are backed up; never auth / token files."""
     import importlib.util
     from pathlib import Path
+
+    monkeypatch.setenv("AGORA_EXPERIMENTAL", "")  # the script's setdefault must not leak into other tests
 
     spec = importlib.util.spec_from_file_location("rec", Path(__file__).parents[1] / "scripts" / "record_agent_fixture.py")
     rec = importlib.util.module_from_spec(spec)
