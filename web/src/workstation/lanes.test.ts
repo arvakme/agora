@@ -60,6 +60,21 @@ describe("buildLane", () => {
   });
 });
 
+describe("buildLane: a command that runs on a file", () => {
+  // The server says which files a shell command runs on (`tool.on`, server/canvas/adapters/shell_files.py):
+  // the segment stays an exec (its command is kept) but carries the file, so the worker walks to its node.
+  const run = (tool: Item["tool"]) => buildLane("s1", [user("u", 0), { id: "b", kind: "tool", at: 1 * S, endAt: 4 * S, msg: "m", tool }], { root: ROOT }).segs.find((x) => x.kind === "exec" || x.kind === "write")!;
+  it("an exec with `on` carries the file and keeps its command", () => {
+    expect(run({ name: "Bash", input: "npx vitest run src/a.test.ts", activity: "commands", on: ["src/a.test.ts"] })).toMatchObject({ kind: "exec", path: "src/a.test.ts", input: "npx vitest run src/a.test.ts" });
+  });
+  it("a shell write (activity edit, files) is a write on its file", () => {
+    expect(run({ name: "Bash", input: "sed -i '' s/a/b/ src/a.ts", activity: "edit", files: [{ path: "src/a.ts", op: "edit" }] })).toMatchObject({ kind: "write", path: "src/a.ts" });
+  });
+  it("an exec without a file stays where it is", () => {
+    expect(run({ name: "Bash", input: "git status", activity: "commands" }).path).toBeUndefined();
+  });
+});
+
 describe("readPath", () => {
   it("takes a file path from the input, relative to the project", () => {
     expect(readPath("/tmp/proj/server/app.py", "/tmp/proj")).toBe("server/app.py");

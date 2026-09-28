@@ -46,6 +46,12 @@ describe("stateAt: a session's worker", () => {
     expect(stateAt(abs, 14 * S, c2).at).toBe(OUTSIDE); // a relative file no node claims still goes to the tray
     expect(stateAt(run([seg("write", 0, 2, "/tmp/only.txt")]), 1 * S, c2)).toMatchObject({ present: true, at: OUTSIDE }); // nowhere yet: it starts at the tray as with a thought
   });
+  it("a command that runs on a file (a test, a script) takes it to that file's node, and it stands there while the command runs", () => {
+    const e = run([seg("think", 0, 1), seg("read", 2, 4, "server/app.py"), seg("exec", 6, 12, "server/db/test_models.py")]);
+    const c3 = ctx([e]);
+    expect(stateAt(e, 6.2 * S, c3)).toMatchObject({ at: "db", from: "api", pose: "walk" });
+    expect(stateAt(e, stateAt(e, 6.2 * S, c3).trip!.t1 + 1, c3)).toMatchObject({ at: "db", pose: "exec", w: 1 });
+  });
   it("jumping straight to a time gives the same state as stepping there", () => {
     for (const t of [0.5, 3, 6.4, 7.5, 11, 21.5, 30].map((x) => x * S)) {
       let stepped = stateAt(r, 0, c);

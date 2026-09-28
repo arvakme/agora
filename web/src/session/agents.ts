@@ -173,6 +173,8 @@ export type Item = {
     activity?: string;
     /** Files this call reads, relative to the project root. */
     reads?: string[];
+    /** Files a shell command runs on (a test or script path in it): the command stays a command, the worker stands at their node. */
+    on?: string[];
     /** The call waits for the person (a question, an approval gate). */
     waitsUser?: boolean;
     /** The call started another agent: a native sub-agent, or a Seedmux ticket (`taskId`, `pane`). */
