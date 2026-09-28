@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { IconCopy } from "../app/icons";
 import type { Locate } from "./place";
 import { useRuns } from "./runs/store";
-import { drawInHints } from "./unmapped";
+import { drawInHints, shortDir } from "./unmapped";
 import "./TrayHint.css";
 
 export function TrayHint({ locate }: { locate: Locate }) {
@@ -27,7 +27,7 @@ export function TrayHint({ locate }: { locate: Locate }) {
   return (
     <button className="ws-tray-hint" title={h.files.join("\n")} onPointerDown={(e) => e.stopPropagation()} onClick={() => void copy()}>
       <IconCopy size={12} />
-      <span>{note ?? h.text}</span>
+      <span>{note ?? `${shortDir(h.dir)} 有 ${h.files.length} 个新文件，要画进图里吗？`}</span>
       {!note && hints.length > 1 && <em>+{hints.length - 1}</em>}
     </button>
   );

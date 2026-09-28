@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import type { Locate } from "./place.ts";
 import type { RunSeg, WorkRun } from "./runs/types.ts";
-import { drawInHints } from "./unmapped.ts";
+import { drawInHints, shortDir } from "./unmapped.ts";
 
 const w = (path: string, kind: RunSeg["kind"] = "write"): RunSeg => ({ kind, start: 0, end: 1, label: kind, path });
 const run = (id: string, segs: RunSeg[], x: Partial<WorkRun> = {}): WorkRun => ({ id, agent: "pi", name: id, segs, receipts: [], running: false, lastAt: 0, children: [], ...x });
@@ -25,5 +25,18 @@ describe("drawInHints", () => {
     const pi = run("pi", [w("lib/jobs/a/y.py"), w("lib/cache/2.py"), w("lib/cache/3.py")], { children: [codex] });
     // lib/jobs/a/ has only two; lib/ has six, all taken by the deeper folders
     expect(drawInHints([pi, codex], locate).map((h) => h.text)).toEqual(["lib/cache/ 有 3 个新文件，要画进图里吗？", "lib/jobs/ 有 3 个新文件，要画进图里吗？"]);
+  });
+
+  it("counts only project-relative files: absolute paths (scratchpad, /tmp, ~/.claude) never make a suggestion", () => {
+    const abs = ["/private/tmp/x/scratchpad/a.py", "/private/tmp/x/scratchpad/b.py", "/private/tmp/x/scratchpad/c.py", "C:\\tmp\\d.py", "C:/tmp/e.py", "C:/tmp/f.py"];
+    expect(drawInHints([run("pi", abs.map((p) => w(p)))], () => null)).toEqual([]);
+  });
+});
+
+describe("shortDir", () => {
+  it("keeps a short folder, and a long one as its last folders behind an ellipsis that fits", () => {
+    expect(shortDir("server/cache/")).toBe("server/cache/");
+    expect(shortDir("services/payments/gateway/adapters/redis/")).toBe("…/gateway/adapters/redis/");
+    for (const d of ["a/".repeat(40), `${"x".repeat(80)}/`]) expect(shortDir(d).length).toBeLessThanOrEqual(26);
   });
 });
