@@ -231,9 +231,20 @@ def guest_threads(file: dict[str, Any] | None) -> dict[str, Any]:
     return {"seq": (file or {}).get("seq", 0), "threads": out}
 
 
-def guest_elements(elements: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Scene elements without ``customData`` (code paths of the progress pointer, animation metadata)."""
-    return [{k: v for k, v in e.items() if k != "customData"} for e in elements if not e.get("isDeleted")]
+def guest_elements(elements: list[dict[str, Any]], children: set[str] | frozenset[str] = frozenset()) -> list[dict[str, Any]]:
+    """Scene elements without ``customData`` (code paths of the progress pointer, animation metadata).
+    A node that opens a child canvas the share reaches keeps only that link (``childCanvas``), so a
+    guest can step into it; links to canvases outside the share are dropped."""
+    out = []
+    for e in elements:
+        if e.get("isDeleted"):
+            continue
+        g = {k: v for k, v in e.items() if k != "customData"}
+        child = ((e.get("customData") or {}).get("childCanvas"))
+        if isinstance(child, str) and child in children:
+            g["customData"] = {"childCanvas": child}
+        out.append(g)
+    return out
 
 
 # ——— lifecycle ———

@@ -1,6 +1,14 @@
 /* Progress pointer on the canvas (design-system.md v0.2, app/tokens.css).
  * One purple: the pointer's icon, ring and the one primary button in the path editor. */
-.ptr-layer { position: absolute; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
+/* Below Excalidraw's UI (its islands are z-index 4 in the same stacking context), above the scene
+ * (canvases 1–2), clipped around every panel (canvas/chrome.ts). The path editor is our own
+ * popover the person opened, so it sits above the UI in its own layer. */
+.ptr-layer { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
+.ptr-edit-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+.ptr-edge { position: absolute; left: 0; top: 0; display: inline-flex; align-items: center; gap: 2px; height: 28px; padding: 0 var(--space-3) 0 var(--space-2); border-radius: var(--r-pill); background: var(--surface); box-shadow: 0 0 0 1px var(--accent-ring), var(--lift-2); color: var(--accent); }
+.ptr-edge:hover { background: var(--raised); }
+.ptr-edge .agent-avatar + .agent-avatar { margin-left: -5px; box-shadow: 0 0 0 1.5px var(--surface); border-radius: 50%; }
+.ptr-edge-arrow { margin-left: 2px; }
 .ptr-ui { pointer-events: auto; }
 
 .ptr-ring { position: absolute; left: 0; top: 0; border-radius: var(--r-sm); box-shadow: 0 0 0 2px var(--accent); background: var(--accent-wash); pointer-events: none; }
@@ -44,3 +52,16 @@ button.ptr-row:hover, .ptr-list li[data-open="true"] > .ptr-row { background: va
 .ptr-primary { height: 30px; padding: 0 16px; border-radius: var(--r-pill); background: var(--accent-fill); color: var(--accent-fg); font-size: var(--text-md); font-weight: var(--weight-medium); transition: background var(--dur-tap) var(--ease-out), transform var(--dur-tap) var(--ease-spring); }
 .ptr-primary:hover { background: var(--accent-fill-hover); }
 .ptr-primary:active { background: var(--accent-fill-pressed); transform: scale(0.97); }
+
+/* Several sessions (docs/multi-agent.md): a shared ring is the same accent ring; the followed
+ * session's chip leads and carries the target icon. The conflict mark is a caution dot + text. */
+.ptr[data-followed] .ptr-chip { box-shadow: 0 0 0 1px var(--accent-ring), var(--lift-2); }
+.ptr-group { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-3) var(--space-1); color: var(--fg-muted); font-size: var(--text-xs); font-weight: var(--weight-strong); }
+.ptr-group em { font-style: normal; color: var(--fg-subtle); font-weight: normal; font-variant-numeric: tabular-nums; }
+.ptr-clash { position: absolute; left: 0; top: 0; }
+.ptr-clash-btn { display: inline-flex; align-items: center; gap: var(--space-2); height: 22px; padding: 0 var(--space-4) 0 var(--space-3); border-radius: var(--r-pill); background: var(--surface); box-shadow: var(--edge), var(--lift-1); color: var(--caution); font-size: var(--text-xs); white-space: nowrap; }
+.ptr-clash-btn:hover { background: var(--raised); }
+.ptr-clash .nest-dot, .ptr-row .nest-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--caution-dot); }
+.ptr-clash-row { padding: var(--space-3) var(--space-4); border-radius: var(--r-xs); font-size: var(--text-sm); }
+.ptr-clash-row p { margin: 0 0 var(--space-2); }
+.ptr-clash-row div { display: flex; flex-wrap: wrap; gap: var(--space-2); }

@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from server.canvas import agents
+from server.canvas import agents, nested
 from server.canvas.project import Gone, Locked
 from server.canvas.sessions import AgentHub, Busy, Copied, NoPage, agora_prompt, canvas_names
 from server.canvas.terminal import TerminalError
@@ -55,6 +55,10 @@ class CanvasCall(BaseModel):
     script: Any = None
     links: dict[str, list[str]] | None = None
     clear: bool = False
+    op: str | None = None
+    node: str | None = None
+    child: str | None = None
+    title: str | None = None
 
 
 def create_agent_router(hub: AgentHub) -> APIRouter:
@@ -222,8 +226,9 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
     def canvas_list():
         names = canvas_names(store)
         bindings = store.bindings()
+        index = nested.parent_index(nested.scenes(store))
         return {
-            "canvases": [{"id": i, "name": n} for i, n in names.items()],
+            "canvases": [{"id": i, "name": n, **({"parent": index[i][0], "parentNode": index[i][1]} if i in index else {})} for i, n in names.items()],
             "sessions": [{"id": sid, "agent": b.get("agent"), "model": b.get("model"), "nativeId": b.get("nativeId")} for sid, b in bindings.items()],
             "page": hub.executor() is not None,
         }
@@ -248,6 +253,13 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
     async def canvas_link(body: CanvasCall):
         try:
             return await hub.canvas_link(body.canvas, body.session, body.links or {}, body.clear)
+        except Exception as e:
+            return fail(e)
+
+    @router.post("/canvas/child")
+    async def canvas_child(body: CanvasCall):
+        try:
+            return await hub.canvas_child(body.op or "list", body.canvas, body.session, body.node, body.child, body.title)
         except Exception as e:
             return fail(e)
 

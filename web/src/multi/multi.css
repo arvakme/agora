@@ -1,0 +1,4 @@
+/* Conflict notice in a session pane (docs/multi-agent.md §3): a caution dot and one sentence. */
+.sp-clash { flex: none; margin: var(--space-4) var(--space-5) 0; }
+.sp-clash .nest-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--caution-dot); flex: none; }
+.sp-clash .btn .agent-avatar { margin-right: var(--space-2); }

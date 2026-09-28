@@ -74,6 +74,7 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
 - `elements` 保留原顺序（它就是图层顺序），已删除的元素（`isDeleted`）不写。
 - 画布名不在这里，在 `workspace.json` 的 docs 里（改名不动场景文件）。
 - Excalidraw 每次编辑会更新元素的 `version`/`versionNonce`/`updated`，diff 里会看到这些行，这是格式本身的噪声。
+- 节点打开的子画布存在父节点的 `customData.childCanvas`（子画布 id，[嵌套画布](nested-canvas.md)）；子画布在 `workspace.json` 的画布条目可带 `reviewedAt`（「已核对」的时间）。
 - 节点代表的代码路径存在元素的 `customData.codePaths`（glob 列表，[进度指针](progress-pointer.md)），和图一起提交。
 
 ### threads/<canvasId>.json
