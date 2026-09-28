@@ -208,3 +208,20 @@ export function recoverWorkspace(canvasIds: string[], sessionList: { id: string;
   ];
   return { v: 2, docs, root: group(ids.slice(0, 1), ids[0] ?? ""), focused: ids[0] ?? "" };
 }
+
+/**
+ * 所有画布's grouping: each canvas followed by its sessions; then sessions whose canvas is in the
+ * trash (they come back under it when it is restored — its id is kept); then sessions linked to no
+ * canvas in the workspace.
+ */
+export function listGroups(docs: Doc[], canvasOf: (d: SessionDoc) => string, trashedCanvases: Set<string>) {
+  const canvases = docs.filter((d): d is CanvasDoc => d.kind === "canvas");
+  const sessionDocs = docs.filter((d): d is SessionDoc => d.kind === "session");
+  const orphans = sessionDocs.filter((s) => !canvases.some((c) => c.id === canvasOf(s)));
+  return {
+    canvases: canvases.map((c) => ({ canvas: c, sessions: sessionDocs.filter((s) => canvasOf(s) === c.id) })),
+    waiting: orphans.filter((s) => trashedCanvases.has(canvasOf(s))),
+    unlinked: orphans.filter((s) => !trashedCanvases.has(canvasOf(s))),
+  };
+}
+

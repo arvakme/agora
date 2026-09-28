@@ -26,6 +26,7 @@ from server.canvas.events import Events
 from server.canvas.local import Local, session_origins
 from server.canvas.project import Conflict, Gone, NotEmpty, ProjectStore
 from server.canvas.share import ShareError, ShareManager, check_max_opens, check_ttl
+from server.canvas.trash import Trash, TrashError, canvas_sessions
 from server.canvas.runner import DEFAULT_BACKEND, DEFAULT_MODEL, EFFORTS, ExecOptions
 
 REPO = Path(__file__).resolve().parents[2]
@@ -72,6 +73,13 @@ class Merge(BaseModel):
     data: dict[str, Any]
 
 
+class ToTrash(BaseModel):
+    # The page owns workspace.json: it sends the entry and where its tab was, so a restore puts it back.
+    entry: dict[str, Any] | None = None
+    place: dict[str, Any] | None = None
+    title: str = ""
+
+
 class NewShare(BaseModel):
     canvasId: str
     ttl: int | None = None  # seconds; None = until revoked
@@ -98,13 +106,14 @@ def sse(events: Events, request: Request, accept=None, *, tick: float = 15.0) ->
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"cache-control": "no-cache", "x-accel-buffering": "no"})
 
 
-def create_project_router(store: ProjectStore, events: Events | None = None, *, shares: ShareManager | None = None, hub=None, local: Local | None = None) -> APIRouter:
-    """``shares`` (optional): deleting a canvas ends its shares. ``hub`` (optional, an AgentHub):
-    deleting a session closes its terminal pane and stops its headless turn. ``local``: this copy's
-    machine-local state (instance, copies, registry)."""
+def create_project_router(store: ProjectStore, events: Events | None = None, *, shares: ShareManager | None = None, hub=None, local: Local | None = None, trash: Trash | None = None) -> APIRouter:
+    """``shares`` (optional): trashing a canvas ends its shares. ``hub`` (optional, an AgentHub):
+    trashing a session closes its terminal pane and stops its headless turn. ``local``: this copy's
+    machine-local state (instance, copies, registry). ``trash``: where deleted items go."""
     router = APIRouter()
     events = events or Events()
     local = local or (hub.local if hub is not None else Local(store))
+    trash = trash or Trash(store)
 
     def guard(f):
         try:
@@ -148,17 +157,6 @@ def create_project_router(store: ProjectStore, events: Events | None = None, *, 
             events.publish({"t": "canvas", "canvasId": id, "version": out["version"]})
         return out
 
-    @router.delete("/canvases/{id}")
-    def delete_canvas(id: str):
-        def go():
-            store.delete("canvas", id)
-            store.delete("threads", id)
-            # A share of a deleted canvas would show guests a blank page: end it (token dead,
-            # DNS record removed, tunnel torn down when nothing else is shared).
-            ended = shares.end_for_canvas(id, "canvas-deleted") if shares is not None else []
-            return {"ok": True, "sharesEnded": ended}
-
-        return guard(go)
 
     @router.put("/threads/{id}")
     def put_threads(id: str, body: Write):
@@ -179,7 +177,7 @@ def create_project_router(store: ProjectStore, events: Events | None = None, *, 
     @router.get("/events")
     async def project_events(request: Request):
         """SSE for the owner's page: threads written by someone else (share guests), share changes."""
-        return sse(events, request, lambda ev: ev.get("t") in ("threads", "shares"))
+        return sse(events, request, lambda ev: ev.get("t") in ("threads", "shares", "trash"))
 
     @router.post("/sessions/{id}/append")
     def append_session(id: str, body: Records):
@@ -189,14 +187,94 @@ def create_project_router(store: ProjectStore, events: Events | None = None, *, 
     def put_session(id: str, body: Records):
         return guard(lambda: {"version": store.replace_session(id, body.records, base=body.base, force=body.force)})
 
-    @router.delete("/sessions/{id}")
-    async def delete_session(id: str):
-        # The agent binding goes with the log; undoing the delete re-binds (PUT /api/agent/sessions/{id}).
-        # Its terminal pane (Agora's tmux or Seedmux) and a running headless turn end with it.
-        out = await asyncio.to_thread(guard, lambda: (store.delete("session", id), store.delete("binding", id), {"ok": True})[2])
-        if hub is not None and isinstance(out, dict):
-            out["terminalClosed"] = await hub.forget(id)
+    # ——— trash (deleting is moving here; web/docs/project-storage.md §1) ———
+    def trash_guard(f):
+        try:
+            return guard(f)
+        except TrashError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=f"not found: {e}") from None
+
+    @router.get("/trash")
+    def list_trash():
+        return {"items": trash.list(), "keepDays": trash.keep_ms // (24 * 3600 * 1000)}
+
+    @router.post("/trash/canvas/{id}")
+    def trash_canvas(id: str, body: ToTrash):
+        """A canvas and its comments go to the trash. Its shares end first (a guest would see a
+        blank page; a failure to end them leaves the canvas where it is), its sessions stay."""
+
+        def go():
+            store.check_alive()
+            ended = shares.end_for_canvas(id, "canvas-deleted") if shares is not None else []
+            m = trash.put("canvas", id, title=body.title, entry=body.entry, place=body.place, linked=canvas_sessions(store, id), sharesEnded=ended)
+            local.note("trash", kind="canvas", itemId=id, trashId=m["trashId"], title=body.title or None)
+            events.publish({"t": "trash"})
+            return m
+
+        return trash_guard(go)
+
+    @router.post("/trash/session/{id}")
+    async def trash_session(id: str, body: ToTrash):
+        """A session goes to the trash with its binding, record, snapshot and usage; its terminal
+        pane (Agora's tmux or Seedmux) and a running headless turn end first. The native log stays."""
+        try:
+            store.check_alive()
+        except Gone as e:
+            return gone(e)
+        b = store.read_binding(id) or {}
+        closed = await hub.forget(id) if hub is not None else False
+
+        def go():
+            native = {k: v for k, v in {"agent": b.get("agent"), "nativeId": b.get("nativeId"), "logPath": (b.get("log") or {}).get("path")}.items() if v}
+            m = trash.put("session", id, title=body.title, entry=body.entry, place=body.place, native=native or None, terminalClosed=closed)
+            local.drop_copy(id)
+            local.note("trash", kind="session", itemId=id, sessionId=id, trashId=m["trashId"], title=body.title or None, agent=b.get("agent"), nativeId=b.get("nativeId"))
+            events.publish({"t": "trash"})
+            return m
+
+        out = await asyncio.to_thread(trash_guard, go)
+        if hub is not None and not isinstance(out, dict):  # nothing moved: the session is still here
+            hub.revive(id)
         return out
+
+    @router.post("/trash/{trash_id}/restore")
+    def restore_trash(trash_id: str):
+        """Put an item back. Returns what the page needs to show it again right away: the scene and
+        threads (canvas) or the folded record and binding (session). Shares are not restored."""
+
+        def go():
+            m = trash.restore(trash_id)
+            id = m["id"]
+            out: dict[str, Any] = {"item": m, "id": id}
+            if m["kind"] == "canvas":
+                got = store.read("canvas", id)
+                th = store.read("threads", id)
+                out["canvas"] = {"scene": got[0] if got else {"elements": []}, "version": got[1] if got else None, "threads": None if th is None else {"data": th[0], "version": th[1]}}
+            else:
+                sess = store.read_session(id)
+                out["session"] = None if sess is None else {"state": sess[0], "version": sess[1]}
+                out["binding"] = store.read_binding(id)
+                if hub is not None:
+                    hub.revive(id)
+            local.note("restore", kind=m["kind"], itemId=id, trashId=trash_id, sessionId=id if m["kind"] == "session" else None)
+            events.publish({"t": "trash"})
+            return out
+
+        return trash_guard(go)
+
+    @router.delete("/trash/{trash_id}")
+    def purge_trash(trash_id: str):
+        """Delete for good. A session's native conversation stays in the CLI's own log (``native``)."""
+
+        def go():
+            m = trash.purge(trash_id)
+            local.note("purge", kind=m["kind"], itemId=m["id"], trashId=trash_id, sessionId=m["id"] if m["kind"] == "session" else None)
+            events.publish({"t": "trash"})
+            return {"ok": True, "native": m.get("native")}
+
+        return trash_guard(go)
 
     @router.post("/import")
     def import_all(payload: dict[str, Any]):
@@ -274,6 +352,7 @@ NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>Agora</title>
 
 
 SWEEP_S = 5.0
+TRASH_SWEEP_S = 3600.0
 
 
 def create_project_app(
@@ -309,10 +388,24 @@ def create_project_app(
     dist = dist or WEB / "dist"
     gateway_app = create_gateway_app(store, shares, events, dist=dist)
 
+    trash = Trash(store)
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         tasks: list[asyncio.Task] = []
-        server = None
+        server = gateway_task = None
+
+        async def trash_sweeper():
+            # Items past the 30 days go (at start, then hourly); each is noted in the registry.
+            while True:
+                try:
+                    for m in await asyncio.to_thread(trash.sweep):
+                        local.note("purge", kind=m["kind"], itemId=m["id"], trashId=m["trashId"], reason="expired")
+                except Exception as e:  # keep serving; the next pass retries
+                    print(f"trash sweep failed: {e}", flush=True)
+                await asyncio.sleep(TRASH_SWEEP_S)
+
+        tasks.append(asyncio.create_task(trash_sweeper()))
         if gateway:
             import uvicorn
 
@@ -320,7 +413,7 @@ def create_project_app(
 
             port = free_port()
             server = uvicorn.Server(uvicorn.Config(gateway_app, host="127.0.0.1", port=port, log_level="warning", proxy_headers=False))
-            tasks.append(asyncio.create_task(server.serve()))
+            gateway_task = asyncio.create_task(server.serve())  # stops on should_exit, not cancelled
             shares.gateway_port = port
             await asyncio.to_thread(shares.resume)
 
@@ -336,7 +429,7 @@ def create_project_app(
         yield
         if server is not None:
             server.should_exit = True
-        for t in tasks[1:]:
+        for t in tasks:
             t.cancel()
         await asyncio.to_thread(shares.shutdown)
         await hub.close()
@@ -357,7 +450,7 @@ def create_project_app(
             return JSONResponse({"error": "forbidden"}, status_code=403)
         return await call_next(request)
 
-    app.include_router(create_project_router(store, events, shares=shares, hub=hub, local=local), prefix="/api/project")
+    app.include_router(create_project_router(store, events, shares=shares, hub=hub, local=local, trash=trash), prefix="/api/project")
     app.include_router(create_share_router(store, shares, events), prefix="/api/share")
     app.include_router(create_agent_router(hub), prefix="/api/agent")
     if canvas_router is None:

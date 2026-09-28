@@ -778,9 +778,13 @@ class AgentHub:
         return alive
 
     def revive(self, sid: str) -> None:
-        """A trashed session came back (restore): follow and report it again."""
+        """A trashed session came back (restore): follow its native log again (the same one: the
+        binding came back with it) and send pages its transcript and status."""
         self.dropped.discard(sid)
         self.live.pop(sid, None)
+        lv = self._get(sid)
+        self._follow(sid, lv)
+        self.broadcast({"t": "transcript", "sessionId": sid, "reset": True, "items": [public_item(i) for i in list(lv.items.values())[-MAX_ITEMS:]]})
         self._status(sid)
 
     # ——— canvas bridge ———

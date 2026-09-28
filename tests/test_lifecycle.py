@@ -313,10 +313,10 @@ def test_deleting_a_session_closes_its_pane(store):
     store.append_session("s-t", [{"t": "session", "session": {"id": "s-t", "canvasId": "c1"}}], base=None)
     terms.open.add("s-t")
     c = TestClient(create_project_app(store.root, canvas_router=APIRouter(), hub=hub))
-    r = c.delete("/api/project/sessions/s-t")
-    assert r.json() == {"ok": True, "terminalClosed": True}
-    assert terms.killed == ["s-t"] and store.read_binding("s-t") is None
-    assert c.delete("/api/project/sessions/s-none").json()["terminalClosed"] is False
+    r = c.post("/api/project/trash/session/s-t", json={})
+    assert r.status_code == 200 and r.json()["terminalClosed"] is True
+    assert terms.killed == ["s-t"] and store.read_binding("s-t") is None  # the binding went to the trash with it
+    assert c.post("/api/project/trash/session/s-none", json={}).status_code == 404
 
 
 # ——— 8. the hidden footer names the Agora session and project ———

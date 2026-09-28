@@ -18,6 +18,7 @@
   shares/shares.json       分享记录（令牌只存哈希，见 [分享](sharing.md)），目录自带 `*` 的 .gitignore  不提交
   local/instance.json      这份副本的身份（实例 id、根路径、inode）与待提示的变化，见下文      不提交
   local/copies.json        `cp -r` 带过来、在这里只读的会话                                 不提交
+  trash/<时间>-<kind>-<id>/ 回收站：删掉的画布或会话的文件原样挪进来 + manifest.json，保留 30 天   不提交
   .gitignore               由 agora 生成：sessions/ run/ shares/ local/ trash/ *.tmp *.lock
 ```
 
@@ -118,7 +119,23 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
 - 读取时折叠：最后一条 `session` 是会话头，每个 turn / batch 取该 id 的最后一条。每一轮的每一步变化都会追加一条新的 turn 快照，历史留在文件里。
 - `batch` 是这一轮改图的撤销数据（改前的元素），只写被某一轮引用的。
 - 进程崩溃在半行上：读取时丢掉解析不了的行，不影响其他记录。
-- 删除会话删整个文件；撤销删除时整份重写。
+- 删除会话把它挪进回收站（下一节），不删。
+
+### trash/：回收站
+
+删除画布或会话 = 把它的文件用 `rename` 挪进 `trash/<毫秒时间>-<canvas|session>-<id>/`（在写锁里），同目录 `manifest.json`：
+
+```json
+{ "trashId": "1790580000000-canvas-c2", "kind": "canvas", "id": "c2", "at": 1790580000000, "title": "架构 B",
+  "entry": { …workspace.json 里的条目… }, "place": { "groupId": "g1", "index": 1, "docIndex": 3 },
+  "files": [{ "rel": "canvases/c2.excalidraw", "name": "canvases__c2.excalidraw" }, …],
+  "linked": ["s-…"], "sharesEnded": ["a1b2c3d4"] }
+```
+
+- 画布：`canvases/<id>.excalidraw`、`threads/<id>.json`。会话：`sessions/<id>.jsonl`、`sessions/<id>.agent.json`、`sessions/snapshots/<id>.jsonl`、`run/usage/<id>.jsonl`；manifest 的 `native` 记着原生日志在哪（Agora 从不删它）。
+- manifest 先写、文件后挪：中途崩溃留下的条目照样能恢复。恢复时目标 id 已被占用（git 带回了同 id 的画布）就换成 `<id>-r1`，绝不覆盖。
+- 保留 30 天：服务启动时和之后每小时清扫一次，过期的删掉；每次进、出、彻底删除都记进本机注册表。
+- 目录自带 `*` 的 `.gitignore`；`git clean -fdx` 会清掉它，由仓库外的每日备份兜底。
 
 ### workspace.json
 
@@ -156,10 +173,14 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
 | POST | `/local/ack` | 页面已经提示过移动 / 复制 / 新 clone，清掉 |
 | PUT | `/workspace`、`/canvases/{id}`、`/threads/{id}` | `{data, base, force?}` → `{version}` 或 409 |
 | POST | `/threads/{id}/merge` | `{data}` → `{version, data}`：按 id 合并进磁盘上的线程文件，从不 409。页面保存线程走这个（分享访客会同时写同一个文件，见 [分享 §4](sharing.md#4-两方同时写评论按操作合并)） |
-| GET | `/events` | SSE：`threads`（别人写入后的整份线程文件与版本）、`shares`（分享列表变了） |
-| DELETE | `/canvases/{id}` | 同时删它的 threads |
+| GET | `/events` | SSE：`threads`（别人写入后的整份线程文件与版本）、`shares`（分享列表变了）、`trash`（回收站变了） |
 | POST | `/sessions/{id}/append` | `{records, base, force?}` |
-| PUT / DELETE | `/sessions/{id}` | 整份重写 / 删除 |
+| PUT | `/sessions/{id}` | 整份重写 |
+| GET | `/trash` | 回收站：`{items: [manifest + expiresAt + daysLeft], keepDays}`，新的在前 |
+| POST | `/trash/canvas/{id}` | `{entry, place, title}`：画布连同评论进回收站；先结束它的分享 |
+| POST | `/trash/session/{id}` | 同上：会话连同绑定、记录、快照、用量；先关掉它的终端、停掉无头一轮 |
+| POST | `/trash/{trashId}/restore` | 放回去 → `{item, id, canvas?: {scene, version, threads}, session?: {state, version}, binding?}` |
+| DELETE | `/trash/{trashId}` | 彻底删除 → `{ok, native}`（原生日志在哪） |
 | POST | `/import` | 一次性导入；项目非空时 409 |
 
 id 只允许 `[A-Za-z0-9._-]`，不能以点开头。

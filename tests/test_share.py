@@ -335,14 +335,14 @@ async def test_deleting_a_canvas_ends_its_shares(env):
     g = await joined(app, host, token)
     assert (await g.get("/api/guest/state")).status_code == 200
     async with owner(app) as c:
-        r = await c.delete("/api/project/canvases/c1")
+        r = await c.post("/api/project/trash/canvas/c1", json={})
     assert r.status_code == 200 and r.json()["sharesEnded"] == [a["id"]]
     ended = {x["id"]: x for x in shares.list()}
     assert ended[a["id"]]["status"] == "canvas-deleted" and ended[other["id"]]["status"] == "active"
     assert (await g.get("/api/guest/state")).status_code == 403  # the token is dead
     assert set(dns.records) == {other["dnsRecordId"]} and tunnels.tunnels  # the other canvas's share keeps the tunnel
     async with owner(app) as c:
-        await c.delete("/api/project/canvases/c2")
+        await c.post("/api/project/trash/canvas/c2", json={})
     assert dns.records == {} and tunnels.tunnels == {}  # nothing shared any more: tunnel torn down
 
 

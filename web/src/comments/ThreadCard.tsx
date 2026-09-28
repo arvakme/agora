@@ -11,7 +11,8 @@ import { canDelete, canEdit, identity, isGuestId } from "./threads";
 import { offerUndo } from "./undo";
 import { GUEST } from "../guest/mode";
 import { SPRING } from "./motion";
-import { useTurn } from "../session/store";
+import { useSessions, useTurn } from "../session/store";
+import { useTrash } from "../workspace/trash";
 import { AGENT_NAMES, useAgents } from "../session/agents";
 import { AgentAvatar } from "../session/AgentAvatar";
 import { ui } from "../session/ui";
@@ -177,9 +178,7 @@ function Row({ m, first, onUndo, tools }: { m: Message; first?: boolean; onUndo?
           </div>
         )}
         {GUEST ? null : native ? (
-          <button className="tsession" onClick={() => ui.openSession(m.sessionId!, m.turnId)}>
-            在会话中查看 →
-          </button>
+          <SessionLink sessionId={m.sessionId!} turnId={m.turnId} />
         ) : turn && (
           <button className="tsession" onClick={() => ui.openSession(turn.sessionId, turn.id)}>
             在会话中查看第 {turn.n} 轮 · {turn.steps.length} 步 →
@@ -188,6 +187,28 @@ function Row({ m, first, onUndo, tools }: { m: Message; first?: boolean; onUndo?
       </div>
     </div>
   );
+}
+
+/**
+ * A native-session reply links to its session. A session in the trash links to 回收站 (restore it
+ * there); one deleted for good says so — the reply's text stays either way.
+ */
+function SessionLink({ sessionId, turnId }: { sessionId: string; turnId?: string }) {
+  const { sessions: all } = useSessions();
+  const inTrash = useTrash().find((x) => x.kind === "session" && x.id === sessionId);
+  if (all[sessionId])
+    return (
+      <button className="tsession" onClick={() => ui.openSession(sessionId, turnId)}>
+        在会话中查看 →
+      </button>
+    );
+  if (inTrash)
+    return (
+      <button className="tsession" onClick={() => ui.openTrash(inTrash.trashId)} title="会话在回收站：恢复后这一轮照常可看">
+        会话在回收站 · 恢复 →
+      </button>
+    );
+  return <span className="tsession" data-gone>会话已删除</span>;
 }
 
 /** People and agents alike are an initial in a neutral circle; the system note is a hint icon. */

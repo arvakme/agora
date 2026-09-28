@@ -1,13 +1,16 @@
 // 所有画布: every canvas in the workspace (open or closed) with its sessions nested under it.
-// Opening a closed one brings its tab back; deleting is confirmed here, in place. Draft sessions
-// (no agent chosen yet) are not listed: they exist only as their open tab until an agent is picked.
+// Opening a closed one brings its tab back; deleting is confirmed here, in place, and moves the item
+// to 回收站 (restorable for 30 days). Draft sessions (no agent chosen yet) are not listed: they exist
+// only as their open tab until an agent is picked.
 import { motion } from "motion/react";
-import { useEffect } from "react";
-import { IconLayers, IconPlus, IconTrash } from "../app/icons";
+import { useEffect, useState } from "react";
+import { IconHistory, IconLayers, IconPlus, IconTrash } from "../app/icons";
 import { SPRING } from "../comments/motion";
 import { sessions } from "../session/store";
 import { SessionMark } from "../session/AgentAvatar";
-import type { CanvasDoc, Doc, SessionDoc } from "./model";
+import { AGENT_NAMES, agents } from "../session/agents";
+import { listGroups, type CanvasDoc, type Doc, type SessionDoc } from "./model";
+import { useTrash } from "./trash";
 
 type Props = {
   docs: Doc[];
@@ -23,10 +26,13 @@ type Props = {
   onOpen: (id: string) => void;
   onRemove: (id: string) => void;
   onNew: (sample: boolean) => void;
+  onTrash: () => void;
+  onHistory?: () => void;
   onDismiss: () => void;
 };
 
-export function AllDocs({ docs, titles, open, focused, confirm, setConfirm, canvasOf, commentCount, onOpen, onRemove, onNew, onDismiss }: Props) {
+export function AllDocs({ docs, titles, open, focused, confirm, setConfirm, canvasOf, commentCount, onOpen, onRemove, onNew, onTrash, onHistory, onDismiss }: Props) {
+  const inTrash = useTrash();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && (e.stopPropagation(), confirm ? setConfirm(undefined) : onDismiss());
     addEventListener("keydown", onKey, true);
@@ -35,17 +41,18 @@ export function AllDocs({ docs, titles, open, focused, confirm, setConfirm, canv
 
   const canvases = docs.filter((d): d is CanvasDoc => d.kind === "canvas");
   const sessionDocs = docs.filter((d): d is SessionDoc => d.kind === "session");
-  const orphans = sessionDocs.filter((s) => !canvases.some((c) => c.id === canvasOf(s)));
+  const groups = listGroups(docs, canvasOf, new Set(inTrash.filter((m) => m.kind === "canvas").map((m) => m.id)));
+  const { waiting, unlinked } = groups;
 
   const row = (d: Doc, sub = false) => {
     const title = titles[d.id] ?? d.title;
-    if (confirm === d.id) return <Confirm key={d.id} doc={d} title={title} comments={d.kind === "canvas" ? commentCount(d.id) : 0} onCancel={() => setConfirm(undefined)} onConfirm={() => onRemove(d.id)} />;
+    if (confirm === d.id) return <Confirm key={d.id} doc={d} title={title} comments={d.kind === "canvas" ? commentCount(d.id) : 0} sessions={d.kind === "canvas" ? sessionDocs.filter((s) => canvasOf(s) === d.id).length : 0} onCancel={() => setConfirm(undefined)} onConfirm={() => onRemove(d.id)} />;
     const last = d.kind === "canvas" && canvases.length === 1;
     const state = d.id === focused ? "当前" : open.has(d.id) ? "已打开" : "已关闭";
     return (
       <li key={d.id} className="ad-row" data-sub={sub} data-open={open.has(d.id)} data-current={d.id === focused}>
         <button className="ad-main" onClick={() => onOpen(d.id)} title={open.has(d.id) ? "切换到这里" : "重新打开"}>
-          {d.kind === "session" ? <SessionMark sessionId={d.sessionId} /> : <span className="ad-mark" data-kind={d.kind} />}
+          {d.kind === "session" ? <SessionMark sessionId={d.sessionId} fallback={d.agent} /> : <span className="ad-mark" data-kind={d.kind} />}
           <span className="ad-title">{title}</span>
           <span className="ad-state">{state}</span>
         </button>
@@ -67,34 +74,50 @@ export function AllDocs({ docs, titles, open, focused, confirm, setConfirm, canv
       <div className="ad-scrim" onPointerDown={onDismiss} />
       <motion.div className="ad" role="dialog" aria-label="所有画布" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
         <ul className="ad-list">
-          {canvases.map((c) => [row(c), ...sessionDocs.filter((s) => canvasOf(s) === c.id).map((s) => row(s, true))])}
-          {orphans.length > 0 && <li className="ad-group">未关联画布</li>}
-          {orphans.map((s) => row(s, true))}
+          {groups.canvases.map(({ canvas, sessions: linked }) => [row(canvas), ...linked.map((s) => row(s, true))])}
+          {waiting.length > 0 && <li className="ad-group">未关联画布（画布在回收站）</li>}
+          {waiting.map((s) => row(s, true))}
+          {unlinked.length > 0 && <li className="ad-group">未关联画布</li>}
+          {unlinked.map((s) => row(s, true))}
         </ul>
         <footer className="ad-foot">
           <button className="btn sm ghost" onClick={() => onNew(false)}><IconPlus size={14} />新建空白画布</button>
           <button className="btn sm ghost" onClick={() => onNew(true)}><IconLayers size={14} />从示例新建</button>
+          <span className="ad-foot-gap" />
+          {onHistory && <button className="icon-btn sm muted" onClick={onHistory} aria-label="会话历史" title="会话历史：按时间、agent、主题、画布找会话"><IconHistory size={16} /></button>}
+          <button className="btn sm ghost" onClick={onTrash} title="删除的画布和会话，30 天内可恢复"><IconTrash size={14} />回收站{inTrash.length ? <em>{inTrash.length}</em> : null}</button>
         </footer>
       </motion.div>
     </>
   );
 }
 
-function Confirm({ doc, title, comments, onCancel, onConfirm }: { doc: Doc; title: string; comments: number; onCancel: () => void; onConfirm: () => void }) {
+function Confirm({ doc, title, comments, sessions: linked, onCancel, onConfirm }: { doc: Doc; title: string; comments: number; sessions: number; onCancel: () => void; onConfirm: () => void }) {
+  const [shares, setShares] = useState(0);
+  useEffect(() => {
+    if (doc.kind !== "canvas") return;
+    void fetch("/api/share")
+      .then((r) => r.json())
+      .then((j: { shares?: { canvasId: string; status: string }[] }) => setShares((j.shares ?? []).filter((s) => s.canvasId === doc.id && s.status === "active").length))
+      .catch(() => {});
+  }, [doc]);
   const turns = doc.kind === "session" ? (sessions.get().sessions[doc.sessionId]?.turnIds.length ?? 0) : 0;
-  // The native conversation stays in the CLI's own log; what goes is Agora's record of the session.
+  const b = doc.kind === "session" ? agents.get().bindings[doc.sessionId] : undefined;
+  const agent = b ? AGENT_NAMES[b.agent] : "CLI";
+  const where = b?.agent === "codex" ? "~/.codex/sessions/" : b?.agent === "pi" ? "~/.pi/agent/sessions/" : "~/.claude/projects/";
+  // What moves to the trash, what stays, what ends — the plan's wording (web/docs/workspace-model.md §1).
   const what =
     doc.kind === "canvas"
-      ? `画布内容${comments ? `和 ${comments} 条评论` : ""}会一起删除，关联会话保留；这块画布的分享会立即结束。`
-      : `Agora 里的会话记录${turns ? `（${turns} 次改图）` : ""}会删除，终端里正在运行的这个会话会被关闭；原生对话仍在 CLI 自己的日志里。`;
+      ? `画布${comments ? `和 ${comments} 条评论` : ""}移到回收站，30 天内可恢复；关联的 ${linked} 个会话保留${shares ? `；这块画布上的 ${shares} 个分享会立即结束（恢复画布不会恢复分享）` : ""}。`
+      : `会话${turns ? `（${turns} 次改图）` : ""}移到回收站，30 天内可恢复；${agent} 的原生对话不受影响（${where}）；终端里正在运行的 ${agent} 会被关闭。`;
   return (
     <li className="ad-confirm" role="alertdialog" aria-label={`删除 ${title}`}>
       <p>
-        删除「{title}」？{what}删除后可以立即撤销。
+        删除「{title}」？{what}
       </p>
       <div>
         <button className="btn sm ghost" autoFocus onClick={onCancel}>取消</button>
-        <button className="btn sm danger" onClick={onConfirm}><IconTrash size={14} />删除</button>
+        <button className="btn sm danger" onClick={onConfirm}><IconTrash size={14} />移到回收站</button>
       </div>
     </li>
   );
