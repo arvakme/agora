@@ -20,9 +20,26 @@ from server.canvas.adapters.experimental import enabled as _experimental
 # Order matters: the session agents (T1) first, in the order the picker shows them; then the
 # observed CLIs (T2), which Seedmux can dispatch as workers. Grok is a v2 feature: registered only
 # with AGORA_EXPERIMENTAL=grok (experimental.py).
-ADAPTERS: dict[str, Adapter] = {a.kind: a for a in (PiAdapter(), ClaudeAdapter(), CodexAdapter())}
-if _experimental("grok"):
-    ADAPTERS["grok"] = GrokAdapter()
+BUILTIN: tuple[type[Adapter], ...] = (PiAdapter, ClaudeAdapter, CodexAdapter)
+EXPERIMENTAL: dict[str, type[Adapter]] = {"grok": GrokAdapter}  # flag name → adapter (v2, off by default)
+ADAPTERS: dict[str, Adapter] = {}
+
+
+def refresh() -> dict[str, Adapter]:
+    """(Re)build the registry from the built-in adapters and the enabled flags (``AGORA_EXPERIMENTAL``),
+    in place: every module holding ``ADAPTERS`` sees the change (tests turn a flag on and back off)."""
+    ADAPTERS.clear()
+    for cls in BUILTIN:
+        a = cls()
+        ADAPTERS[a.kind] = a
+    for flag, cls in EXPERIMENTAL.items():
+        if _experimental(flag):
+            a = cls()
+            ADAPTERS[a.kind] = a
+    return ADAPTERS
+
+
+refresh()
 
 
 def register(a: Adapter) -> Adapter:
