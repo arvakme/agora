@@ -22,6 +22,7 @@ import { createThreadStore, threadStores, useThreads, type ThreadSnapshot, type 
 import { AllDocs } from "../workspace/AllDocs";
 import { ancestry, descendants } from "../nested/graph";
 import { canvasFromUrl, nav, nested, urlFor } from "../nested/store";
+import { isEditableTarget, markBackHintSeen, upOnKey } from "../nested/up";
 import { sessionNames } from "../multi/writes";
 import { setWorkstationRoot } from "../workstation/Workstation";
 import { ShareButton } from "../share/SharePanel";
@@ -495,6 +496,15 @@ export function App({ boot }: { boot: Boot }) {
    */
   const go = (from: string, to: string, push = true) => {
     if (!docsRef.current.some((d) => d.id === to && d.kind === "canvas")) return;
+    // Keep what the leaving canvas holds right now. Its view reports scene changes one frame
+    // late (CanvasView onChange → onScene), and it unmounts below: a link just written into a
+    // node (新建空白子图) would otherwise never reach the scene store, the nesting index or disk.
+    const leaving = canvases.get(from)?.api.getSceneElementsIncludingDeleted() as readonly El[] | undefined;
+    if (leaving) {
+      scenes.current.set(from, leaving);
+      nested.setScene(from, leaving);
+      persistCanvas(from);
+    }
     const r = replaceTab(rootRef.current, from, to);
     if (r.closed) {
       handles.current.delete(from);
@@ -535,6 +545,20 @@ export function App({ boot }: { boot: Boot }) {
       else openRef.current(to, { kind: "canvas" });
     };
     addEventListener("popstate", onPop);
+    // ⌘↑ / Ctrl+↑: up one level from the child canvas in use (nested/up.ts decides when it is ours).
+    const onKey = (e: KeyboardEvent) => {
+      const id = docsRef.current.some((d) => d.id === focusedRef.current && d.kind === "canvas") ? focusedRef.current : lastCanvasRef.current;
+      const api = canvases.get(id)?.api;
+      const map = api ? byId(api.getSceneElements() as readonly El[]) : new Map<string, El>();
+      const selected = api ? Object.keys(api.getAppState().selectedElementIds ?? {}).flatMap((k) => map.get(k) ?? []) : [];
+      const up = upOnKey({ key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey, editable: isEditableTarget(e.target) }, id, nested.get().index, selected);
+      if (!up) return;
+      e.preventDefault();
+      e.stopPropagation();
+      markBackHintSeen();
+      goRef.current(id, up);
+    };
+    addEventListener("keydown", onKey, true);
     // A link like ?canvas=<id> opens that level on load.
     const first = canvasFromUrl();
     if (first && docsRef.current.some((d) => d.id === first && d.kind === "canvas")) {
@@ -545,7 +569,7 @@ export function App({ boot }: { boot: Boot }) {
       if (from) goRef.current(from, first, false);
       else openRef.current(first, { kind: "canvas" });
     }
-    return () => removeEventListener("popstate", onPop);
+    return () => (removeEventListener("popstate", onPop), removeEventListener("keydown", onKey, true));
   }, []);
   // The address bar follows the canvas in use (replace, not push: switching tabs is not a level change).
   useEffect(() => {

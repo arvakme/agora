@@ -109,7 +109,7 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 }
 
 /* floating layers sit on --surface: their wells and hovers step one notch (tokens.css) */
-.menu, .ad, .tcard, .toast, .dock, .miss, .mode-hint, .parked-hint, .share-pop, .sp-composer, .guest-dialog, .anim-player, .ptr-pop, .ptr-chip, .ptr-pill, .sp-agents button, .wm-ghost {
+.menu, .ad, .tcard, .toast, .dock, .miss, .mode-hint, .parked-hint, .share-pop, .sp-composer, .guest-dialog, .anim-player, .ptr-pop, .node-pop, .nest-hint, .ptr-chip, .ptr-pill, .sp-agents button, .wm-ghost {
   --well: var(--well-on-surface);
   --raised: var(--raised-on-surface);
 }

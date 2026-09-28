@@ -2,13 +2,14 @@
 
 架构图上的一个节点可以「打开」一张子画布：总架构 › 后端 › 订单模块 › 下单流程。每一层都是一张普通画布（`.agora/canvases/<id>.excalidraw`，有自己的评论、分享、会话关联），只是被父节点指着。
 
-实现：`web/src/nested/`（`graph.ts` 纯函数：父子索引、面包屑、代码路径汇总、过时判断；`store.ts` 所有画布的场景与导航动作；`NestedLayer.tsx` 进入标记、面包屑、节点菜单；`writeChild.ts` 写链接），`web/src/app/App.tsx`（在原 tab 里切换层级、地址栏、前进后退），`web/src/session/agentBridge.ts` 的 `childFromAgent`；服务端 `server/canvas/nested.py`，`agora canvas child`（`agora_cli/canvas.py` → `/api/agent/canvas/child`），分享网关 `server/canvas/share_gateway.py`。
+实现：`web/src/nested/`（`graph.ts` 纯函数：父子索引、面包屑、代码路径汇总、过时判断、写链接；`store.ts` 所有画布的场景与导航动作；`up.ts` 返回上一级的快捷键与一次性提示；`NestedLayer.tsx` 进入标记、面包屑、「子图」菜单；`writeChild.ts` 写链接），`web/src/canvas/nodes.ts`（什么算一个节点：选区、双击、`--node` 都经过它），`web/src/canvas/NodeBar.tsx`（选中节点旁的操作条），`web/src/app/App.tsx`（在原 tab 里切换层级、地址栏、前进后退），`web/src/session/agentBridge.ts` 的 `childFromAgent`；服务端 `server/canvas/nested.py`，`agora canvas child`（`agora_cli/canvas.py` → `/api/agent/canvas/child`），分享网关 `server/canvas/share_gateway.py`。
 
 ## 1. 数据：链接只在父节点上
 
 | | |
 |---|---|
 | 存在哪 | 父节点（方框、椭圆、菱形、frame）的 `customData.childCanvas = "<子画布 id>"`，随父画布存盘、进 git |
+| 编组节点 | 素材库图标（一组元素：透明根矩形 + 各层子编组 + 标签）是**一个节点**，链接写在根矩形上——和它的 `codePaths` 同一个元素，也是 `agora canvas read` 列出的节点 id；图标的零件和标签都不带链接。自己编的组选中时也是一个节点：组里已有链接的形状，其次带 `codePaths` 的，再次面积最大的（`canvas/nodes.ts` `groupNode`）；双击进组编辑时组里的形状各算各的 |
 | 跟随什么 | 子画布的 **id**。改名、移动文件、换分支都不影响；id 在 `workspace.json` 里对应一个名字 |
 | 反向关系 | 不另存。谁是谁的父、面包屑、层级深度，都从所有画布的场景里推出来（`parentIndex`） |
 | 一个子图被两个节点指着 | 复制节点会连 `customData` 一起复制。取第一个（画布顺序，再按场景顺序）做面包屑的父；两个节点都能进 |
@@ -18,15 +19,16 @@
 
 ## 2. 进入与返回
 
-- **进入标记**：有子图的节点右下角一个小胶囊（进入图标，子图及其下层未解决评论数，可能过时时带一个提示色小点）。点它或**双击节点**进入。双击因此不再编辑这种节点的文字，改文字用选中后按 Enter。
+- **进入标记**：有子图的节点右下角一个小胶囊（进入图标，子图及其下层未解决评论数，可能过时时带一个提示色小点）；编组节点按整个图标连同标签的外框算右下角。点它或**双击节点**进入（图标上任何位置，包括标签和透明空隙）。双击因此不再编辑这种节点的文字，改文字用选中后按 Enter。
 - **原地切换**：进入时子画布替换当前 tab（同一分组、同一位置），父画布被「关闭」——关闭不是删除，它仍在「所有画布」里。子画布已经在别的分组打开时，直接切过去，不动当前 tab。
-- **面包屑**：子画布上方一条细栏：`总架构 › 后端 API › 订单服务`，点任意一级原地回去。顶层画布没有这条栏。
+- **返回上一级**：子画布上方一条栏，最前面是「← 返回 <父画布名>」按钮，后面是面包屑 `总架构 › 后端 API › 订单服务`（父级悬停时像链接，点任意一级原地回去）。快捷键 **⌘↑**（Mac）/ **Ctrl+↑**（其他）；正在输入文字，或恰好选中一个方框 / 椭圆 / 菱形时不接管（那是 Excalidraw 的「按住 Cmd 加方向键画流程图」）。不用 Backspace / Esc（Excalidraw 在用）。第一次进到子图时按钮下面提示一次「在子图里。点左上角返回，或按 ⌘↑」，点「知道了」或用任何方式返回过一次后，这个浏览器不再提示（`localStorage` `agora.nested.backHint`）。顶层画布没有这条栏。
+- **离开时先存**：进入 / 返回替换 tab 之前，先把要离开的画布此刻的场景写进场景表、层级索引并存盘（`App.tsx` `go`）。画布视图把场景变化晚一帧才报上来，不这样做的话「新建空白子图」刚写进节点的链接会随视图卸载丢掉（2026-09-28 修过：子画布建出来了，父节点上却没有链接，也就没有面包屑）。
 - **地址栏**：`?canvas=<id>` 跟着当前画布走（换 tab 用 replace，进入 / 返回用 push），所以浏览器前进后退就是逐级进出；带 `?canvas=` 打开页面直接到那一层。
 - **所有画布**：子画布缩进挂在父画布下面（`canvasTree`）。
 
 ## 3. 建子图
 
-选中一个节点，「代码路径」下面多一个「子图」胶囊：
+选中一个节点（编组节点整组选中即可），节点旁的**操作条**上并排两个胶囊：「代码路径」和「子图」。操作条贴着节点放（先右、再左、下、上），不压 Excalidraw 的面板、进度指针的标签、评论钉和节点自己的进入标记，尽量不压别的图形；两个胶囊的弹层同一时间只开一个（开一个就关另一个，再点同一个关掉；打开进度指针的弹层也会关掉它），弹层同样避让（`canvas/nodeBarLayout.ts`）。节点没有标签时标题写「未命名节点」，不显示元素 id。「子图」菜单：
 
 | 节点状态 | 菜单 |
 |---|---|
@@ -45,6 +47,7 @@ agora canvas child unlink --parent <画布> --node <节点>
 agora canvas child list   [--parent <画布>]
 ```
 
+- `--node`：`agora canvas read` 列出的节点 id；也可以是素材库图标的任一零件或标签元素的 id、编组 id（`lib-…` / `g-…`），或节点的完整标签——都解析到同一个节点（`canvas/nodes.ts` `resolveNode`）。自己编的组里的形状各自是节点，按 id 指哪个就是哪个。
 - `create`：节点已经有子图时返回 `exists` 和那张子图（agent 接着画进去），否则新建一张空白画布（不开 tab）并挂上，返回 `created`。都带 `canvas.id`，之后 `read / apply / link --canvas <id>`。
 - 挂链接是父画布上的一次可撤销修改，并在会话里记一张卡片（可撤销）。撤销只去掉链接，子画布留下。
 - `list` 服务没开也能用（直接读 `.agora/canvases/`）；其余要服务和打开的页面（和 `apply` 一样，退出码 3）。

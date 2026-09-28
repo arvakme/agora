@@ -9,11 +9,13 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { threadStores } from "../comments/threads";
 import { layoutPins } from "../comments/pinLayout";
-import { IconCode, IconHint, IconTarget } from "../app/icons";
+import { IconHint, IconTarget } from "../app/icons";
 import type { CanvasViewState } from "../canvas/CanvasView";
 import { bbox, codePathsOf, isShape, labelOf, live, type El } from "../canvas/scene";
 import { footprint, inflate, obstacles, overlaps, placeBeside, type Box } from "../canvas/clearance";
-import { clipPath, edgeSpot, occluded } from "../canvas/chrome";
+import { NodeBar } from "../canvas/NodeBar";
+import type { NodePop } from "../canvas/nodeBarLayout";
+import { clipPath, edgeSpot, notOwn, occluded } from "../canvas/chrome";
 import { AGENT_NAMES, useAgents, type AgentKind } from "../session/agents";
 import { AgentAvatar } from "../session/AgentAvatar";
 import { openTrajectory, ui } from "../session/ui";
@@ -24,7 +26,6 @@ import { useSessionFolds, useSessionNames } from "../multi/writes";
 import { useReplayAt } from "../workstation/clock";
 import { elementFor, type Placed } from "./codeLinks";
 import { useFollowedSession } from "./follow";
-import { writeCodePaths } from "./writeLinks";
 import "./pointer.css";
 
 const clock = (at: number) => new Date(at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
@@ -96,6 +97,17 @@ export function PointerLayer({ api, view, chrome = [] }: { api: ExcalidrawImpera
   const followedState = pointers.find((p) => p.sessionId === followed)?.state ?? pointers[0]?.state;
   const [open, setOpen] = useState<Open>(null);
   const [outsideOpen, setOutsideOpen] = useState<string | null>(null);
+  // The node action bar's popover (代码路径 / 子图): one popover open at a time across the canvas.
+  const [nodeOpen, setNodeOpen] = useState<NodePop | null>(null);
+  useEffect(() => {
+    if (open) setNodeOpen(null);
+  }, [open]);
+  const openNode = (p: NodePop | null) => {
+    setNodeOpen(p);
+    if (p) (setOpen(null), setOutsideOpen(null));
+  };
+  // Overlays place themselves against the panels, not against the node action bar (it moves for them).
+  const free = useMemo(() => notOwn(chrome), [chrome]);
 
   // A click anywhere outside the pointer's own UI closes its popovers.
   useEffect(() => {
@@ -110,10 +122,6 @@ export function PointerLayer({ api, view, chrome = [] }: { api: ExcalidrawImpera
   const a = view.appState;
   const z = a.zoom.value;
   const toScreen = (b: Box): Box => ({ x: (b.x + a.scrollX) * z, y: (b.y + a.scrollY) * z, w: b.w * z, h: b.h * z });
-  const screen = (e: El) => {
-    const b = bbox(e);
-    return { x: (b.x + a.scrollX) * z, y: (b.y + a.scrollY) * z, w: b.width * z, h: b.height * z };
-  };
 
   // Chip widths, measured, so one node's labels can be laid side by side.
   const chipRefs = useRef(new Map<string, HTMLElement>());
@@ -130,9 +138,9 @@ export function PointerLayer({ api, view, chrome = [] }: { api: ExcalidrawImpera
 
   const tstore = threadStores.get(view.id);
   const threads = useSyncExternalStore(tstore?.subscribe ?? noSub, () => tstore?.get().threads ?? NONE);
+  const drawing = useMemo(() => obstacles(view.elements, view.map).map(toScreen), [view.elements, view.map, a.scrollX, a.scrollY, z]);
+  const pins = useMemo(() => layoutPins(threads, view).boxes, [threads, view]);
   const { placed: layout, hidden } = useMemo(() => {
-    const drawing = obstacles(view.elements, view.map).map(toScreen);
-    const pins = layoutPins(threads, view).boxes;
     const placed: { element: string; ring: Box; x: number; y: number; side: string; chips: { sid: string; dx: number }[]; clashX?: number }[] = [];
     const hidden: { element: string; sids: string[]; spot: ReturnType<typeof edgeSpot> }[] = [];
     const viewBox = { x: 0, y: 0, w: a.width, h: a.height };
@@ -141,9 +149,9 @@ export function PointerLayer({ api, view, chrome = [] }: { api: ExcalidrawImpera
       if (!live(el)) continue;
       const ring = inflate(toScreen(footprint(el, view.map, view.elements)), 6);
       // Behind a panel or off-screen: no ring there, an indicator on the nearest free edge instead.
-      if (occluded(ring, viewBox, chrome)) {
+      if (occluded(ring, viewBox, free)) {
         const w = 44 + 18 * s.pointers.length;
-        const spot = edgeSpot(ring, viewBox, [...chrome, ...hidden.map((h) => h.spot)], w, 28);
+        const spot = edgeSpot(ring, viewBox, [...free, ...hidden.map((h) => h.spot)], w, 28);
         hidden.push({ element: s.element, sids: s.pointers.map((p) => p.sessionId), spot });
         continue;
       }
@@ -152,7 +160,7 @@ export function PointerLayer({ api, view, chrome = [] }: { api: ExcalidrawImpera
       const clash = byNode.has(s.element) ? CLASH_W + CHIP_GAP : 0;
       const w = ws.reduce((n, x) => n + x, 0) + CHIP_GAP * (ws.length - 1) + clash;
       // Labels stay off the drawing, the pins, other rings and the labels placed before them.
-      const blocks = [...drawing.filter((b) => !overlaps(b, ring, -8)), ...pins, ...chrome, ...hidden.map((h) => h.spot), ...placed.flatMap((p) => [p.ring, { x: p.x, y: p.y, w: p.chips.reduce((n, c) => Math.max(n, c.dx + (widths[c.sid] ?? 200)), 0), h: 28 }])];
+      const blocks = [...drawing.filter((b) => !overlaps(b, ring, -8)), ...pins, ...free, ...hidden.map((h) => h.spot), ...placed.flatMap((p) => [p.ring, { x: p.x, y: p.y, w: p.chips.reduce((n, c) => Math.max(n, c.dx + (widths[c.sid] ?? 200)), 0), h: 28 }])];
       const spot = placeBeside(ring, w, 28, blocks, { x: 0, y: 0, w: a.width, h: a.height }, { gap: 6 });
       let dx = 0;
       const chips = s.pointers.map((p, i) => {
@@ -163,7 +171,7 @@ export function PointerLayer({ api, view, chrome = [] }: { api: ExcalidrawImpera
       placed.push({ element: s.element, ring, x: spot.x, y: spot.y, side: spot.side, chips, clashX: clash ? dx : undefined });
     }
     return { placed, hidden };
-  }, [piles, view.elements, view.map, a.scrollX, a.scrollY, z, a.width, a.height, threads, widths, clashes, chrome]);
+  }, [drawing, pins, piles, view.elements, view.map, a.scrollX, a.scrollY, z, a.width, a.height, threads, widths, clashes, free]);
   const clip = useMemo(() => clipPath({ x: 0, y: 0, w: a.width, h: a.height }, chrome), [a.width, a.height, chrome]);
 
   const elOf = Object.fromEntries(pointers.flatMap((p) => (p.state.current?.element ? [[p.sessionId, p.state.current.element]] : [])));
@@ -172,9 +180,24 @@ export function PointerLayer({ api, view, chrome = [] }: { api: ExcalidrawImpera
   const shownIds = pointers.map((p) => p.sessionId);
   const outsideCount = pointers.reduce((n, p) => n + p.state.outside.length, 0);
 
+  // The selected node's action bar stays off the panels, every pointer label and pin, the edge
+  // indicators, the conflict marks and the 「在架构图之外」 pill.
+  const labelBoxes = layout.map((l) => ({ x: l.x, y: l.y, w: l.chips.reduce((n, c) => Math.max(n, c.dx + (widths[c.sid] ?? 200)), 0) + (l.clashX !== undefined ? CLASH_W : 0), h: 28 }));
+  const outsideBox = outsideCount > 0 ? [{ x: 12, y: a.height - 64 - 28, w: 200, h: 28 }] : [];
   const editor = (
-    <div className="ds ptr-edit-layer">
-      <LinkEditor api={api} view={view} placed={followedState?.placed ?? []} links={links} screen={screen} />
+    <div className="ds">
+      <NodeBar
+        api={api}
+        view={view}
+        canvasId={view.id}
+        open={nodeOpen}
+        onOpen={openNode}
+        hard={[...free, ...labelBoxes, ...hidden.map((h) => h.spot), ...pins, ...outsideBox]}
+        soft={drawing}
+        chrome={free}
+        placed={followedState?.placed ?? []}
+        links={links}
+      />
     </div>
   );
   if (!links.length) return editor;
@@ -193,8 +216,8 @@ export function PointerLayer({ api, view, chrome = [] }: { api: ExcalidrawImpera
             // Not animated: Excalidraw's animated scroll does not report the final view (onChange)
             // until the next pointer move, so the layers would lag behind it.
             onClick={() => api.scrollToContent(el, { animate: false })}
-            title={`${names} 在改「${labelOf(el, view.map) || el.id}」——它被面板挡住或在视野外，点击定位`}
-            aria-label={`定位到 ${labelOf(el, view.map) || el.id}`}
+            title={`${names} 在改「${labelOf(el, view.map) || "未命名节点"}」——它被面板挡住或在视野外，点击定位`}
+            aria-label={`定位到 ${labelOf(el, view.map) || "未命名节点"}`}
           >
             {h.sids.map((sid) => {
               const kind = ag.bindings[sid]?.agent as AgentKind | undefined;
@@ -259,7 +282,7 @@ export function PointerLayer({ api, view, chrome = [] }: { api: ExcalidrawImpera
                 {isOpen && (
                   <motion.div className="ptr-pop" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18 }}>
                     <div className="ptr-pop-head">
-                      <b>{kind && <AgentAvatar kind={kind} size={16} />}{name} · {labelOf(el, view.map) || el.id}</b>
+                      <b>{kind && <AgentAvatar kind={kind} size={16} />}{name} · {labelOf(el, view.map) || "未命名节点"}</b>
                       <span>{codePathsOf(el).join("  ") || (rolled ? "代码路径在它的子图里" : "")}</span>
                     </div>
                     <ul className="ptr-list">
@@ -292,7 +315,7 @@ export function PointerLayer({ api, view, chrome = [] }: { api: ExcalidrawImpera
             {isOpen && (
               <div className="ptr-pop">
                 <div className="ptr-pop-head">
-                  <b>「{labelOf(el, view.map) || el.id}」：两个会话短时间内都写了这里</b>
+                  <b>「{labelOf(el, view.map) || "未命名节点"}」：两个会话短时间内都写了这里</b>
                   <span>Agora 不会阻止，只提醒：看看两边的改动是否互相覆盖</span>
                 </div>
                 <ul className="ptr-list">
@@ -394,88 +417,5 @@ function FileRow({ p, onTurn }: { p: Placed; onTurn: () => void }) {
         <time>{clock(p.at)}</time>
       </div>
     </li>
-  );
-}
-
-/** Selected box or frame → "代码路径" chip → edit its globs (one per line). */
-function LinkEditor({ api, view, placed, links, screen }: { api: ExcalidrawImperativeAPI; view: CanvasViewState; placed: Placed[]; links: { id: string; label: string; globs: string[] }[]; screen: (e: El) => { x: number; y: number; w: number; h: number } }) {
-  const ids = Object.keys(view.appState.selectedElementIds ?? {}).map((id) => {
-    const e = view.map.get(id);
-    return e?.type === "text" && e.containerId ? e.containerId : id;
-  });
-  const uniq = [...new Set(ids)].filter((id) => {
-    const e = view.map.get(id);
-    return live(e) && (isShape(e) || e.type === "frame");
-  });
-  const target = uniq.length === 1 ? view.map.get(uniq[0]) : undefined;
-  const [editing, setEditing] = useState<string | null>(null);
-  const [text, setText] = useState("");
-  useEffect(() => {
-    if (editing && editing !== target?.id) setEditing(null);
-  }, [target?.id]);
-  if (!target) return null;
-  const paths = codePathsOf(target);
-  const s = screen(target);
-  const draft = text.split("\n").map((l) => l.trim()).filter(Boolean);
-  const preview = editing
-    ? (() => {
-        const others = links.filter((l) => l.id !== target.id);
-        const mine = { id: target.id, label: "", globs: draft };
-        return [...new Set(placed.filter((p) => elementFor(p.path, [...others, mine])?.link.id === target.id).map((p) => p.path))];
-      })()
-    : [];
-  const save = (globs: string[]) => {
-    writeCodePaths(api, new Map([[target.id, globs]]));
-    setEditing(null);
-  };
-  return (
-    <div className="ptr-edit ptr-ui" style={{ left: s.x + s.w + 8, top: s.y }}>
-      {editing !== target.id ? (
-        <button
-          className="ptr-pill"
-          onClick={() => {
-            setText(paths.join("\n"));
-            setEditing(target.id);
-          }}
-          title={paths.length ? paths.join("\n") : "让这个节点代表一部分代码，进度指针就能落在它上面"}
-        >
-          <IconCode size={14} />
-          {paths.length ? `代码路径 · ${paths.length}` : "关联代码路径"}
-        </button>
-      ) : (
-        <div className="ptr-pop ptr-editor">
-          <div className="ptr-pop-head">
-            <b>「{labelOf(target, view.map) || target.id}」代表的代码</b>
-            <span>相对项目根目录，一行一个，如 server/** 或 web/src/api/*.ts</span>
-          </div>
-          <textarea
-            autoFocus
-            rows={Math.max(3, draft.length + 1)}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setEditing(null);
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save(draft);
-            }}
-            spellCheck={false}
-            aria-label="代码路径"
-          />
-          {draft.length > 0 && <p className="ptr-hint">{preview.length ? `会话改过的 ${preview.length} 个文件会落到这里：${preview.slice(0, 3).join("、")}${preview.length > 3 ? " …" : ""}` : "会话里还没有改过匹配的文件"}</p>}
-          <div className="ptr-actions">
-            {paths.length > 0 && (
-              <button className="ptr-quiet" onClick={() => save([])}>
-                清除
-              </button>
-            )}
-            <button className="ptr-quiet" onClick={() => setEditing(null)}>
-              取消
-            </button>
-            <button className="ptr-primary" onClick={() => save(draft)}>
-              保存
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
   );
 }

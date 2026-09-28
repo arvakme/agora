@@ -20,11 +20,17 @@ export const CHROME_SELECTORS = [
   ".excalidraw .popover",
   ".excalidraw .dropdown-menu",
   ".ws-toggle",
-  ".nest-menu",
-  ".ptr-edit",
+  ".node-bar",
+  ".node-pop",
   ".tcard",
   ".drawer",
 ];
+/** Of those, the node action bar (NodeBar.tsx): the layers under it are clipped around it, but it
+ * places itself against the other boxes only, and the pointer labels don't move for it (it moves
+ * for them), so no two overlays chase each other. Boxes measured from these carry `own: true`. */
+export const NODE_BAR_SELECTORS = [".node-bar", ".node-pop"];
+/** Boxes to place overlays against: everything but the node action bar. */
+export const notOwn = <B extends { own?: boolean }>(boxes: readonly B[]) => boxes.filter((b) => !b.own);
 /** Our UI outside the canvas pane that can still float over it (the dock, the comment-mode hint). */
 export const GLOBAL_CHROME = [".dock", ".mode-hint"];
 
