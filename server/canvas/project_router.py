@@ -26,7 +26,7 @@ from server.canvas.backup import Backups, FileHistory
 from server.canvas.discover import full_text, session_history
 from server.canvas.events import Events
 from server.canvas.local import Local, session_origins
-from server.canvas.project import Conflict, Gone, NotEmpty, ProjectStore
+from server.canvas.project import Conflict, EmptyOverwrite, Gone, NotEmpty, ProjectStore
 from server.canvas.share import ShareError, ShareManager, check_max_opens, check_ttl
 from server.canvas.trash import Trash, TrashError, canvas_sessions
 from server.canvas.runner import DEFAULT_BACKEND, DEFAULT_MODEL, EFFORTS, ExecOptions
@@ -39,6 +39,8 @@ class Write(BaseModel):
     data: Any
     base: str | None = None
     force: bool = False
+    #: The writer says an empty scene is the user's own clear/delete (not a page that lost its scene).
+    clear: bool = False
 
 
 class Records(BaseModel):
@@ -48,7 +50,8 @@ class Records(BaseModel):
 
 
 def conflict(e: Conflict) -> JSONResponse:
-    return JSONResponse(status_code=409, content={"conflict": True, "file": e.file, "current": e.current, "base": e.base})
+    extra = {"code": e.code} if isinstance(e, EmptyOverwrite) else {}
+    return JSONResponse(status_code=409, content={"conflict": True, "file": e.file, "current": e.current, "base": e.base, **extra})
 
 
 def gone(e: Gone) -> JSONResponse:
@@ -152,9 +155,17 @@ def create_project_router(store: ProjectStore, events: Events | None = None, *, 
     def put_workspace(body: Write):
         return guard(lambda: {"version": store.write("workspace", None, body.data, base=body.base, force=body.force)})
 
+    @router.get("/canvases/{id}")
+    def get_canvas(id: str):
+        """One canvas as the server holds it now: a page that (re)mounts loads this before it may save."""
+        got = guard(lambda: store.read("canvas", id))
+        if not isinstance(got, tuple):
+            raise HTTPException(status_code=404, detail=f"no canvas {id}")
+        return {"scene": got[0], "version": got[1]}
+
     @router.put("/canvases/{id}")
     def put_canvas(id: str, body: Write):
-        out = guard(lambda: {"version": store.write("canvas", id, body.data, base=body.base, force=body.force)})
+        out = guard(lambda: {"version": store.write("canvas", id, body.data, base=body.base, force=body.force, clear=body.clear)})
         if isinstance(out, dict):
             events.publish({"t": "canvas", "canvasId": id, "version": out["version"]})
         return out

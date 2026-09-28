@@ -7,7 +7,9 @@ import { replayEval, runEval, TASKS, type EvalProgress, type EvalRow } from "../
 import { buildFixture } from "../eval/fixture";
 import { IconClose, IconComment, IconHint, IconList, IconPlus, IconPointer, IconWorkspace } from "./icons";
 import { ViewMenu } from "./ViewMenu";
-import { ackChange, adoptCanvas, adoptSession, dropCanvas, flushSaves, PERSIST, project, reloadFromDisk, save, slotFile, type LocalChange } from "../persist";
+import { ackChange, adoptCanvas, adoptSession, dropCanvas, flushSaves, loadCanvas, onCanvasRefused, PERSIST, project, reloadFromDisk, save, slotFile, type LocalChange } from "../persist";
+import { createSaveGate } from "../canvas/saveGate";
+import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import { trash, type Restored } from "../workspace/trash";
 import { TrashPanel } from "../workspace/TrashPanel";
 import { HistoryPanel } from "../workspace/HistoryPanel";
@@ -129,8 +131,49 @@ export function App({ boot }: { boot: Boot }) {
       Object.fromEntries(initial.docs.flatMap((d) => (d.kind === "canvas" && d.reviewedAt ? [[d.id, d.reviewedAt]] : []))),
     );
   }
+  // A canvas is saved only after this mount has loaded the server's scene for it (canvas/saveGate.ts).
+  const gate = useRef(createSaveGate()).current;
+  const [synced, setSynced] = useState(!PERSIST);
   const persistCanvas = (id: string) =>
-    PERSIST && save(`canvas:${id}`, () => ({ elements: (scenes.current.get(id) ?? []).filter((e) => !e.isDeleted), threads: stores.current.get(id)?.snapshot() }));
+    PERSIST &&
+    save(`canvas:${id}`, () => {
+      const p = gate.payload(id, scenes.current.get(id) ?? []);
+      return p && { ...p, threads: stores.current.get(id)?.snapshot() };
+    });
+  // The scene the shell got at page load is old after a remount (hot update, error reset): every
+  // mount of the shell takes the server's scenes and versions first; only then editors show and saves start.
+  const takeServerScene = async (id: string) => {
+    const c = await loadCanvas(id);
+    const els = c ? c.elements : (scenes.current.get(id) ?? []);
+    if (c) {
+      scenes.current.set(id, els);
+      nested.setScene(id, els);
+      canvases.get(id)?.api.updateScene({ elements: els as never, captureUpdate: CaptureUpdateAction.NEVER });
+    }
+    gate.arm(id, els);
+  };
+  useEffect(() => {
+    if (!PERSIST) return;
+    let dead = false;
+    onCanvasRefused((id) => void takeServerScene(id).catch(() => reloadFromDisk()));
+    (async () => {
+      for (const id of [...scenes.current.keys()]) {
+        for (;;) {
+          try {
+            await takeServerScene(id);
+            break;
+          } catch {
+            await new Promise((ok) => setTimeout(ok, 1000)); // the server is briefly away
+            if (dead) return;
+          }
+        }
+      }
+      if (dead) return;
+      if (firstRun) persistCanvas("c1");
+      setSynced(true);
+    })();
+    return () => void (dead = true);
+  }, []);
   const storeFor = (id: string) => {
     if (!stores.current.has(id)) {
       const st = createThreadStore(id, boot.canvases[id]?.threads);
@@ -224,9 +267,6 @@ export function App({ boot }: { boot: Boot }) {
     sync();
     return agents.subscribe(sync);
   }, []);
-  useEffect(() => {
-    if (firstRun) persistCanvas("c1");
-  }, []);
   // Every session exists as a doc, including ones created elsewhere (a comment handed to the agent).
   useEffect(() => {
     const sync = () =>
@@ -247,6 +287,11 @@ export function App({ boot }: { boot: Boot }) {
     }
   });
 
+  // An editor that is gone must not stay in the registry: its API answers an empty scene.
+  const onGone = useCallback((id: string, h: CanvasHandle) => {
+    if (handles.current.get(id) === h) handles.current.delete(id);
+    if (canvases.get(id)?.api === h.api) canvases.delete(id);
+  }, []);
   const onReady = useCallback((id: string, h: CanvasHandle) => {
     handles.current.set(id, h);
     canvases.set(id, { api: h.api, store: h.store, title: "" });
@@ -322,6 +367,7 @@ export function App({ boot }: { boot: Boot }) {
     const title = opts.sample ? nextTitle(titlesOf(docs, "canvas"), SAMPLE_CANVAS, true) : nextTitle(titlesOf(docs, "canvas"), UNTITLED_CANVAS);
     scenes.current.set(id, opts.sample ? buildFixture() : []);
     nested.setScene(id, scenes.current.get(id)!);
+    gate.arm(id, scenes.current.get(id)!); // a new file: nothing on the server to load
     persistCanvas(id);
     setDocs((ds) => [...ds, { id, kind: "canvas", title }]);
     openDoc(id, { groupId: opts.groupId, kind: "canvas" });
@@ -393,6 +439,7 @@ export function App({ boot }: { boot: Boot }) {
     let undoDrop = () => {};
     if (doc.kind === "canvas") {
       scenes.current.delete(id);
+      gate.disarm(id);
       nested.remove(id);
       stores.current.delete(id);
       threadStores.delete(id);
@@ -416,6 +463,7 @@ export function App({ boot }: { boot: Boot }) {
       if (doc.kind === "canvas") {
         scenes.current.set(id, keptCanvas.elements);
         nested.setScene(id, keptCanvas.elements);
+        gate.arm(id, keptCanvas.elements);
         if (keptCanvas.store) stores.current.set(id, keptCanvas.store), threadStores.set(id, keptCanvas.store);
         undoDrop(); // the files are still there: the next save carries the version this page had seen
       } else {
@@ -440,6 +488,7 @@ export function App({ boot }: { boot: Boot }) {
       const { elements, threads } = adoptCanvas(r.id, r.canvas);
       scenes.current.set(r.id, elements);
       nested.setScene(r.id, elements);
+      gate.arm(r.id, elements);
       const st = createThreadStore(r.id, threads);
       stores.current.set(r.id, st);
       threadStores.set(r.id, st);
@@ -532,6 +581,7 @@ export function App({ boot }: { boot: Boot }) {
       const id = uid("c");
       const name = nextTitle(titlesOf(docsRef.current, "canvas"), title.trim() || UNTITLED_CANVAS, true);
       scenes.current.set(id, []);
+      gate.arm(id, []);
       nested.setMeta({ ...nested.get().titles, [id]: name }, nested.get().reviewed);
       nested.setScene(id, []);
       persistCanvas(id);
@@ -805,7 +855,7 @@ export function App({ boot }: { boot: Boot }) {
           onSettled={onSettled}
           renderCanvas={(id) => {
             const doc = docs.find((d) => d.id === id);
-            if (!doc) return null;
+            if (!doc || !synced) return null;
             if (doc.kind === "session") return <SessionPane sessionId={doc.sessionId} canvasTitles={canvasTitles} />;
             return (
               <CanvasView
@@ -814,6 +864,7 @@ export function App({ boot }: { boot: Boot }) {
                 drawerOpen={!!drawers[id]}
                 onDrawer={(open) => setDrawers((d) => ({ ...d, [id]: open }))}
                 onReady={(h) => onReady(id, h)}
+                onGone={(h) => onGone(id, h)}
                 onSelection={(n) => id === lastCanvas && setSelCount(n)}
                 onModeDone={() => setMode("browse")}
                 initialElements={scenes.current.get(id) ?? []}

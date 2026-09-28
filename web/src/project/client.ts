@@ -13,7 +13,8 @@
 // nothing is written to it until the page is reloaded.
 
 export type Op =
-  | { kind: "put"; path: string; data: unknown }
+  /** `clear`: an empty canvas here is the user's own clear/delete (the server refuses an unmarked one over a non-empty file). */
+  | { kind: "put"; path: string; data: unknown; clear?: boolean }
   | { kind: "append"; path: string; records: unknown[] }
   | { kind: "replace"; path: string; records: unknown[] }
   | { kind: "delete"; path: string }
@@ -34,7 +35,18 @@ export type Status = { conflicts: string[]; offline: boolean; saving: number; fa
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
-export function createClient({ base = "/api/project", fetchImpl = (u, i) => fetch(u, i), retryMs = 2000 }: { base?: string; fetchImpl?: Fetch; retryMs?: number } = {}) {
+export function createClient({
+  base = "/api/project",
+  fetchImpl = (u, i) => fetch(u, i),
+  retryMs = 2000,
+  onRefusedEmpty,
+}: {
+  base?: string;
+  fetchImpl?: Fetch;
+  retryMs?: number;
+  /** The server refused to replace a non-empty file with an empty scene this page did not mark as cleared: the page's scene is wrong, take the server's. */
+  onRefusedEmpty?: (slot: string) => void;
+} = {}) {
   const versions = new Map<string, string | null>();
   const chains = new Map<string, Promise<void>>();
   const held = new Map<string, Pending>();
@@ -42,6 +54,7 @@ export function createClient({ base = "/api/project", fetchImpl = (u, i) => fetc
   /** Last body the server took (or the page loaded) per slot, and the one on its way: unchanged saves send nothing. */
   const written = new Map<string, string>();
   const sending = new Map<string, string>();
+  const refused = new Set<string>();
   let status: Status = { conflicts: [], offline: false, saving: 0, failed: [], blocked: [] };
   let keepalive = false;
   const listeners = new Set<() => void>();
@@ -50,13 +63,13 @@ export function createClient({ base = "/api/project", fetchImpl = (u, i) => fetc
     listeners.forEach((l) => l());
   };
 
-  async function send(slot: string, op: Op, force: boolean): Promise<"ok" | "conflict" | Failure> {
+  async function send(slot: string, op: Op, force: boolean): Promise<"ok" | "conflict" | "refused-empty" | Failure> {
     const baseVersion = versions.get(slot) ?? null;
     const method = op.kind === "put" || op.kind === "replace" ? "PUT" : op.kind === "append" || op.kind === "merge" ? "POST" : "DELETE";
     const body =
       op.kind === "delete"
         ? undefined
-        : JSON.stringify(op.kind === "merge" ? { data: op.data } : op.kind === "put" ? { data: op.data, base: baseVersion, force } : { records: op.records, base: baseVersion, force });
+        : JSON.stringify(op.kind === "merge" ? { data: op.data } : op.kind === "put" ? { data: op.data, base: baseVersion, force, ...(op.clear ? { clear: true } : {}) } : { records: op.records, base: baseVersion, force });
     for (;;) {
       let r: Response;
       try {
@@ -72,7 +85,10 @@ export function createClient({ base = "/api/project", fetchImpl = (u, i) => fetc
         continue;
       }
       if (status.offline) setStatus({ offline: false });
-      if (r.status === 409) return "conflict";
+      if (r.status === 409) {
+        const j = (await r.json().catch(() => ({}))) as { code?: string };
+        return j.code === "empty-overwrite" ? "refused-empty" : "conflict";
+      }
       if (!r.ok) {
         const text = await r.text().catch(() => "");
         let body: { error?: string; detail?: string; file?: string } = {};
@@ -99,7 +115,8 @@ export function createClient({ base = "/api/project", fetchImpl = (u, i) => fetc
         if (blocked.has(slot)) return void held.set(slot, p); // unreadable on disk: never written from here
         if (!force && !full && held.has(slot)) return void held.set(slot, p); // conflicted or failed: wait for the user
         const res = await send(slot, full && p.overwrite ? p.overwrite() : p.op, force);
-        if (res === "conflict") {
+        if (res === "refused-empty") (refused.add(slot), onRefusedEmpty?.(slot)); // nothing is held: the page takes the server's scene
+        else if (res === "conflict") {
           held.set(slot, p);
           if (!status.conflicts.includes(slot)) setStatus({ conflicts: [...status.conflicts, slot] });
         } else if (res !== "ok") {
@@ -134,7 +151,7 @@ export function createClient({ base = "/api/project", fetchImpl = (u, i) => fetc
       sending.set(slot, compare);
       return run(slot, { op }).then(() => {
         if (sending.get(slot) === compare) sending.delete(slot);
-        if (!held.has(slot) && !blocked.has(slot)) written.set(slot, compare);
+        if (!held.has(slot) && !blocked.has(slot) && !refused.delete(slot)) written.set(slot, compare);
       });
     },
     /** The file holds `compare` (loaded, or merged in from elsewhere). */

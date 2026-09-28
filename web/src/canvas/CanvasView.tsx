@@ -59,6 +59,8 @@ type Props = {
   onReady: (h: CanvasHandle) => void;
   onSelection: (count: number) => void;
   onModeDone: () => void;
+  /** This editor is going away (unmounted or replaced): its handle must stop being served to anyone. */
+  onGone?: (h: CanvasHandle) => void;
   /** Persisted scene to start from (fixture otherwise). */
   initialElements?: readonly El[];
   /** Called when the scene's elements change (persistence). */
@@ -72,7 +74,7 @@ type Props = {
   overlay?: (view: CanvasViewState, chrome: Box[]) => React.ReactNode;
 };
 
-export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelection, onModeDone, initialElements, onScene, readOnly, onEnterChild, top, overlay }: Props) {
+export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onGone, onSelection, onModeDone, initialElements, onScene, readOnly, onEnterChild, top, overlay }: Props) {
   const enter = (child: string) => (onEnterChild ? onEnterChild(child) : nav.go(doc.id, child));
   const figuresOn = useWorkstation(doc.id);
   const viewPrefs = usePrefs();
@@ -84,8 +86,8 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
   const chrome = useChrome(layers, view && `${view.appState.width}|${view.appState.height}|${Object.keys(view.appState.selectedElementIds ?? {}).join()}`);
   // Parent callbacks are recreated every render; read the latest through a ref so
   // effects and Excalidraw's onChange stay stable.
-  const cb = useRef({ onReady, onSelection, onModeDone, onScene });
-  cb.current = { onReady, onSelection, onModeDone, onScene };
+  const cb = useRef({ onReady, onGone, onSelection, onModeDone, onScene });
+  cb.current = { onReady, onGone, onSelection, onModeDone, onScene };
   const [draft, setDraft] = useState<Draft | null>(null);
   // A resolved pin clicked → the comment list shows it; 「重新钉到…」 → the next element picked.
   const [listFocus, setListFocus] = useState<{ id: string; key: number } | null>(null);
@@ -212,6 +214,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
     };
     handleRef.current = h;
     cb.current.onReady(h);
+    return () => cb.current.onGone?.(h);
   }, [api, doc.store]);
 
   return (

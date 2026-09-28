@@ -80,6 +80,19 @@ class Conflict(Exception):
         self.base = base
 
 
+class EmptyOverwrite(Conflict):
+    """A canvas that has elements would be replaced by an empty one without the writer saying it
+    is a deliberate clear (a page that lost its scene must not save that back)."""
+
+    code = "empty-overwrite"
+
+    def __init__(self, file: str, current: str | None) -> None:
+        Exception.__init__(self, f"{file}: refusing to replace a non-empty canvas with an empty one")
+        self.file = file
+        self.current = current
+        self.base = None
+
+
 class NotEmpty(Exception):
     """An import was attempted into a project that already has data."""
 
@@ -407,6 +420,14 @@ class ProjectStore:
         finally:
             tmp.unlink(missing_ok=True)
 
+    @staticmethod
+    def _live(raw: bytes | None) -> int:
+        """Elements a canvas file shows (not deleted); 0 for anything unreadable."""
+        try:
+            return sum(1 for e in json.loads(raw or b"{}").get("elements", []) if not e.get("isDeleted"))
+        except (ValueError, AttributeError, TypeError):
+            return 0
+
     def _keep_old(self, path: Path, current: bytes | None) -> None:
         """The file's previous version goes to the local history (outside the project) first."""
         if current is None or self.on_overwrite is None:
@@ -425,8 +446,9 @@ class ProjectStore:
         raw = self._bytes(self._path(kind, id))
         return None if raw is None else (json.loads(raw), version_of(raw) or "")
 
-    def write(self, kind: str, id: str | None, data: Any, *, base: str | None, force: bool = False) -> str:
-        """Compare-and-swap write. ``base`` None means "I expect no file". Returns the new version."""
+    def write(self, kind: str, id: str | None, data: Any, *, base: str | None, force: bool = False, clear: bool = True) -> str:
+        """Compare-and-swap write. ``base`` None means "I expect no file". Returns the new version.
+        ``clear`` False: a canvas that has elements is not replaced by an empty one (``EmptyOverwrite``)."""
         path = self._path(kind, id)
         body = dump_json(to_excalidraw(data) if kind == "canvas" else data)
         with self._locked():
@@ -434,6 +456,8 @@ class ProjectStore:
             if current == body:  # nothing changed: no write, no conflict
                 return version_of(body) or ""
             self._check(path, current, base, force)
+            if kind == "canvas" and not clear and self._live(current) and not self._live(body):
+                raise EmptyOverwrite(self._rel(path), version_of(current))
             self._keep_old(path, current)
             self._atomic(path, body)
         return version_of(body) or ""
