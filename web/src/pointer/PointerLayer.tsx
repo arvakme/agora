@@ -13,6 +13,7 @@ import { IconCode, IconHint, IconTarget } from "../app/icons";
 import type { CanvasViewState } from "../canvas/CanvasView";
 import { bbox, codePathsOf, isShape, labelOf, live, type El } from "../canvas/scene";
 import { footprint, inflate, obstacles, overlaps, placeBeside, type Box } from "../canvas/clearance";
+import { clipPath, edgeSpot, occluded } from "../canvas/chrome";
 import { AGENT_NAMES, useAgents, type AgentKind } from "../session/agents";
 import { AgentAvatar } from "../session/AgentAvatar";
 import { openTrajectory, ui } from "../session/ui";
@@ -72,7 +73,7 @@ function useGliding(at: Record<string, string>) {
 
 type Open = { kind: "pointer"; sid: string } | { kind: "outside" } | { kind: "conflict"; element: string } | null;
 
-export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view: CanvasViewState }) {
+export function PointerLayer({ api, view, chrome = [] }: { api: ExcalidrawImperativeAPI; view: CanvasViewState; chrome?: Box[] }) {
   const followed = useFollowedSession();
   const ag = useAgents();
   const folds = useSessionFolds();
@@ -129,20 +130,29 @@ export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view
 
   const tstore = threadStores.get(view.id);
   const threads = useSyncExternalStore(tstore?.subscribe ?? noSub, () => tstore?.get().threads ?? NONE);
-  const layout = useMemo(() => {
+  const { placed: layout, hidden } = useMemo(() => {
     const drawing = obstacles(view.elements, view.map).map(toScreen);
     const pins = layoutPins(threads, view).boxes;
     const placed: { element: string; ring: Box; x: number; y: number; side: string; chips: { sid: string; dx: number }[]; clashX?: number }[] = [];
+    const hidden: { element: string; sids: string[]; spot: ReturnType<typeof edgeSpot> }[] = [];
+    const viewBox = { x: 0, y: 0, w: a.width, h: a.height };
     for (const s of piles) {
       const el = view.map.get(s.element);
       if (!live(el)) continue;
       const ring = inflate(toScreen(footprint(el, view.map, view.elements)), 6);
+      // Behind a panel or off-screen: no ring there, an indicator on the nearest free edge instead.
+      if (occluded(ring, viewBox, chrome)) {
+        const w = 44 + 18 * s.pointers.length;
+        const spot = edgeSpot(ring, viewBox, [...chrome, ...hidden.map((h) => h.spot)], w, 28);
+        hidden.push({ element: s.element, sids: s.pointers.map((p) => p.sessionId), spot });
+        continue;
+      }
       const ws = s.pointers.map((p) => widths[p.sessionId] ?? 200);
       // A conflict on this node sits at the end of its label row, not on the drawing.
       const clash = byNode.has(s.element) ? CLASH_W + CHIP_GAP : 0;
       const w = ws.reduce((n, x) => n + x, 0) + CHIP_GAP * (ws.length - 1) + clash;
       // Labels stay off the drawing, the pins, other rings and the labels placed before them.
-      const blocks = [...drawing.filter((b) => !overlaps(b, ring, -8)), ...pins, ...placed.flatMap((p) => [p.ring, { x: p.x, y: p.y, w: p.chips.reduce((n, c) => Math.max(n, c.dx + (widths[c.sid] ?? 200)), 0), h: 28 }])];
+      const blocks = [...drawing.filter((b) => !overlaps(b, ring, -8)), ...pins, ...chrome, ...hidden.map((h) => h.spot), ...placed.flatMap((p) => [p.ring, { x: p.x, y: p.y, w: p.chips.reduce((n, c) => Math.max(n, c.dx + (widths[c.sid] ?? 200)), 0), h: 28 }])];
       const spot = placeBeside(ring, w, 28, blocks, { x: 0, y: 0, w: a.width, h: a.height }, { gap: 6 });
       let dx = 0;
       const chips = s.pointers.map((p, i) => {
@@ -152,8 +162,9 @@ export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view
       });
       placed.push({ element: s.element, ring, x: spot.x, y: spot.y, side: spot.side, chips, clashX: clash ? dx : undefined });
     }
-    return placed;
-  }, [piles, view.elements, view.map, a.scrollX, a.scrollY, z, a.width, a.height, threads, widths, clashes]);
+    return { placed, hidden };
+  }, [piles, view.elements, view.map, a.scrollX, a.scrollY, z, a.width, a.height, threads, widths, clashes, chrome]);
+  const clip = useMemo(() => clipPath({ x: 0, y: 0, w: a.width, h: a.height }, chrome), [a.width, a.height, chrome]);
 
   const elOf = Object.fromEntries(pointers.flatMap((p) => (p.state.current?.element ? [[p.sessionId, p.state.current.element]] : [])));
   const glides = useGliding(elOf);
@@ -161,9 +172,40 @@ export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view
   const shownIds = pointers.map((p) => p.sessionId);
   const outsideCount = pointers.reduce((n, p) => n + p.state.outside.length, 0);
 
-  if (!links.length) return <div className="ds ptr-layer"><LinkEditor api={api} view={view} placed={followedState?.placed ?? []} links={links} screen={screen} /></div>;
+  const editor = (
+    <div className="ds ptr-edit-layer">
+      <LinkEditor api={api} view={view} placed={followedState?.placed ?? []} links={links} screen={screen} />
+    </div>
+  );
+  if (!links.length) return editor;
   return (
-    <div className="ds ptr-layer">
+    <>
+    {editor}
+    <div className="ds ptr-layer" style={{ clipPath: clip }}>
+      {hidden.map((h) => {
+        const el = view.map.get(h.element)!;
+        const names = h.sids.map((sid) => label(sid, shownIds)).join("、");
+        return (
+          <button
+            key={`edge-${h.element}`}
+            className="ptr-edge ptr-ui"
+            style={{ transform: `translate(${h.spot.x}px, ${h.spot.y}px)` }}
+            // Not animated: Excalidraw's animated scroll does not report the final view (onChange)
+            // until the next pointer move, so the layers would lag behind it.
+            onClick={() => api.scrollToContent(el, { animate: false })}
+            title={`${names} 在改「${labelOf(el, view.map) || el.id}」——它被面板挡住或在视野外，点击定位`}
+            aria-label={`定位到 ${labelOf(el, view.map) || el.id}`}
+          >
+            {h.sids.map((sid) => {
+              const kind = ag.bindings[sid]?.agent as AgentKind | undefined;
+              return kind ? <AgentAvatar key={sid} kind={kind} size={16} /> : null;
+            })}
+            <svg className="ptr-edge-arrow" width="14" height="14" viewBox="0 0 14 14" style={{ transform: `rotate(${Math.round(h.spot.angle)}deg)` }} aria-hidden>
+              <path d="M2 7h9M7.5 3.5 11 7l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        );
+      })}
       {layout.map((l) => (
         <motion.span
           key={`ring-${l.chips[0].sid}`}
@@ -236,6 +278,7 @@ export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view
         const el = view.map.get(element);
         if (!live(el)) return null;
         const r = inflate(toScreen(footprint(el, view.map, view.elements)), 6);
+        if (occluded(r, { x: 0, y: 0, w: a.width, h: a.height }, chrome)) return null; // the edge indicator speaks for it
         const isOpen = open?.kind === "conflict" && open.element === element;
         // Next to that node's pointer labels when it has some; else just above its top-left corner.
         const row = layout.find((l) => l.element === element && l.clashX !== undefined);
@@ -327,8 +370,8 @@ export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view
           )}
         </div>
       )}
-      <LinkEditor api={api} view={view} placed={followedState?.placed ?? []} links={links} screen={screen} />
     </div>
+    </>
   );
 }
 

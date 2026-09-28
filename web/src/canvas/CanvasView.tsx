@@ -19,6 +19,8 @@ import { childAt, NodeChildMenu, OwnerBreadcrumb, OwnerChildMarkers } from "../n
 import { nav } from "../nested/store";
 import { TimelinePanel, Workers, WorkstationToggle } from "../workstation/Workstation";
 import { useWorkstation } from "../workstation/clock";
+import { useChrome } from "./useChrome";
+import type { Box } from "./clearance";
 import { AnimatePresence, motion } from "motion/react";
 import { SPRING } from "../comments/motion";
 
@@ -59,14 +61,18 @@ type Props = {
   onEnterChild?: (child: string) => void;
   /** Share guests bring their own breadcrumb and child markers (the owner's come from the workspace). */
   top?: React.ReactNode;
-  overlay?: (view: CanvasViewState) => React.ReactNode;
+  overlay?: (view: CanvasViewState, chrome: Box[]) => React.ReactNode;
 };
 
 export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelection, onModeDone, initialElements, onScene, readOnly, onEnterChild, top, overlay }: Props) {
   const enter = (child: string) => (onEnterChild ? onEnterChild(child) : nav.go(doc.id, child));
   const workstation = useWorkstation(doc.id) && !readOnly;
+
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [view, setView] = useState<CanvasViewState | null>(null);
+  // The canvas UI (Excalidraw's panels, our popovers) as boxes: overlays stay clear of it.
+  const [layers, setLayers] = useState<HTMLDivElement | null>(null);
+  const chrome = useChrome(layers, view && `${view.appState.width}|${view.appState.height}|${Object.keys(view.appState.selectedElementIds ?? {}).join()}`);
   // Parent callbacks are recreated every render; read the latest through a ref so
   // effects and Excalidraw's onChange stay stable.
   const cb = useRef({ onReady, onSelection, onModeDone, onScene });
@@ -144,6 +150,12 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
       cb.current.onSelection(sel.length);
     });
   }, [api, doc.id]);
+  // Scrolling from code (scrollToContent: the pointer's edge indicator, "在画布中高亮") does not
+  // reach onChange, so the overlays would stay where the view was. Follow the scroll too.
+  useEffect(() => {
+    if (!api) return;
+    return api.onScrollChange(() => onChange(api.getSceneElementsIncludingDeleted() as readonly El[], api.getAppState()));
+  }, [api, onChange]);
 
   useEffect(() => {
     if (!api) return;
@@ -193,6 +205,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
       {readOnly ? top : <OwnerBreadcrumb canvasId={doc.id} />}
       <div
         className="canvas-layers"
+        ref={setLayers}
         onDoubleClickCapture={(e) => {
           // Double-click on a node that opens a child canvas enters it (text editing stays on Enter).
           if (!view || (e.target as HTMLElement).closest(".ptr-ui, .nest-mark, .tcard, .pin")) return;
@@ -246,10 +259,10 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
             onCreated={onModeDone}
           />
           {!readOnly && <HighlightLayer canvasId={doc.id} view={view} />}
-          {readOnly ? overlay?.(view) : <OwnerChildMarkers view={view} canvasId={doc.id} />}
-          {!readOnly && <PointerLayer api={api} view={view} />}
+          {readOnly ? overlay?.(view, chrome) : <OwnerChildMarkers view={view} canvasId={doc.id} chrome={chrome} />}
+          {!readOnly && <PointerLayer api={api} view={view} chrome={chrome} />}
           {!readOnly && <NodeChildMenu api={api} view={view} canvasId={doc.id} />}
-          {workstation && <Workers view={view} />}
+          {workstation && <Workers view={view} chrome={chrome} />}
         </>
       )}
       {!readOnly && api && <WorkstationToggle canvasId={doc.id} />}

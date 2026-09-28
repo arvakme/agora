@@ -255,8 +255,8 @@ export function GuestApp({ initial }: { initial: State }) {
             readOnly
             onEnterChild={(id) => void goTo(id)}
             top={<Breadcrumb path={cur.path ?? []} current={cur.canvas.id} onGo={(id) => void goTo(id)} />}
-            overlay={(view) => (
-              <ChildMarkers view={view} canvasId={cur.canvas.id} info={(k) => (cur.canvases?.[k] ? { title: cur.canvases[k].title || "子图", open: cur.canvases[k].open } : null)} onEnter={(id) => void goTo(id)} />
+            overlay={(view, chrome) => (
+              <ChildMarkers view={view} chrome={chrome} canvasId={cur.canvas.id} info={(k) => (cur.canvases?.[k] ? { title: cur.canvases[k].title || "子图", open: cur.canvases[k].open } : null)} onEnter={(id) => void goTo(id)} />
             )}
           />
         </div>
