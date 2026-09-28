@@ -103,12 +103,13 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
         return await asyncio.to_thread(build)
 
     @router.get("/runs")
-    async def agent_runs(session: str | None = None, kind: str | None = None, native: str | None = None, depth: str = "1", canvas: str | None = None, items: int = 0, receipts: int = 1):
+    async def agent_runs(session: str | None = None, kind: str | None = None, native: str | None = None, depth: str = "all", canvas: str | None = None, items: int = 0, receipts: int = 1):
         """The run tree of a session (web/docs/cli-adapters.md §7): the session, its native sub-agents
-        and its Seedmux workers, each with a timeline. ``session=<sid>`` for an Agora session, or
-        ``kind=<cli>&native=<id>`` for any native session Agora can read. ``depth``: levels to expand
-        (default 1; ``all``); ``canvas=<id>`` adds the canvas node each segment's file maps to;
-        ``items=1`` adds each run's transcript items."""
+        and its Seedmux workers (read-only receipts), each with a timeline. ``session=<sid>`` for an
+        Agora session, or ``kind=<cli>&native=<id>`` for any native session Agora can read. ``depth``:
+        levels to expand (default ``all``; each run carries ``descendants`` for folding);
+        ``canvas=<id>`` adds the canvas node each segment's file maps to; ``items=1`` adds each run's
+        transcript items; ``receipts=0`` leaves out Seedmux workers."""
         from server.canvas.adapters import runs as runs_mod
         from server.canvas.adapters.base import NativeRef
 
@@ -125,7 +126,7 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
             return JSONResponse(status_code=400, content={"error": f"no adapter for {k!r}"})
         if not nid:
             return JSONResponse(status_code=409, content={"error": "this session has no native session yet (it never ran)"})
-        d = None if depth == "all" else max(0, int(depth)) if depth.isdigit() else 1
+        d = None if depth == "all" or not depth.isdigit() else max(0, int(depth))
 
         def build() -> dict:
             hint = ((store.read_binding(session) or {}).get("log") or {}).get("path") if session else None

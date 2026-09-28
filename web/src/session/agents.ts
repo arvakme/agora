@@ -66,17 +66,19 @@ export type AgentRun = {
   endedAt?: number | null;
   lastAt?: number | null;
   logPath?: string;
-  /** Runs below this one that are not expanded (only one level is by default). */
+  /** Runs below this one that the server did not expand (`depth=N`; the default `all` expands everything). */
   hiddenDescendants: number;
   childCount: number;
+  /** Every run below this one (expanded or not): the page shows one level and folds the rest into this badge. */
+  descendants: number;
   receipt?: Receipt;
   timeline: { segments: RunSegment[]; turns: { n: number; start: number; end: number }[]; moments: RunMoment[]; timesInferred?: boolean };
   items?: Item[];
 };
 export type RunTree = { root: string; runs: AgentRun[]; folded: Record<string, number>; depth: number | null; generatedAt: number };
 /** The run tree of a session (no UI consumes it yet: the workstation's child figures build on it). */
-export async function fetchRuns(sessionId: string, opts: { depth?: number | "all"; canvas?: string; items?: boolean } = {}): Promise<RunTree> {
-  const q = new URLSearchParams({ session: sessionId, depth: String(opts.depth ?? 1), ...(opts.canvas ? { canvas: opts.canvas } : {}), ...(opts.items ? { items: "1" } : {}) });
+export async function fetchRuns(sessionId: string, opts: { depth?: number | "all"; canvas?: string; items?: boolean; receipts?: boolean } = {}): Promise<RunTree> {
+  const q = new URLSearchParams({ session: sessionId, depth: String(opts.depth ?? "all"), ...(opts.canvas ? { canvas: opts.canvas } : {}), ...(opts.items ? { items: "1" } : {}), ...(opts.receipts === false ? { receipts: "0" } : {}) });
   const r = await fetch(`/api/agent/runs?${q}`);
   if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? r.statusText);
   return (await r.json()) as RunTree;
