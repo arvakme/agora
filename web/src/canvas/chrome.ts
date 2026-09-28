@@ -14,7 +14,8 @@ export const CHROME_SELECTORS = [
   ".excalidraw .layer-ui__wrapper__top-right > *",
   ".excalidraw .layer-ui__wrapper__footer-left > *",
   ".excalidraw .layer-ui__wrapper__footer-right > *",
-  ".excalidraw .App-bottom-bar",
+  // the compact layout's bottom bar is a full-height flex column: only its island is UI
+  ".excalidraw .App-bottom-bar > *",
   ".excalidraw .sidebar",
   ".excalidraw .context-menu",
   ".excalidraw .popover",

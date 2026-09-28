@@ -93,7 +93,8 @@
 
 1. 真实运行：Claude Code（haiku）和 Codex（gpt-5.6-luna, low）同时干活，两个小人在 Web 前端上，各自一个气泡（`03-c-two-agents-real-light.png`），Codex 走到 API 服务、Claude 去了图外托盘；一个 agent 在跑时会话里一行「正在想 / 正在读」和「停止」（`02-b-one-agent-real-light.png`）。
 2. 子代理（`?mock=runs`）：派发、牵绳、子代理气泡和回执、等你、交接（`03-c-*`；`03-c-subagents-*` 是修正气泡重叠后重拍的，整段 42 秒脚本逐帧检查浅色、深色各两遍，约 7000 帧里没有一帧两个可见气泡相交）；工位视图关掉时的在场胶囊（`03b-*`）；回放和图例（`04-d-*`）；首次打开（`05-e-*`）；点泳道名定位（`06-locate-*`）。浅色、深色各一套。
-3. 帧率与动效：§4、§5。
+3. 真实子代理（`/api/agent/runs` 的真数据，不是 mock）：Claude Code（haiku）用 Agent 工具派一个 general-purpose 子代理读 `server/app.py`、写 `docs/sub-agent-note.md`。子小人从主 agent 身边出发走到 API 服务读文件、再走向图外托盘去写，虚线牵回主 agent，主 agent 气泡「派 … 原生子代理」，交回时走回主 agent 身边；时间线里子泳道、派出 / 交回连线、回执带（已派发 → 运行中 → 已返回结果）都来自服务端（`real-subagent-reading-light` / `-writing-*` / `-handoff-*` / `-figure-light`）。限制：Agora 的无头 Claude 只放行 `agora canvas`，子代理的 Write 被拒（轨迹里仍记为写的尝试，文件没写成）；Agora 的无头 Codex 没有 `spawn_agent`（它回答「工具不可用」）。所以「子代理真的写成文件」这一步没能在 Agora 里原生跑通。
+4. 帧率与动效：§4、§5。合并适配层、改完气泡之后重跑：60 fps，叠层开销 空闲 3.3 / 平移 2.7 ms（`perf/bench-after-merge.json`）。
 
 ## 9. v2 待办（本轮不做）
 
