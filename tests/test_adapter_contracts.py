@@ -21,8 +21,24 @@ from server.canvas.adapters import drift
 from server.canvas.transcript import State, project
 from tests.agent_fixtures import all_fixtures, meta
 
-FIXTURES = [(k, v) for k, v in all_fixtures() if adapters.get(k) is not None]
+from server.canvas.adapters import registry
+
+# Every recorded fixture, including v2 adapters behind a flag: the test turns the flag on (review P2-10).
+KNOWN = {c().kind for c in registry.BUILTIN} | set(registry.EXPERIMENTAL)
+FIXTURES = [(k, v) for k, v in all_fixtures() if k in KNOWN]
 IDS = [f"{k}-{v.name}" for k, v in FIXTURES]
+# Tools that run a shell command, per CLI (a fixture's meta.json may name its own: command_tools).
+SHELL_TOOLS = {"claude": ["Bash"], "codex": ["shell"], "pi": ["bash"], "grok": ["run_terminal_command"]}
+
+
+@pytest.fixture()
+def flags(monkeypatch):
+    """Enable the experimental adapters for this test, and restore the registry afterwards."""
+    monkeypatch.setenv("AGORA_EXPERIMENTAL", ",".join(registry.EXPERIMENTAL))
+    registry.refresh()
+    yield
+    monkeypatch.delenv("AGORA_EXPERIMENTAL")
+    registry.refresh()
 
 
 def log_of(folder: Path) -> Path | None:
@@ -84,7 +100,11 @@ def replay(kind: str, log: Path, root: str) -> tuple[list[dict], list[dict], Sta
 
 
 @pytest.mark.parametrize("kind,folder", FIXTURES, ids=IDS)
-def test_fixture_contract(kind, folder, home):
+def test_fixture_contract(kind, folder, home, flags):
+    check_contract(kind, folder, home)
+
+
+def check_contract(kind, folder, home):
     m = meta(folder)
     log = log_of(folder)
     if log is None:
@@ -120,7 +140,9 @@ def test_fixture_contract(kind, folder, home):
     for path in exp.get("files", []):
         assert path in written, (path, written)
     if exp.get("commands"):
-        assert sum(1 for t in tools if t.get("activity") in ("commands", "read", "search") and t.get("name") in exp.get("command_tools", [t.get("name") for t in tools])) >= exp["commands"]
+        shell = exp.get("command_tools") or SHELL_TOOLS[kind]
+        ran = [t for t in tools if t.get("name") in shell and t.get("activity") in ("commands", "read", "search")]
+        assert len(ran) >= exp["commands"], (shell, [t.get("name") for t in tools])
     for act in exp.get("activities", []):
         assert any(t.get("activity") == act for t in tools), act
     if exp.get("subagents"):
@@ -133,8 +155,23 @@ def test_fixture_contract(kind, folder, home):
         assert all(k.parent is not None and k.parent.via == "native" for k in kids)
 
 
-def test_every_adapter_has_a_fixture():
+def test_every_adapter_has_a_fixture(flags):
     have = {k for k, _ in FIXTURES}
+    assert set(adapters.ADAPTERS) == KNOWN
     for k, a in adapters.ADAPTERS.items():
         if adapters.implemented_tier(a) in ("T1", "T2") and not getattr(a, "stub", False):
             assert k in have, f"{k} has no recorded fixture under tests/fixtures/agents/{k}/"
+
+
+def test_the_shell_command_check_can_fail(home, flags, tmp_path):
+    """Review P2-10: the command check used to default to every tool name, so it could never fail."""
+    import shutil
+
+    src = next(v for k, v in FIXTURES if k == "claude" and (v / "stream.jsonl").exists() and v.name != "unversioned")
+    f = tmp_path / "claude-no-shell"
+    shutil.copytree(src, f)
+    m = json.loads((f / "meta.json").read_text())
+    m["expected"]["command_tools"] = ["NoSuchTool"]
+    (f / "meta.json").write_text(json.dumps(m))
+    with pytest.raises(AssertionError):
+        check_contract("claude", f, home)
