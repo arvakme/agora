@@ -77,7 +77,14 @@ export function sumUsage(turns: TrajTurn[]): UsageSum {
   return s;
 }
 
-/** Tool name → activity (DSH process-activity.ts `activity`, extended with Claude Code / Pi / Codex names). */
+const ACTIVITIES: ReadonlySet<string> = new Set(["read", "search", "write", "edit", "commands", "webFetch", "webSearch", "subagents", "plan", "questions", "tools"]);
+/** A tool item's activity: the server's `tool.activity` (adapters know their CLI's names), else by name. */
+export function toolActivity(it: Item): Activity {
+  const a = it.tool?.activity;
+  return a && ACTIVITIES.has(a) ? (a as Activity) : activityOf(it.tool?.name);
+}
+
+/** Fallback for items without `tool.activity` (older snapshots): tool name → activity (DSH process-activity.ts `activity`, extended with Claude Code / Pi / Codex names). */
 export function activityOf(name = ""): Activity {
   const n = name.toLowerCase();
   if (n === "read" || n === "read_file" || n === "view") return "read";
@@ -278,7 +285,8 @@ export function buildTurns(items: readonly Item[], defaults: { model?: string | 
       s.records.push(record(t, it, "tool", `${name} ${oneLine(it.tool?.input)}`.trim(), dur));
       t.toolCount += 1;
       const c = counts.get(t) ?? new Map<Activity, number>();
-      c.set(activityOf(name), (c.get(activityOf(name)) ?? 0) + 1);
+      const act = toolActivity(it);
+      c.set(act, (c.get(act) ?? 0) + 1);
       counts.set(t, c);
       if (!it.tool?.isError) for (const f of it.tool?.files ?? []) t.files.push({ path: f.path, op: f.op, at: it.at, toolId: it.id, turn: t.n });
       if (t.reply && t.reply.at <= it.at) t.reply = undefined; // a tool call after the text: that text was not the final answer

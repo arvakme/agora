@@ -21,6 +21,7 @@ from typing import Any, Callable
 
 from server.canvas import agent_models
 from server.canvas.adapters.base import Adapter, VersionRange, tool_facts
+from server.canvas.adapters.tools import activity_of, shell_reads, spawn_in_output
 from server.canvas.adapters.common import (
     MAX_FULL,
     MAX_TEXT,
@@ -118,6 +119,50 @@ def diff(changes: Any) -> str:
     return _clip("\n\n".join(parts), MAX_FULL)
 
 
+def _cwd(v: Any) -> str | None:
+    if not isinstance(v, str) or not v:
+        return None
+    return v[len("file://"):] if v.startswith("file://") else v
+
+
+def shell_facts(item: dict[str, Any], root: str | None) -> dict[str, Any]:
+    """A CommandExecution → tool facts. Codex parses the command itself (``parsed_cmd``: read /
+    search / list_files / unknown); what it leaves ``unknown`` goes through the shared shell parser
+    (``rtk read …``, pipelines)."""
+    cwd = _cwd(item.get("cwd")) or root
+    parsed = item.get("parsed_cmd") if isinstance(item.get("parsed_cmd"), list) else []
+    kinds: list[str] = []
+    reads: list[str] = []
+
+    def add(p: str) -> None:
+        q = rel_path(os.path.normpath(os.path.join(cwd, p)) if cwd and not os.path.isabs(p) else p, root)
+        if q not in reads:
+            reads.append(q)
+
+    for pc in parsed:
+        if not isinstance(pc, dict):
+            continue
+        t = pc.get("type")
+        if t == "read" and isinstance(pc.get("path"), str):
+            kinds.append("read")
+            add(pc["path"])
+        elif t in ("search", "list_files"):
+            kinds.append("search")
+        else:
+            got, ps = shell_reads(pc.get("cmd"), root, cwd)
+            kinds.append(got or "commands")
+            for p in ps:
+                if p not in reads:
+                    reads.append(p)
+    if not parsed:
+        cmd = item.get("command")
+        got, reads = shell_reads(cmd[-1] if isinstance(cmd, list) and cmd else cmd, root, cwd)
+        kinds = [got or "commands"]
+    act = "read" if kinds and all(k == "read" for k in kinds) else "search" if kinds and all(k in ("read", "search") for k in kinds) else "commands"
+    out = str(item.get("formatted_output") or item.get("aggregated_output") or "")
+    return tool_facts(act, reads=reads, spawn=spawn_in_output(out))
+
+
 def project(rec: dict[str, Any], st: State) -> Out:
     items: list[dict[str, Any]] = []
     turns: list[dict[str, Any]] = []
@@ -185,17 +230,18 @@ def project(rec: dict[str, Any], st: State) -> Out:
                 "kind": "tool",
                 "at": started,
                 "endAt": at,
-                "tool": {"name": "shell", "input": _summary(shown), "args": _full(shown), "output": _full(str(out or "")), "isError": code not in (0, None) or it.get("status") == "failed"},
+                "tool": {"name": "shell", "input": _summary(shown), "args": _full(shown), "output": _full(str(out or "")), "isError": code not in (0, None) or it.get("status") == "failed", **shell_facts(it, st.root)},
             })
         elif itype == "FileChange":
             fs = files(it.get("changes"), st.root)
             tool: dict[str, Any] = {"name": "apply_patch", "input": ", ".join(f["path"] for f in fs) or "patch", "args": diff(it.get("changes")), "output": str(it.get("status") or ""), "isError": it.get("status") == "failed"}
             if fs and it.get("status") != "failed":
                 tool["files"] = fs
+            tool["activity"] = "edit"
             items.append({"id": iid, "kind": "tool", "at": started, "endAt": at, "tool": tool})
         elif itype in ("McpToolCall", "WebSearch"):
             arg = it.get("arguments") or it.get("query") or ""
-            items.append({"id": iid, "kind": "tool", "at": started, "endAt": at, "tool": {"name": str(it.get("tool") or itype), "input": _summary(arg), "args": _full(arg), "output": _full(it.get("result") or it.get("status") or ""), "isError": it.get("status") == "failed"}})
+            items.append({"id": iid, "kind": "tool", "at": started, "endAt": at, "tool": {"name": str(it.get("tool") or itype), "input": _summary(arg), "args": _full(arg), "output": _full(it.get("result") or it.get("status") or ""), "isError": it.get("status") == "failed", "activity": "webSearch" if itype == "WebSearch" else "tools"}})
     return items, turns
 
 
@@ -328,8 +374,14 @@ class CodexAdapter(Adapter):
 
     # ——— ToolVocab ———
     def classify(self, name: str, args: Any, root: str | None = None) -> dict[str, Any]:
-        """Tool facts for one call (FileChange ``changes`` are the writes)."""
-        return tool_facts("tools", files=files(args, root) if name == "apply_patch" else None)
+        """Tool facts for one call: ``shell`` (a CommandExecution item or a command line), ``apply_patch``
+        (FileChange ``changes`` are the writes), otherwise by name."""
+        if name == "shell":
+            return shell_facts(args if isinstance(args, dict) else {"command": args}, root)
+        if name == "apply_patch":
+            return tool_facts("edit", files=files(args, root))
+        act = activity_of(name)
+        return tool_facts(act, waits_user=act == "questions")
 
     # ——— Headless ———
     def headless_args(self, cmd: list[str], req: Any, *, log_exists: Callable[[str], bool] | bool = False, skill_dir: Path | None = None) -> list[str]:

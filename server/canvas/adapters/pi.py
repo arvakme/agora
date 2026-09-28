@@ -18,6 +18,7 @@ from typing import Any, Callable
 
 from server.canvas import agent_models
 from server.canvas.adapters.base import Adapter, tool_facts, VersionRange
+from server.canvas.adapters.tools import activity_of, shell_reads, spawn_in_output
 from server.canvas.adapters.common import (
     MAX_TEXT,
     LogLookup,
@@ -104,6 +105,22 @@ def files(name: str, args: Any, root: str | None) -> list[dict[str, str]]:
     return [{"path": rel_path(str(path), root), "op": op}] if isinstance(path, str) and path else []
 
 
+def classify(name: str, args: Any, root: str | None) -> dict[str, Any]:
+    """Pi's tool vocabulary (read / bash / edit / write / grep / find / ls …) → tool facts."""
+    a = args if isinstance(args, dict) else {}
+    n = name.lower()
+    fs = files(name, args, root)
+    act = activity_of(name)
+    reads: list[str] = []
+    if n == "read":
+        p = a.get("path") or a.get("file_path")
+        reads = [rel_path(p, root)] if isinstance(p, str) and p else []
+    elif n == "bash":
+        got, reads = shell_reads(a.get("command"), root, root)
+        act = got or act
+    return tool_facts(act, files=fs, reads=reads, waits_user=act == "questions")
+
+
 def project(rec: dict[str, Any], st: State) -> Out:
     items: list[dict[str, Any]] = []
     turns: list[dict[str, Any]] = []
@@ -138,9 +155,10 @@ def project(rec: dict[str, Any], st: State) -> Out:
             name = str(b.get("name"))
             st.pending.add(tid)
             tool: dict[str, Any] = {"name": name, "input": _summary(b.get("arguments")), "args": _full(b.get("arguments"))}
-            fs = files(name, b.get("arguments"), st.root)
-            if fs:
-                tool["files"] = fs
+            facts = classify(name, b.get("arguments"), st.root)
+            if facts.get("files"):
+                tool["files"] = facts["files"]
+            tool.update({k: v for k, v in facts.items() if k != "files"})
             items.append({"id": tid, "kind": "tool", "at": at, "msg": rid, "tool": tool})
         u = m.get("usage")
         if isinstance(u, dict) and (u.get("input") or u.get("output") or u.get("cacheRead")):
@@ -155,7 +173,12 @@ def project(rec: dict[str, Any], st: State) -> Out:
     elif role == "toolResult":
         tid = str(m.get("toolCallId"))
         st.pending.discard(tid)
-        items.append({"id": tid, "kind": "tool", "at": at, "endAt": at, "tool": {"name": str(m.get("toolName") or ""), "output": _full(text_of(m.get("content"))), "isError": bool(m.get("isError"))}})
+        out = text_of(m.get("content"))
+        done: dict[str, Any] = {"name": str(m.get("toolName") or ""), "output": _full(out), "isError": bool(m.get("isError"))}
+        sp = spawn_in_output(out)
+        if sp:
+            done["spawn"] = sp
+        items.append({"id": tid, "kind": "tool", "at": at, "endAt": at, "tool": done})
     return items, turns
 
 
@@ -287,8 +310,7 @@ class PiAdapter(Adapter):
 
     # ——— ToolVocab ———
     def classify(self, name: str, args: Any, root: str | None = None) -> dict[str, Any]:
-        """Tool facts for one call (the write files; activities come with the page's vocabulary)."""
-        return tool_facts("tools", files=files(name, args, root))
+        return classify(name, args, root)
 
     # ——— Headless ———
     def headless_args(self, cmd: list[str], req: Any, *, log_exists: Callable[[str], bool] | bool = False, skill_dir: Path | None = None) -> list[str]:
