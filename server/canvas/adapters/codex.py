@@ -325,7 +325,7 @@ class CodexAdapter(Adapter):
     kind = "codex"
     name = "Codex"
     binaries = ("codex",)
-    tested = VersionRange(">=0.128,<0.158")
+    tested = VersionRange(">=0.149,<0.158")
     max_tier = "T1"
     seedmux_names = ("codex",)
     icon = "codex"
@@ -359,7 +359,32 @@ class CodexAdapter(Adapter):
         return [{"agent": "codex", **r} for r in index_rows(roots, home or Path.home())]
 
     # ——— Projector ———
-    known_types = frozenset()  # filled in by the drift step
+    # ``record_type``: top-level type, ``event_msg/<type>``, ``response_item/<type>``, or
+    # ``item/<ItemType>`` for event_msg/item_completed. Seen locally in 0.125–0.157 (drift.py).
+    handled_types = frozenset({
+        "session_meta", "turn_context", "token_usage_record", "event_msg/token_count", "event_msg/task_started",
+        "event_msg/task_complete", "event_msg/turn_aborted", "item/UserMessage", "item/AgentMessage",
+        "item/CommandExecution", "item/FileChange", "item/McpToolCall", "item/WebSearch", "item/SubAgentActivity",
+    })
+    # Duplicates of the item_completed records (paginated history, 0.149+) or not shown.
+    ignored_types = frozenset({
+        "response_item/message", "response_item/reasoning", "response_item/custom_tool_call", "response_item/custom_tool_call_output",
+        "response_item/function_call", "response_item/function_call_output", "response_item/agent_message", "response_item/web_search_call",
+        "response_item/tool_search_call", "response_item/tool_search_output", "response_item/image_generation_call",
+        "item/Reasoning", "item/Extension", "item/ImageView", "item/ContextCompaction", "item/HookPrompt", "compacted",
+        "event_msg/thread_settings_applied", "event_msg/thread_name_updated", "event_msg/thread_goal_updated", "event_msg/thread_rolled_back",
+        "event_msg/context_compacted", "event_msg/agent_reasoning", "event_msg/error", "event_msg/dynamic_tool_call_request",
+        "event_msg/dynamic_tool_call_response", "event_msg/view_image_tool_call", "event_msg/image_generation_end",
+        "inter_agent_communication_metadata",
+    })
+    # Known, not handled: the legacy (pre-0.149) event log keeps messages and tool calls only in these,
+    # so older Codex sessions show turns without their messages (reported by `agora doctor --agents`).
+    gap_types = frozenset({
+        "event_msg/user_message", "event_msg/agent_message", "event_msg/exec_command_end", "event_msg/patch_apply_end",
+        "event_msg/mcp_tool_call_end", "event_msg/web_search_end", "event_msg/sub_agent_activity", "event_msg/collab_agent_spawn_end",
+        "event_msg/collab_close_end", "event_msg/collab_waiting_end", "event_msg/collab_agent_interaction_end",
+    })
+    known_types = handled_types | ignored_types
 
     def project(self, rec: dict[str, Any], st: State) -> Out:
         return project(rec, st)

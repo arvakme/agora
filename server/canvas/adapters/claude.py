@@ -221,7 +221,7 @@ class ClaudeAdapter(Adapter):
     kind = "claude"
     name = "Claude Code"
     binaries = ("claude",)
-    tested = VersionRange(">=2.1.268,<2.2")
+    tested = VersionRange(">=2.1.267,<2.2")
     max_tier = "T1"
     seedmux_names = ("claude",)
     icon = "claude"
@@ -278,7 +278,18 @@ class ClaudeAdapter(Adapter):
         return out
 
     # ——— Projector ———
-    known_types = frozenset()  # filled in by the drift step
+    # Record types (``record_type``) the projector turns into items, and those it skips on purpose
+    # (Claude Code's own bookkeeping). Anything else counts as drift (drift.py). Seen in 2.1.267–2.1.283.
+    handled_types = frozenset({"user", "assistant", "system/turn_duration"})
+    ignored_types = frozenset({
+        "attachment", "atis-latch", "last-prompt", "ai-title", "mode", "permission-mode", "queue-operation",
+        "file-history-snapshot", "file-history-delta", "system/stop_hook_summary", "bridge-session", "pr-link",
+        "custom-title", "system/away_summary", "agent-name", "cost-state", "frame-link", "system/informational",
+        "system/api_error", "relocated", "system/local_command", "artifact-autoreact-ledger", "artifact-comment-monitor",
+        "system/bridge_status", "system/compact_boundary", "continued-in", "system/model_refusal_fallback", "summary",
+    })
+    gap_types = frozenset()
+    known_types = handled_types | ignored_types
 
     def project(self, rec: dict[str, Any], st: State) -> Out:
         return project(rec, st)

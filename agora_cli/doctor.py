@@ -186,7 +186,32 @@ def _tmux_alive(socket: str) -> bool:
 MARK = {"ok": "  ok ", "info": "  ·  ", "warn": "注意 ", "error": "问题 "}
 
 
+def cmd_doctor_agents(p, a) -> int:
+    """``agora doctor --agents``: every CLI Agora has an adapter for — installed version against the
+    tested range, log format, record types its adapter does not know (drift), tier. Read-only;
+    ``--record <kind>`` re-records that CLI's fixture in /tmp (a real, cheap model run)."""
+    from server.canvas.adapters import drift
+
+    if a.record:
+        import subprocess as sp
+
+        script = Path(__file__).resolve().parents[1] / "scripts" / "record_agent_fixture.py"
+        if not script.exists():
+            print(f"agora: {script} is missing", file=sys.stderr)
+            return 2
+        return sp.call([sys.executable, str(script), a.record])
+    rows = drift.probe_all(root=p.root if p else None)
+    if a.json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+    else:
+        print(drift.table(rows))
+    bad = any(r["installed"] and (r["degraded"] or r["unknown"]) for r in rows)
+    return 1 if bad else 0
+
+
 def cmd_doctor(p, a) -> int:
+    if getattr(a, "agents", False) or getattr(a, "record", None):
+        return cmd_doctor_agents(p, a)
     findings = diagnose(p, fix=a.fix)
     if a.json:
         print(json.dumps(findings, ensure_ascii=False, indent=2))
@@ -261,6 +286,8 @@ def add_parsers(sub) -> None:
     s.add_argument("--project", default=None)
     s.add_argument("--fix", action="store_true", help="restore records from the newest backup and bindings from the registry")
     s.add_argument("--json", action="store_true")
+    s.add_argument("--agents", action="store_true", help="the coding-agent CLIs: versions vs. tested range, unknown log records (drift), tiers")
+    s.add_argument("--record", metavar="KIND", default=None, help="with --agents: re-record KIND's fixture in /tmp with its cheapest model (spends a few cents)")
     s.set_defaults(fn=cmd_doctor)
     s = sub.add_parser("backup", help="back up sessions/, trash/, local/ outside the project now")
     s.add_argument("--project", default=None)
