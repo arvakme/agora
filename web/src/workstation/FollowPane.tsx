@@ -217,7 +217,21 @@ export function FollowPane({ main }: { main: string }) {
             </div>
           </header>
           <div className="ws-follow-body" ref={body}>
-            {size && size.w > 0 && layers.map((l) => <Stage key={l.canvasId} canvasId={l.canvasId} run={flat.run.id} node={l.canvasId === target ? deepest?.node : undefined} size={size} out={l.out} reduced={reduced} />)}
+            {size &&
+              size.w > 0 &&
+              layers.map((l) => (
+                <Stage
+                  key={l.canvasId}
+                  canvasId={l.canvasId}
+                  run={flat.run.id}
+                  node={l.canvasId === target ? deepest?.node : undefined}
+                  size={size}
+                  out={l.out}
+                  reduced={reduced}
+                  // only who is in this canvas (or below it) and the one followed — the others would stand at its 图外 tray
+                  only={(id) => id === flat.run.id || !!ps.get(id)?.levels?.some((lv) => lv.canvasId === l.canvasId)}
+                />
+              ))}
             {note && (
               <div className="ws-follow-note" role="status">
                 <span>
@@ -236,7 +250,7 @@ export function FollowPane({ main }: { main: string }) {
  * the whole drawing when it fits (between 55 % and 100 %), gliding after the figure otherwise, and
  * kept on the drawing (or on the figure when it stands off it, like at 图外).
  */
-function Stage({ canvasId, run, node, size, out, reduced }: { canvasId: string; run: string; node?: string; size: { w: number; h: number }; out: boolean; reduced: boolean }) {
+function Stage({ canvasId, run, node, size, out, reduced, only }: { canvasId: string; run: string; node?: string; size: { w: number; h: number }; out: boolean; reduced: boolean; only: (runId: string) => boolean }) {
   const nst = useNested();
   const dark = useTheme().resolved === "dark";
   const elements = useMemo(() => (nst.scenes.get(canvasId) ?? []).filter((e) => !e.isDeleted), [nst.scenes, canvasId]);
@@ -300,7 +314,7 @@ function Stage({ canvasId, run, node, size, out, reduced }: { canvasId: string; 
   return (
     <div className="ws-follow-stage" data-out={out || undefined}>
       <div className="ws-follow-scene" ref={scene} style={svg ? { width: svg.w, height: svg.h } : { display: "none" }} dangerouslySetInnerHTML={svg ? { __html: svg.html } : undefined} />
-      <WorkstationOverlay view={view} chrome={NO_CHROME} figuresOn />
+      <WorkstationOverlay view={view} chrome={NO_CHROME} figuresOn only={only} />
     </div>
   );
 }
