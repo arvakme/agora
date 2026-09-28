@@ -18,7 +18,8 @@ from typing import Any, Callable
 
 from server.canvas import agent_models
 from server.canvas.adapters.base import first_cwd, valid_id, Adapter, tool_facts, VersionRange
-from server.canvas.adapters.tools import activity_of, shell_reads, spawn_in_output
+from server.canvas.adapters.shell_files import shell_tool
+from server.canvas.adapters.tools import activity_of, spawn_in_output
 from server.canvas.adapters.common import (
     MAX_TEXT,
     LogLookup,
@@ -112,13 +113,14 @@ def classify(name: str, args: Any, root: str | None) -> dict[str, Any]:
     fs = files(name, args, root)
     act = activity_of(name)
     reads: list[str] = []
+    on: list[str] = []
     if n == "read":
         p = a.get("path") or a.get("file_path")
         reads = [rel_path(p, root)] if isinstance(p, str) and p else []
     elif n == "bash":
-        got, reads = shell_reads(a.get("command"), root, root)
-        act = got or act
-    return tool_facts(act, files=fs, reads=reads, waits_user=act == "questions")
+        got, reads, shell_fs, on = shell_tool(a.get("command"), root, root)
+        act, fs = got or act, shell_fs or fs
+    return tool_facts(act, files=fs, reads=reads, waits_user=act == "questions", on=on)
 
 
 def project(rec: dict[str, Any], st: State) -> Out:

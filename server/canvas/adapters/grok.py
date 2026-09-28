@@ -29,7 +29,8 @@ from typing import Any
 
 from server.canvas.adapters.base import valid_id, Adapter, NativeRef, ParentLink, VersionRange, tool_facts
 from server.canvas.adapters.common import MAX_TEXT, LogLookup, Out, State, _clip, _end, _full, _ms, _start, _summary, _usage, read_jsonl, rel_path, user_item
-from server.canvas.adapters.tools import activity_of, shell_reads, spawn_in_output
+from server.canvas.adapters.shell_files import shell_tool
+from server.canvas.adapters.tools import activity_of, spawn_in_output
 
 TICKS = 1e10
 KIND_ACTIVITY = {"read": "read", "edit": "edit", "write": "write", "delete": "edit", "move": "edit", "execute": "commands", "search": "search", "fetch": "webFetch", "think": "plan", "plan": "plan", "task": "subagents"}
@@ -54,18 +55,19 @@ def classify(name: str, kind: str | None, args: Any, root: str | None) -> dict[s
     a = args if isinstance(args, dict) else {}
     act = KIND_ACTIVITY.get((kind or "").lower()) or activity_of(name)
     reads: list[str] = []
+    on: list[str] = []
     fs: list[dict[str, str]] = []
     if name in WRITE_OPS and isinstance(a.get("file_path"), str):
         fs = [{"path": rel_path(a["file_path"], root), "op": WRITE_OPS[name]}]
     if name == "read_file" and isinstance(a.get("target_file"), str):
         reads = [rel_path(a["target_file"], root)]
     if name == "run_terminal_command":
-        got, reads = shell_reads(a.get("command"), root, root)
-        act = got or act
+        got, reads, shell_fs, on = shell_tool(a.get("command"), root, root)
+        act, fs = got or act, shell_fs or fs
     if name in ("spawn_subagent",):
         act = "subagents"
     waits = name in ("ask_user_question",) or act == "questions"
-    return tool_facts("questions" if waits else act, files=fs, reads=reads, waits_user=waits, spawn={"childKind": "grok", "via": "native"} if name == "spawn_subagent" else None)
+    return tool_facts("questions" if waits else act, files=fs, reads=reads, waits_user=waits, spawn={"childKind": "grok", "via": "native"} if name == "spawn_subagent" else None, on=on)
 
 
 def project(rec: dict[str, Any], st: State) -> Out:

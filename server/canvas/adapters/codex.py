@@ -21,6 +21,7 @@ from typing import Any, Callable
 
 from server.canvas import agent_models
 from server.canvas.adapters.base import first_cwd, valid_id, Adapter, NativeRef, ParentLink, VersionRange, tool_facts
+from server.canvas.adapters.shell_files import shell_tool
 from server.canvas.adapters.tools import activity_of, shell_reads, spawn_in_output
 from server.canvas.adapters.common import (
     MAX_FULL,
@@ -161,7 +162,13 @@ def shell_facts(item: dict[str, Any], root: str | None) -> dict[str, Any]:
         kinds = [got or "commands"]
     act = "read" if kinds and all(k == "read" for k in kinds) else "search" if kinds and all(k in ("read", "search") for k in kinds) else "commands"
     out = str(item.get("formatted_output") or item.get("aggregated_output") or "")
-    return tool_facts(act, reads=reads, spawn=spawn_in_output(out, item.get("command")))
+    fs: list[dict[str, str]] = []
+    on: list[str] = []
+    if act == "commands":  # more than reads: what the command line writes / runs on
+        cmd = item.get("command")
+        _, _, fs, on = shell_tool(cmd[-1] if isinstance(cmd, list) and cmd else cmd, root, cwd)
+        act = "edit" if fs else act
+    return tool_facts(act, reads=reads, files=fs, on=on, spawn=spawn_in_output(out, item.get("command")))
 
 
 def project(rec: dict[str, Any], st: State) -> Out:

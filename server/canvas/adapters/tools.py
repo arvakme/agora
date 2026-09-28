@@ -9,6 +9,9 @@ and argument keys); what they share lives here:
   ``nl``, ``less``/``bat``, ``rtk read``) or searches (``rg``/``grep`` with explicit paths),
   relative to the project root — Codex runs everything through a shell, so without this its
   reads were invisible to the workstation view.
+- ``shell_tool``: ``shell_reads`` plus the files a shell command *writes* (``sed -i``, redirects, ``tee``,
+  ``cp``/``mv`` targets, scripts that open a file for writing) and the files it *runs on* (a test or
+  script path in the command) — an agent that edits through the shell walks the diagram too.
 - ``spawn_in_output``: a Seedmux dispatch printed by ``smx-team spawn/assign``
   (``task=T-xx pane=<UUID>``) in a tool's output.
 - ``patch_files``: the files a ``*** Begin Patch`` text writes (Cursor records Codex-family models'
@@ -80,19 +83,23 @@ def _program(words: list[str]) -> list[str]:
     return words[2:] if words[:2] == ["rtk", "proxy"] else words
 
 
-def _simple_commands(command: str) -> list[list[str]]:
-    """The simple commands of a shell line (split on ``&& || ; | &`` and newlines, heredoc
-    bodies skipped), each as its words."""
-    out: list[list[str]] = []
+def _commands(command: str) -> list[tuple[list[str], str]]:
+    """The simple commands of a shell line (split on ``&& || ; | &`` and newlines), each as
+    ``(words, heredoc body)``; the body (``python3 - <<'EOF' … EOF``) belongs to the last command of
+    the line that opens it, and is data, not commands."""
+    out: list[tuple[list[str], str]] = []
     lines = command.splitlines()
     i = 0
     while i < len(lines):
         line = lines[i]
         i += 1
+        body = ""
         m = _HEREDOC.search(line)
-        if m:  # skip the heredoc body: it is data (a script), not commands
+        if m:
+            start = i
             while i < len(lines) and lines[i].strip() != m.group(1):
                 i += 1
+            body = "\n".join(lines[start:i])
             i += 1
         # fd duplications (2>&1, >&2) are not command separators; &> is a plain redirect.
         line = re.sub(r"\d*>&\d+", " ", line).replace("&>>", ">>").replace("&>", ">")
@@ -103,16 +110,23 @@ def _simple_commands(command: str) -> list[list[str]]:
         except ValueError:
             tokens = re.split(r"\s+", line.strip())
         cur: list[str] = []
+        first = len(out)
         for t in tokens:
             if t in _OPS:
                 if cur:
-                    out.append(cur)
+                    out.append((cur, ""))
                 cur = []
             else:
                 cur.append(t)
         if cur:
-            out.append(cur)
+            out.append((cur, ""))
+        if body and len(out) > first:
+            out[-1] = (out[-1][0], body)
     return out
+
+
+def _simple_commands(command: str) -> list[list[str]]:
+    return [words for words, _ in _commands(command)]
 
 
 def _redirects(words: list[str]) -> tuple[list[str], bool, list[str]]:

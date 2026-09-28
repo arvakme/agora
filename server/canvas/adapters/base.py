@@ -116,11 +116,11 @@ class NativeRef:
         return f"{self.kind}:{self.native_id}"
 
 
-def tool_facts(activity: str, *, files: list[dict[str, str]] | None = None, reads: list[str] | None = None, waits_user: bool = False, spawn: dict[str, Any] | None = None) -> dict[str, Any]:
+def tool_facts(activity: str, *, files: list[dict[str, str]] | None = None, reads: list[str] | None = None, waits_user: bool = False, spawn: dict[str, Any] | None = None, on: list[str] | None = None) -> dict[str, Any]:
     """What the page needs to know about one tool call, without knowing tool names: its
     ``activity``, the files it ``reads``, whether it ``waitsUser``, and whether it ``spawn``s an
     agent (``{childKind?, childId?, taskId?, pane?}``). ``files`` (writes) are reported separately
-    on the tool item, as before."""
+    on the tool item, as before. ``on``: files a shell command runs on (a test or script path in it)."""
     out: dict[str, Any] = {"activity": activity}
     if reads:
         out["reads"] = reads
@@ -130,6 +130,8 @@ def tool_facts(activity: str, *, files: list[dict[str, str]] | None = None, read
         out["spawn"] = spawn
     if files:
         out["files"] = files
+    if on:
+        out["on"] = on
     return out
 
 
