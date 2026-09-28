@@ -72,6 +72,7 @@ def env(tmp_path, monkeypatch):
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("AGORA_SEEDMUX_PANES", "0")  # never talk to a real Seedmux in tests
+    monkeypatch.setenv("AGORA_EXPERIMENTAL", "seedmux-receipts")  # v2 feature, off by default
     monkeypatch.setattr(receipts, "_panes", None)
     monkeypatch.setattr(agents, "check_binding", lambda *a: None)
     s = ProjectStore(tmp_path / "proj")
@@ -131,6 +132,16 @@ def test_workers_link_to_the_session_that_dispatched_them(env):
 
     moments = r[f"claude:{P}"]["timeline"]["moments"]
     assert {(m["kind"], m.get("taskId")) for m in moments} >= {("dispatch", "T-aaa111"), ("handoff", "T-aaa111"), ("dispatch", "T-bbb222"), ("dispatch", "T-ccc333")}
+
+
+def test_receipts_are_off_by_default(env, monkeypatch):
+    home, s, tasks = env
+    monkeypatch.delenv("AGORA_EXPERIMENTAL")
+    ticket(tasks, "T-ggg777", {"from_pane": "", "agent": "codex", "cwd": str(s.root), "created_at": time.time(), "status": "dispatched"})
+    d = home / ".claude" / "projects" / agents.claude_dir_name(str(s.root))
+    log = jl(d / f"{P}.jsonl", [{"type": "user", "uuid": "u1", "timestamp": iso(time.time() - 5), "cwd": str(s.root), "message": {"content": "hi"}}])
+    tree = runs.build(NativeRef("claude", P, log, str(s.root)), root=str(s.root), store=s)
+    assert [r["id"] for r in tree["runs"]] == [f"claude:{P}"]
 
 
 def test_reads_only_core_files(env):
