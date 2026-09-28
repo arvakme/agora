@@ -375,13 +375,25 @@ class ClaudeAdapter(Adapter):
             return []
         outcomes = spawn_outcomes(ref.path)
         by_agent = {o.get("agentId"): (tuid, o) for tuid, o in outcomes.items() if o.get("agentId")}
-        out = []
-        for log in sorted(sub.glob("agent-*.jsonl")):
-            aid = log.stem.removeprefix("agent-")
+        metas: dict[str, tuple[Path, dict[str, Any]]] = {}
+        for log in sub.glob("agent-*.jsonl"):
             try:
                 meta = json.loads(log.with_name(log.stem + ".meta.json").read_text())
             except (OSError, ValueError):
                 meta = {}
+            metas[log.stem.removeprefix("agent-")] = (log, meta if isinstance(meta, dict) else {})
+
+        def level(aid: str, seen: frozenset = frozenset()) -> int:
+            """Depth from the parent-agent chain (a nested agent after its parent, review P2-1); spawnDepth otherwise."""
+            parent = metas.get(aid, (None, {}))[1].get("parentAgentId")
+            if parent in metas and parent not in seen:
+                return level(parent, seen | {aid}) + 1
+            d = metas.get(aid, (None, {}))[1].get("spawnDepth")
+            return d if isinstance(d, int) and d > 0 else 1
+
+        out = []
+        for aid in sorted(metas, key=lambda x: (level(x), metas[x][1].get("parentAgentId") or "", x)):
+            log, meta = metas[aid]
             tuid = meta.get("toolUseId") or by_agent.get(aid, (None, {}))[0]
             o = outcomes.get(tuid or "", {})
             parent_aid = meta.get("parentAgentId")
@@ -394,7 +406,7 @@ class ClaudeAdapter(Adapter):
                 ref.cwd,
                 ParentLink("native", parent_run, tool_call_id=tuid, evidence=ev),
                 label=str(meta.get("description") or o.get("description") or aid),
-                meta={"agentId": aid, "role": meta.get("agentType") or o.get("role"), "depth": meta.get("spawnDepth") or 1, "model": meta.get("model"), "background": meta.get("requestShape") == "background", "dispatchedAt": o.get("at"), "doneAt": o.get("doneAt"), "state": o.get("state") or ("dispatched" if o.get("status") == "async_launched" else None)},
+                meta={"agentId": aid, "role": meta.get("agentType") or o.get("role"), "depth": level(aid), "model": meta.get("model"), "background": meta.get("requestShape") == "background", "dispatchedAt": o.get("at"), "doneAt": o.get("doneAt"), "state": o.get("state") or ("dispatched" if o.get("status") == "async_launched" else None)},
             ))
         return out
 

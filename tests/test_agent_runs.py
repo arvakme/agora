@@ -161,3 +161,17 @@ def test_glob_port_matches_the_page():
     assert runs.node_for("/abs/server/app.py", links) is None
     # Same as the page (codeLinks.ts specificity): a bare directory counts as a literal, so it outranks a deeper glob.
     assert runs.node_for("server/canvas/runner.py", [("bare", ["server"]), ("deep", ["server/canvas/**"])]) == "bare"
+
+
+def test_claude_nested_agents_hang_under_their_parent_whatever_the_file_names(home):
+    """Review P2-1: children were processed in hex file-name order, so a nested agent whose id sorts
+    before its parent's was attached to the session at depth 1."""
+    parent = claude_tree(home)
+    sub = parent.parent / P / "subagents"
+    (sub / "agent-000.meta.json").write_text(json.dumps({"agentType": "Explore", "description": "孙子", "toolUseId": "toolu_Z", "spawnDepth": 2, "parentAgentId": "zzz"}))
+    (sub / "agent-000.jsonl").write_text((sub / "agent-aaa.jsonl").read_text())
+    (sub / "agent-zzz.meta.json").write_text(json.dumps({"agentType": "general-purpose", "description": "儿子", "toolUseId": "toolu_Y", "spawnDepth": 1}))
+    (sub / "agent-zzz.jsonl").write_text((sub / "agent-aaa.jsonl").read_text())
+    r = by_id(runs.build(NativeRef("claude", P, parent, ROOT), root=ROOT, depth=None))
+    assert r[f"claude:{P}/000"]["parent"]["runId"] == f"claude:{P}/zzz" and r[f"claude:{P}/000"]["depth"] == 2
+    assert r[f"claude:{P}/zzz"]["depth"] == 1 and r[f"claude:{P}/zzz"]["descendants"] == 1
