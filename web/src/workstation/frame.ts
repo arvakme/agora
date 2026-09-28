@@ -11,12 +11,21 @@ const jobs = new Set<Job>();
 let raf = 0;
 let timer = 0;
 let lastPaint = 0;
+/** The time the jobs last ran at (ms on the performance clock). */
+let last = 0;
 const params = typeof location === "undefined" ? new URLSearchParams() : new URLSearchParams(location.search);
 const PERF = params.has("perf") || params.has("bench");
 
-function run() {
+/**
+ * Run the jobs at `at` (ms on the performance clock). A frame passes its own timestamp (evenly
+ * spaced, the time the frame will show), so fast movers advance by even steps. The jobs' clock never
+ * runs backwards: a run between frames can come after a frame began but before it ran, and a figure
+ * reads a step back as a jump in time (its springs reset, a turn is cut short).
+ */
+function run(at: number) {
   lastPaint = performance.now();
-  const now = Date.now();
+  last = Math.max(last, at);
+  const now = performance.timeOrigin + last;
   const t0 = PERF ? performance.now() : 0;
   for (const j of jobs) {
     try {
@@ -28,10 +37,10 @@ function run() {
   if (PERF) performance.measure("ws:frame", { start: t0, end: performance.now() });
 }
 
-function tick() {
+function tick(ts: number) {
   raf = 0;
   if (!jobs.size) return;
-  run();
+  run(ts);
   if (document.visibilityState === "visible") raf = requestAnimationFrame(tick);
 }
 
@@ -44,7 +53,7 @@ function ensure() {
     return;
   }
   if (!raf && document.visibilityState === "visible") raf = requestAnimationFrame(tick);
-  if (!timer) timer = window.setInterval(() => performance.now() - lastPaint > 180 && run(), 250);
+  if (!timer) timer = window.setInterval(() => performance.now() - lastPaint > 180 && run(performance.now()), 250);
 }
 
 if (typeof document !== "undefined")
@@ -64,6 +73,7 @@ export const frame = {
       ensure();
     };
   },
-  /** Run all jobs once now (after a data change, so the next paint is already right). */
-  flush: () => jobs.size && run(),
+  /** Run all jobs once more (after a data change, so the next paint is already right), at the time
+   * of the last run: only frames move the clock on, so the next frame still advances by an even step. */
+  flush: () => jobs.size && run(last || performance.now()),
 };
