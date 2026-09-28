@@ -49,7 +49,7 @@ jobs:
           AGORA_REDIS_URL: redis://127.0.0.1:6379/0
 
   web:
-    # Excalidraw workbench frontend: typecheck, unit tests, build, vendored-asset check.
+    # Excalidraw workbench frontend: typecheck, unit tests, build, vendored-asset check, eval replay.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -69,3 +69,9 @@ jobs:
         run: npm run build
       - working-directory: web
         run: npm run libraries:fetch -- --check
+      # Offline eval replay: re-applies the committed model outputs in eval/runs/ through
+      # the real validate → apply → check → undo path in headless Chromium. No model calls.
+      - working-directory: web
+        run: npx playwright install --with-deps chromium
+      - working-directory: web
+        run: npm run eval:replay
