@@ -98,7 +98,7 @@ def test_refused_write_says_which_file_and_why_and_keeps_the_old_file(store):
     base = c.get("/api/project/snapshot").json()["canvases"]["c1"]["version"]
     os.chmod(path.parent, stat.S_IRUSR | stat.S_IXUSR)
     try:
-        r = c.put("/api/project/canvases/c1", json={"data": {"elements": []}, "base": base})
+        r = c.put("/api/project/canvases/c1", json={"data": {"elements": []}, "base": base, "clear": True})
     finally:
         os.chmod(path.parent, stat.S_IRWXU)
     assert r.status_code == 500

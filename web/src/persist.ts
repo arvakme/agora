@@ -16,7 +16,11 @@ import type { Binding } from "./session/agents";
 
 export const PERSIST = !new URLSearchParams(location.search).has("eval") && !new URLSearchParams(location.search).has("fresh");
 
-export const project = createClient();
+let onRefusedEmpty: (canvasId: string) => void = () => {};
+/** The shell's answer to "the server refused this page's empty scene": load the server's canvas again. */
+export const onCanvasRefused = (f: (canvasId: string) => void) => void (onRefusedEmpty = f);
+
+export const project = createClient({ onRefusedEmpty: (slot) => slot.startsWith("canvas:") && onRefusedEmpty(slot.slice("canvas:".length)) });
 
 export type ProjectInfo = { id: string; name: string; root: string; me: Person };
 type Versioned<T> = { data: T; version: string };
@@ -139,10 +143,30 @@ export async function connect(): Promise<Loaded> {
   };
 }
 
+/**
+ * A canvas as the server holds it now. Every mount of the shell loads this before it may save the
+ * canvas: it is the scene the editor shows and the version (`base`) the next save carries.
+ * Null: the server has no file for it (yet).
+ */
+export async function loadCanvas(id: string): Promise<{ elements: El[]; version: string } | null> {
+  const r = await fetch(`/api/project/canvases/${encodeURIComponent(id)}`);
+  if (r.status === 404) {
+    project.seen(`canvas:${id}`, null);
+    return null;
+  }
+  if (!r.ok) throw new Error(`GET /canvases/${id}: ${r.status}`);
+  const c = (await r.json()) as { scene: { elements?: El[] }; version: string };
+  const elements = c.scene.elements ?? [];
+  project.seen(`canvas:${id}`, c.version);
+  project.remember(`canvas:${id}`, JSON.stringify(elements));
+  return { elements, version: c.version };
+}
+
 /** The move / copy / clone notice was shown: the server forgets it. */
 export const ackChange = () => project.post("/local/ack", {}).catch(() => undefined);
 
-const putIfChanged = (slot: string, path: string, data: unknown, compare: string = JSON.stringify(data)) => void project.writeIfChanged(slot, compare, { kind: "put", path, data });
+const putIfChanged = (slot: string, path: string, data: unknown, compare: string = JSON.stringify(data), clear = false) =>
+  void project.writeIfChanged(slot, compare, { kind: "put", path, data, ...(clear ? { clear } : {}) });
 /** Threads are merged on the server, not overwritten: share guests write the same file. */
 const mergeIfChanged = (slot: string, path: string, data: unknown) => void project.writeIfChanged(slot, JSON.stringify(data), { kind: "merge", path, data });
 
@@ -192,9 +216,10 @@ function write(key: string, v: unknown) {
   if (key === "workspace") return putIfChanged("workspace", "/workspace", v);
   if (key === "sessions") return syncSessions(v as SessionsState);
   if (key.startsWith("canvas:")) {
+    if (!v) return; // this mount has not loaded the canvas: nothing to save
     const id = key.slice("canvas:".length);
-    const { elements, threads } = v as { elements: El[]; threads?: ThreadSnapshot };
-    putIfChanged(`canvas:${id}`, `/canvases/${id}`, { elements }, JSON.stringify(elements));
+    const { elements, threads, clear } = v as { elements: El[]; threads?: ThreadSnapshot; clear?: boolean };
+    putIfChanged(`canvas:${id}`, `/canvases/${id}`, { elements }, JSON.stringify(elements), clear);
     // No comments and no file yet: don't create an empty threads file.
     if (threads && (threads.threads.length || project.version(`threads:${id}`) != null))
       mergeIfChanged(`threads:${id}`, `/threads/${id}/merge`, threadsToFile(threads));
