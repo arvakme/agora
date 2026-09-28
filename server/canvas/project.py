@@ -428,12 +428,14 @@ class ProjectStore:
         except (ValueError, AttributeError, TypeError):
             return 0
 
-    def _keep_old(self, path: Path, current: bytes | None) -> None:
-        """The file's previous version goes to the local history (outside the project) first."""
+    def _keep_old(self, path: Path, current: bytes | None, shrinks: bool = False) -> None:
+        """The file's previous version goes to the local history (outside the project) first.
+        ``shrinks``: the write empties the canvas or drops half of it, so the version is kept
+        even when the history's time gap would skip it."""
         if current is None or self.on_overwrite is None:
             return
         try:
-            self.on_overwrite(self._rel(path), current)
+            self.on_overwrite(self._rel(path), current, force=True) if shrinks else self.on_overwrite(self._rel(path), current)
         except OSError:
             pass  # a safety net must never block the write it protects
 
@@ -456,9 +458,13 @@ class ProjectStore:
             if current == body:  # nothing changed: no write, no conflict
                 return version_of(body) or ""
             self._check(path, current, base, force)
-            if kind == "canvas" and not clear and self._live(current) and not self._live(body):
-                raise EmptyOverwrite(self._rel(path), version_of(current))
-            self._keep_old(path, current)
+            shrinks = False
+            if kind == "canvas":
+                before, after = self._live(current), self._live(body)
+                if before and not after and not clear:
+                    raise EmptyOverwrite(self._rel(path), version_of(current))
+                shrinks = before > 0 and after * 2 <= before
+            self._keep_old(path, current, shrinks)
             self._atomic(path, body)
         return version_of(body) or ""
 
