@@ -1,4 +1,6 @@
-"""Seedmux tickets as receipts (tier T3): workers a session dispatched through Seedmux, what state
+"""**v2, off by default** — enabled with ``AGORA_EXPERIMENTAL=seedmux-receipts`` (experimental.py).
+
+Seedmux tickets as receipts (tier T3): workers a session dispatched through Seedmux, what state
 their delivery is in, and — when the worker's CLI has an adapter and its session id is known — the
 worker's own trajectory (web/docs/cli-adapters.md §5.2–5.3).
 

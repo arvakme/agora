@@ -328,13 +328,12 @@ def build(ref: NativeRef, *, root: str | None, session_id: str | None = None, de
             runs[krun["id"]] = krun
             _moments(parent_run, krun, kref, parent_run["_items"])
             queue.append((kref, krun, False))
-    if receipts and store is not None:
-        try:
-            from server.canvas.adapters import receipts as rc
-        except ImportError:
-            rc = None
-        if rc is not None:
-            rc.attach(runs, root=root, store=store, depth=depth, folded=folded, links=links, home=home)
+    from server.canvas.adapters.experimental import enabled
+
+    if receipts and store is not None and enabled("seedmux-receipts"):  # v2, off by default
+        from server.canvas.adapters import receipts as rc
+
+        rc.attach(runs, root=root, store=store, depth=depth, folded=folded, links=links, home=home)
     for r in runs.values():
         r.pop("_items", None)
         r["timeline"]["moments"].sort(key=lambda m: m["at"])
