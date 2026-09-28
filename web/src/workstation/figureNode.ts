@@ -6,10 +6,12 @@
 // closed path, paper inside and an ink outline that stays 1.1 screen px at any zoom (a non-scaling
 // stroke), so a bone costs one element. Bones are drawn back to front — far arm, far leg, torso,
 // near leg, near arm, head — so at a knee or an elbow the lower bone's outline lies over the upper
-// one. The far limbs are filled a shade darker. Colours are the --fig-* tokens (light and dark).
+// one. The far limbs are filled a shade toward the ink. Colours are the --fig-* tokens (light and dark).
+// Gestures (./gestures.ts) arrive with the joints: a landing's scale and lift, the head's look (on its
+// own spring here: the head turns first), the save flash and a command's verdict on the screen.
 import codex128 from "../app/agents/codex-128.png";
 import { focus } from "./focus";
-import { RIG, type Bone, type Joints, type Pt } from "./rig";
+import { RIG, Spring, type Bone, type Joints, type Pt } from "./rig";
 
 const NS = "http://www.w3.org/2000/svg";
 const el = <K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}, parent?: Element): SVGElementTagNameMap[K] => {
@@ -92,13 +94,30 @@ export class FigureNode {
   private markT: SVGTextElement;
   private rigLines: SVGPathElement;
   private rigJoints: SVGPathElement;
+  private shadow: SVGEllipseElement;
+  private glow: SVGRectElement;
+  private glyph: SVGPathElement;
+  /** The head's look: an offset toward what it looks at, on a quick spring of its own. */
+  private lookX = new Spring(4, 0.7, 0.6);
+  private lookY = new Spring(4, 0.7, 0.6);
+  private lastT: number | null = null;
   private last: Record<string, string> = {};
+  /** Where the pointer is over this figure (figure space), or null: for the gesture that looks at it. */
+  pointer: Pt | null = null;
 
   constructor(readonly id: string, agent: string, o: { parentAgent?: string; label: string }) {
     this.g = el("g", { class: "ws-worker", "data-run": id, role: "button", tabindex: 0, "aria-label": o.label });
     el("rect", { x: -14, y: -64, width: 32, height: 66, fill: "transparent", class: "ws-hit" }, this.g);
+    // pointer events only (never per frame): where the pointer is, in figure space
+    this.g.addEventListener("pointermove", (e) => {
+      const m = this.g.getScreenCTM();
+      if (!m) return;
+      const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
+      this.pointer = { x: p.x, y: p.y };
+    });
+    this.g.addEventListener("pointerleave", () => void (this.pointer = null));
     const b = (this.body = el("g", {}, this.g));
-    el("ellipse", { cy: 0.5, rx: f2(9.5 * K), ry: f2(1.7 * K), fill: "var(--line-strong)" }, b);
+    this.shadow = el("ellipse", { cy: 0.5, rx: f2(9.5 * K), ry: f2(1.7 * K), fill: "var(--line-strong)" }, b);
     // the standing desk (write: a purple screen with code; exec: a terminal with a prompt)
     this.desk = el("g", { display: "none" }, b);
     this.deskPost = el("path", { fill: "none", "stroke-linecap": "round", ...outline(1.2), stroke: "var(--fig-ink)" }, this.desk);
@@ -106,7 +125,10 @@ export class FigureNode {
     this.screen = el("rect", { y: f2(DESK - 10.4), width: 11.5, height: 9.2, rx: 1.2, ...outline(), stroke: "var(--fig-ink)" }, this.desk);
     this.code = el("path", { fill: "none", stroke: "var(--accent-fg)", "stroke-width": 1.1, "stroke-linecap": "round" }, this.desk);
     this.prompt = el("path", { fill: "none", stroke: "var(--accent-on-chrome)", "stroke-width": 1.1, "stroke-linecap": "round", "stroke-linejoin": "round" }, this.desk);
-    const bone = (fill: string) => el("path", { fill, ...outline() }, b);
+    // over the screen: the save flash, or a command's verdict (✓ / ✗ on a lit screen)
+    this.glow = el("rect", { display: "none", y: f2(DESK - 10.4), width: 11.5, height: 9.2, rx: 1.2 }, this.desk);
+    this.glyph = el("path", { display: "none", fill: "none", stroke: "var(--fig-mark-fg)", "stroke-width": 1.5, "stroke-linecap": "round", "stroke-linejoin": "round" }, this.desk);
+    const bone =(fill: string) => el("path", { fill, ...outline() }, b);
     this.upperF = bone(FAR);
     this.foreF = bone(FAR);
     this.thighF = bone(FAR);
@@ -158,8 +180,13 @@ export class FigureNode {
     // Selected (a figure or its bubble clicked): the outline in the accent, the paper tinted, the skeleton on top.
     const sel = focus.get().selected === this.id;
     S(this.body, "b", "style", sel ? SELECTED : "");
-    // Turning: the whole body is mirrored through edge-on (−1 → 1) around its root.
-    S(this.body, "b", "transform", j.turn >= 0.999 ? "" : `scale(${f2(j.turn)} 1)`);
+    // Turning: the whole body is mirrored through edge-on (−1 → 1) around its root. Landing: it is
+    // scaled about its feet and raised.
+    const scale = j.scale ?? 1;
+    const lift = j.lift ?? 0;
+    S(this.body, "b", "transform", `${lift ? `translate(0 ${f2(-lift)}) ` : ""}${j.turn < 0.999 || scale !== 1 ? `scale(${f2(j.turn * scale)} ${f2(scale)})` : ""}`.trim());
+    // off the ground on a ladder: no shadow under the feet
+    S(this.shadow, "sd", "opacity", 1 - j.climb);
     // the avatar mark, the dispatcher's badge and the ! / ? never read mirrored mid-turn
     const un = j.turn < 0 ? " scale(-1 1)" : "";
     const desk = !j.walking && (j.prop === "laptop" || j.prop === "terminal") && j.propAlpha > 0.01;
@@ -186,6 +213,20 @@ export class FigureNode {
         const cursor = still || Math.floor(t / 500) % 2 ? `M${f2(sx + 5.2)} ${f2(DESK - 3.6)}h3` : "";
         S(this.prompt, "pr", "d", `M${f2(sx + 2.2)} ${f2(DESK - 7.8)}l1.9 1.5-1.9 1.5${cursor}`);
       }
+      // a save flashes the screen white; a command's verdict lights it green ✓ or red ✗
+      const res = !laptop && j.result && j.result.a > 0.01 ? j.result : null;
+      const flash = laptop ? (j.flash ?? 0) : 0;
+      S(this.glow, "gw", "display", res || flash > 0.01 ? "inline" : "none");
+      S(this.glyph, "gy", "display", res ? "inline" : "none");
+      if (res || flash > 0.01) {
+        S(this.glow, "gw", "x", sx);
+        S(this.glow, "gw", "fill", res ? (res.ok ? "var(--positive-dot)" : "var(--negative)") : "var(--accent-fg)");
+        S(this.glow, "gw", "opacity", res ? 0.92 * res.a : 0.8 * flash);
+      }
+      if (res) {
+        S(this.glyph, "gy", "opacity", res.a);
+        S(this.glyph, "gy", "d", res.ok ? `M${f2(sx + 3.3)} ${f2(DESK - 5.9)}l2.1 2.1 4-4.4` : `M${f2(sx + 3.8)} ${f2(DESK - 8.2)}l3.9 3.9M${f2(sx + 7.7)} ${f2(DESK - 8.2)}l-3.9 3.9`);
+      }
     }
     // Bones. An arm is shoulder → elbow → hand. A leg's IK ends at the sole: the drawn shin stops
     // RIG.ankle above it, where the foot starts — so a planted foot stays put while the body sways.
@@ -204,13 +245,32 @@ export class FigureNode {
     bone(this.torso, "to", j.px, j.py + 0.6, j.nx, j.ny + 1.6, R.torso);
     leg(j.hipN, j.legN, this.thighN, this.shinN, this.footN, "ln");
     arm(j.shN, j.armN, this.upperN, this.foreN, "an");
-    const hx = q(j.hx);
-    const hy = q(j.hy);
+    // The head's look (the pointer, the other writer): up to 2.4 units toward it, the head first.
+    const dt = this.lastT == null ? -1 : (t - this.lastT) / 1000;
+    this.lastT = t;
+    let tx = 0;
+    let ty = 0;
+    if (j.look) {
+      const dx = j.look.x - j.hx;
+      const dy = j.look.y - j.hy;
+      const d = Math.hypot(dx, dy) || 1;
+      const m = Math.min(2.4, d * 0.1);
+      tx = (dx / d) * m;
+      ty = (dy / d) * m;
+    }
+    const jump = still || dt < 0 || dt > 1;
+    const hx = q(j.hx + (jump ? this.lookX.reset(tx) : this.lookX.step(Math.min(dt, 0.05), tx)));
+    const hy = q(j.hy + (jump ? this.lookY.reset(ty) : this.lookY.step(Math.min(dt, 0.05), ty)));
     S(this.head, "hd", "transform", `translate(${f2(hx)} ${f2(hy)})${un}`);
-    const hold = (j.prop === "sheet" || j.prop === "carry") && j.propAlpha > 0.01;
-    S(this.sheet, "sh", "display", hold ? "inline" : "none");
-    if (hold) {
-      const carry = j.prop === "carry";
+    // the page: its prop (read, carried, handed over), or one taken (at its desk, beside the desk) —
+    // while it is being passed over, on its way from the hand that gives it
+    const passing = (j.hold ?? 0) > 0.01 && !!j.holdFrom && (j.holdU ?? 1) < 0.999;
+    const prop = !passing && (j.prop === "sheet" || j.prop === "carry") && j.propAlpha > 0.01;
+    const taken = !prop && (j.hold ?? 0) > 0.01;
+    S(this.sheet, "sh", "display", prop || taken ? "inline" : "none");
+    if (prop || taken) {
+      const carry = taken || j.prop === "carry";
+      const alpha = taken ? (j.hold ?? 0) : j.propAlpha;
       const w = carry ? 5.6 : 6.8;
       const h = carry ? 7 : 8.8;
       S(this.sheetRect, "sr", "x", -w / 2);
@@ -219,14 +279,19 @@ export class FigureNode {
       S(this.sheetRect, "sr", "height", h);
       const x0 = f2(-w / 2 + 1.4);
       S(this.sheetLines, "sl", "d", `M${x0} ${f2(-h / 2 + 2.2)}h${f2(w - 2.8)}M${x0} ${f2(-h / 2 + 4.2)}h${f2(w - 3.8)}M${x0} ${f2(-h / 2 + 6.2)}h${f2(w - 2.8)}`);
-      // in both hands (reading, handing over), in the near one while walking
-      const mx = j.walking ? j.armN.ex : (j.armN.ex + j.armF.ex) / 2;
-      const my = j.walking ? j.armN.ey : (j.armN.ey + j.armF.ey) / 2;
+      // a page read in both hands; one carried or handed over in the near hand
+      let mx = carry || j.walking ? j.armN.ex : (j.armN.ex + j.armF.ex) / 2;
+      let my = carry || j.walking ? j.armN.ey : (j.armN.ey + j.armF.ey) / 2;
+      if (passing && j.holdFrom) {
+        const u = j.holdU ?? 1;
+        mx = j.holdFrom.x + (mx - j.holdFrom.x) * u;
+        my = j.holdFrom.y + (my - j.holdFrom.y) * u;
+      }
       // it fades and grows in; while reading, now and then a page turns (edge-on and back)
       const u = (t % 1800) / 1800;
       const page = still || carry || u >= 0.12 ? 1 : Math.abs(Math.cos((u / 0.12) * Math.PI));
-      const sc = (0.6 + 0.4 * j.propAlpha) * K;
-      S(this.sheet, "sh", "opacity", Math.min(1, j.propAlpha * 1.2));
+      const sc = (0.6 + 0.4 * alpha) * K;
+      S(this.sheet, "sh", "opacity", Math.min(1, alpha * 1.2));
       S(this.sheet, "sh", "transform", `translate(${f2(q(mx + L(0.8 * K)))} ${f2(q(my + (1.4 - h / 2) * K))}) rotate(${-10 * f}) scale(${f2(page * sc)} ${f2(sc)})`);
     }
     if (this.badge) S(this.badge, "bg", "transform", `translate(${f2(hx - L(RIG.head + 1.2))} ${f2(hy - RIG.head * 0.85)})${un}`);
