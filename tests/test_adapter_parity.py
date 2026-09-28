@@ -34,7 +34,8 @@ STATE_FIELDS = ("busy", "pending", "last_text", "root", "turn", "turn_at", "code
 
 
 def strip_added(items: list[dict]) -> list[dict]:
-    out = copy.deepcopy(items)
+    # Codex ``spawn_agent`` (SubAgentActivity started) is a new item: the old projection skipped it.
+    out = [it for it in copy.deepcopy(items) if not (it.get("kind") == "tool" and (it.get("tool") or {}).get("name") == "spawn_agent" and (it.get("tool") or {}).get("activity") == "subagents")]
     for it in out:
         tool = it.get("tool")
         if isinstance(tool, dict):

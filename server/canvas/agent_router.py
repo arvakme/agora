@@ -102,6 +102,40 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
 
         return await asyncio.to_thread(build)
 
+    @router.get("/runs")
+    async def agent_runs(session: str | None = None, kind: str | None = None, native: str | None = None, depth: str = "1", canvas: str | None = None, items: int = 0, receipts: int = 1):
+        """The run tree of a session (web/docs/cli-adapters.md §7): the session, its native sub-agents
+        and its Seedmux workers, each with a timeline. ``session=<sid>`` for an Agora session, or
+        ``kind=<cli>&native=<id>`` for any native session Agora can read. ``depth``: levels to expand
+        (default 1; ``all``); ``canvas=<id>`` adds the canvas node each segment's file maps to;
+        ``items=1`` adds each run's transcript items."""
+        from server.canvas.adapters import runs as runs_mod
+        from server.canvas.adapters.base import NativeRef
+
+        if session:
+            b = store.read_binding(session)
+            if b is None:
+                return JSONResponse(status_code=404, content={"error": f"no agent binding for session {session}"})
+            k, nid = b["agent"], b.get("nativeId")
+        elif kind and native:
+            k, nid = kind, native
+        else:
+            return JSONResponse(status_code=400, content={"error": "give session=<sid>, or kind=<cli>&native=<id>"})
+        if adapters.get(k) is None:
+            return JSONResponse(status_code=400, content={"error": f"no adapter for {k!r}"})
+        if not nid:
+            return JSONResponse(status_code=409, content={"error": "this session has no native session yet (it never ran)"})
+        d = None if depth == "all" else max(0, int(depth)) if depth.isdigit() else 1
+
+        def build() -> dict:
+            hint = ((store.read_binding(session) or {}).get("log") or {}).get("path") if session else None
+            look = agents.locate_log(k, nid, store.root, hint=hint)
+            path = look.path or (look.candidates[0] if look.candidates else None)
+            ref = NativeRef(k, nid, path, str(store.root))
+            return runs_mod.build(ref, root=str(store.root), session_id=session, depth=d, store=store, canvas=canvas, with_items=bool(items), receipts=bool(receipts))
+
+        return await asyncio.to_thread(build)
+
     @router.put("/sessions/{sid}")
     async def bind(sid: str, body: Bind):
         try:

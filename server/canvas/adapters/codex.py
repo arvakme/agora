@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from server.canvas import agent_models
-from server.canvas.adapters.base import Adapter, VersionRange, tool_facts
+from server.canvas.adapters.base import Adapter, NativeRef, ParentLink, VersionRange, tool_facts
 from server.canvas.adapters.tools import activity_of, shell_reads, spawn_in_output
 from server.canvas.adapters.common import (
     MAX_FULL,
@@ -39,6 +39,7 @@ from server.canvas.adapters.common import (
     _usage,
     add_usage,
     end_item,
+    read_jsonl,
     rel_path,
     text_of,
     user_item,
@@ -239,6 +240,9 @@ def project(rec: dict[str, Any], st: State) -> Out:
                 tool["files"] = fs
             tool["activity"] = "edit"
             items.append({"id": iid, "kind": "tool", "at": started, "endAt": at, "tool": tool})
+        elif itype == "SubAgentActivity" and it.get("kind") == "started" and it.get("agent_thread_id"):
+            # ``spawn_agent``: the child is its own thread (runs API: /api/agent/runs).
+            items.append({"id": iid, "kind": "tool", "at": started, "endAt": at, "tool": {"name": "spawn_agent", "input": str(it.get("agent_path") or it["agent_thread_id"]), "args": _full(it), "output": "", "isError": False, "activity": "subagents", "spawn": {"childKind": "codex", "childId": str(it["agent_thread_id"]), "via": "native"}}})
         elif itype in ("McpToolCall", "WebSearch"):
             arg = it.get("arguments") or it.get("query") or ""
             items.append({"id": iid, "kind": "tool", "at": started, "endAt": at, "tool": {"name": str(it.get("tool") or itype), "input": _summary(arg), "args": _full(arg), "output": _full(it.get("result") or it.get("status") or ""), "isError": it.get("status") == "failed", "activity": "webSearch" if itype == "WebSearch" else "tools"}})
@@ -287,6 +291,33 @@ def rollouts_since(cwd: Path, since: float, home: Path | None = None) -> list[tu
             continue
         out.append((os.path.getctime(p), str(pl["id"]), Path(p)))
     return [(i, p) for _, i, p in sorted(out)]
+
+
+def session_meta(path: Path | None) -> dict[str, Any]:
+    """The first record's payload (``session_meta``): id, cwd, cli_version, source…"""
+    if path is None:
+        return {}
+    try:
+        with open(path, "rb") as fh:
+            head = json.loads(fh.readline() or b"{}")
+    except (OSError, ValueError):
+        return {}
+    return head.get("payload") if isinstance(head, dict) and head.get("type") == "session_meta" and isinstance(head.get("payload"), dict) else {}
+
+
+def spawn_edges(parent_id: str, home: Path) -> dict[str, str]:
+    """Codex's index ``thread_spawn_edges``: child thread id → ``open`` / ``closed``, read-only."""
+    db = codex_home(home) / "state_5.sqlite"
+    if not db.exists():
+        return {}
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=1)
+        try:
+            return {str(c): str(s) for c, s in con.execute("select child_thread_id, status from thread_spawn_edges where parent_thread_id = ?", (parent_id,)).fetchall()}
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return {}
 
 
 CODEX_FALLBACK = 400  # newest rollouts looked at when Codex has no index
@@ -409,6 +440,58 @@ class CodexAdapter(Adapter):
             return tool_facts("edit", files=files(args, root))
         act = activity_of(name)
         return tool_facts(act, waits_user=act == "questions")
+
+    # ——— Subagents ———
+    def children(self, ref: NativeRef, home: Path | None = None) -> list[NativeRef]:
+        """``spawn_agent`` children: the parent rollout's ``SubAgentActivity`` items (started /
+        interacted / completed, with the child thread id), Codex's index ``thread_spawn_edges``, and
+        each child rollout's ``session_meta.source.subagent.thread_spawn.parent_thread_id``. Guardian
+        threads (``source.subagent.other == "guardian"``, approval checks) are not workers: hidden."""
+        home = home or Path.home()
+        acts: dict[str, dict[str, Any]] = {}
+        if ref.path is not None:
+            for rec in read_jsonl(ref.path):
+                p = rec.get("payload") if isinstance(rec.get("payload"), dict) else {}
+                it = p.get("item") if rec.get("type") == "event_msg" and p.get("type") == "item_completed" else None
+                if isinstance(it, dict) and it.get("type") == "SubAgentActivity" and it.get("agent_thread_id"):
+                    a = acts.setdefault(str(it["agent_thread_id"]), {"path": it.get("agent_path")})
+                    at = _ms(p.get("completed_at_ms") or rec.get("timestamp"))
+                    if it.get("kind") == "started":
+                        a.setdefault("at", at)
+                        a.setdefault("callId", str(it.get("id")))
+                    elif it.get("kind") == "completed":
+                        a["doneAt"] = at
+                    else:
+                        a.setdefault("interactions", []).append(at)
+        edges = spawn_edges(ref.native_id, home)
+        out = []
+        for cid in dict.fromkeys([*acts, *edges]):
+            look = self.locate(cid, None, home)
+            meta = session_meta(look.path) if look.path else {}
+            src = meta.get("source") if isinstance(meta.get("source"), dict) else {}
+            sub = src.get("subagent") if isinstance(src.get("subagent"), dict) else {}
+            if sub.get("other") == "guardian":
+                continue
+            spawn = sub.get("thread_spawn") if isinstance(sub.get("thread_spawn"), dict) else {}
+            a = acts.get(cid, {})
+            why = []
+            if spawn.get("parent_thread_id") == ref.native_id:
+                why.append("子 rollout 的 session_meta.source.subagent.thread_spawn.parent_thread_id")
+            if cid in edges:
+                why.append("Codex 索引 thread_spawn_edges")
+            if a:
+                why.append("父 rollout 的 SubAgentActivity")
+            state = "done" if a.get("doneAt") or edges.get(cid) == "closed" else ("running" if edges.get(cid) == "open" or a else None)
+            out.append(NativeRef(
+                "codex",
+                cid,
+                look.path,
+                meta.get("cwd") or ref.cwd,
+                ParentLink("native", ref.run_id, tool_call_id=a.get("callId"), evidence="、".join(why)),
+                label=str(spawn.get("agent_nickname") or a.get("path") or cid),
+                meta={"role": spawn.get("agent_role"), "path": spawn.get("agent_path") or a.get("path"), "depth": spawn.get("depth") or 1, "dispatchedAt": a.get("at"), "doneAt": a.get("doneAt"), "interactions": a.get("interactions") or [], "edge": edges.get(cid), "state": state},
+            ))
+        return out
 
     # ——— Headless ———
     def headless_args(self, cmd: list[str], req: Any, *, log_exists: Callable[[str], bool] | bool = False, skill_dir: Path | None = None) -> list[str]:
