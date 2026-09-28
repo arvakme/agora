@@ -159,8 +159,11 @@ def test_glob_port_matches_the_page():
     assert runs.node_for("README.md", links) == "readme" and runs.node_for("docs/README.md", links) is None
     assert runs.node_for("web/src/a.ts", links) == "web" and runs.node_for("web/src/x/a.ts", links) is None
     assert runs.node_for("/abs/server/app.py", links) is None
-    # Same as the page (codeLinks.ts specificity): a bare directory counts as a literal, so it outranks a deeper glob.
-    assert runs.node_for("server/canvas/runner.py", [("bare", ["server"]), ("deep", ["server/canvas/**"])]) == "bare"
+    # Review P2-5: a bare dir or a trailing "/" is scored as dir/** — the deeper glob wins, like the page.
+    assert runs.node_for("server/canvas/runner.py", [("bare", ["server"]), ("deep", ["server/canvas/**"])]) == "deep"
+    assert runs.node_for("server/canvas/runner.py", [("slash", ["server/"]), ("deep", ["server/canvas/**"])]) == "deep"
+    assert runs.node_for("server/canvas/runner.py", [("dir", ["server/canvas"]), ("file", ["server/canvas/runner.py"])]) == "file"
+    assert runs.specificity("server") == runs.specificity("server/") == runs.specificity("server/**")
 
 
 def test_claude_nested_agents_hang_under_their_parent_whatever_the_file_names(home):
