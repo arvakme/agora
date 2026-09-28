@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import secrets
 import threading
 import time
@@ -50,6 +51,9 @@ BRIDGE_TIMEOUT_S = 25.0
 MAX_ITEMS = 1500
 PREVIEW = 4000  # tool args / output characters pushed to the page; the rest on request
 READS_KEPT = 64
+SNAPSHOT_MAX = 20 * 1024 * 1024  # per session: past this the trajectory snapshot stops growing
+SUMMARY_MAX = 6000  # characters of the "carry on with a summary" message
+STALE_DAYS = 20  # a Claude Code session idle this long is warned about Claude's 30-day cleanup
 
 
 class NoPage(RuntimeError):
@@ -189,6 +193,8 @@ class Live:
     last_error: str | None = None
     native: dict[str, Any] | None = None  # the native log is missing / ambiguous / elsewhere (agents.NativeMissing.public)
     located_at: float = 0.0  # when the followed log was last looked up
+    snap: dict[str, str] = field(default_factory=dict)  # item id → what the trajectory snapshot holds for it
+    snap_size: int = 0
 
 
 class Subscriber:
@@ -285,6 +291,8 @@ class AgentHub:
             "binding": b,
             "copy": self.local.copies().get(sid),
             "native": lv.native,
+            "stale": self.stale(sid, b),
+            "snapshot": bool(lv.snap),
             "running": lv.running,
             "busy": lv.state.busy,
             "queued": len(lv.headless) + len(lv.pane),
@@ -316,6 +324,10 @@ class AgentHub:
         b = self.store.read_binding(sid)
         if not lv.runs_loaded:
             lv.runs_loaded = True
+            # What Agora kept of the trajectory first: if the native log is gone, this is what the
+            # panel shows (read-only); if it is there, reading it again brings the full records.
+            for it in self._load_snapshot(sid, lv):
+                lv.items[it["id"]] = it
             for it in self._load_runs(sid):
                 lv.items[it["id"]] = it
         if not b or not b.get("nativeId"):
@@ -372,6 +384,7 @@ class AgentHub:
             lv.items.popitem(last=False)
         if changed:
             latest = {i["id"]: i for i in changed}  # a call and its result in one read: send the merged item once
+            self._keep_snapshot(sid, lv, list(latest.values()))
             self.broadcast({"t": "transcript", "sessionId": sid, "items": [public_item(i) for i in latest.values()]})
         self._status(sid)
 
@@ -383,6 +396,110 @@ class AgentHub:
         if it is None:
             raise LookupError(f"no item {item_id} in session {sid}")
         return it
+
+    # ——— trajectory snapshot (sessions/snapshots/<id>.jsonl; web/docs/agent-sessions.md §7) ———
+    # What the transcript showed, kept by Agora in case the native log disappears (Claude's 30-day
+    # cleanup, another machine): user and assistant text in full, tool calls as name, one-line
+    # summary and a preview of input and output (the page's preview), files touched. Local only,
+    # append-only; the latest line per item id wins; capped per session.
+    def _snapshot_path(self, sid: str) -> Path:
+        return self.store.dir / "sessions" / "snapshots" / f"{sid}.jsonl"
+
+    def _load_snapshot(self, sid: str, lv: Live) -> list[dict[str, Any]]:
+        try:
+            raw = self._snapshot_path(sid).read_bytes()
+        except OSError:
+            return []
+        lv.snap_size = len(raw)
+        items: dict[str, dict[str, Any]] = {}
+        for line in raw.splitlines():
+            try:
+                it = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(it, dict) and it.get("id"):
+                items[it["id"]] = it
+                lv.snap[it["id"]] = line.decode("utf-8", "replace")
+        return list(items.values())
+
+    def _keep_snapshot(self, sid: str, lv: Live, items: list[dict[str, Any]]) -> None:
+        if sid in self.dropped or self.store.gone():
+            return
+        lines = []
+        for it in items:
+            if it.get("kind") == "run":
+                continue  # headless usage has its own file (run/usage)
+            line = json.dumps(public_item(it), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            if lv.snap.get(it["id"]) != line:
+                lv.snap[it["id"]] = line
+                lines.append(line)
+        if not lines or lv.snap_size > SNAPSHOT_MAX:
+            return
+        chunk = ("\n".join(lines) + "\n").encode()
+        try:
+            path = self._snapshot_path(sid)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "ab") as fh:
+                fh.write(chunk)
+            lv.snap_size += len(chunk)
+        except OSError:
+            pass  # a backstop: a full disk must not stop the transcript
+
+    def summary(self, sid: str) -> str:
+        """A message that carries a lost session into a new native one: what was said, turn by turn
+        (the latest turns when it is long), from what Agora kept. No model is called."""
+        lv = self._get(sid)
+        self._follow(sid, lv)
+        turns: list[list[str]] = []
+        for it in sorted(lv.items.values(), key=lambda i: i.get("at") or 0):
+            if it.get("kind") == "user" and (it.get("text") or "").strip():
+                turns.append([f"用户：{it['text'].strip()}"])
+            elif it.get("kind") == "assistant" and (it.get("text") or "").strip() and turns:
+                turns[-1].append(f"助手：{it['text'].strip()}")
+            elif it.get("kind") == "tool" and turns and (it.get("tool") or {}).get("name"):
+                t = it["tool"]
+                turns[-1].append(f"（工具 {t['name']}{': ' + t['input'] if t.get('input') else ''}）")
+        head = "（接着之前的讨论：原来的原生会话记录已经丢失，下面是 Agora 保存的轨迹摘要。）"
+        blocks = [f"第 {n} 轮\n" + "\n".join(lines) for n, lines in enumerate(turns, 1)]
+        out: list[str] = []
+        size = len(head)
+        for b in reversed(blocks):  # the latest turns first, then as many earlier ones as fit
+            if size + len(b) + 2 > SUMMARY_MAX:
+                out.append(f"（更早的 {len(blocks) - len(out)} 轮略）")
+                break
+            out.append(b)
+            size += len(b) + 2
+        return "\n\n".join([head, *reversed(out)]) if turns else head
+
+    def restart(self, sid: str) -> dict[str, Any]:
+        """The native log is gone: continue this Agora session in a new native session (the next
+        message starts it; the page pre-fills a summary). Its transcript and snapshot stay; the old
+        id stays in ``natives``. Only for a session whose log is really missing — never a silent
+        replacement of one that is still there."""
+        import uuid
+
+        b = self.binding(sid)
+        look = agents.locate_log(b["agent"], b.get("nativeId"), self.store.root) if b.get("nativeId") else agents.LogLookup("missing")
+        if look.state == "found":
+            raise ValueError("原生会话还在，不需要开新的；直接接着说")
+        new = str(uuid.uuid4()) if b["agent"] in ("claude", "pi") else None
+        self.store.rebind(sid, new, reason="fresh-after-loss", started=False)
+        lv = self._get(sid)
+        lv.tail, lv.native = None, None
+        self.note_bind(sid, "rebind", reason="fresh-after-loss")
+        self._status(sid)
+        return self.store.read_binding(sid) or {}
+
+    def stale(self, sid: str, b: dict[str, Any]) -> dict[str, Any] | None:
+        """Claude Code deletes session logs untouched for 30 days (``cleanupPeriodDays``): warn from 20."""
+        lv = self._get(sid)
+        if b.get("agent") != "claude" or lv.tail is None:
+            return None
+        try:
+            idle = (time.time() - os.path.getmtime(lv.tail.path)) / 86400
+        except OSError:
+            return None
+        return {"days": int(idle), "path": str(lv.tail.path)} if idle >= STALE_DAYS else None
 
     # Usage the runner reported for headless turns (Claude's cost is only in its result line,
     # not in the session log). Kept per session under .agora/run so a restart still shows it.

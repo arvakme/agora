@@ -14,6 +14,7 @@
   threads/<canvasId>.json  这块画布的评论线程                   提交
   sessions/<id>.jsonl      会话里的画布修改（含撤销数据），追加写   不提交
   sessions/<id>.agent.json 会话绑定的 agent / 模型 / 强度 / 原生 id  不提交
+  sessions/snapshots/<id>.jsonl  Agora 保存的轨迹快照（原生日志没了时只读查看、生成摘要）  不提交
   run/                     server.json（pid、端口、URL）、日志、锁、usage/（无头续接的用量）  不提交
   shares/shares.json       分享记录（令牌只存哈希，见 [分享](sharing.md)），目录自带 `*` 的 .gitignore  不提交
   local/instance.json      这份副本的身份（实例 id、根路径、inode）与待提示的变化，见下文      不提交
@@ -152,7 +153,7 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
 
 读不了的文件（git 合并冲突、无效 JSON、没有读权限）不会让整个 snapshot 失败：`snapshot.errors` 逐个列出 `{file, error: "merge-conflict" | "invalid-json" | "unreadable", line}`，其余照常返回；页面说明是哪个文件第几行，并且不写这个文件，直到解决后刷新。workspace.json 缺失而磁盘上唯一的画布读不了时，也算「不是首次运行」：恢复模式把它列出来（「已恢复画布 c7（文件读不了）」），不写示例。
 
-## 2. 写入：原子 + 版本
+## 2. 写入：原子 + 版本，以及仓库外的兜底
 
 - 版本 = 文件字节的 sha256 前 16 位。读取接口同时返回内容和版本。
 - JSON 文件：临时文件（同目录 `.<name>.<pid>.<rand>.tmp`）写完 fsync，再 `os.replace` 换上；失败时旧文件不动，临时文件删掉。jsonl：整段记录一次 `O_APPEND` 写入后 fsync。
@@ -162,6 +163,11 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
   - **用这里的覆盖**：带 `force` 写入这个页面的最新内容（会话记录则整份重写）。
 - 服务不可达时提示「项目服务连不上，改动暂未保存」，恢复后自动补写。
 - 外部改动（`git checkout`、手改文件）不会被主动推送到已打开的页面；下一次这个文件的写入会以冲突的形式发现它。
+
+**仓库外的兜底**（`server/canvas/backup.py`，都在 `$AGORA_STATE_DIR` 下，`git clean -fdx`、仓库被删都碰不到）：
+
+- **本地版本历史** `history/<项目 id>/<实例 id>/<文件>/<毫秒时间>`：画布、线程文件、`workspace.json` 被覆盖之前，旧内容先存一份；同一个文件 10 分钟最多存一次，最多 50 份、不超过 30 天。兜住 `git reset --hard`、`git checkout -- .agora`、误覆盖和不常提交的人。`agora history [<文件>]` 列出，`agora history <文件> --restore <毫秒时间>` 写回去（写回的那一刻被替换的版本也会留一份；开着的页面下次保存时会报冲突）。
+- **每日备份** `backups/<项目 id>/<实例 id>/<毫秒时间>.tar.gz`：只在本机的那部分 `.agora/` —— `sessions/`（改图记录、绑定、轨迹快照）、`trash/`、`local/`。服务启动时和之后每小时检查一次，满 24 小时就备份，保留 7 份。`agora backup` 立即备份，`agora restore [--from latest|<毫秒时间>]` 放回缺的文件（`--overwrite` 才覆盖已有的）。
 
 ## 3. 接口（`/api/project`）
 
@@ -203,6 +209,14 @@ path/to/agora/bin/agora init               # 只建 .agora/
 - 服务进程另在项目外持有一把锁并留一份记录：`$AGORA_STATE_DIR/servers/<实例 id>.{lock,json}`（默认 `~/.local/state/agora`；旧版本按根路径哈希命名的记录照样认）。锁文件里写着服务的 pid。`run/` 丢了（`git clean -fdx`）时，`up` 从这份记录找到还在跑的服务并写回 `run/server.json`，不会起第二个；记录也没了时，第二个 `serve` 拿不到锁直接退出。`down` 同样按这份记录停掉服务；服务卡住不应答、`run/` 和记录都没了时，按锁文件里的 pid 找到它，确认命令行是 `agora_cli serve --project <这个项目>` 再停。`down` 还会关掉这个实例的 tmux 服务器、它开过的 Seedmux pane（持有记录在 `$AGORA_STATE_DIR/seedmux/` 另有一份，`run/` 丢了也找得到），以及旧版本按路径哈希命名、这个实例在以前的位置用过的 tmux 服务器。
 - 服务运行中项目目录被移走、改名或删除：比较 inode（设备号变了但 inode 相同、`config.toml` 里的项目 id 也相同时算重新挂载，不算移走），所有写入返回 `410 {gone: true}`，不会在旧路径上重新长出 `.agora/`；页面提示在新位置运行 `agora up`，没保存的改动留在页面里，可以「下载为 .excalidraw」。只删了 `.agora/`、项目目录还在时单独说明（「.agora 被删除了」）。`/health` 带着 `gone`：`up` 不会复用这样的服务；项目移走后在新位置 `up`，会先停掉留在旧路径上的那个。其他写入失败（磁盘满、没权限、只读）返回 `{error, file}`（500 / 507），页面显示「保存失败」和原因，保留改动，可以重试或下载；页面只在服务端确认写入之后才记下「这个文件已经是这些内容」。
 - 只监听 `127.0.0.1`。
+
+```bash
+agora doctor            # 检查本机数据：这是哪份副本（移动 / 复制 / 新 clone）、清单里的会话有没有绑定和改图记录、原生日志在不在、Claude 会话是否快到 30 天清理、画布文件与清单是否一致、回收站、旧 tmux 服务器、备份
+agora doctor --fix      # 放回能精确放回的：改图记录等从最新备份（只放缺的），会话绑定从本机注册表；今天还没备份就备份一次。从不删除任何东西
+agora backup | restore [--from …] [--overwrite] | history [<文件>] [--restore <时间>]
+```
+
+`doctor` 发现问题时退出码 1。`git clean -fdx` 之后跑一次 `agora doctor --fix`：实例 id 按注册表认回（tmux、分享隧道、备份都对得上），会话的绑定和改图记录回来，原生对话本来就在 CLI 自己的目录里。
 
 ## 5. 从浏览器旧数据迁移
 

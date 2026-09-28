@@ -26,7 +26,7 @@ import threading
 import time
 import tomllib
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -254,6 +254,8 @@ class ProjectStore:
         self.root = Path(root).resolve()
         self.dir = self.root / DIRNAME
         self._lock = threading.RLock()
+        # Called with a committed file's old bytes just before it is replaced (backup.FileHistory.keep).
+        self.on_overwrite: Callable[[str, bytes], Any] | None = None
         self._ident: tuple[int, int] | None = self._identity()
         self._pid: str | None = self._project_id() if self._ident else None
 
@@ -399,6 +401,15 @@ class ProjectStore:
         finally:
             tmp.unlink(missing_ok=True)
 
+    def _keep_old(self, path: Path, current: bytes | None) -> None:
+        """The file's previous version goes to the local history (outside the project) first."""
+        if current is None or self.on_overwrite is None:
+            return
+        try:
+            self.on_overwrite(self._rel(path), current)
+        except OSError:
+            pass  # a safety net must never block the write it protects
+
     def _check(self, path: Path, current: bytes | None, base: str | None, force: bool) -> None:
         if not force and version_of(current) != base:
             raise Conflict(self._rel(path), version_of(current), base)
@@ -417,6 +428,7 @@ class ProjectStore:
             if current == body:  # nothing changed: no write, no conflict
                 return version_of(body) or ""
             self._check(path, current, base, force)
+            self._keep_old(path, current)
             self._atomic(path, body)
         return version_of(body) or ""
 
@@ -624,6 +636,7 @@ class ProjectStore:
             merged = merge_thread_files(disk, incoming)
             body = dump_json(merged)
             if body != raw:
+                self._keep_old(path, raw)
                 self._atomic(path, body)
         return merged, version_of(body) or "", body != raw
 
@@ -690,6 +703,7 @@ class ProjectStore:
                     raise ValueError(f"unknown thread op {kind!r}")
             body = dump_json(data)
             if body != raw:
+                self._keep_old(path, raw)
                 self._atomic(path, body)
         return data, version_of(body) or "", thread
 

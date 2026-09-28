@@ -22,6 +22,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from server.canvas.backup import Backups, FileHistory
+from server.canvas.discover import full_text, session_history
 from server.canvas.events import Events
 from server.canvas.local import Local, session_origins
 from server.canvas.project import Conflict, Gone, NotEmpty, ProjectStore
@@ -276,6 +278,29 @@ def create_project_router(store: ProjectStore, events: Events | None = None, *, 
 
         return trash_guard(go)
 
+    # ——— 会话历史 (web/docs/agent-sessions.md §8) ———
+    @router.get("/history")
+    def history():
+        """Every session of this project wherever it is now, plus native sessions found on this
+        machine that belong to it (footer, registry) or ran in its directory."""
+        return session_history(store, local, trash)
+
+    @router.get("/history/search")
+    def history_search(q: str):
+        """Full text (what was said) across the sessions' native logs, or their snapshots when a log is gone."""
+        if len(q.strip()) < 2:
+            raise HTTPException(status_code=400, detail="search for at least 2 characters")
+        h = session_history(store, local, trash)
+        paths: dict[str, tuple[str, str]] = {}
+        for r in [*h["rows"], *h["found"]]:
+            key = r.get("sessionId") or r.get("nativeId")
+            snap = store.dir / "sessions" / "snapshots" / f"{r.get('sessionId')}.jsonl"
+            if r.get("logPath") and Path(r["logPath"]).exists():
+                paths[key] = (r.get("agent") or "claude", r["logPath"])
+            elif r.get("sessionId") and snap.exists():
+                paths[key] = ("snapshot", str(snap))
+        return {"matches": full_text(store, paths, q.strip())}
+
     @router.post("/import")
     def import_all(payload: dict[str, Any]):
         try:
@@ -389,6 +414,9 @@ def create_project_app(
     gateway_app = create_gateway_app(store, shares, events, dist=dist)
 
     trash = Trash(store)
+    # Safety nets outside the project: earlier versions of committed files, daily local backups.
+    store.on_overwrite = FileHistory(local).keep
+    backups = Backups(store, local)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -401,8 +429,9 @@ def create_project_app(
                 try:
                     for m in await asyncio.to_thread(trash.sweep):
                         local.note("purge", kind=m["kind"], itemId=m["id"], trashId=m["trashId"], reason="expired")
+                    await asyncio.to_thread(backups.make)  # once a day
                 except Exception as e:  # keep serving; the next pass retries
-                    print(f"trash sweep failed: {e}", flush=True)
+                    print(f"trash sweep / backup failed: {e}", flush=True)
                 await asyncio.sleep(TRASH_SWEEP_S)
 
         tasks.append(asyncio.create_task(trash_sweeper()))

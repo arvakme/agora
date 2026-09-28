@@ -544,6 +544,22 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .lp-empty { display: flex; flex-direction: column; align-items: center; gap: var(--space-4); padding: var(--space-8, 32px) 0; color: var(--fg-muted); font-size: var(--text-md); }
 .lp-empty p { margin: 0; }
 .toast[data-tone="error"] span { color: var(--negative); }
+.ad-foot { flex-wrap: wrap; }
 .ad-foot .ad-foot-gap { flex: 1; }
 .ad-foot em { font-style: normal; font-variant-numeric: tabular-nums; color: var(--fg-subtle); }
 @media (max-width: 520px) { .lp { top: 16px; max-height: calc(100vh - 32px); } .lp-sub { display: none; } }
+/* 会话历史 (HistoryPanel.tsx): search in the header row, filters under it, rows with a state tag. */
+.hs { width: 680px; }
+.hs-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-3); height: 32px; color: var(--fg-subtle); }
+.hs-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: var(--text-md); color: var(--fg); }
+.hs-search input::placeholder { color: var(--fg-subtle); }
+.hs-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--line); }
+.hs-filters select { height: 26px; padding: 0 var(--space-3); border: 0; border-radius: var(--r-sm); background: var(--well); font-size: var(--text-sm); color: var(--fg); }
+.hs-full { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--fg-muted); margin-left: auto; }
+.hs-state { font-style: normal; color: var(--fg-muted); }
+.hs-state[data-tone="caution"] { color: var(--caution); }
+.hs-state[data-tone="error"] { color: var(--negative); }
+.hs-snippet { font-size: var(--text-xs); color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hs-toggle { font: inherit; color: inherit; padding: 0; background: none; border: 0; cursor: pointer; }
+.hs-loading { margin: var(--space-6); font-size: var(--text-sm); color: var(--fg-muted); }
+.lp-list .lp-empty { list-style: none; }

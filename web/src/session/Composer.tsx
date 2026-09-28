@@ -29,15 +29,17 @@ function elementOptions(canvasId: string, q: string): Option[] {
     .slice(0, 8);
 }
 
-export function Composer({ canvasId, canvasTitle, agentName, route, onSend }: {
+export function Composer({ canvasId, canvasTitle, agentName, route, onSend, initial }: {
   canvasId: string;
   canvasTitle?: string;
   agentName: string;
   /** Where the next message goes: the terminal pane holding the session, or a headless turn. */
   route: "terminal" | "headless";
   onSend: (text: string, refs: Turn["refs"]) => Promise<void>;
+  /** Text to start with (a summary of a lost session, to edit before sending). */
+  initial?: string;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initial ?? "");
   const [refs, setRefs] = useState<Turn["refs"]>([]);
   const [pick, setPick] = useState<{ q: string; start: number; i: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
