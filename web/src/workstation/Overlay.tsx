@@ -41,17 +41,22 @@ import { placeBubbles, protoSpot, type BubbleIn } from "./bubbles";
 import { pickBubbles, slots } from "./crowd";
 import { EntryMarks } from "./EntryMarks";
 import { FigureNode } from "./figureNode";
+import { FootprintLayer } from "./FootprintLayer";
 import { figurePositions, focus, useFocus } from "./focus";
 import { canvasOfView, follow, useFollow } from "./follow";
 import { frame } from "./frame";
+import { gestureFor } from "./gestures";
 import { buildGeometry, type Geometry } from "./geometry";
 import { canvasWhere, conflictAt, OUTSIDE, stateAt, writeConflicts, type Ctx, type RunState, type WriteConflict } from "./place";
 import { Glide, makeSprings, RIG, solve, SUB_SCALE, type Pt, type Springs, type Trip } from "./rig";
 import type { Leg } from "./route";
 import { RunAvatar } from "./RunAvatar";
+import { scenePlaces } from "./scenePlaces";
 import { useRuns, type Runs } from "./runs/store";
 import { RECEIPT_NAMES, type FlatRun } from "./runs/types";
+import { TalkBubble } from "./TalkBubble";
 import { pointAt, traceAt, walkedAt, type Trace } from "./trace";
+import { TrayHint } from "./TrayHint";
 import "./workstation.css";
 
 const SNAP_MS = 250;
@@ -155,7 +160,9 @@ export function snapshot(runs: Runs, t: number, ctx: Ctx, conflicts: WriteConfli
   for (const f of runs.flat) {
     const st = stateAt(f.run, t, ctx);
     states.set(f.run.id, st);
-    if (!st.present || (o.only && !o.only(f.run.id))) continue;
+    if (o.only && !o.only(f.run.id)) continue;
+    // looks ahead one snapshot: a figure that is about to be present is built now, so the first 250 ms of a door's animation are not lost
+    if (!st.present && !stateAt(f.run, t + SNAP_MS, ctx).present) continue;
     if (f.depth >= 2) {
       // One level of sub-agents is drawn; deeper ones fold into a +N over their depth-1 ancestor.
       let p: FlatRun | undefined = f;
@@ -364,11 +371,13 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const keepRef = useRef(keep);
   keepRef.current = keep;
   const geom = useMemo(() => buildGeometry(view.id, view.elements, view.map, nst.scenes, (id) => nst.titles[id]), [view.id, view.version, nst.scenes, nst.titles]);
-  const ctx = useMemo<Ctx>(() => ({ locate: geom.locate, dock: geom.dock, route: geom.route, reduced, run: (id) => runs.byId.get(id) }), [geom, runs, reduced]);
+  const ctx = useMemo<Ctx>(() => ({ locate: geom.locate, dock: geom.dock, route: geom.route, ...scenePlaces(geom.boxes, view.map, nst.index.has(canvasOfView(view.id))), reduced, run: (id) => runs.byId.get(id) }), [geom, runs, reduced, view.map, nst.index, view.id]);
   const conflicts = useMemo(() => writeConflicts(runs.flat.map((f) => f.run)), [runs]);
+  // A canvas with nothing on it shows its own guide (「一张空白画布」): the layer gives way (no figures, bubbles, tray), the strip says so.
+  const empty = useMemo(() => !view.elements.some((e) => !e.isDeleted), [view.elements, view.version]);
   useEffect(() => {
-    canvasWhere.set(view.id, { ctx, label: (p) => (p === OUTSIDE ? "图外" : (geom.labels.get(p) ?? "节点")) });
-  }, [view.id, ctx, geom]);
+    canvasWhere.set(view.id, { ctx, label: (p) => (p === OUTSIDE ? "图外" : (geom.labels.get(p) ?? "节点")), empty });
+  }, [view.id, ctx, geom, empty]);
   const [snap, setSnap] = useState<Snap>(EMPTY);
   const a = view.appState;
   const clip = useMemo(() => clipPath({ x: 0, y: 0, w: a.width, h: a.height }, chrome), [a.width, a.height, chrome]);
@@ -619,7 +628,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         // a glance: it looks at the middle of the node's top edge
         const gb = st.glance ? g.boxOf(st.glance.place) : undefined;
         const gaze = gb ? { x: gb.x + gb.w / 2, y: gb.y } : null;
-        const j = solve({ t, wall: anim, dt: step, reset, pose: st.pose, since: st.since, dock: g.dock(st.at), trip: st.trip, k: kk, gaze, still, conflict: !!conflict && !!st.seg, bump, unknownReceipt: st.receipt === "unknown", coarse: !!run.coarse, readingWhileWalking: st.seg?.kind === "read" }, sp);
+        const j = solve({ t, wall: anim, dt: step, reset, pose: st.pose, since: st.since, dock: g.dock(st.at), trip: st.trip, k: kk, gaze, still, conflict: !!conflict && !!st.seg, bump, unknownReceipt: st.receipt === "unknown", coarse: !!run.coarse, readingWhileWalking: st.seg?.kind === "read", gest: gestureFor({ run, st, t, wall: anim, still, k: kk, ctx: c, positions, conflict, pointer: n.pointer }) }, sp);
         // Side by side at a node: each figure has its own free spot (geometry.spots: along the top
         // edge, else beside or under the node, clear of text and icons); the offset from the trip's
         // dock glides — to 0 while it is on a trip, so it keeps to the bridges and ladders, and back
@@ -642,7 +651,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
           alpha *= xf.a;
         }
         const dim = dimmed(run.id);
-        n.place(wx, wy, kk, alpha, dim, st.pose === "idle");
+        n.place(wx, wy, kk * (st.portalScale ?? 1), alpha, dim, st.pose === "idle");
         n.draw(j, anim, still);
         heads.current.set(run.id, { x: wx + j.hx * kk, y: wy + j.hy * kk, r: RIG.head * kk, mark: !!j.mark, k: kk, sc: fsc, walking: j.walking, root: { x: wx, y: wy } });
         alphas.set(run.id, alpha / Math.max(0.001, st.fade));
@@ -955,9 +964,10 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const errands = (trv?.subs ?? []).map((k) => ({ id: k.id, ...errand(k.stops.filter((x) => x.done).map((x) => geom.dock(x.place))), run: snap.byId.get(k.id)?.run }));
   const placeName = (p: string) => (p === OUTSIDE ? "图外" : (geom.labels.get(p) ?? "节点"));
   return (
-    <div className="ws-layer" ref={rootEl} style={{ clipPath: clip }} data-trace={keep ? "" : undefined}>
+    <div className="ws-layer" ref={rootEl} style={{ clipPath: clip, display: empty ? "none" : undefined }} data-empty={empty || undefined} data-trace={keep ? "" : undefined}>
       <svg className="ws-svg" aria-hidden={!figuresOn}>
         <g ref={svgWorld}>
+          <FootprintLayer ctx={ctx} boxOf={geom.boxOf} />
           <g className="ws-rings">
             {rings.map((r) => {
               const b = geom.boxOf(r.place);
@@ -1017,11 +1027,13 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
           />
         </g>
       </svg>
+      {figuresOn && !only && <TalkBubble canvasId={view.id} />}
       <EntryMarks view={view} />
       {snap.tray && (
         <div className="ws-tray" ref={trayEl}>
           <b>图外</b>
           <span>这张图没关联的文件，例如 docs/</span>
+          <TrayHint locate={geom.locate} />
         </div>
       )}
       {stopMarks.map((m) => (
