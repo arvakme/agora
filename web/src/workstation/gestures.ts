@@ -16,7 +16,7 @@ import { agents } from "../session/agents";
 import { attention } from "./attention";
 import { focus } from "./focus";
 import { execResults, type ExecResult } from "./outcome";
-import { HANDOFF_MS, IDLE_LEAVE_MS, stateAt, type Ctx, type RunState, type WriteConflict } from "./place";
+import { HANDOFF_MS, IDLE_LEAVE_MS, OUTSIDE, stateAt, type Ctx, type RunState, type WriteConflict } from "./place";
 import { RIG, type Pose, type Prop, type Pt } from "./rig";
 import type { RunSeg, WorkRun } from "./runs/types";
 import { talk } from "./talk";
@@ -53,6 +53,10 @@ export type GestureIn = {
   talkAt?: number | null;
   /** Under the pointer: where it is (figure space: from the feet, world axes, up is −), or just hovered. */
   hover?: Pt | true | null;
+  /** A comment's turn ended (it answered) at this moment on the timeline: it nods once. */
+  answeredAt?: number | null;
+  /** Nothing to sit on where it stands (the 图外 tray, no node): it stands or stretches, never sits. */
+  noSeat?: boolean;
 };
 
 /** What gestures add over a pose. Hand targets are from the shoulder, x along the facing (figure units). */
@@ -117,6 +121,7 @@ const CLASH_LOOK_MS = 600;
 const SAVE_MS = 450;
 const FLASH_MS = 300;
 const RESULT_MS = 1000;
+const NOD_MS = 700;
 
 /** Loom's hand positions are for its arm (19.4 long): scaled to ours. */
 const ARM = (RIG.upper + RIG.fore) / 19.4;
@@ -272,10 +277,10 @@ export function gesture(g: GestureIn): Gesture {
       }
     }
     const s = g.still ? (a >= SIT_AT ? 1 : 0) : smooth((a - SIT_AT) / SIT_MS);
-    if (s > 0) seat(G, s);
+    if (s > 0 && !g.noSeat) seat(G, s);
   }
   // New work after that long rest: it gets up first.
-  if (g.roseAt != null && g.pose !== "idle" && !g.still) {
+  if (g.roseAt != null && g.pose !== "idle" && !g.still && !g.noSeat) {
     const s = 1 - smooth((g.t - g.roseAt) / STAND_MS);
     if (g.t >= g.roseAt && s > 0) seat(G, s);
   }
@@ -300,6 +305,9 @@ export function gesture(g: GestureIn): Gesture {
       add(G, "tilt", 12 * (hump(a, 300, 650) + hump(a, 700, 1050)));
     }
   }
+
+  // A comment answered: one nod as the pin gets its check (timeline time, so a replay nods at the same moment).
+  if (anim && g.answeredAt != null) add(G, "tilt", 12 * hump(g.t - g.answeredAt, 0, NOD_MS));
 
   // Two writers on one file: a look at the other, hands off the keys; then the recoil.
   if (g.conflict) {
@@ -434,5 +442,7 @@ export function gestureFor(o: { run: WorkRun; st: RunState; t: number; wall: num
     clickAt: pe.selected === run.id ? pe.selectedAt : null,
     talkAt: (pe.talk as { runId?: string } | null)?.runId === run.id ? pe.talkAt : null,
     hover: focus.get().hovered === run.id ? (o.pointer ?? true) : null,
+    answeredAt: st.answered?.end ?? null,
+    noSeat: st.at === OUTSIDE,
   });
 }

@@ -399,4 +399,5 @@ export const conflictAt = (list: readonly WriteConflict[], runId: string, t: num
 
 /** Each canvas's current context and place names, published by its overlay for the timeline
  * (walk bars, 「在 API 服务」 rows, the detail card) — read at ≤ 4 Hz, never per frame. */
-export const canvasWhere = new Map<string, { ctx: Ctx; label: (place: string) => string }>();
+/** `empty`: the canvas has nothing drawn on it (its 「一张空白画布」 guide shows): the overlay draws no one, the strip says so. */
+export const canvasWhere = new Map<string, { ctx: Ctx; label: (place: string) => string; empty?: boolean }>();

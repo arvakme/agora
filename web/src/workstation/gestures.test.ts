@@ -312,3 +312,36 @@ describe("a command finished: the terminal lights up ✓ or ✗ for about a seco
     expect(ran(300, false, { still: true }).result).toEqual({ ok: false, a: 1 });
   });
 });
+
+describe("a comment answered: it nods once at that moment (timeline time; the pin gets its ✓)", () => {
+  const ans = (ms: number, x: Partial<GestureIn> = {}) => g({ pose: "think", answeredAt: T, t: T + ms, ...x });
+  it("one nod: the head dips and comes back within about a second", () => {
+    expect(ans(300).tilt ?? 0).toBeGreaterThan(5);
+    const tilts = frames(-64, 1300, (ms) => ans(ms)).map((x) => x.tilt ?? 0);
+    expect(Math.max(...tilts)).toBeGreaterThan(8);
+    expect(quiet(ans(1300))).toBe(true);
+    expect(quiet(ans(-100))).toBe(true);
+  });
+  it("does not jump from one frame to the next", () => {
+    const tilts = frames(-64, 1300, (ms) => ans(ms)).map((x) => x.tilt ?? 0);
+    for (let i = 1; i < tilts.length; i++) expect(Math.abs(tilts[i] - tilts[i - 1])).toBeLessThanOrEqual(3);
+  });
+  it("the same moment on the timeline gives the same nod whatever the animation clock says", () => {
+    expect(ans(300, { wall: W + 12345 }).tilt).toBe(ans(300).tilt);
+  });
+  it("with reduced motion it does not nod", () => {
+    expect(quiet(ans(300, { still: true }))).toBe(true);
+  });
+});
+
+describe("no seat, no sitting: on the 图外 tray (noSeat) it stands or stretches", () => {
+  it("a long rest sits on a node's edge but not without one", () => {
+    expect(g({ pose: "idle", idleFor: 45_000 }).sit?.w).toBe(1);
+    expect(g({ pose: "idle", idleFor: 45_000, noSeat: true }).sit).toBeUndefined();
+    expect(g({ pose: "idle", idleFor: 45_000, noSeat: true, still: true }).sit).toBeUndefined();
+  });
+  it("the stretch still happens, and getting up does not sit it down again", () => {
+    expect(g({ pose: "idle", idleFor: 21_000, noSeat: true }).nearW).toBeGreaterThan(0);
+    expect(g({ pose: "think", roseAt: T, t: T + 100, noSeat: true }).sit).toBeUndefined();
+  });
+});

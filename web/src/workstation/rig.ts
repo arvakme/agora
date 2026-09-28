@@ -337,7 +337,8 @@ export function planTrip(m: Move, rt: Route, from: Pt, k = 1): Trip {
   const legs = rt.legs;
   const b = legs.length ? legs[legs.length - 1].b : from;
   const trip: Trip = { t0: m.t, t1: m.t, a: from, b, f: 1, k, phases: [], bridges: [], ladders: [] };
-  if (!legs.length) return trip;
+  // nowhere to go (no legs, or ones that add up to under a pixel: the two docks are the same spot): no steps
+  if (!legs.length || legs.reduce((n, l) => n + Math.hypot(l.b.x - l.a.x, l.b.y - l.a.y), 0) < 1) return trip;
   // runs of legs, walked (level ones and steps) or climbed; a ladder is always walked to and from
   const runs: { climb: boolean; legs: Leg[] }[] = [];
   for (let i = 0; i < legs.length; ) {

@@ -26,6 +26,7 @@ import { isEditableTarget, markBackHintSeen, upOnKey } from "../nested/up";
 import { sessionNames } from "../multi/writes";
 import { setRunsRoot } from "../workstation/runs/store";
 import { WorkerDefs } from "../workstation/RunAvatar";
+import { WaitNotifier } from "../workstation/WaitNotifier";
 import { FollowPane } from "../workstation/FollowPane";
 import { focus as figureFocus } from "../workstation/focus";
 import { follow } from "../workstation/follow";
@@ -721,6 +722,7 @@ export function App({ boot }: { boot: Boot }) {
     <MotionConfig reducedMotion="user">
       <div className="app" data-mode={mode}>
         <WorkerDefs />
+        <WaitNotifier />
         <header className="topbar">
           <span className="brand"><IconWorkspace size={18} />Agora</span>
           {boot.project && <span className="project-name" title={boot.project.root}>{boot.project.name}</span>}

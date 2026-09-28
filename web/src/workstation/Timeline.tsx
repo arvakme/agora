@@ -17,11 +17,12 @@ import { focus, useFocus, type SegRef } from "./focus";
 import { follow, useFollow } from "./follow";
 import { frame } from "./frame";
 import { canvasWhere, OUTSIDE, planFor, stateAt, writeConflicts } from "./place";
+import { DaySummary } from "./DaySummary";
 import { RunAvatar } from "./RunAvatar";
 import { useRuns } from "./runs/store";
 import { FINAL, RECEIPT_NAMES, receiptAt, receiptView, type WorkRun, type FlatRun, type RunSeg } from "./runs/types";
 
-const MINI_COLORS: Record<string, string> = { write: "--accent-fill", read: "--accent-soft", exec: "--series-3", think: "--line-strong", wait: "--caution-dot", delegate: "--accent", gap: "--line-strong" };
+const MINI_COLORS: Record<string, string> = { write: "--accent-fill", read: "--fg-faint", exec: "--series-3", think: "--line-strong", wait: "--caution", delegate: "--fg", gap: "--line-strong" };
 let miniPalette: { theme: string; c: Record<string, string> } | null = null;
 /** The strip: up to three main agents as thin rows, collapsed idle stretches hatched. `prev` + `u` blend a rebuilt axis in. */
 function drawMini(cv: HTMLCanvasElement, runs: WorkRun[], A: Axis, prev: Axis | null, u: number, now: number) {
@@ -155,6 +156,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
   const [fold, setFold] = useState<Record<string, boolean>>({});
   const [tip, setTip] = useState<{ ref: SegRef; x: number; y: number } | null>(null);
   const [spd, setSpd] = useState(1);
+  const [dayAt, setDayAt] = useState<HTMLElement | null>(null);
   // Lanes and the axis are rebuilt at most 4 times a second.
   const now = useTick(250, true);
   const t = replay ? replayTime(replay, now) : now;
@@ -486,6 +488,10 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
       state = { k: n.k, node: <><i className="live" /><b>{busy[0].run.name}</b><span>{n.text}</span></> };
     } else if (busy.length > 1) state = { k: "busy", node: <><i className="live" /><span>{busy.length} 个会话在干活</span></> };
     else state = { k: "idle", node: <span>都空闲</span> };
+    if (where?.empty && !tf) {
+      const on = runs.flat.filter((f) => f.run.running || f.run.segs.some((g) => g.start <= now && now < g.end)).length;
+      state = { k: on ? "busy" : "idle", node: <>{on > 0 && <i className="live" />}<span>{on > 0 ? `${on} 个 agent 在干活 · ` : ""}这张图还是空的</span></> };
+    }
     const subs = runs.flat.filter((f) => f.depth > 0).length;
     return (
       <div className="ws-bar">
@@ -498,11 +504,12 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
           <canvas ref={miniCanvas} className="mini-cv" aria-hidden />
           <span className="mph" ref={mph} data-replay={replay ? "" : undefined} />
         </div>
-        <span className="ws-cnt" title={tops.map((f) => f.run.name).join("、")}>
+        <span className="ws-cnt" title={tops.map((f) => f.run.name).join("、")} onPointerEnter={(e) => setDayAt(e.currentTarget)} onPointerLeave={() => setDayAt(null)}>
           <span className="stack">{tops.slice(0, 3).map((f) => <RunAvatar key={f.run.id} agent={f.run.agent} size={18} />)}</span>
           <span className="n">{tops.length} 个会话{subs ? ` · ${subs} 个子代理` : ""}</span>
           {waiting.length > 0 && <span className="need"><i className="dot-c" />{waiting.length} 等你</span>}
         </span>
+        {dayAt && canvasId && <DaySummary canvasId={canvasId} anchor={dayAt} />}
         <button className="icon-btn sm muted" data-open onClick={() => toggle(true)} aria-label="展开时间线" title="展开时间线"><IconEnter size={14} /></button>
       </div>
     );
@@ -704,6 +711,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
           <RunAvatar agent={f.run.agent} size={16} />
           {fullName(f)} · {g.verifies ? "验收 · " : ""}
           {KIND_NAME[g.kind] ?? g.kind}
+          {g.comment ? ` · 处理评论 #${g.comment.n}` : ""}
         </h4>
         {what}
         <dl>

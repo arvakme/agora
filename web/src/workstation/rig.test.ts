@@ -39,3 +39,15 @@ describe("springs", () => {
     expect(at(500)).toEqual(fresh); // went backwards: reset, same as solving from scratch
   });
 });
+
+describe("a trip with nowhere to go", () => {
+  it("has no steps when its legs add up to under a pixel (the two docks are the same spot)", async () => {
+    const { planTrip } = await import("./rig.ts");
+    const m = { from: "a", to: "b", t: 1000, slot: 0 };
+    const tiny = planTrip(m, { legs: [{ kind: "walk", a: { x: 5, y: 5 }, b: { x: 5.3, y: 5 }, temp: false }], len: 0.3 }, { x: 5, y: 5 });
+    expect(tiny.phases).toHaveLength(0);
+    expect(tiny.t1).toBe(tiny.t0);
+    const real = planTrip(m, { legs: [{ kind: "walk", a: { x: 5, y: 5 }, b: { x: 85, y: 5 }, temp: false }], len: 80 }, { x: 5, y: 5 });
+    expect(real.phases.length).toBeGreaterThan(0);
+  });
+});

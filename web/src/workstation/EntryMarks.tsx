@@ -1,6 +1,7 @@
 // 子图入口 on a canvas (web/docs/workstation.md §10 子视图跟随): while agents are in a node's sub-view,
 // that node shows their avatars at its bottom-left (three, then +N; a click follows that agent in the
-// follow pane), and a pale purple ring while one of them writes in there. Who is inside comes from
+// follow pane), a pale purple ring while one of them writes in there, and the warm "waiting" mark
+// (a dot and a warm outline, 「等你回复 · name」 on hover) while one of them waits on you in there. Who is inside comes from
 // ./subview.ts, relative to this canvas, so it works on the pane's picture of a canvas too.
 // Mounted inside the canvas overlay (./Overlay.tsx `.ws-layer`, which clips it); rebuilt ≤ 4 Hz,
 // moved by the frame loop with the view.
@@ -19,7 +20,7 @@ import { presenceAt, subviewCtx } from "./subview";
 import "./follow.css";
 
 const SHOWN = 3;
-type Door = { node: string; box: Box; title: string; ids: string[]; writing: boolean };
+type Door = { node: string; box: Box; title: string; ids: string[]; writing: boolean; waiting: string[] };
 
 export function EntryMarks({ view }: { view: CanvasViewState }) {
   const canvasId = canvasOfView(view.id);
@@ -34,9 +35,10 @@ export function EntryMarks({ view }: { view: CanvasViewState }) {
     const p = presenceAt(x.run, t, ctx);
     if (!p?.levels || p.levels.length < 2) continue;
     const node = p.levels[0].node;
-    const d = at.get(node) ?? { node, title: p.levels[1].title, ids: [], writing: false };
+    const d = at.get(node) ?? { node, title: p.levels[1].title, ids: [], writing: false, waiting: [] };
     d.ids.push(x.run.id);
     if (!p.ended && x.run.segs.some((g) => g.kind === "write" && g.start <= t && t < g.end)) d.writing = true;
+    if (!p.ended && x.run.segs.some((g) => g.kind === "wait" && g.start <= t && t < g.end)) d.waiting.push(x.run.name);
     at.set(node, d);
   }
   const doors: Door[] = [...at.values()].flatMap((d) => {
@@ -75,18 +77,19 @@ export function EntryMarks({ view }: { view: CanvasViewState }) {
     <div className="ws-doors" aria-hidden={!doors.length}>
       <svg className="ws-doors-rings">
         <g ref={world}>
-          {doors.map((d) => (d.writing ? <rect key={d.node} x={d.box.x - 9} y={d.box.y - 9} width={d.box.w + 18} height={d.box.h + 18} rx={16} vectorEffect="non-scaling-stroke" /> : null))}
+          {doors.map((d) => (d.writing || d.waiting.length ? <rect key={d.node} x={d.box.x - 9} y={d.box.y - 9} width={d.box.w + 18} height={d.box.h + 18} rx={16} data-tone={d.waiting.length ? "wait" : "write"} vectorEffect="non-scaling-stroke" /> : null))}
         </g>
       </svg>
       {doors.map((d) => (
         <div
           key={d.node}
           className="ws-door"
+          data-wait={d.waiting.length ? "" : undefined}
           ref={(el) => {
             if (el) (marks.current.set(d.node, el), place(d.node, el));
             else marks.current.delete(d.node);
           }}
-          title={`在子图「${d.title || "未命名画布"}」里：${d.ids.map((id) => byId.get(id)?.run.name ?? id).join("、")}`}
+          title={d.waiting.length ? `等你回复 · ${d.waiting.join("、")}` : `在子图「${d.title || "未命名画布"}」里：${d.ids.map((id) => byId.get(id)?.run.name ?? id).join("、")}`}
         >
           {d.ids.slice(0, SHOWN).map((id) => {
             const x = byId.get(id);
@@ -97,6 +100,7 @@ export function EntryMarks({ view }: { view: CanvasViewState }) {
             ) : null;
           })}
           {d.ids.length > SHOWN && <em>+{d.ids.length - SHOWN}</em>}
+          {d.waiting.length > 0 && <i className="ws-door-wait" />}
         </div>
       ))}
     </div>
