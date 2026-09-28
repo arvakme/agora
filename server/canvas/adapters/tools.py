@@ -81,6 +81,8 @@ def _simple_commands(command: str) -> list[list[str]]:
             while i < len(lines) and lines[i].strip() != m.group(1):
                 i += 1
             i += 1
+        # fd duplications (2>&1, >&2) are not command separators; &> is a plain redirect.
+        line = re.sub(r"\d*>&\d+", " ", line).replace("&>>", ">>").replace("&>", ">")
         try:
             lex = shlex.shlex(line, posix=True, punctuation_chars=";&|")
             lex.whitespace_split = True
@@ -98,6 +100,41 @@ def _simple_commands(command: str) -> list[list[str]]:
         if cur:
             out.append(cur)
     return out
+
+
+def _redirects(words: list[str]) -> tuple[list[str], bool, list[str]]:
+    """(words without redirections, whether stdout goes to a file, files read with ``<``).
+    ``> f`` / ``>> f`` / ``1> f`` are writes (never reads of ``f``); ``2> f`` is ignored; ``<< EOF``
+    and ``<<< s`` are heredoc / here-strings."""
+    out: list[str] = []
+    writes = False
+    inputs: list[str] = []
+    skip = None  # what the next word is: "write" | "input" | "drop"
+    for w in words:
+        if skip is not None:
+            if skip == "input":
+                inputs.append(w)
+            skip = None
+            continue
+        if w in (">", ">>", "1>", "1>>", ">|"):
+            writes, skip = True, "drop"
+        elif re.match(r"^1?>>?[^>&]", w):
+            writes = True
+        elif w in ("2>", "2>>"):
+            skip = "drop"
+        elif re.match(r"^2>>?.", w):
+            pass
+        elif w in ("<<", "<<-", "<<<"):
+            skip = "drop"
+        elif w.startswith("<<"):
+            pass
+        elif w == "<":
+            skip = "input"
+        elif w.startswith("<"):
+            inputs.append(w[1:])
+        else:
+            out.append(w)
+    return out, writes, inputs
 
 
 def _looks_like_path(w: str) -> bool:
@@ -145,9 +182,13 @@ def shell_reads(command: Any, root: str | None = None, cwd: str | None = None) -
     kinds: list[str] = []
     paths: list[str] = []
     for words in _simple_commands(command.strip()):
+        words, writes, inputs = _redirects(words)
+        paths += [_resolve(p, cwd, root) for p in inputs if _looks_like_path(p)]
         while words and (words[0] in _WRAPPERS or re.match(r"^[A-Z_][A-Z0-9_]*=", words[0])):
             words = words[1:]
         if not words:
+            if writes:
+                kinds.append("commands")
             continue
         prog = os.path.basename(words[0])
         args = words[1:]
@@ -189,6 +230,8 @@ def shell_reads(command: Any, root: str | None = None, cwd: str | None = None) -
             kinds.append("search")
         else:
             kinds.append("commands")
+        if writes and kinds and kinds[-1] != "commands":
+            kinds[-1] = "commands"  # `head -5 a.py > b.py`: reads a.py, but it writes a file
     seen: list[str] = []
     for p in paths:
         if p not in seen:
@@ -211,8 +254,28 @@ def spawn_in_output(text: Any, command: Any = None) -> dict[str, str] | None:
     that happens to contain the line is not a dispatch); ``command=None`` = unknown → not trusted."""
     if not isinstance(text, str):
         return None
-    cmd = command[-1] if isinstance(command, list) and command else command
-    if not isinstance(cmd, str) or "smx-team" not in cmd:
+    if not is_dispatch(command):
         return None
     m = SPAWN.search(text)
     return {"taskId": m.group(1), "pane": m.group(2).upper(), "via": "seedmux"} if m else None
+
+
+def is_dispatch(command: Any) -> bool:
+    """Whether a shell command runs ``smx-team spawn`` or ``smx-team assign`` (parsed, not a substring:
+    ``echo smx-team spawn`` or ``grep smx-team`` are not dispatches)."""
+    if isinstance(command, list):
+        command = command[-1] if command else ""
+    if not isinstance(command, str) or "smx-team" not in command:
+        return False
+    for words in _simple_commands(command.strip()):
+        words, _, _ = _redirects(words)
+        while words and (words[0] in _WRAPPERS or re.match(r"^[A-Z_][A-Z0-9_]*=", words[0])):
+            words = words[1:]
+        if words[:2] == ["rtk", "proxy"]:
+            words = words[2:]
+        if not words or os.path.basename(words[0]) not in ("smx-team", "smx-team.py"):
+            continue
+        sub = next((w for w in words[1:] if not w.startswith("-")), None)
+        if sub in ("spawn", "assign"):
+            return True
+    return False

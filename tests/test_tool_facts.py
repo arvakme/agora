@@ -4,7 +4,7 @@ longer needs to know any CLI's tool names."""
 
 import pytest
 
-from server.canvas.adapters.tools import activity_of, shell_reads, spawn_in_output
+from server.canvas.adapters.tools import activity_of, is_dispatch, shell_reads, spawn_in_output
 from server.canvas.transcript import State, project
 
 ROOT = "/work/p"
@@ -35,6 +35,14 @@ def tool_items(kind, recs, root=ROOT):
         ("sed -i s/a/b/ f.txt", ("commands", [])),
         ("python3 - <<'PY'\ncat = 1\nPY\ncat z.txt", ("commands", ["z.txt"])),
         ("ls -la", ("search", [])),
+        # Redirections (review P2-2): the target of > / >> is written, never read.
+        ("cat > new.py <<'EOF'\nprint(1)\nEOF", ("commands", [])),
+        ("cat <<EOF > out.md\nhi\nEOF", ("commands", [])),
+        ("head -5 a.py > b.py", ("commands", ["a.py"])),
+        ("sed -n 1,5p a.py >> log.txt", ("commands", ["a.py"])),
+        ("wc -l < a.py", ("read", ["a.py"])),
+        ("rg foo src/x.ts 2>&1 | head", ("search", ["src/x.ts"])),
+        ("cat a.py 2>/dev/null", ("read", ["a.py"])),
         ("", (None, [])),
     ],
 )
@@ -118,3 +126,22 @@ def test_pi_tool_facts():
     assert (by["p1"]["activity"], by["p1"]["reads"]) == ("read", ["src/a.ts"])
     assert (by["p2"]["activity"], by["p2"]["reads"]) == ("read", ["b.md"])
     assert by["p3"]["activity"] == "edit" and by["p3"]["files"] == [{"path": "c.ts", "op": "edit"}]
+
+
+@pytest.mark.parametrize(
+    "cmd,want",
+    [
+        ("smx-team spawn --agent devin --cwd .", True),
+        ("~/.local/bin/smx-team assign --to A5D548FF", True),
+        ("cd web && FOO=1 smx-team spawn --agent codex", True),
+        (["/bin/zsh", "-lc", "smx-team spawn --agent claude"], True),
+        ("echo smx-team spawn", False),  # review P2-7: a substring is not a dispatch
+        ("grep 'smx-team spawn' old.log", False),
+        ("smx-team panes", False),
+        ("smx-team reply T-1 --status done", False),
+        ("cat notes.md | grep smx-team", False),
+    ],
+)
+def test_dispatch_needs_smx_team_spawn_or_assign(cmd, want):
+    assert is_dispatch(cmd) is want
+    assert (spawn_in_output("task=T-5ee5fa pane=a5d548ff-0d58-4406-bdd0-bd1f40810cb3", cmd) is not None) is want
