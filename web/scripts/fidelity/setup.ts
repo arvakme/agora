@@ -69,14 +69,30 @@ const text = (id: string, s: string, size: number, x: number, y: number, contain
   y: y - (size * 1.25) / 2,
 });
 
-export function canvas() {
+// The API 服务 node opens a more detailed diagram one level down (a nested canvas, web/docs/nested-canvas.md):
+// the mock script's server/app.py and server/users.py land on its nodes, so a worker walks, climbs and
+// goes in and out of the sub-diagram. Laid out so that one hop is a bridge and one a ladder.
+export const API_CHILD = "c-api";
+const API_NODES: N[] = [
+  { id: "api-app", label: "应用入口", x: 60, y: 120, w: 170, h: 64, link: "server/app.py" },
+  { id: "api-routes", label: "路由", x: 330, y: 120, w: 170, h: 64, link: "server/routes/**" },
+  { id: "api-users", label: "用户模块", x: 330, y: 330, w: 170, h: 64, link: "server/users.py" },
+  { id: "api-auth", label: "鉴权", x: 620, y: 330, w: 170, h: 64, link: "server/auth/**" },
+];
+const API_EDGES: typeof EDGES = [
+  { a: "api-app", b: "api-routes", label: "挂载", pts: [[230, 152], [330, 152]] },
+  { a: "api-routes", b: "api-users", label: "/users", pts: [[415, 184], [415, 330]] },
+  { a: "api-users", b: "api-auth", label: "校验", pts: [[500, 362], [620, 362]] },
+];
+
+export function canvas(nodes: N[] = NODES, edges: typeof EDGES = EDGES, child: Record<string, string> = { api: API_CHILD }) {
   const els: object[] = [];
-  for (const n of NODES) {
-    const arrows = EDGES.filter((e) => e.a === n.id || e.b === n.id).map((e) => ({ id: `e-${e.a}-${e.b}`, type: "arrow" }));
-    els.push({ ...common(), id: n.id, type: "rectangle", x: n.x, y: n.y, width: n.w, height: n.h, roundness: { type: 3 }, boundElements: [{ id: `${n.id}-t`, type: "text" }, ...arrows], customData: { codePaths: [n.link] } });
+  for (const n of nodes) {
+    const arrows = edges.filter((e) => e.a === n.id || e.b === n.id).map((e) => ({ id: `e-${e.a}-${e.b}`, type: "arrow" }));
+    els.push({ ...common(), id: n.id, type: "rectangle", x: n.x, y: n.y, width: n.w, height: n.h, roundness: { type: 3 }, boundElements: [{ id: `${n.id}-t`, type: "text" }, ...arrows], customData: { codePaths: [n.link], ...(child[n.id] ? { childCanvas: child[n.id] } : {}) } });
     els.push(text(`${n.id}-t`, n.label, 18, n.x + n.w / 2, n.y + n.h / 2, n.id));
   }
-  for (const e of EDGES) {
+  for (const e of edges) {
     const [x0, y0] = e.pts[0];
     const pts = e.pts.map(([x, y]) => [x - x0, y - y0]);
     const xs = pts.map((p) => p[0]);
@@ -118,9 +134,14 @@ export function setup(src: string, dir: string) {
   rmSync(join(store, "canvases"), { recursive: true, force: true });
   mkdirSync(join(store, "canvases"), { recursive: true });
   writeFileSync(join(store, "canvases", "c1.excalidraw"), JSON.stringify(canvas(), null, 1));
+  writeFileSync(join(store, "canvases", `${API_CHILD}.excalidraw`), JSON.stringify(canvas(API_NODES, API_EDGES, {}), null, 1));
   writeFileSync(
     join(store, "workspace.json"),
-    JSON.stringify({ v: 2, docs: [{ id: "c1", kind: "canvas", title: "总架构" }], focused: "c1", root: { id: "g-fid", kind: "group", tabs: ["c1"], active: "c1" } }, null, 2),
+    JSON.stringify(
+      { v: 2, docs: [{ id: "c1", kind: "canvas", title: "总架构" }, { id: API_CHILD, kind: "canvas", title: "API 服务" }], focused: "c1", root: { id: "g-fid", kind: "group", tabs: ["c1"], active: "c1" } },
+      null,
+      2,
+    ),
   );
 }
 
