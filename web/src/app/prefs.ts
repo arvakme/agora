@@ -1,18 +1,22 @@
 // Per-browser view preferences behind the top bar's ⋯ menu (web/docs/workbench-focus.md):
 //   showResolved — resolved comment threads drawn on the canvas as quiet pins (off by default);
-//   hints        — Excalidraw's hint line under the toolbar outside first run / empty canvases.
+//   hints        — Excalidraw's hint line under the toolbar outside first run / empty canvases;
+//   footprints   — 工位视图: faint footprints where workers stood and wrote (on by default; trial,
+//                  web/docs/workstation.md「新想法」);
+//   notifyWait   — a system notification when an agent starts waiting on you while the page is
+//                  hidden (off by default; turning it on asks the browser; trial, same section).
 // A convenience kept in localStorage (the page works without it); shared by the owner's page and
 // share guests.
 import { useSyncExternalStore } from "react";
 
-export type Prefs = { showResolved: boolean; hints: boolean };
+export type Prefs = { showResolved: boolean; hints: boolean; footprints: boolean; notifyWait: boolean };
 const KEY = "agora.view";
 function read(): Prefs {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? "{}") as Partial<Prefs>;
-    return { showResolved: !!v.showResolved, hints: !!v.hints };
+    return { showResolved: !!v.showResolved, hints: !!v.hints, footprints: v.footprints !== false, notifyWait: !!v.notifyWait };
   } catch {
-    return { showResolved: false, hints: false };
+    return { showResolved: false, hints: false, footprints: true, notifyWait: false };
   }
 }
 let state = read();

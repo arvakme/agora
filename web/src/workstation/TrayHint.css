@@ -1,0 +1,6 @@
+/* 图外文件提示补节点 (web/docs/workstation.md「新想法」): a quiet line in the dashed 图外 tray; the
+ * accent only on its icon and on hover. The tray itself takes no pointer: this line does. */
+.ws-tray-hint { pointer-events: auto; display: inline-flex; align-items: flex-start; gap: 5px; margin-top: 3px; padding: 3px 7px 3px 5px; border-radius: var(--r-sm); background: var(--accent-wash); color: var(--accent-ink); font-size: var(--text-xs); line-height: 1.4; text-align: left; --icon: var(--accent); }
+.ws-tray-hint svg { flex: none; margin-top: 2px; }
+.ws-tray-hint:hover { background: var(--accent-tint); }
+.ws-tray-hint em { font-style: normal; color: var(--fg-subtle); }
