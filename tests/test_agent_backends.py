@@ -1,7 +1,7 @@
 """server/canvas/agents.py — the Pi / Claude Code / Codex headless backends.
 
 Event mapping is checked against real CLI output recorded on 2026-09-28 (sanitized, in
-tests/fixtures/agents/); launches go through tests/fake_agent_cli.py so no model runs."""
+tests/fixtures/agents/<kind>/<version>/); launches go through tests/fake_agent_cli.py so no model runs."""
 
 import json
 import sys
@@ -13,12 +13,13 @@ from server.canvas import agents
 from server.canvas.agents import ClaudeCodeBackend, ClaudeStream, CodexBackend, CodexStream, PiBackend, PiStream, interactive_argv
 from server.canvas.runner import ExecOptions, RunRequest, make_backend
 
-FIX = Path(__file__).parent / "fixtures" / "agents"
+from tests.agent_fixtures import legacy
+
 FAKE = Path(__file__).parent / "fake_agent_cli.py"
 
 
 def records(name: str) -> list[dict]:
-    return [json.loads(line) for line in (FIX / name).read_text().splitlines() if line.strip()]
+    return [json.loads(line) for line in legacy(name).read_text().splitlines() if line.strip()]
 
 
 def feed(mapper, name: str) -> list[dict]:
@@ -117,7 +118,7 @@ async def test_run_in_project_dir_with_agora_env(tmp_path, monkeypatch, cls, fix
     probe = tmp_path / "probe.json"
     project = tmp_path / "proj"
     project.mkdir()
-    backend = cls([sys.executable, str(FAKE), str(FIX / fixture)], env={"FAKE_AGENT_PROBE": str(probe)})
+    backend = cls([sys.executable, str(FAKE), str(legacy(fixture))], env={"FAKE_AGENT_PROBE": str(probe)})
     req = RunRequest(schema=None, system=None, prompt="把 Redis 改成集群", options=ExecOptions(backend=cls.name, model="m", session="s-native"), cwd=str(project), env={"AGORA_SESSION": "s-1", "AGORA_PROJECT": str(project)})
     evs = [e async for e in backend.run(req)]
     assert evs[0]["t"] == "start" and evs[-1]["t"] == "result"
@@ -137,7 +138,7 @@ async def test_run_in_project_dir_with_agora_env(tmp_path, monkeypatch, cls, fix
 
 
 async def test_nonzero_exit_and_missing_binary_are_explicit(tmp_path):
-    b = CodexBackend([sys.executable, str(FAKE), str(FIX / "codex-stream.jsonl")], env={"FAKE_AGENT_EXIT": "3"})
+    b = CodexBackend([sys.executable, str(FAKE), str(legacy("codex-stream.jsonl"))], env={"FAKE_AGENT_EXIT": "3"})
     req = RunRequest(schema=None, system=None, prompt="p", options=ExecOptions(backend="codex", model=""), cwd=str(tmp_path))
     res = [e async for e in b.run(req)][-1]
     assert res["error"].startswith("exit 3")

@@ -1,0 +1,12 @@
+{
+  "kind": "pi",
+  "cli_version": null,
+  "log_format": "3",
+  "recorded": "2026-09-27",
+  "files": {
+    "log.jsonl": "session log (~/.pi/agent/sessions/--<cwd>--/<ts>_<id>.jsonl), header stripped",
+    "stream.jsonl": "pi -p --mode json"
+  },
+  "note": "Sanitized before CLI versions were recorded; the stream's session header says log format version 3.",
+  "expected_unknown": []
+}

@@ -2,7 +2,7 @@
 """Test double for the three agent CLIs in their headless modes.
 
 ``fake_agent_cli.py <fixture.jsonl> [real CLI args…]`` replays a recorded stdout stream
-(tests/fixtures/agents/*-stream.jsonl) after reading stdin, and — when
+(tests/fixtures/agents/<kind>/<version>/stream.jsonl) after reading stdin, and — when
 ``FAKE_AGENT_PROBE`` is set — writes {"cwd", "argv", "stdin", "env"} there first, so tests
 can assert where and how the backend launched it. ``FAKE_AGENT_EXIT`` sets the exit code."""
 
