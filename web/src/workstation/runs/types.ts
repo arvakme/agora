@@ -9,6 +9,13 @@ import type { RunState } from "../../session/agents";
 /** What a worker is doing in one stretch of time. `delegate` = handing work to a sub-agent. */
 export type SegKind = "read" | "write" | "exec" | "think" | "wait" | "delegate";
 
+/**
+ * The canvas comment a turn works on (「交给 Agent」): its thread number and the elements it is pinned
+ * to (the first one carries the pin), read off the turn's first message (../lanes.ts `commentOf`).
+ * `open`: the turn is still going — not answered yet.
+ */
+export type TurnComment = { n: number; anchor: string[]; open?: true };
+
 export type RunSeg = {
   kind: SegKind;
   start: number;
@@ -27,6 +34,8 @@ export type RunSeg = {
   child?: string;
   /** A verification step on a sub-agent's work (验收). */
   verifies?: string;
+  /** Its turn works on a canvas comment (every segment of that turn carries it). */
+  comment?: TurnComment;
   label: string;
 };
 

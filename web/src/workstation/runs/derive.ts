@@ -11,6 +11,7 @@ export function toRunSeg(s: Seg): RunSeg {
   const out: RunSeg = { kind: s.kind, start: s.start, end: s.end, turn: s.turn, label: s.label };
   if (s.itemId) out.itemId = s.itemId;
   if (s.path) out.path = s.path;
+  if (s.comment) out.comment = s.comment;
   if (s.kind === "exec" && s.input) out.cmd = s.input;
   if (s.kind === "wait" && s.input && !s.input.startsWith("{")) out.question = s.input;
   if (s.kind === "delegate" && s.input) out.label = `派 ${s.input.length > 24 ? `${s.input.slice(0, 24)}…` : s.input}`;

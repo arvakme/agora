@@ -1,10 +1,11 @@
 // Run-tree fixtures: the scripted ~46 s from the 工位视图 prototype (two sessions, a Seedmux worker
-// with tool calls, a receipts-only worker, a Claude Task sub-agent), placed at `base`. Used by the
-// tests and by the dev mock (`?mock=runs`), so the sub-agent UI can be seen before the adapter
-// layer serves real run trees. Paths match the sample diagram's code links (web/**, server/**,
-// server/db/**, server/cache/**, server/payments/**).
+// with tool calls, a receipts-only worker, a Claude Task sub-agent), placed at `base`, and after it
+// Pi working in API 服务's sub-diagram (47–57 s) and on a canvas comment (58–66 s). Used by the tests
+// and by the dev mock (`?mock=runs`), so the sub-agent UI can be seen before the adapter layer serves
+// real run trees. Paths match the sample diagram's code links (web/**, server/**, server/db/**,
+// server/cache/**, server/payments/**; its API 服务 sub-diagram: server/app.py, server/users.py).
 import type { RunState } from "../../session/agents";
-import type { WorkRun, Receipt, RunSeg, SegKind } from "./types";
+import type { WorkRun, Receipt, RunSeg, SegKind, TurnComment } from "./types";
 
 type S = [kind: SegKind, start: number, end: number, extra?: Partial<RunSeg>];
 const base = (p: string) => p.split("/").pop() || p;
@@ -25,6 +26,11 @@ function segs(at: number, list: S[]): RunSeg[] {
   });
 }
 const rc = (at: number, list: [number, RunState | "accepted"][]): Receipt[] => list.map(([s, state]) => (state === "accepted" ? { at: at + s * 1000, state: "done", accepted: true } : { at: at + s * 1000, state }));
+
+/** The comment Pi works on from 58 s: #3 on Redis (element `redis` in the sample diagram, web/scripts/
+ * fidelity/setup.ts). The dev mock shows its pin (comments/CommentLayer.tsx; never saved). */
+export const MOCK_COMMENT = { n: 3, anchor: ["redis"], text: "缓存过期时间是不是太短？" } as const;
+const C3: TurnComment = { n: MOCK_COMMENT.n, anchor: [...MOCK_COMMENT.anchor] };
 
 /** The prototype's scenario at `at` (ms). `now` decides which runs are still running. */
 export function scenario(at: number, now = at + 46_000): WorkRun[] {
@@ -97,10 +103,19 @@ export function scenario(at: number, now = at + 46_000): WorkRun[] {
       ["read", 38, 40.5, { path: "tests/test_users.py", verifies: "smx:T-41", turn: 2 }],
       ["exec", 40.5, 44, { cmd: "pytest tests/test_users.py", verifies: "smx:T-41", turn: 2 }],
       ["think", 44, 45.5, { turn: 2 }],
+      // in API 服务's sub-diagram: 应用入口, then over the bridge to 路由 and down the ladder to 用户模块
+      ["think", 47, 48, { turn: 3 }],
+      ["read", 48, 51, { path: "server/app.py", turn: 3 }],
+      ["write", 51, 56, { path: "server/users.py", turn: 3 }],
+      ["think", 56, 57, { turn: 3 }],
+      // comment #3 on Redis 「缓存过期时间是不是太短？」, handed to Pi (the canvas's most recently active session)
+      ["think", 58, 60.5, { turn: 4, comment: C3 }],
+      ["read", 60.5, 63.5, { path: "server/cache/session.py", turn: 4, comment: C3 }],
+      ["think", 63.5, 66, { turn: 4, comment: C3 }],
     ]),
     receipts: [],
-    running: now < t(45.5),
-    lastAt: t(45.5),
+    running: now < t(66),
+    lastAt: t(66),
     children: [cx, w3],
   };
   const sub: WorkRun = {
