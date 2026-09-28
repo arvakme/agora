@@ -53,8 +53,10 @@ async function waitFor(url: string, ms = 30_000): Promise<boolean> {
 }
 
 console.log(`starting vite dev on :${PORT} …`);
-procs.push(spawn("npx", ["vite", "--port", String(PORT), "--strictPort"], { cwd: WEB, stdio: ["ignore", "pipe", "inherit"], detached: true }));
-if (!(await waitFor(`http://localhost:${PORT}/`))) {
+// Bind and probe 127.0.0.1 explicitly: where `localhost` resolves to ::1 first (Linux
+// containers, some CI images) vite listens on ::1 while Node's fetch dials 127.0.0.1.
+procs.push(spawn("npx", ["vite", "--host", "127.0.0.1", "--port", String(PORT), "--strictPort"], { cwd: WEB, stdio: ["ignore", "pipe", "inherit"], detached: true }));
+if (!(await waitFor(`http://127.0.0.1:${PORT}/`))) {
   console.error("vite dev server did not come up");
   cleanup();
   process.exit(2);
@@ -62,7 +64,7 @@ if (!(await waitFor(`http://localhost:${PORT}/`))) {
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-await page.goto(`http://localhost:${PORT}/?eval`);
+await page.goto(`http://127.0.0.1:${PORT}/?eval`);
 await page.waitForFunction(() => (window as any).__agora?.eval, null, { timeout: 30_000 });
 
 let bad = 0;
