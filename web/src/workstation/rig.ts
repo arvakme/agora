@@ -91,7 +91,14 @@ export class Glide {
       this.v0 = v;
       this.p1 = target;
       this.t0 = now;
-      this.D = Math.min(0.65, 0.34 + Math.abs(target - p) / 900);
+      // Long moves take longer; and a glide retargeted mid-flight takes as long as it needs so that
+      // neither its start nor its end accelerates harder than A (Hermite: a(0) = (6Δ − 4·D·v0) / D²,
+      // a(1) = (2·D·v0 − 6Δ) / D²) — it never brakes or lurches, however often the target moves.
+      const A = 2000;
+      const d = target - p;
+      let D = Math.min(1, 0.42 + Math.abs(d) / 260);
+      while (D < 2.5 && (Math.abs(6 * d - 4 * D * v) > A * D * D || Math.abs(2 * D * v - 6 * d) > A * D * D)) D += 0.05;
+      this.D = D;
     }
     return this.at(now)[0];
   }
@@ -122,8 +129,10 @@ export type WalkPlan = { a: Pt; b: Pt; f: 1 | -1; steps: Step[]; t0: number; t1:
 export const WALK_SPEED = 0.15;
 export const WALK_MIN_MS = 700;
 export const WALK_MAX_MS = 2600;
-/** A beat to turn and shift weight before the first step. */
-export const SET_OFF_MS = 160;
+/** How long a turn takes (from facing one way to the other, through edge-on). */
+export const TURN_MS = 200;
+/** A beat to turn and shift weight before the first step: the turn is over before a foot lifts. */
+export const SET_OFF_MS = 240;
 
 /** Progress along the path at time fraction u: sine ease-in-out (starts and stops gently). */
 const ease = (u: number) => (1 - Math.cos(Math.PI * u)) / 2;
@@ -358,12 +367,24 @@ export function poseTargets(pose: Pose, t: number, since: number, o: { still: bo
 }
 
 /** A worker's springs (smooth hands, lean, head tilt, sway), kept per run between frames. */
-export type Springs = { t: number | null; nx: Spring; ny: Spring; fx: Spring; fy: Spring; lean: Spring; tilt: Spring; sway: Spring; turn: Spring; f: 1 | -1 | 0; prop: Spring; propKind: Prop };
+export type Springs = { t: number | null; nx: Spring; ny: Spring; fx: Spring; fy: Spring; lean: Spring; tilt: Spring; sway: Spring; /** The turn in progress: from `turnFrom` (−1 = still facing the old way) to 1, starting at wall time `turnAt`. */
+  turnFrom: number; turnAt: number; f: 1 | -1 | 0; prop: Spring; propKind: Prop };
 export function makeSprings(): Springs {
   const hand = () => new Spring(3.2, 0.55, 0.4);
   // The body settles with a small, damped overshoot (arriving, standing up from a pose).
   const body = () => new Spring(2.2, 0.5, 0.3);
-  return { t: null, nx: hand(), ny: hand(), fx: hand(), fy: hand(), lean: body(), tilt: new Spring(3, 0.45, 1.2), sway: body(), turn: new Spring(4, 0.8, 0), f: 0, prop: new Spring(4, 0.9, 0), propKind: null };
+  return { t: null, nx: hand(), ny: hand(), fx: hand(), fy: hand(), lean: body(), tilt: new Spring(3, 0.45, 1.2), sway: body(), turnFrom: 1, turnAt: -Infinity, f: 0, prop: new Spring(4, 0.9, 0), propKind: null };
+}
+
+/** Where a turn is at wall time `wall`: −1 … 1, eased (smoothstep), 1 when done. */
+function turnValue(sp: Pick<Springs, "turnFrom" | "turnAt">, wall: number): number {
+  if (sp.turnFrom >= 1) return 1;
+  const dur = (TURN_MS * (1 - sp.turnFrom)) / 2;
+  const u = Math.min(1, Math.max(0, (wall - sp.turnAt) / dur));
+  const e = u * u * (3 - 2 * u);
+  const v = sp.turnFrom + (1 - sp.turnFrom) * e;
+  if (u >= 1) sp.turnFrom = 1;
+  return v;
 }
 
 /** Solved joints in figure space (origin = the root on the ground, facing applied). */
@@ -451,13 +472,23 @@ export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolea
   const tilt = S(sp.tilt, T.tilt);
   const sway = S(sp.sway, T.sway);
 
-  // Turning: when the facing flips, the figure starts mirrored (still facing the old way) and a
-  // spring brings it round through edge-on — a quick turn before it steps off.
+  // Turning: when the facing flips, the figure is redrawn for the new facing but mirrored (so it
+  // still looks the old way) and its horizontal scale eases from −1 through 0 (edge-on) to 1 over
+  // TURN_MS of wall-clock time. Limbs, props and springs all live in facing-local coordinates, so
+  // nothing swings across; a turn reversed half-way continues from where it is. A jump in time
+  // (seek, scrub) faces the right way at once.
   if (sp.f !== f) {
-    if (sp.f !== 0 && !jump) sp.turn.reset(-Math.abs(sp.turn.y || 1));
+    if (sp.f !== 0 && !jump) {
+      sp.turnFrom = -turnValue(sp, wall);
+      sp.turnAt = wall;
+    }
     sp.f = f;
   }
-  const turn = jump ? sp.turn.reset(1) : sp.turn.step(step, 1);
+  if (jump) {
+    sp.turnFrom = 1;
+    sp.turnAt = -Infinity;
+  }
+  const turn = turnValue(sp, wall);
   // Props fade and scale in and out (never pop): the old one shrinks away before the new one grows.
   let propAlpha: number;
   if (jump) {

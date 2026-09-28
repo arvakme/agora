@@ -106,7 +106,9 @@ export class FigureNode {
     const d = (x0: number, y0: number, b: { jx: number; jy: number; ex: number; ey: number }) => `M${f2(x0)} ${f2(y0)}L${f2(b.jx)} ${f2(b.jy)}L${f2(b.ex)} ${f2(b.ey)}`;
     const foot = (b: { ex: number; ey: number }) => `M${f2(b.ex - L(0.6))} ${f2(b.ey)}h${f2(L(3.6))}`;
     // Turning: the whole body is mirrored through edge-on (−1 → 1) around its root.
-    S(this.body, "bd0", "transform", j.turn >= 0.999 ? "" : `scale(${f2(Math.abs(j.turn) < 0.08 ? 0.08 * Math.sign(j.turn || 1) : j.turn)} 1)`);
+    S(this.body, "bd0", "transform", j.turn >= 0.999 ? "" : `scale(${f2(j.turn)} 1)`);
+    // the avatar mark, the dispatcher's badge and the ! / ? never read mirrored mid-turn
+    const un = j.turn < 0 ? " scale(-1 1)" : "";
     S(this.shadow, "sh", "cx", j.px * 0.3);
     const desk = !j.walking && (j.prop === "laptop" || j.prop === "terminal") && j.propAlpha > 0.01;
     S(this.desk, "dk", "display", desk ? "inline" : "none");
@@ -147,7 +149,7 @@ export class FigureNode {
     S(this.torso, "to", "d", `M${f2(j.px)} ${f2(j.py + 1)}L${f2(j.nx)} ${f2(j.ny + 2)}`);
     S(this.legN, "ln", "d", d(j.hipN.x, j.hipN.y, j.legN));
     S(this.footN, "fn", "d", foot(j.legN));
-    S(this.head, "hd", "transform", `translate(${f2(j.hx)} ${f2(j.hy)})`);
+    S(this.head, "hd", "transform", `translate(${f2(j.hx)} ${f2(j.hy)})${un}`);
     const hold = (j.prop === "sheet" || j.prop === "carry") && j.propAlpha > 0.01;
     S(this.prop, "pp", "display", hold ? "inline" : "none");
     if (hold) {
@@ -164,19 +166,23 @@ export class FigureNode {
       S(this.propLines, "pl", "d", j.prop === "sheet" ? `M${-w / 2 + 1.8} 2.8h5M${-w / 2 + 1.8} 5h4M${-w / 2 + 1.8} 7.2h5` : "");
     }
     S(this.armN, "an", "d", d(j.shN.x, j.shN.y, j.armN));
-    if (this.badge) S(this.badge, "bd", "transform", `translate(${f2(j.hx + L(7))} ${f2(j.hy - 6.5)})`);
+    if (this.badge) S(this.badge, "bd", "transform", `translate(${f2(j.hx + L(7))} ${f2(j.hy - 6.5)})${un}`);
     S(this.markG, "mk", "display", j.mark ? "inline" : "none");
     if (j.mark) {
-      S(this.markG, "mk", "transform", `translate(${f2(j.hx + L(this.badge ? -8 : 9))} ${f2(j.hy - 12)})`);
+      S(this.markG, "mk", "transform", `translate(${f2(j.hx + L(this.badge ? -8 : 9))} ${f2(j.hy - 12)})${un}`);
       S(this.markC, "mc", "fill", j.markMuted ? "var(--fg-faint)" : "var(--caution-dot)");
       if (this.markT.textContent !== j.mark) this.markT.textContent = j.mark;
     }
   }
 
   /** Place the figure (screen transform), fade it, dim it (trace). */
-  place(x: number, y: number, scale: number, opacity: number, dim: boolean) {
+  place(x: number, y: number, scale: number, opacity: number, dim: boolean, idle = false) {
     this.set(this.g, "g", "transform", `translate(${f2(x)} ${f2(y)}) scale(${f2(scale)})`);
     this.set(this.g, "g", "opacity", opacity >= 1 ? "1" : f2(opacity));
     this.set(this.g, "g", "data-dim", dim ? "1" : "0");
+    if (this.last.idle !== String(idle)) {
+      this.last.idle = String(idle);
+      this.g.toggleAttribute("data-idle", idle);
+    }
   }
 }

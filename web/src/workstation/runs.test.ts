@@ -74,7 +74,7 @@ describe("runFromTranscript", () => {
 });
 
 describe("pickBubbles / slots", () => {
-  it("gives every busy session a bubble, a sub-agent only when it needs you; needs first", () => {
+  it("gives every session a bubble (idle ones too, last), a sub-agent only when it needs you; needs first", () => {
     const ids = pickBubbles([
       { id: "a", depth: 0, need: false, writing: false, order: 0 },
       { id: "b", depth: 1, need: false, writing: true, order: 1 },
@@ -82,7 +82,7 @@ describe("pickBubbles / slots", () => {
       { id: "d", depth: 0, need: false, writing: true, order: 3 },
       { id: "e", depth: 0, need: false, writing: false, order: 4, idle: true },
     ]);
-    expect(ids).toEqual(["c", "d", "a"]);
+    expect(ids).toEqual(["c", "d", "a", "e"]);
   });
   it("stands figures at one node side by side in tree order", () => {
     const s = slots([

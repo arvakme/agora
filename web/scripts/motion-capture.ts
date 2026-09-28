@@ -53,7 +53,7 @@ async function startSampler(page: Page) {
         const inner = b.firstElementChild as HTMLElement;
         const r = inner.getBoundingClientRect();
         const key = inner.querySelector(".who")?.textContent ?? String(i);
-        els[`bub:${key}`] = [r.x, r.y, b.style.visibility === "hidden" ? 0 : Number(getComputedStyle(b).opacity) * Number(getComputedStyle(inner).opacity)];
+        els[`bub:${key}`] = [r.x, r.y, getComputedStyle(b).visibility === "hidden" ? 0 : Number(getComputedStyle(b).opacity) * Number(getComputedStyle(inner).opacity)];
       });
       const ph = pane.querySelector<HTMLElement>(".ws-tl .mph, .ws-tl .ph");
       if (ph) {
@@ -154,7 +154,7 @@ await capture("bubbles-enter", 18.8, 23.5);
 await capture("handoff-exit", 33, 39.5);
 // Replay: drag the strip's playhead from near now back to the start, then forward again.
 await at(41);
-const box = await page.locator('[data-pane]:not([data-hidden="true"]) .ws-tl .mini').first().boundingBox();
+const box = await page.locator('[data-pane]:not([data-hidden="true"]) .ws-tl .mini, [data-pane]:not([data-hidden="true"]) .ws-tl .track').first().boundingBox();
 await capture(
   "replay-scrub",
   41.2,
