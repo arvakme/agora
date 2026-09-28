@@ -507,6 +507,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
         <span className="ws-cnt" title={tops.map((f) => f.run.name).join("、")} onPointerEnter={(e) => setDayAt(e.currentTarget)} onPointerLeave={() => setDayAt(null)}>
           <span className="stack">{tops.slice(0, 3).map((f) => <RunAvatar key={f.run.id} agent={f.run.agent} size={18} />)}</span>
           <span className="n">{tops.length} 个会话{subs ? ` · ${subs} 个子代理` : ""}</span>
+          <span className="num">{tops.length}</span>
           {waiting.length > 0 && <span className="need"><i className="dot-c" />{waiting.length} 等你</span>}
         </span>
         {dayAt && canvasId && <DaySummary canvasId={canvasId} anchor={dayAt} />}
