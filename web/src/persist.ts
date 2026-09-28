@@ -38,7 +38,7 @@ export type LocalChange = {
  */
 export type Origin = {
   state: "copy" | "recoverable" | "other-copy" | "foreign";
-  agent?: "pi" | "claude" | "codex";
+  agent?: string;
   model?: string;
   effort?: string;
   nativeId?: string | null;

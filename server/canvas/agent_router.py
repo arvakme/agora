@@ -88,6 +88,19 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
     async def catalog():
         return await asyncio.to_thread(agents.catalog, store.root)
 
+    @router.get("/adapters")
+    async def adapter_list(catalog: int = 0, versions: int = 1):
+        """``AgentInfo[]`` (web/src/session/agents.ts): every CLI Agora has an adapter for, its tier
+        and capabilities; ``catalog=1`` adds the session agents' model catalogs, ``versions=0`` skips
+        ``--version`` (cached 10 minutes)."""
+
+        def build() -> list[dict]:
+            from server.canvas.adapters import registry
+
+            return registry.adapter_infos(store.root, with_versions=bool(versions), with_catalog=bool(catalog))
+
+        return await asyncio.to_thread(build)
+
     @router.put("/sessions/{sid}")
     async def bind(sid: str, body: Bind):
         try:

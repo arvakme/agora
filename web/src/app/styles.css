@@ -80,6 +80,7 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .agent-avatar > svg, .agent-avatar > img { display: block; width: calc(var(--av) * var(--mark, 0.6)); height: calc(var(--av) * var(--mark, 0.6)); }
 .agent-avatar[data-agent="pi"] { --mark: 0.46; }
 .agent-avatar[data-agent="claude"] { --mark: 0.62; }
+.agent-avatar > .agent-initial { font-size: calc(var(--av) * 0.46); font-weight: 600; line-height: 1; color: var(--ink, currentColor); }
 .agent-avatar[data-agent="codex"] { --mark: 0.7; }
 .avatar[data-who="system"] { --icon: var(--caution); }
 

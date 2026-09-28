@@ -17,7 +17,7 @@ import { ProcessFold, TrajectoryView, UsageMeta } from "./TrajectoryView";
 import { buildTurns, sumUsage, type TrajTurn } from "./trajectoryModel";
 import { SPRING } from "../comments/motion";
 import { Composer } from "./Composer";
-import { AGENT_KINDS, AGENT_NAMES, agents, effortChoices, useAgents, type AgentKind, type Catalog, type TerminalApp, type TerminalApps } from "./agents";
+import { AGENT_NAMES, agents, effortChoices, forkHeadless, loadAdapters, sessionKinds, useAgents, type AgentKind, type Catalog, type TerminalApp, type TerminalApps } from "./agents";
 import { AgentAvatar } from "./AgentAvatar";
 import { Picker } from "./Picker";
 import { effortGroups, modelGroups } from "./pickerModel";
@@ -136,11 +136,14 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const waiting = agentChoice.pending(sessionId);
+  // The session agents (tier T1) from the server's adapter registry; the built-in three until it answers.
+  const [kinds, setKinds] = useState<AgentKind[]>(sessionKinds());
   useEffect(() => {
     void agents.catalog().then(setCat).catch((e) => setErr(String(e)));
+    void loadAdapters().then(() => setKinds(sessionKinds()));
   }, []);
   useEffect(() => {
-    if (cat) setModel(cat[kind].default || cat[kind].featured[0] || "");
+    if (cat?.[kind]) setModel(cat[kind].default || cat[kind].featured[0] || "");
   }, [cat, kind]);
   const c = cat?.[kind];
   // The levels this model really takes (from the CLI's own catalog); switching model starts on its default.
@@ -181,11 +184,11 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
           </p>
         )}
         <div className="sp-agents" role="radiogroup" aria-label="Agent">
-          {AGENT_KINDS.map((k) => (
-            <button key={k} role="radio" aria-checked={kind === k} data-on={kind === k} disabled={cat ? !cat[k].installed : false} onClick={() => setKind(k)}>
+          {kinds.map((k) => (
+            <button key={k} role="radio" aria-checked={kind === k} data-on={kind === k} disabled={cat ? !cat[k]?.installed : false} onClick={() => setKind(k)}>
               <AgentAvatar kind={k} size={40} />
-              <span>{AGENT_NAMES[k]}</span>
-              {cat && !cat[k].installed && <em>未安装</em>}
+              <span>{AGENT_NAMES[k] ?? k}</span>
+              {cat && !cat[k]?.installed && <em>未安装</em>}
             </button>
           ))}
         </div>
@@ -499,7 +502,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
       {fork && !copyOf && (
         <div className="notice sp-lost-note" role="status">
           <b>分叉</b>
-          <span>{binding.agent === "codex" ? "Codex 只能在终端里分叉：点「在终端打开」，在终端里接着说；新的原生会话会自动接到这里。" : `下一条消息会从原来的会话（${fork.from.slice(0, 8)}）分出一个新的原生会话继续，之前的对话都在。`}</span>
+          <span>{!forkHeadless(binding.agent) ? `${AGENT_NAMES[binding.agent] ?? binding.agent} 只能在终端里分叉：点「在终端打开」，在终端里接着说；新的原生会话会自动接到这里。` : `下一条消息会从原来的会话（${fork.from.slice(0, 8)}）分出一个新的原生会话继续，之前的对话都在。`}</span>
         </div>
       )}
       {copyOf ? (

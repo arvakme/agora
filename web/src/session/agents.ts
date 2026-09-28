@@ -6,9 +6,66 @@
 import { useSyncExternalStore } from "react";
 import type { Origin } from "../persist";
 
-export type AgentKind = "pi" | "claude" | "codex";
+/**
+ * A CLI Agora has an adapter for (server/canvas/adapters/). Any string: the server's adapter
+ * registry is the list (`GET /api/agent/adapters` → `AgentInfo[]`); the page knows nothing
+ * CLI-specific beyond these fallbacks for before that list has loaded.
+ */
+export type AgentKind = string;
+export type Tier = "T1" | "T2" | "T3" | "T0";
+/** One CLI as the server's adapter registry describes it (server/canvas/adapters/registry.py `info`). */
+export type AgentInfo = {
+  kind: AgentKind;
+  name: string;
+  /** T1 session agent (picker), T2 observed (trajectory, read-only), T3 receipts only, T0 inferred. */
+  tier: Tier;
+  maxTier: Tier;
+  installed: boolean;
+  version?: string;
+  /** Versions the adapter was tested with, e.g. "0.128–<0.158". */
+  tested: string;
+  testedSpec?: string;
+  /** Notify-only for now: the tier drift would take it to, and why (`agora doctor --agents`). */
+  degraded?: { from: Tier; to: Tier; reason: string; trusted?: boolean } | null;
+  drift?: { unknown: Record<string, number>; records: number; versionOk: boolean | null } | null;
+  caps: { headless: boolean; terminal: boolean; catalog: boolean; subagents: boolean; forkHeadless: boolean; cost: boolean; waits: "native" | "inferred" | "none" };
+  icon: { kind: "mark" | "svg" | "bitmap"; src: string };
+  /** Where its native conversations live, for people. */
+  logDir: string;
+  /** Command that deletes a native session by hand ("{id}" = its id); null = remove the log file. */
+  deleteCommand: string | null;
+  seedmuxNames: string[];
+  catalog?: CatalogEntry;
+};
+/** Fallbacks until `/api/agent/adapters` answers (and for older servers). */
 export const AGENT_NAMES: Record<AgentKind, string> = { pi: "Pi", claude: "Claude Code", codex: "Codex" };
 export const AGENT_KINDS: AgentKind[] = ["pi", "claude", "codex"];
+const FALLBACK: Record<string, Pick<AgentInfo, "logDir" | "deleteCommand"> & { forkHeadless: boolean }> = {
+  pi: { logDir: "~/.pi/agent/sessions/", deleteCommand: null, forkHeadless: true },
+  claude: { logDir: "~/.claude/projects/", deleteCommand: null, forkHeadless: true },
+  codex: { logDir: "~/.codex/sessions/", deleteCommand: "codex delete {id}", forkHeadless: false },
+};
+let adapterList: AgentInfo[] | null = null;
+let adaptersP: Promise<AgentInfo[]> | null = null;
+/** The registry's AgentInfo list (fetched once per page; `?versions=0`: no `--version` probes). */
+export function loadAdapters(): Promise<AgentInfo[]> {
+  adaptersP ??= fetch("/api/agent/adapters?versions=0")
+    .then((r) => (r.ok ? (r.json() as Promise<AgentInfo[]>) : []))
+    .then((list) => {
+      adapterList = Array.isArray(list) ? list : [];
+      for (const a of adapterList) AGENT_NAMES[a.kind] = a.name;
+      return adapterList;
+    })
+    .catch(() => (adapterList = []));
+  return adaptersP;
+}
+export const agentInfo = (kind: AgentKind | undefined): AgentInfo | undefined => (kind ? adapterList?.find((a) => a.kind === kind) : undefined);
+export const agentName = (kind: AgentKind | undefined): string => (kind ? (agentInfo(kind)?.name ?? AGENT_NAMES[kind] ?? kind) : "Agent");
+/** The session agents (T1) to offer in the picker, in the registry's order. */
+export const sessionKinds = (): AgentKind[] => (adapterList?.length ? adapterList.filter((a) => a.tier === "T1").map((a) => a.kind) : AGENT_KINDS);
+export const logDirOf = (kind: AgentKind | undefined): string => agentInfo(kind)?.logDir || (kind && FALLBACK[kind]?.logDir) || "CLI 自己的目录";
+export const deleteCommandOf = (kind: AgentKind | undefined): string | null => agentInfo(kind)?.deleteCommand ?? (kind ? FALLBACK[kind]?.deleteCommand : null) ?? null;
+export const forkHeadless = (kind: AgentKind | undefined): boolean => agentInfo(kind)?.caps.forkHeadless ?? (kind ? FALLBACK[kind]?.forkHeadless : undefined) ?? true;
 
 /**
  * `started`: the native session exists (it ran once); from then on it is only ever resumed.
@@ -220,6 +277,7 @@ let source: EventSource | null = null;
 /** Subscribe to the project's agent events; this page executes canvas bridge requests. */
 export function connectAgents() {
   if (source) return;
+  void loadAdapters();
   source = new EventSource("/api/agent/events?executor=1");
   source.onmessage = (m) => {
     try {

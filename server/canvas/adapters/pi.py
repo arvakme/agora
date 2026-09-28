@@ -237,7 +237,9 @@ class PiAdapter(Adapter):
     seedmux_names = ("pi",)
     icon = "pi"
     log_hint = "~/.pi/agent/sessions/--<目录>--/<时间>_<id>.jsonl"
-    delete_hint = "rm ~/.pi/agent/sessions/--<目录>--/*_<id>.jsonl"
+    log_dir = "~/.pi/agent/sessions/"
+    has_cost = True
+    waits = "inferred"
 
     assigns_id = "agora"
     can_fork_headless = True
