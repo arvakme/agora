@@ -1,6 +1,6 @@
 # CLI 适配层：一个 CLI 一个文件，按能力分档
 
-把「接一个 coding agent CLI」拆成可以分别实现的**能力**（找会话、读日志、分类工具、子 agent、无头运行、终端、模型目录、移动后怎么续），Agora 按一个 CLI 实现了哪些能力自动算出它的**档位**。现有的 Pi / Claude Code / Codex 原样搬进来（对照测试保证逐条相同），前端不再认工具名和 CLI 名字；每个适配器声明测过的版本，带按版本录制的样本和契约测试，`agora doctor --agents` 报告版本漂移和不认识的日志记录（只提示，不降级）。
+把「接一个 coding agent CLI」拆成可以分别实现的**能力**（找会话、读日志、分类工具、子 agent、无头运行、终端、模型目录、移动后怎么续），Agora 按一个 CLI 实现了哪些能力自动算出它的**档位**。现有的 Pi / Claude Code / Codex 原样搬进来（对照测试保证**原有输出**逐条相同；工具事实与子 agent 条目是有意的新增，见 §4），前端不再认工具名和 CLI 名字；每个适配器声明测过的版本，带按版本录制的样本和契约测试，`agora doctor --agents` 报告版本漂移和不认识的日志记录（只提示，不降级）。
 
 实现：`server/canvas/adapters/`。旧入口 `agents.py`、`transcript.py` 保留原有名字，转发到适配器。
 
@@ -82,7 +82,14 @@ tool.spawn      // { childKind?, childId?, taskId?, pane?, role?, state?, via: "
 
 前端 `toolActivity(item)` 优先用 `tool.activity`，工位时间线优先用 `tool.reads[0]` 和 `tool.waitsUser`；旧快照没有这些字段时退回 `activityOf(name)` / `readPath(input)`。
 
-Codex 的 shell 读文件：先用 Codex 自己写的 `parsed_cmd`（`read` 带 path、`search`、`list_files`），剩下 `unknown` 的交给 `shell_reads`（按 `&& || ; |` 和换行拆开，跳过 heredoc，跟随 `cd`，认 `rtk read` / `rtk proxy`）。命令里只要有一段不是读或搜，activity 就是 `commands`，但读到的文件仍然列在 `reads` 里。
+Codex 的 shell 读文件：先用 Codex 自己写的 `parsed_cmd`（`read` 带 path、`search`、`list_files`），剩下 `unknown` 的交给 `shell_reads`（按 `&& || ; |` 和换行拆开，跳过 heredoc，跟随 `cd`，认 `rtk read` / `rtk proxy`）。命令里只要有一段不是读或搜，activity 就是 `commands`，但读到的文件仍然列在 `reads` 里。重定向：`>` / `>>` 的目标是写、不是读（`cat > new.py <<'EOF'`、`head -5 a.py > b.py` 都是命令，后者只读 `a.py`）；`< a.py` 算读；`2>&1` 不拆命令。Seedmux 派发只认程序是 `smx-team`、子命令是 `spawn` / `assign` 的那次调用（按 shlex 解析，不是找子串）。
+
+**有意的行为变化**（不是「零变化」）：原有的输出字段逐条不变（对照测试），但下面这些是新增，会改变页面上的分类：
+
+- Codex 用 shell 读文件（`sed -n`、`cat`、`nl`、`rg`…）原来一律算「执行命令」，现在按 `parsed_cmd` / shell 解析算「读」或「搜」，工位时间线上变成读片段、带文件路径；
+- `waitsUser` 的调用（AskUserQuestion、ExitPlanMode、request_user_input…）在工位时间线上一律是「等待用户」片段，不再按名字猜；
+- Codex 的子 agent 调用成为新的工具条目：`SubAgentActivity(started)`（0.153+）和 `CollabAgentToolCall`（0.157，`spawn_agent` / `wait` / `send_input` / `close_agent`），activity 都是 `subagents`，`spawn_agent` 带 `spawn.childId`；
+- 各 CLI 的 `activity` 由服务端给出，前端的 `activityOf` / `readPath` 只剩旧快照兜底。
 
 ## 5. 接口
 
@@ -153,17 +160,24 @@ type AgentRun = {
 
 前端类型与 `fetchRuns(sessionId, {depth, canvas, items, receipts})` 在 `web/src/session/agents.ts`；**还没有界面消费它**（工位视图的子小人、系绳、子泳道由 UI 那边接着做，§9）。
 
+### 5.0 安全
+
+- **原生 id** 一律过 `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`（且不含 `..`）：`/runs` 的 `native=`、每个适配器的 `locate`、工单里的 `sid`。不合格的 id 永远到不了路径或 glob。
+- `kind=&native=` 只接受这个项目根和它的 git worktree 下的会话（各适配器的 `sessions_for`），别的项目的会话返回 404；`canvas=` 用 store 的画布 id 规则。
+- owner 应用只回应本机 Host（`127.0.0.1`、`localhost`、`::1`、本机名，另可用 `AGORA_ALLOWED_HOSTS` 加）：别的 Host 返回 421、WebSocket 以 1008 关闭，防 DNS rebinding。分享网关是独立应用，不受影响。
+
 ### 5.1 Seedmux worker（T3 回执）
 
 用户的常规用法是**一个主 agent 编排多个子 agent**（两个顶层 agent 同时改一个项目会被禁止），所以 `/runs?session=<主会话>` 把主会话经 Seedmux 派出的 worker 也放进同一棵树，worker 自己的原生子 agent、worker 再派出的 worker 也一样。
 
-- **只读**（用户定）：`~/.seedmux/team/tasks/T-*/meta.json` 与 `delivery.json` 的核心键（`META_KEYS`、`DELIVERY_KEYS`）、`reply.md` 的前 1200 字节，外加每 15 秒至多一次 `GET /panes`（找没写 sid 的 worker 的 pane）。绝不 send / capture / spawn / wake。只收 `meta.cwd` 在项目根、它的 git worktree（`git worktree list`）或其子目录下的工单。`AGORA_SEEDMUX_TASKS` 可改目录，`AGORA_SEEDMUX_PANES=0` 关掉 `/panes`（测试用）。
+- **只读**（用户定）：`~/.seedmux/team/tasks/T-*/meta.json` 与 `delivery.json` 的核心键（`META_KEYS`、`DELIVERY_KEYS`；超过 256 KB 不读，符号链接的目录和文件跳过）、`reply.md` 的前 1200 字节，外加每 15 秒至多一次 `GET /panes`（找没写 sid 的 worker 的 pane）。绝不 send / capture / spawn / wake。只收 `meta.cwd` 在项目根、它的 git worktree（`git worktree list`）或其子目录下的工单。`AGORA_SEEDMUX_TASKS` 可改目录，`AGORA_SEEDMUX_PANES=0` 关掉 `/panes`（测试用）。
 - **连到父 run**，证据从强到弱：
   1. 父 run 自己的日志里，`smx-team spawn/assign` 打印的 `task=T-xx pane=<UUID>`（工具事实的 `spawn.taskId`；`toolCallId` 就是那次 Bash 调用）。只认命令里跑了 `smx-team` 的那次调用的输出：`cat` / `grep` 旧日志打印出来的同样一行不算；
-  2. `meta.from_pane` 是 Agora 记下的持有这个会话的 Seedmux pane（`.agora/run/seedmux/agora-<sid>.json`），或是树里某个 worker 的 `to_pane`（worker 派出的 worker）；
+  2. `meta.from_pane` 是 Agora 记下的持有这个会话的 Seedmux pane（`.agora/run/seedmux/agora-<sid>.json`，且工单在会话活跃期间创建），或是树里某个 worker 的 `to_pane`——**只在那个 worker 占着这个 pane 的时间窗里**（派发到回复，或最后活动后 5 分钟）。Seedmux 会复用 pane（本机 869 张工单里 55 个 pane 被复用过，一个复用了 35 次），所以每个 pane 的每段占用都记下来，按时间匹配；
   3. `inferred`：`from_pane` 为空（派发者在 Agora 自己的 tmux 里）、cwd 对得上、在主会话活跃期间（首条记录到末条后 5 分钟）创建，且当时没有这个项目的别的 Agora 会话活跃。
-- **worker 本身**：`delivery.sid`（或 `native.sid`、`/panes` 里 `to_pane` 的 sid）加上它的 CLI 有 T1/T2 适配器、找得到日志 → 带完整轨迹的原生 run（`tier: "T2"`，它的原生子 agent 继续展开）；否则是 `smx:T-xx`（`tier: "T3"`，`kind` 是工单的 agent 名），只有状态和回执。v1 里 Devin、Cursor、Grok 的 worker 都是后者。
+- **worker 本身**：`delivery.sid` 或 `native.sid`（都过原生 id 检查）；没有时才用 `/panes` 里 `to_pane` 当前的 sid，而且只在这张工单是这个 pane（在所有项目里）最新的一张、还没有回复时——旧工单绝不拿 pane 现在的会话。找到的日志还必须记录它在项目根或其 worktree 里跑（`log_cwd`），否则不接（证据里写明）。这样都满足、CLI 有 T1/T2 适配器 → 带完整轨迹的原生 run（`tier: "T2"`，它的原生子 agent 继续展开）；否则是 `smx:T-xx`（`tier: "T3"`，`kind` 是工单的 agent 名），只有状态和回执。v1 里 Devin、Cursor、Grok 的 worker 都是后者。
 - **统一状态**：`meta.status` 的 `replied:done|failed|blocked` → `done|failed|blocked`（`replied:unknown` → `unknown`）；否则 `delivery.state`：`awaiting_ack`、`ack_overdue` → `dispatched`，`running_observed` → `running`，`waiting` → `waiting`，`idle_without_reply` → `idle_no_reply`，`exited_without_reply` → `exited`，`session_changed`，`reply_unconfirmed` / `unknown` → `unknown`；只有 `ack_at` → `acknowledged`；没有 delivery 记录的旧工单只在创建后 60 秒内算 `dispatched`，之后 `unknown`（**不画成运行中**）。有原生日志且 2 分钟内在写的 worker 算 `running`。
+- **一个 worker 会话服务多张工单**（`resume_session`）：同一个 run，`receipts` 里按时间列出每一张，`receipt` 是最新一张；父 run 上每张工单都有自己的 dispatch / handoff 时刻。
 - **回执**：
 
 ```ts
@@ -184,14 +198,13 @@ type Receipt = { taskId: string; agent: string; cwd?: string; createdAt?: number
 
 **测过的版本**：每个适配器的 `tested`。**日志词表**：每个 Projector 写明 `handled_types`（投影成条目的）、`ignored_types`（看过、有意不显示的）、`gap_types`（认识但还没处理的，比如 Codex 0.149 以前的旧事件格式）；三者之外的都算漂移。词表按本机 2026-09-28 的全部日志整理（Claude 2.1.267–2.1.283、Codex 0.125–0.157、Pi 格式 v3、Grok 1.0.41）。
 
-**`agora doctor --agents`**（`--json` 可选）：对每个适配器跑 `--version` 对照 `tested`；抽样最近 12 份原生日志（Codex 另按索引里每个 CLI 版本各取最新一份），统计不认识的记录类型和已知缺口；读日志内的格式版本；打印一张表和每个 CLI 的「怎么办」。只读、只在本机。有漂移或版本不在范围内时退出码 1。
+**`agora doctor --agents`**（`--json` 可选）：对每个适配器跑 `--version` 对照 `tested`；抽样最近 12 份原生日志（Codex 另按索引里每个 CLI 版本各取最新一份），统计不认识的记录类型和已知缺口；读日志内的格式版本；打印一张表和每个 CLI 的「怎么办」。只读、只在本机。退出码：**1** 只在某个已安装的 CLI 会被降级（版本不在测过的范围，或不认识的记录超过 5%）且项目没有写 `trust_untested` 时；**0** 其余情况，包括低于阈值的不认识记录（输出里标「只提示」）。
 
 ```
 CLI          安装  版本     测过的范围    档位  日志格式  抽样              不认识的记录
 Pi           是    0.87.1   0.80–<0.88    T1    v3        12 份 / 772 条    —
 Claude Code  是    2.1.283  2.1.267–<2.2  T1    —         12 份 / 15381 条  —
-Codex        是    0.157.1  0.149–<0.158  T1    —         40 份 / 17900 条  world_state×45
-· Codex：不认识的记录类型：world_state ×45（轨迹里被跳过）
+Codex        是    0.157.1  0.149–<0.158  T1    —         40 份 / 17900 条  —
 · Codex：认识但还没处理的记录：event_msg/agent_message ×562、event_msg/user_message ×114、…
 ```
 
@@ -209,7 +222,7 @@ trust_untested = true
 **样本与契约测试**：
 
 - 目录 `tests/fixtures/agents/<kind>/<version>/`：`log.jsonl`（Grok 是 `updates.jsonl`）、`stream.jsonl`、`meta.json`；子 agent 的日志在 `subagents/`（Claude）或 `children/`（Codex、Grok）。旧版本保留。`unversioned/` 是 2026-09-27 去掉了版本字段的旧样本。
-- `tests/test_adapter_contracts.py` 参数化到每个 kind × 每个版本：临时 HOME 里找得到会话；投影出一轮；**没有 `meta.json` 的 `expected_unknown` 之外的未知记录**；`expected` 写的文件（整棵 run 树里）、shell 命令、子 agent 数都满足。每个 T1/T2 适配器必须至少有一份样本。
+- `tests/test_adapter_contracts.py` 参数化到每个 kind × 每个版本（开关后面的 v2 适配器由测试打开开关一起跑，所以 Grok 的样本也在 CI 里）：临时 HOME 里找得到会话；投影出一轮；**没有 `meta.json` 的 `expected_unknown` 之外的未知记录**；`expected` 写的文件（整棵 run 树里）、shell 命令（按各 CLI 的 shell 工具名计数，或 `meta.json` 的 `command_tools`）、子 agent 数都满足。每个 T1/T2 适配器必须至少有一份样本。
 - `tests/test_adapter_parity.py`：`tests/legacy/` 冻结了搬迁前（12f78eb）的实现，对所有样本比对新旧输出逐条相同（新增的工具事实键和新增的 spawn 条目剥掉后比较）。`AGORA_PARITY_REAL=1` 另拿本机最新的真实日志只读比对。
 
 **录样本**：`agora doctor --agents --record <kind>`（= `uv run python scripts/record_agent_fixture.py <kind>`）。在 `/tmp/agora-record-<kind>-*` 的空 git 目录里用最便宜的模型跑固定提示（一个子 agent 写 `hello.txt`，自己再 `ls`），然后：
@@ -258,5 +271,4 @@ v1 = 上面 §1–§7（步骤 0–6 与 8：适配层、工具事实、漂移�
 8. **漂移后续**：观察一周没有误报后，决定是否打开真的降级（`degraded.enforced`）；面板顶部的一次性提示（「Codex 0.158 出现了 Agora 不认识的记录…」）；可选的周任务重录（默认关，花钱）。
 9. **已知缺口**：
    - Codex 0.149 以前的旧格式（`event_msg/user_message`、`agent_message`、`exec_command_end`、`patch_apply_end`…）只投影出回合边界，没有消息和工具调用：老会话的轨迹不全（`gap_types`，doctor 会报）。
-   - Codex 的 `world_state`（0.144 起，每轮的上下文快照）没有投影，一直作为未知记录报出，等决定是否列进 `ignored_types`。
-   - 进度指针的 `specificity`（`codeLinks.ts`，服务端照搬）把不带通配符的目录 glob（`server`）当成字面量，排在更深的 `server/canvas/**` 前面：可能与文档「最具体的胜出」不符，待确认。
+   - Codex 的 `world_state`（0.144 起，每轮的上下文快照）有意不投影（`ignored_types`；模型与强度仍从 `turn_context` 来）。
