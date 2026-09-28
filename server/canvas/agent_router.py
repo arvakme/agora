@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from server.canvas import agents, nested
+from server.canvas import adapters, agents, nested
 from server.canvas.project import Gone, Locked
 from server.canvas.sessions import AgentHub, Busy, Copied, NoPage, agora_prompt, canvas_names
 from server.canvas.terminal import TerminalError
@@ -102,8 +102,8 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
             b = store.bind(sid, agent=body.agent, model=body.model, effort=body.effort, native_id=body.nativeId, at=int(time.time() * 1000), started=body.started)
         except Exception as e:
             return fail(e)
-        # Claude and Pi accept the id up front; Codex assigns its own on the first run.
-        if not b.get("nativeId") and body.agent in ("claude", "pi"):
+        # Claude and Pi accept the id up front (``assigns_id == "agora"``); Codex assigns its own on the first run.
+        if not b.get("nativeId") and adapters.need(body.agent).assigns_id == "agora":
             import uuid
 
             b = store.set_native(sid, str(uuid.uuid4()), reason="bind")

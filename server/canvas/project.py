@@ -102,7 +102,13 @@ class Gone(Exception):
     ``.agora/`` at the old path."""
 
 
-AGENT_KINDS = ("pi", "claude", "codex")
+def _session_kinds() -> tuple[str, ...]:
+    from server.canvas.adapters import session_kinds
+
+    return session_kinds()
+
+
+AGENT_KINDS = _session_kinds()  # the CLIs a session can be bound to (tier T1, server/canvas/adapters/)
 
 
 def version_of(data: bytes | None) -> str | None:

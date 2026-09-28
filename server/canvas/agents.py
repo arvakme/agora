@@ -161,7 +161,8 @@ def duplicates_note(kind: str, native_id: str, lookup: LogLookup) -> dict[str, A
 def native_problem(kind: str, native_id: str, lookup: LogLookup) -> str:
     name = NAMES.get(kind, kind)
     if lookup.state == "missing":
-        why = "可能被 Claude Code 的 30 天自动清理删掉了，或者这个项目是从别的机器拿来的。" if kind == "claude" else "日志可能被删除或移走了，或者这个项目是从别的机器拿来的。"
+        days = getattr(adapters.get(kind), "prunes_logs_after_days", None)
+        why = f"可能被 {name} 的 {days} 天自动清理删掉了，或者这个项目是从别的机器拿来的。" if days else "日志可能被删除或移走了，或者这个项目是从别的机器拿来的。"
         return f"{name} 的原生会话 {native_id} 在这台机器上找不到了。{why}Agora 不会用同一个 id 新开对话。"
     if lookup.state == "ambiguous":
         return f"{name} 的原生会话 {native_id} 找到了 {len(lookup.candidates)} 份记录，Agora 不确定该跟哪一份，先不续接。"
@@ -370,8 +371,10 @@ def install_skill(root: Path, agents: list[str], copy: bool = False) -> list[dic
     import shutil
 
     done: list[dict[str, str]] = []
-    if "pi" in agents:
-        done.append({"path": str(SKILL_DIR), "state": "pi loads it with --skill on every launch", "for": "pi"})
+    for k in agents:  # a CLI without a project skills folder (Pi) gets `--skill <dir>` on every launch
+        a = adapters.get(k)
+        if a is not None and k in KINDS and a.project_skill_dir is None:
+            done.append({"path": str(SKILL_DIR), "state": f"{k} loads it with --skill on every launch", "for": k})
     rels = sorted({SKILL_DIRS[x] for x in agents if x in SKILL_DIRS})
     for rel in rels:
         target = root / rel / "agora-canvas"
@@ -417,7 +420,7 @@ def catalog(root: Path | None = None, ttl_s: float = 600) -> dict[str, Any]:
     project: Pi's model scope can come from its ``.pi/settings.json``."""
     out = {}
     for kind in KINDS:
-        key = (kind, str(root) if root is not None and kind == "pi" else "")
+        key = (kind, str(root) if root is not None and adapters.need(kind).catalog_per_project else "")
         hit = _catalog_cache.get(key)
         if hit is None or time.time() - hit[0] > ttl_s:
             hit = (time.time(), adapters.need(kind).catalog(child_env(), root))

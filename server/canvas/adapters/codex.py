@@ -288,6 +288,7 @@ class CodexAdapter(Adapter):
 
     assigns_id = "cli"
     can_fork_headless = False
+    terminal_fork = "codex fork"
     Mapper = CodexStream
     survives_move = True
 

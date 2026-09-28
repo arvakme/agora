@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from server.canvas import agents, nested, schemas
+from server.canvas import adapters, agents, nested, schemas
 from server.canvas.local import Local
 from server.canvas.model_view import model_view, versions
 from server.canvas.project import ProjectStore
@@ -485,7 +485,8 @@ class AgentHub:
         look = agents.locate_log(b["agent"], b.get("nativeId"), self.store.root) if b.get("nativeId") else agents.LogLookup("missing")
         if look.state == "found":
             raise ValueError("原生会话还在，不需要开新的；直接接着说")
-        new = str(uuid.uuid4()) if b["agent"] in ("claude", "pi") else None
+        # A CLI that takes Agora's id up front gets a fresh one now; one that assigns its own (Codex) on the first run.
+        new = str(uuid.uuid4()) if adapters.need(b["agent"]).assigns_id == "agora" else None
         self.store.rebind(sid, new, reason="fresh-after-loss", started=False)
         lv = self._get(sid)
         lv.tail, lv.native = None, None
@@ -494,9 +495,11 @@ class AgentHub:
         return self.store.read_binding(sid) or {}
 
     def stale(self, sid: str, b: dict[str, Any]) -> dict[str, Any] | None:
-        """Claude Code deletes session logs untouched for 30 days (``cleanupPeriodDays``): warn from 20."""
+        """A CLI that deletes untouched session logs itself (Claude Code: 30 days, ``cleanupPeriodDays``;
+        the adapter's ``prunes_logs_after_days``): warn from ``STALE_DAYS``."""
         lv = self._get(sid)
-        if b.get("agent") != "claude" or lv.tail is None:
+        a = adapters.get(b.get("agent"))
+        if a is None or a.prunes_logs_after_days is None or lv.tail is None:
             return None
         try:
             idle = (time.time() - os.path.getmtime(lv.tail.path)) / 86400
@@ -564,15 +567,15 @@ class AgentHub:
                 if not alive:
                     lv.pane_since = None
                 self._status(sid)
-            # Codex assigns its id when the interactive session starts: adopt the new rollout.
-            if b["agent"] == "codex" and not b.get("nativeId") and not b.get("pendingFork") and lv.pane_since:
+            # A CLI that assigns its own id (Codex) does so when the interactive session starts:
+            # adopt the new native session.
+            if adapters.need(b["agent"]).assigns_id == "cli" and not b.get("nativeId") and not b.get("pendingFork") and lv.pane_since:
                 taken = {x.get("nativeId") for x in bound.values()}
-                for tid, _ in agents.codex_rollouts_since(self.store.root, lv.pane_since):
-                    if tid not in taken:
-                        self.store.set_native(sid, tid)
-                        self.note_bind(sid, "bind")
-                        self._status(sid)
-                        break
+                tid = agents.new_native_since(b["agent"], self.store.root, lv.pane_since, taken)
+                if tid:
+                    self.store.set_native(sid, tid)
+                    self.note_bind(sid, "bind")
+                    self._status(sid)
             # An interactive fork (``claude --fork-session``, ``pi --fork``, ``codex fork``) writes a new
             # native session in this project: adopt it as the session's native id.
             if b.get("pendingFork") and lv.pane_since:
@@ -705,8 +708,8 @@ class AgentHub:
             fork = b.get("pendingFork")
             try:
                 self.check_native(sid, b)
-                if fork and b["agent"] == "codex":
-                    raise ValueError("Codex 只能在终端里分叉（codex fork）：点「在终端打开」，在终端里接着说")
+                if fork and not adapters.need(b["agent"]).can_fork_headless:
+                    raise ValueError(f"{adapters.need(b['agent']).name} 只能在终端里分叉（{adapters.need(b['agent']).terminal_fork}）：点「在终端打开」，在终端里接着说")
             except (agents.NativeMissing, Copied, ValueError) as e:
                 lv.last_error = str(e)
                 self.broadcast({"t": "done", "sessionId": sid, "sendId": p.send_id, "text": "", "error": str(e), "route": "headless", **({"native": e.public()} if isinstance(e, agents.NativeMissing) else {})})
