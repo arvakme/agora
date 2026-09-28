@@ -69,7 +69,8 @@ const PX = { lane: 30, sub: 20, rc: 5, ruler: 18 };
 const STRIP_H = 34;
 /** The prototype's axis: a stretch with nobody working for more than 8 s collapses to 88 px. */
 const AXIS = { gapMs: 8_000, gapPx: 88 };
-const SPEEDS = [1, 2, 4];
+/** Replay speeds: below 1× the whole scene slows down (a slow-motion film); above it only the timeline hurries. */
+const SPEEDS = [0.25, 0.5, 0.75, 1, 2, 4];
 /** How long the hover card stays after the pointer leaves its segment (time to move into it). */
 const TIP_GRACE_MS = 180;
 const TIP_W = 300;
@@ -578,7 +579,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
               <button className="ibtn" onClick={() => stepEvent(1)} aria-label="下一步" title="下一步（]）"><span style={{ display: "inline-flex", transform: "scaleX(-1)" }}><IconBack size={16} /></span></button>
               <div className="segc" role="group" aria-label="回放速度">
                 {SPEEDS.map((s) => (
-                  <button key={s} aria-pressed={replay.speed === s} onClick={() => (setSpd(s), clock.speed(s))}>{s}×</button>
+                  <button key={s} aria-pressed={replay.speed === s} aria-label={`${s} 倍速`} onClick={() => (setSpd(s), clock.speed(s))}>{String(s).replace(/^0\./, ".")}×</button>
                 ))}
               </div>
               <button className="btn primary" onClick={() => clock.live()}>回到实时</button>
