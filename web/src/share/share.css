@@ -3,7 +3,7 @@
 .share-pop {
   position: absolute; right: 0; top: calc(100% + 8px); z-index: 60; width: min(420px, calc(100vw - 32px));
   max-height: calc(100vh - 80px); overflow-x: hidden; overflow-y: auto; border-radius: var(--r-xl); background: var(--surface);
-  box-shadow: var(--edge), var(--lift-2); transform-origin: top right;
+  box-shadow: var(--frame); transform-origin: top right;
 }
 .share-new { padding: var(--space-6) var(--space-6) var(--space-5); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-5); }
 .share-new > * { min-width: 0; }
@@ -12,7 +12,7 @@
 .share-field { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: center; gap: var(--space-4); font-size: var(--text-sm); }
 .share-field > span { color: var(--fg-muted); }
 .share-field select, .share-custom input {
-  height: var(--control-md); padding: 0 var(--space-4); border: 0; border-radius: var(--r-sm); background: var(--well);
+  height: var(--control-md); padding: 0 var(--space-4); border: 0; border-radius: var(--r-sm); background: transparent; box-shadow: var(--box);
   color: var(--fg); font: inherit; font-size: var(--text-md); min-width: 0;
 }
 .share-seg { flex-wrap: wrap; justify-self: start; }
@@ -27,7 +27,7 @@
 .share-err { margin: 0; color: var(--negative); font-size: var(--text-sm); overflow-wrap: anywhere; }
 .share-made { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
 .share-made p { margin: 0; color: var(--fg-muted); font-size: var(--text-xs); }
-.share-link { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); border-radius: var(--r-sm); background: var(--code-surface); box-shadow: var(--edge); }
+.share-link { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); border-radius: var(--r-sm); background: var(--code-surface); box-shadow: var(--box); }
 .share-link code { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: all; }
 .share-list { border-top: 1px solid var(--line); padding: var(--space-5) var(--space-6) var(--space-6); }
 .share-list h4 { margin: 0 0 var(--space-3); font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--fg-muted); display: flex; gap: var(--space-3); align-items: center; }
@@ -40,7 +40,7 @@
 .share-row-main { flex: 1; min-width: 0; display: grid; gap: var(--space-1); }
 .share-row-main b { font-weight: var(--weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .share-row-main code { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.share-meta { font-size: var(--text-xs); color: var(--fg-subtle); font-variant-numeric: tabular-nums; }
+.share-meta { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-subtle); font-variant-numeric: tabular-nums; }
 .share-empty { margin: 0; color: var(--fg-subtle); font-size: var(--text-sm); }
 @media (max-width: 640px) {
   .share-pop { position: fixed; left: 16px; right: 16px; top: 52px; width: auto; }

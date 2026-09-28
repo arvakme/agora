@@ -1,10 +1,11 @@
-/* Progress pointer on the canvas (design-system.md v0.2, app/tokens.css).
- * One purple: the pointer's icon, ring and the one primary button in the path editor. */
+/* Progress pointer on the canvas (design-system.md v0.2, app/tokens.css), drawn in lines.
+ * One purple: the pointer's icons, ring and the one primary button in the path editor (it shows
+ * where an agent is working, so it keeps the accent the shell's ink icons give up). */
 /* Below Excalidraw's UI (its islands are z-index 4 in the same stacking context), above the scene
  * (canvases 1–2), clipped around every panel (canvas/chrome.ts). The path editor is our own
  * popover the person opened, so it sits above the UI in its own layer. */
-.ptr-layer { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
-.ptr-edge { position: absolute; left: 0; top: 0; display: inline-flex; align-items: center; gap: 2px; height: 28px; padding: 0 var(--space-3) 0 var(--space-2); border-radius: var(--r-pill); background: var(--surface); box-shadow: 0 0 0 1px var(--accent-ring), var(--lift-2); color: var(--accent); }
+.ptr-layer { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; --icon: var(--accent); }
+.ptr-edge { position: absolute; left: 0; top: 0; display: inline-flex; align-items: center; gap: 2px; height: 28px; padding: 0 var(--space-3) 0 var(--space-2); border-radius: var(--r-sm); background: var(--surface); box-shadow: 0 0 0 1px var(--accent); color: var(--accent); }
 .ptr-edge:hover { background: var(--raised); }
 .ptr-edge .agent-avatar + .agent-avatar { margin-left: -5px; box-shadow: 0 0 0 1.5px var(--surface); border-radius: 50%; }
 .ptr-edge-arrow { margin-left: 2px; }
@@ -13,18 +14,18 @@
 .ptr-ring { position: absolute; left: 0; top: 0; border-radius: var(--r-sm); box-shadow: 0 0 0 2px var(--accent); background: var(--accent-wash); pointer-events: none; }
 
 .ptr { position: absolute; left: 0; top: 0; }
-.ptr-chip { display: inline-flex; align-items: center; gap: var(--space-3); height: 28px; padding: 0 var(--space-4) 0 var(--space-3); border-radius: var(--r-pill); background: var(--surface); box-shadow: var(--edge), var(--lift-2); color: var(--fg); font-size: var(--text-sm); white-space: nowrap; }
+.ptr-chip { display: inline-flex; align-items: center; gap: var(--space-3); height: 28px; padding: 0 var(--space-4) 0 var(--space-3); border-radius: var(--r-sm); background: var(--surface); box-shadow: var(--frame); color: var(--fg); font-size: var(--text-sm); white-space: nowrap; }
 .ptr-chip b { font-weight: var(--weight-strong); }
 .ptr-chip .agent-avatar { margin-right: calc(-1 * var(--space-1, 2px)); }
 .ptr-pop-head b .agent-avatar { display: inline-grid; vertical-align: -3px; margin-right: var(--space-2); }
 .ptr-file { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-muted); max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
-.ptr-chip time { color: var(--fg-subtle); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.ptr-chip time { color: var(--fg-subtle); font-family: var(--font-mono); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
 
-.ptr-pill { display: inline-flex; align-items: center; gap: var(--space-3); height: 28px; padding: 0 var(--space-5) 0 var(--space-4); border-radius: var(--r-pill); background: var(--surface); box-shadow: var(--edge), var(--lift-1); color: var(--fg-muted); font-size: var(--text-sm); white-space: nowrap; transition: color var(--dur-tap) var(--ease-out), background var(--dur-tap) var(--ease-out); }
+.ptr-pill { display: inline-flex; align-items: center; gap: var(--space-3); height: 28px; padding: 0 var(--space-5) 0 var(--space-4); border-radius: var(--r-sm); background: var(--surface); box-shadow: var(--frame); color: var(--fg-muted); font-size: var(--text-sm); white-space: nowrap; transition: color var(--dur-tap) var(--ease-out), background var(--dur-tap) var(--ease-out); }
 .ptr-pill:hover { color: var(--fg); background: var(--raised); }
-.ptr-pill em { font-style: normal; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill); background: var(--accent-wash); box-shadow: inset 0 0 0 1px var(--accent-ring); color: var(--accent-ink); font-size: var(--text-xs); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; line-height: 18px; text-align: center; }
+.ptr-pill em { font-style: normal; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-xs); box-shadow: var(--box); color: var(--fg-muted); font-family: var(--font-mono); font-size: var(--text-xs); font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; line-height: 18px; text-align: center; }
 
-.ptr-pop { position: absolute; left: 0; top: calc(100% + 6px); width: 360px; max-width: calc(100vw - 32px); padding: var(--space-2); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--edge), var(--lift-2); color: var(--fg); z-index: 2; }
+.ptr-pop { position: absolute; left: 0; top: calc(100% + 6px); width: 360px; max-width: calc(100vw - 32px); padding: var(--space-2); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--frame); color: var(--fg); z-index: 2; }
 .ptr-pop-up { top: auto; bottom: calc(100% + 6px); }
 .ptr-pop-head { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3) var(--space-4) var(--space-3); border-bottom: 1px solid var(--line); margin-bottom: var(--space-2); }
 .ptr-pop-head b { font-size: var(--text-md); font-weight: var(--weight-strong); }
@@ -32,9 +33,9 @@
 .ptr-list { list-style: none; margin: 0; padding: 0; max-height: 280px; overflow: auto; }
 .ptr-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-3); width: 100%; min-height: 30px; padding: 0 var(--space-3); border-radius: var(--r-xs); text-align: left; font-size: var(--text-sm); }
 button.ptr-row:hover, .ptr-list li[data-open="true"] > .ptr-row { background: var(--raised); }
-.ptr-row em { font-style: normal; height: 18px; line-height: 18px; padding: 0 6px; border-radius: var(--r-pill); background: var(--well); color: var(--fg-muted); font-size: var(--text-xs); }
+.ptr-row em { font-style: normal; height: 18px; line-height: 18px; padding: 0 6px; border-radius: var(--r-xs); box-shadow: var(--box); color: var(--fg-muted); font-size: var(--text-xs); }
 .ptr-row code { font-family: var(--font-mono); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ptr-row time { color: var(--fg-subtle); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.ptr-row time { color: var(--fg-subtle); font-family: var(--font-mono); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
 .ptr-link { color: var(--accent); font-size: var(--text-xs); font-variant-numeric: tabular-nums; padding: 0 var(--space-2); border-radius: var(--r-xs); }
 .ptr-link:hover { color: var(--accent-hover); background: var(--accent-wash); }
 .ptr-turns { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) var(--space-4) var(--space-3) 44px; color: var(--fg-subtle); font-size: var(--text-xs); }
@@ -42,22 +43,22 @@ button.ptr-row:hover, .ptr-list li[data-open="true"] > .ptr-row { background: va
 .ptr-outside { position: absolute; left: 12px; bottom: 64px; }
 
 .ptr-editor { position: relative; top: 0; width: 320px; }
-.ptr-editor textarea { display: block; width: 100%; margin: var(--space-2) 0; padding: var(--space-4) var(--space-5); border-radius: var(--r-sm); background: var(--well); color: var(--fg); font: var(--text-sm) / 1.6 var(--font-mono); resize: vertical; }
+.ptr-editor textarea { display: block; width: 100%; margin: var(--space-2) 0; padding: var(--space-4) var(--space-5); border-radius: var(--r-sm); box-shadow: var(--box); color: var(--fg); font: var(--text-sm) / 1.6 var(--font-mono); resize: vertical; }
 .ptr-hint { margin: 0 var(--space-3) var(--space-3); color: var(--fg-subtle); font-size: var(--text-xs); }
 .ptr-actions { display: flex; justify-content: flex-end; gap: var(--space-3); padding: var(--space-2) var(--space-2) var(--space-2); }
-.ptr-quiet { height: 30px; padding: 0 14px; border-radius: var(--r-pill); background: var(--well); color: var(--fg); font-size: var(--text-md); transition: background var(--dur-tap) var(--ease-out); }
+.ptr-quiet { height: 30px; padding: 0 14px; border-radius: var(--r-sm); box-shadow: var(--box); color: var(--fg); font-size: var(--text-md); transition: background var(--dur-tap) var(--ease-out); }
 .ptr-quiet:hover { background: var(--raised); }
-.ptr-primary { height: 30px; padding: 0 16px; border-radius: var(--r-pill); background: var(--accent-fill); color: var(--accent-fg); font-size: var(--text-md); font-weight: var(--weight-medium); transition: background var(--dur-tap) var(--ease-out), transform var(--dur-tap) var(--ease-spring); }
+.ptr-primary { height: 30px; padding: 0 16px; border-radius: var(--r-sm); background: var(--accent-fill); color: var(--accent-fg); font-size: var(--text-md); font-weight: var(--weight-medium); transition: background var(--dur-tap) var(--ease-out), transform var(--dur-tap) var(--ease-spring); }
 .ptr-primary:hover { background: var(--accent-fill-hover); }
 .ptr-primary:active { background: var(--accent-fill-pressed); transform: scale(0.97); }
 
 /* Several sessions (docs/multi-agent.md): a shared ring is the same accent ring; the followed
  * session's chip leads and carries the target icon. The conflict mark is a caution dot + text. */
-.ptr[data-followed] .ptr-chip { box-shadow: 0 0 0 1px var(--accent-ring), var(--lift-2); }
+.ptr[data-followed] .ptr-chip { box-shadow: 0 0 0 1px var(--accent); }
 .ptr-group { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-3) var(--space-1); color: var(--fg-muted); font-size: var(--text-xs); font-weight: var(--weight-strong); }
 .ptr-group em { font-style: normal; color: var(--fg-subtle); font-weight: normal; font-variant-numeric: tabular-nums; }
 .ptr-clash { position: absolute; left: 0; top: 0; }
-.ptr-clash-btn { display: inline-flex; align-items: center; gap: var(--space-2); height: 22px; padding: 0 var(--space-4) 0 var(--space-3); border-radius: var(--r-pill); background: var(--surface); box-shadow: var(--edge), var(--lift-1); color: var(--caution); font-size: var(--text-xs); white-space: nowrap; }
+.ptr-clash-btn { display: inline-flex; align-items: center; gap: var(--space-2); height: 22px; padding: 0 var(--space-4) 0 var(--space-3); border-radius: var(--r-sm); background: var(--surface); box-shadow: var(--frame); color: var(--caution); font-size: var(--text-xs); white-space: nowrap; }
 .ptr-clash-btn:hover { background: var(--raised); }
 .ptr-clash .nest-dot, .ptr-row .nest-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--caution-dot); }
 .ptr-clash-row { padding: var(--space-3) var(--space-4); border-radius: var(--r-xs); font-size: var(--text-sm); }
