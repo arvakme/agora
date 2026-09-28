@@ -1,6 +1,6 @@
 ---
 name: agora-canvas
-description: Read and change this project's Agora canvas (Excalidraw architecture diagrams with comment threads) through the `agora canvas` CLI — read the diagram, search the icon/asset library, apply typed edits as one undoable change, mount a step-by-step algorithm animation, or link diagram elements to code paths for Agora's progress pointer. Use when a message comes from Agora or mentions the canvas, diagram, 画布, 架构图, a comment on it, asks to animate/演示 an algorithm, or to link the diagram to code (关联代码路径).
+description: Read and change this project's Agora canvas (Excalidraw architecture diagrams with comment threads) through the `agora canvas` CLI — read the diagram, search the icon/asset library, apply typed edits as one undoable change, mount a step-by-step algorithm animation, link diagram elements to code paths for Agora's progress pointer, or expand a node into a nested child canvas (子图). Use when a message comes from Agora or mentions the canvas, diagram, 画布, 架构图, 子图/展开, a comment on it, asks to animate/演示 an algorithm, or to link the diagram to code (关联代码路径).
 ---
 
 # Agora canvas
@@ -71,3 +71,27 @@ When the person asks you to link the diagram to the code structure (「按代码
 3. Link them all in one `agora canvas link --json '{…}'` (one undoable change), then tell the
    person which element got which paths and what was left unlinked. `invalid` → an element
    name was ambiguous or unknown: use the ids from step 1.
+
+## Nested canvases (子图): expand a node one level down
+
+A node can open a child canvas — an ordinary canvas one level more detailed (overview → a
+service's modules → a module's code logic / call flow). `agora canvas read` shows a node's
+`child: {canvasId, name}`, and on a child canvas `canvas.parent` and `canvas.path` (the breadcrumb).
+
+When asked to expand a node (「展开」, 「画出 X 的内部」):
+
+1. `agora canvas child create --parent <canvas> --node <node id or label>` → `created` (a new
+   blank canvas named after the node) or `exists` (the node already has one: update that one).
+   Either way use the returned `canvas.id` from here on.
+2. Read the code the node stands for (its `codePaths`, or find it by the node's name).
+3. `agora canvas read --canvas <child id>`, then `apply --canvas <child id>` the inner structure:
+   the modules / classes / steps and the calls between them. Keep it one level more detailed
+   than the parent — not the whole codebase.
+4. Link the child's nodes to their (finer) code with `agora canvas link --canvas <child id> …`,
+   so the progress pointer lights them when that code changes.
+5. Tell the person in a sentence or two what the child canvas shows.
+
+Also: `agora canvas child list [--parent <canvas>]`, `child link --node N --child <canvas>`
+(open an existing canvas from a node; loops are refused), `child unlink --node N` (the child
+canvas stays, only the link goes). Animations stay your call: if an algorithm inside a module is
+clearer animated, mount one with `agora canvas anim --canvas <child id>`.

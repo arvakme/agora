@@ -33,6 +33,12 @@ def code_paths(e: dict[str, Any] | None) -> list[str]:
     return [str(x) for x in v if isinstance(x, str) and x] if isinstance(v, list) else []
 
 
+def child_canvas(e: dict[str, Any] | None) -> str | None:
+    """The canvas this node opens into — ``customData.childCanvas`` (nested canvases)."""
+    v = ((e or {}).get("customData") or {}).get("childCanvas")
+    return v if isinstance(v, str) and v else None
+
+
 def bound_text(e: dict[str, Any], by_id: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
     for b in e.get("boundElements") or []:
         if b.get("type") == "text":
@@ -81,6 +87,8 @@ def model_view(elements: list[dict[str, Any]]) -> dict[str, Any]:
             n["frameId"] = e["frameId"]
         if code_paths(e):
             n["codePaths"] = code_paths(e)
+        if child_canvas(e):
+            n["child"] = {"canvasId": child_canvas(e)}
         nodes.append(n)
     arrows = []
     for e in live:
@@ -109,6 +117,7 @@ def model_view(elements: list[dict[str, Any]]) -> dict[str, Any]:
             "height": _r(e.get("height")),
             "children": [c["id"] for c in live if c.get("frameId") == e["id"] and c.get("type") in SHAPES],
             **({"codePaths": code_paths(e)} if code_paths(e) else {}),
+            **({"child": {"canvasId": child_canvas(e)}} if child_canvas(e) else {}),
         }
         for e in live
         if e.get("type") == "frame"

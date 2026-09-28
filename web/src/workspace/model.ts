@@ -2,7 +2,8 @@
 // which are open as tabs, and the naming / placement rules. Pure functions only.
 import { activate, addTab, group, groupOf, groups, removeTab, type Group, type Node } from "./layout.ts";
 
-export type CanvasDoc = { id: string; kind: "canvas"; title: string };
+/** `reviewedAt`: a child canvas the person checked against the code at that time (docs/nested-canvas.md §5). */
+export type CanvasDoc = { id: string; kind: "canvas"; title: string; reviewedAt?: number };
 /**
  * A session's `title` is the name the person gave it ("" = automatic: agent name + topic, see
  * sessionTitles). `topic` is taken once from its first message (topicOf).
@@ -62,6 +63,46 @@ export function openTab(root: Node, id: string, groupId?: string, index?: number
   const all = groups(root);
   const target = all.find((g) => g.id === groupId) ?? all[0];
   return addTab(root, target.id, id, index === undefined ? undefined : Math.min(index, target.tabs.length));
+}
+
+/**
+ * Show `to` where `from` is (same group, same place): entering a child canvas or going back up
+ * keeps the tab where it was. `from` is closed (still exists); if `to` is already open elsewhere
+ * it is just brought forward and `from` stays.
+ */
+export function replaceTab(root: Node, from: string, to: string): { root: Node; closed: boolean } {
+  if (from === to) return { root, closed: false };
+  const there = groupOf(root, to);
+  if (there) return { root: activate(root, there.id, to), closed: false };
+  const g = groupOf(root, from);
+  if (!g) return { root: openTab(root, to), closed: false };
+  return { root: closeTab(openTab(root, to, g.id, g.tabs.indexOf(from)), from), closed: true };
+}
+
+/**
+ * Canvases in tree order for 所有画布: each child right under its parent, with its depth.
+ * `parentOf` gives a canvas's parent canvas (nested canvases); loops are cut.
+ */
+export function canvasTree(ids: string[], parentOf: (id: string) => string | undefined): { id: string; depth: number }[] {
+  const known = new Set(ids);
+  const kids = new Map<string, string[]>();
+  const roots: string[] = [];
+  for (const id of ids) {
+    const p = parentOf(id);
+    if (p && known.has(p) && p !== id) kids.set(p, [...(kids.get(p) ?? []), id]);
+    else roots.push(id);
+  }
+  const out: { id: string; depth: number }[] = [];
+  const seen = new Set<string>();
+  const walk = (id: string, depth: number) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push({ id, depth });
+    for (const k of kids.get(id) ?? []) walk(k, depth + 1);
+  };
+  roots.forEach((r) => walk(r, 0));
+  for (const id of ids) walk(id, 0); // a loop has no root: list what is left at the top
+  return out;
 }
 
 /**
