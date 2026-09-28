@@ -31,6 +31,7 @@ const OP: Record<string, string> = { edit: "改", write: "写", add: "新建", d
 const base = (p: string) => p.split("/").pop() || p;
 const GLIDE = { type: "spring", stiffness: 170, damping: 26 } as const;
 const CHIP_GAP = 6;
+const CLASH_W = 84;
 
 const NONE: never[] = [];
 const noSub = () => () => {};
@@ -123,18 +124,23 @@ export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view
     if (changed) setWidths(next);
   });
 
+  const byNode = new Map<string, Conflict[]>();
+  for (const c of clashes) if (c.element && view.map.has(c.element)) byNode.set(c.element, [...(byNode.get(c.element) ?? []), c]);
+
   const tstore = threadStores.get(view.id);
   const threads = useSyncExternalStore(tstore?.subscribe ?? noSub, () => tstore?.get().threads ?? NONE);
   const layout = useMemo(() => {
     const drawing = obstacles(view.elements, view.map).map(toScreen);
     const pins = layoutPins(threads, view).boxes;
-    const placed: { element: string; ring: Box; x: number; y: number; side: string; chips: { sid: string; dx: number }[] }[] = [];
+    const placed: { element: string; ring: Box; x: number; y: number; side: string; chips: { sid: string; dx: number }[]; clashX?: number }[] = [];
     for (const s of piles) {
       const el = view.map.get(s.element);
       if (!live(el)) continue;
       const ring = inflate(toScreen(footprint(el, view.map, view.elements)), 6);
       const ws = s.pointers.map((p) => widths[p.sessionId] ?? 200);
-      const w = ws.reduce((n, x) => n + x, 0) + CHIP_GAP * (ws.length - 1);
+      // A conflict on this node sits at the end of its label row, not on the drawing.
+      const clash = byNode.has(s.element) ? CLASH_W + CHIP_GAP : 0;
+      const w = ws.reduce((n, x) => n + x, 0) + CHIP_GAP * (ws.length - 1) + clash;
       // Labels stay off the drawing, the pins, other rings and the labels placed before them.
       const blocks = [...drawing.filter((b) => !overlaps(b, ring, -8)), ...pins, ...placed.flatMap((p) => [p.ring, { x: p.x, y: p.y, w: p.chips.reduce((n, c) => Math.max(n, c.dx + (widths[c.sid] ?? 200)), 0), h: 28 }])];
       const spot = placeBeside(ring, w, 28, blocks, { x: 0, y: 0, w: a.width, h: a.height }, { gap: 6 });
@@ -144,17 +150,15 @@ export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view
         dx += ws[i] + CHIP_GAP;
         return c;
       });
-      placed.push({ element: s.element, ring, x: spot.x, y: spot.y, side: spot.side, chips });
+      placed.push({ element: s.element, ring, x: spot.x, y: spot.y, side: spot.side, chips, clashX: clash ? dx : undefined });
     }
     return placed;
-  }, [piles, view.elements, view.map, a.scrollX, a.scrollY, z, a.width, a.height, threads, widths]);
+  }, [piles, view.elements, view.map, a.scrollX, a.scrollY, z, a.width, a.height, threads, widths, clashes]);
 
   const elOf = Object.fromEntries(pointers.flatMap((p) => (p.state.current?.element ? [[p.sessionId, p.state.current.element]] : [])));
   const glides = useGliding(elOf);
   const running = (sid: string) => !!(ag.status[sid]?.running || ag.status[sid]?.busy);
   const shownIds = pointers.map((p) => p.sessionId);
-  const byNode = new Map<string, Conflict[]>();
-  for (const c of clashes) if (c.element && view.map.has(c.element)) byNode.set(c.element, [...(byNode.get(c.element) ?? []), c]);
   const outsideCount = pointers.reduce((n, p) => n + p.state.outside.length, 0);
 
   if (!links.length) return <div className="ds ptr-layer"><LinkEditor api={api} view={view} placed={followedState?.placed ?? []} links={links} screen={screen} /></div>;
@@ -233,8 +237,11 @@ export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view
         if (!live(el)) return null;
         const r = inflate(toScreen(footprint(el, view.map, view.elements)), 6);
         const isOpen = open?.kind === "conflict" && open.element === element;
+        // Next to that node's pointer labels when it has some; else just above its top-left corner.
+        const row = layout.find((l) => l.element === element && l.clashX !== undefined);
+        const at = row ? { x: row.x + row.clashX!, y: row.y + 3 } : { x: r.x, y: r.y - 26 };
         return (
-          <div key={`clash-${element}`} className="ptr-clash ptr-ui" style={{ transform: `translate(${Math.round(r.x - 6)}px, ${Math.round(r.y + r.h - 10)}px)` }}>
+          <div key={`clash-${element}`} className="ptr-clash ptr-ui" style={{ transform: `translate(${Math.round(at.x)}px, ${Math.round(at.y)}px)` }}>
             <button className="ptr-clash-btn" onClick={() => setOpen(isOpen ? null : { kind: "conflict", element })} aria-expanded={isOpen} title={cs.map((c) => clashText(c, label)).join("\n")}>
               <span className="nest-dot" aria-hidden />
               可能冲突

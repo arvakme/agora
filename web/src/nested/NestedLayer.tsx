@@ -224,6 +224,7 @@ export function NodeChildMenu({ api, view, canvasId }: { api: ExcalidrawImperati
   const z = a.zoom.value;
   const b = bbox(target);
   const label = labelOf(target, view.map).replace(/\s+/g, " ").trim() || "未命名节点";
+  const firstLine = labelOf(target, view.map).split("\n").map((l) => l.trim()).find(Boolean) ?? label;
   const child = childOf(target);
   const has = !!child && st.scenes.has(child);
   const act = async (what: string, f: () => Promise<void> | void) => {
@@ -271,7 +272,7 @@ export function NodeChildMenu({ api, view, canvasId }: { api: ExcalidrawImperati
                   role="menuitem"
                   onClick={() =>
                     void act("blank", async () => {
-                      const id = await nav.createChild(label);
+                      const id = await nav.createChild(firstLine.slice(0, 60));
                       if (id) (writeChildLink(api, target.id, id), nav.go(canvasId, id));
                     })
                   }

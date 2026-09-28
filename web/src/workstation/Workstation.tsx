@@ -41,7 +41,8 @@ function useLanes(now: number): Lane[] {
       const key = `${live}|${live ? sec : 0}`;
       let hit = laneCache.get(items);
       if (!hit || hit.key !== key) {
-        hit = { key, lane: buildLane(sid, items, { live, now: sec * 1000, root }) };
+        // A running turn reaches a little past "now", so the worker is never idle between refreshes.
+        hit = { key, lane: buildLane(sid, items, { live, now: (sec + 2) * 1000, root }) };
         laneCache.set(items, hit);
       }
       if (hit.lane.segs.length) out.push(hit.lane);
@@ -116,8 +117,8 @@ export function Workers({ view }: { view: CanvasViewState }) {
     const el = view.map.get(where)!;
     const b = footprint(el, view.map, view.elements);
     const r = inflate({ x: (b.x + a.scrollX) * z, y: (b.y + a.scrollY) * z, w: b.w * z, h: b.h * z }, 6);
-    // Stand just below the node, side by side, centred under it.
-    return { x: r.x + r.w / 2 - (n * step) / 2 + i * step, y: r.y + r.h + 4 };
+    // Stand just below the node's left end, side by side (arrows usually leave from the middle).
+    return { x: r.x + 2 + i * step, y: r.y + r.h + 4 };
   };
   const dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
   const snap = (v: number) => Math.round(v * dpr) / dpr;
@@ -150,7 +151,12 @@ export function Workers({ view }: { view: CanvasViewState }) {
             aria-label={`${name}：${doing}`}
           >
             <Figure kind={kind} pose={s.pose} t={t} still={still} faded={s.pose === "idle"} />
-            <span className="ws-cap">{s.pose === "walk" ? "走过去" : doing}</span>
+            {/* Idle workers go without a caption (the faded figure says it); busy neighbours stagger theirs. */}
+            {s.pose !== "idle" && (
+              <span className="ws-cap" style={(slot.get(l.sessionId) ?? 0) % 2 ? { transform: "translateY(18px)" } : undefined}>
+                {s.pose === "walk" ? "走过去" : doing}
+              </span>
+            )}
           </button>
         );
       })}
@@ -167,7 +173,8 @@ export function TimelinePanel({ canvasId, view }: { canvasId: string; view: Canv
   const label = useSessionLabel();
   const st = useNested();
   const [open, setOpen] = useState(true);
-  const axis = useMemo(() => buildAxis(lanes, { now: replay ? undefined : Math.floor(now / 1000) * 1000 }), [lanes, replay ? 0 : Math.floor(now / 1000)]);
+  // The axis runs to "now" in both modes, so switching to replay (or dragging) does not rescale it.
+  const axis = useMemo(() => buildAxis(lanes, { now: Math.floor(now / 1000) * 1000 }), [lanes, Math.floor(now / 1000)]);
   const track = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; moved: boolean } | null>(null);
   const t = replay ? replayTime(replay, now) : now;
@@ -190,7 +197,7 @@ export function TimelinePanel({ canvasId, view }: { canvasId: string; view: Canv
     return axis.fromX(Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * axis.span);
   };
   const jump = (lane: Lane, seg: Seg) => {
-    clock.seek(seg.start, axis.end);
+    clock.seek(seg.start + (seg.end - seg.start) / 2, axis.end); // mid-call: the worker is at it
     ui.openSession(lane.sessionId);
     setTimeout(() => openTrajectory(lane.sessionId, seg.turn), 120);
     const el = seg.path ? elementFor(seg.path, links)?.link.id : undefined;

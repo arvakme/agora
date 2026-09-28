@@ -6,7 +6,7 @@ import type { AgentKind } from "../session/agents";
 import type { Pose } from "./timeline";
 
 const W = 32;
-const H = 44;
+const H = 52;
 const rad = (d: number) => (d * Math.PI) / 180;
 
 /** A limb from (x, y), `len` long, at `deg` from straight down (positive = towards +x). */
@@ -20,26 +20,26 @@ export function poseAt(pose: Pose, t: number, still: boolean) {
   const tap = (offset: number) => (still ? 0 : Math.max(0, Math.sin(((t / 170) * 2 + offset) * Math.PI)) * 1.2);
   switch (pose) {
     case "walk":
-      return { legL: s(640, 26), legR: -s(640, 26), hl: [-4 - s(640, 3), 10], hr: [4 + s(640, 3), 10], bob: still ? 0 : -Math.abs(Math.sin((t / 640) * 2 * Math.PI)) * 1.4, lean: 0 };
+      return { legL: s(640, 26), legR: -s(640, 26), hl: [-4 - s(640, 3), 11], hr: [4 + s(640, 3), 11], bob: still ? 0 : -Math.abs(Math.sin((t / 640) * 2 * Math.PI)) * 1.4, lean: 0 };
     case "write":
-      return { legL: -8, legR: 8, hl: [-5, 1.5 - tap(0)], hr: [5, 1.5 - tap(0.6)], bob: 0, lean: 0 };
+      return { legL: -8, legR: 8, hl: [-6, 9.5 - tap(0)], hr: [6, 9.5 - tap(0.6)], bob: 0, lean: 0 };
     case "exec":
-      return { legL: -8, legR: 8, hl: [-5, 1.5], hr: [5, 1.5 - tap(0.3) * 0.6], bob: 0, lean: 0 };
+      return { legL: -8, legR: 8, hl: [-6, 9.5], hr: [6, 9.5 - tap(0.3) * 0.6], bob: 0, lean: 0 };
     case "read":
-      return { legL: -7, legR: 7, hl: [-6.5, -3 + s(2400, 0.6)], hr: [6.5, -3 + s(2400, 0.6)], bob: 0, lean: s(3000, 2) };
+      return { legL: -7, legR: 7, hl: [-6.5, 5 + s(2400, 0.6)], hr: [6.5, 5 + s(2400, 0.6)], bob: 0, lean: s(3000, 2) };
     case "think":
-      return { legL: -6, legR: 6, hl: [-5, 10], hr: [2.5, -5], bob: 0, lean: s(2600, 2.5) };
+      return { legL: -6, legR: 6, hl: [-5, 11], hr: [3, -4], bob: 0, lean: s(2600, 2.5) };
     case "wait":
-      return { legL: -8, legR: 8, hl: [-5, 10], hr: [8 + s(1100, 2.2), -11], bob: 0, lean: 0 };
+      return { legL: -8, legR: 8, hl: [-5, 11], hr: [9 + s(1100, 2.2), -9], bob: 0, lean: 0 };
     default:
-      return { legL: -5, legR: 5, hl: [-5, 10.5], hr: [5, 10.5], bob: still ? 0 : s(4000, 0.5), lean: 0 };
+      return { legL: -5, legR: 5, hl: [-5, 12], hr: [5, 12], bob: still ? 0 : s(4000, 0.5), lean: 0 };
   }
 }
 
 export function Figure({ kind, pose, t, still, faded }: FigureProps) {
   const a = poseAt(pose, t, still);
-  const hipY = 30 + a.bob;
-  const shY = 19 + a.bob;
+  const hipY = 36 + a.bob;
+  const shY = 22 + a.bob;
   const cx = W / 2;
   // An arm: shoulder → elbow (pushed outward) → hand.
   const arm = (side: -1 | 1, [hx, hy]: number[]) => {
@@ -57,22 +57,22 @@ export function Figure({ kind, pose, t, still, faded }: FigureProps) {
       <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-hidden focusable="false">
         <g transform={`rotate(${a.lean} ${cx} ${hipY})`}>
           <g stroke="var(--ws-ink)" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" fill="none">
-            <line x1={cx - 1} y1={hipY} {...limb(cx - 1, hipY, 12, a.legL)} />
-            <line x1={cx + 1} y1={hipY} {...limb(cx + 1, hipY, 12, a.legR)} />
+            <line x1={cx - 1} y1={hipY} {...limb(cx - 1, hipY, 13, a.legL)} />
+            <line x1={cx + 1} y1={hipY} {...limb(cx + 1, hipY, 13, a.legR)} />
             <line x1={cx} y1={shY - 1} x2={cx} y2={hipY} />
           </g>
           {holding && (
             // a small laptop held in front: purple screen while writing, a graphite prompt while running a command
             <g>
-              <rect x={cx - 7} y={shY - 7} width={14} height={9} rx={1.5} fill={pose === "write" ? "var(--accent)" : "var(--ws-ink)"} />
-              {pose === "exec" && <path d={`M${cx - 4.5} ${shY - 4.6}l2 1.6-2 1.6M${cx - 1} ${shY - 1.4}h3`} stroke="var(--bg)" strokeWidth={1} strokeLinecap="round" strokeLinejoin="round" fill="none" opacity={still || Math.floor(t / 530) % 2 ? 1 : 0.35} />}
-              {pose === "write" && <path d={`M${cx - 4.5} ${shY - 4.6}h9M${cx - 4.5} ${shY - 2.4}h${3 + (still ? 4 : (Math.floor(t / 180) % 5) + 1)}`} stroke="var(--accent-fg)" strokeWidth={0.9} strokeLinecap="round" fill="none" />}
+              <rect x={cx - 7} y={shY + 1} width={14} height={9} rx={1.5} fill={pose === "write" ? "var(--accent)" : "var(--ws-ink)"} />
+              {pose === "exec" && <path d={`M${cx - 4.5} ${shY + 3.4}l2 1.6-2 1.6M${cx - 1} ${shY + 6.6}h3`} stroke="var(--bg)" strokeWidth={1} strokeLinecap="round" strokeLinejoin="round" fill="none" opacity={still || Math.floor(t / 530) % 2 ? 1 : 0.35} />}
+              {pose === "write" && <path d={`M${cx - 4.5} ${shY + 3.4}h9M${cx - 4.5} ${shY + 5.6}h${3 + (still ? 4 : (Math.floor(t / 180) % 5) + 1)}`} stroke="var(--accent-fg)" strokeWidth={0.9} strokeLinecap="round" fill="none" />}
             </g>
           )}
           {pose === "read" && (
             <g>
-              <rect x={cx - 6} y={shY - 8} width={12} height={10} rx={1} fill="var(--surface)" stroke="var(--ws-ink)" strokeWidth={1} />
-              <path d={`M${cx - 3.5} ${shY - 5.5}h7M${cx - 3.5} ${shY - 3.2}h7M${cx - 3.5} ${shY - 0.9}h4`} stroke="var(--accent)" strokeWidth={0.9} strokeLinecap="round" />
+              <rect x={cx - 6} y={shY} width={12} height={10} rx={1} fill="var(--surface)" stroke="var(--ws-ink)" strokeWidth={1} />
+              <path d={`M${cx - 3.5} ${shY + 2.5}h7M${cx - 3.5} ${shY + 4.8}h7M${cx - 3.5} ${shY + 7.1}h4`} stroke="var(--accent)" strokeWidth={0.9} strokeLinecap="round" />
             </g>
           )}
           <path d={`${arm(-1, a.hl)}${arm(1, a.hr)}`} stroke="var(--ws-ink)" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" fill="none" />
@@ -86,7 +86,7 @@ export function Figure({ kind, pose, t, still, faded }: FigureProps) {
           </g>
         )}
       </svg>
-      <span className="ws-head" style={{ transform: `translate(${cx - 8}px, ${Math.round((3 + a.bob) * 2) / 2}px)` }}>
+      <span className="ws-head" style={{ transform: `translate(${cx - 8}px, ${Math.round((4 + a.bob) * 2) / 2}px)` }}>
         {kind ? <AgentAvatar kind={kind} size={16} /> : <span className="ws-head-dot" />}
       </span>
     </div>

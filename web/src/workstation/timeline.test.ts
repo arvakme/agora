@@ -87,22 +87,25 @@ describe("buildAxis", () => {
   it("finds the segment under a click", () => {
     expect(segAt(lanes[0], axis, axis.toX(8 * S))?.kind).toBe("exec");
     expect(segAt(lanes[1], axis, axis.toX(20 * S), 100)).toBeNull();
+    // A click next to a short call picks the call, not the thinking around it.
+    expect(segAt(lanes[0], axis, axis.toX(4.9 * S), 0.5 * S)?.kind).toBe("write");
   });
 });
 
 describe("figureAt (replay)", () => {
   const lane = buildLane("s1", items, { root: ROOT });
   const locate = (p: string) => (p.startsWith("server/") ? "api" : null);
-  it("starts at home, walks to the node of the file it reads, then works there", () => {
-    expect(figureAt(lane, 1 * S, locate)).toMatchObject({ pose: "think", at: HOME });
-    expect(figureAt(lane, 2 * S + WALK_MS / 2, locate)).toMatchObject({ pose: "walk", at: "api", from: HOME, walk: 0.5 });
+  it("starts at home, walks to the node of the file it reads (arriving as the read starts), then works there", () => {
+    expect(figureAt(lane, 0.5 * S, locate)).toMatchObject({ pose: "think", at: HOME });
+    expect(figureAt(lane, 2 * S - WALK_MS / 2, locate)).toMatchObject({ pose: "walk", at: "api", from: HOME, walk: 0.5 });
+    expect(figureAt(lane, 2 * S, locate)).toMatchObject({ pose: "read", at: "api", walk: 1 });
     expect(figureAt(lane, 5.5 * S, locate)).toMatchObject({ pose: "write", at: "api", walk: 1 });
     expect(figureAt(lane, 8 * S, locate)).toMatchObject({ pose: "exec", at: "api" });
     expect(figureAt(lane, 12 * S, locate)).toMatchObject({ pose: "wait", at: "api" });
   });
   it("is idle between turns and goes to the outside desk for files off the diagram", () => {
     expect(figureAt(lane, 100 * S, locate)).toMatchObject({ pose: "idle", at: "api", seg: null });
-    expect(figureAt(lane, 601.5 * S, locate)).toMatchObject({ at: OUTSIDE, from: "api" });
+    expect(figureAt(lane, 601.5 * S, locate)).toMatchObject({ pose: "write", at: OUTSIDE, from: "api" });
   });
   it("jumping straight to a time gives the same state as getting there step by step", () => {
     const ts = Array.from({ length: 700 }, (_, i) => i * S);

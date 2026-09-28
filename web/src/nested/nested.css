@@ -18,13 +18,15 @@
   border-bottom: 1px solid var(--line); background: var(--bg); color: var(--fg-muted); font-size: var(--text-sm);
   overflow: hidden; flex-shrink: 0;
 }
-.nest-crumbs ol { display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: 0; list-style: none; min-width: 0; overflow: hidden; }
-.nest-crumbs li { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; white-space: nowrap; }
+.nest-crumbs ol { display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: 0; list-style: none; min-width: 0; max-width: 70%; flex: 0 1 auto; overflow: hidden; }
+.nest-crumbs li { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; white-space: nowrap; flex: 0 1 auto; }
+.nest-crumbs li:last-child { flex-shrink: 0.5; }
 .nest-crumbs li button { padding: 2px var(--space-2); border-radius: var(--r-xs); color: var(--fg-muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis; transition: background var(--dur-tap) var(--ease-out), color var(--dur-tap) var(--ease-out); }
 .nest-crumbs li button:hover { background: var(--raised); color: var(--fg); }
 .nest-crumbs b { color: var(--fg); font-weight: var(--weight-strong); padding: 2px var(--space-2); max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
 .nest-sep { color: var(--fg-faint); }
-.nest-stale { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-3); color: var(--caution); font-size: var(--text-xs); white-space: nowrap; }
+.nest-stale { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-3); min-width: 0; flex: 0 1 auto; color: var(--caution); font-size: var(--text-xs); white-space: nowrap; }
+.nest-stale > span:not(.nest-dot) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .nest-act { display: inline-flex; align-items: center; gap: var(--space-2); height: 24px; padding: 0 var(--space-4); border-radius: var(--r-pill); background: var(--well); color: var(--fg); font-size: var(--text-xs); transition: background var(--dur-tap) var(--ease-out); }
 .nest-act:hover:not(:disabled) { background: var(--raised); }
 .nest-act.quiet { background: transparent; color: var(--fg-muted); }
