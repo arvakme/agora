@@ -36,7 +36,7 @@ def _claude_cleanup_set() -> bool:
 
 def diagnose(p, *, fix: bool = False) -> list[dict[str, Any]]:
     """Findings: {level: ok|info|warn|error, what, message, fix?: str, fixed?: bool}."""
-    from server.canvas import agents
+    from server.canvas import adapters, agents
     from server.canvas.backup import Backups
     from server.canvas.local import session_origins
     from server.canvas.trash import Trash
@@ -122,7 +122,7 @@ def diagnose(p, *, fix: bool = False) -> list[dict[str, Any]]:
             if b.get("started", True):
                 say("warn", "native", f"{sid}：{agents.native_problem(b['agent'], b['nativeId'], look)}", session=sid, candidates=[str(c) for c in look.candidates])
             continue
-        if b["agent"] == "claude" and look.path is not None:
+        if getattr(adapters.get(b["agent"]), "prunes_logs_after_days", None) and look.path is not None:
             idle = (now - look.path.stat().st_mtime) / 86400
             if idle >= STALE_DAYS:
                 stale.append((sid, int(idle)))

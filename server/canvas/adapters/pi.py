@@ -218,6 +218,8 @@ class PiAdapter(Adapter):
 
     assigns_id = "agora"
     can_fork_headless = True
+    terminal_fork = "pi --fork"
+    catalog_per_project = True  # the model scope can come from the project's .pi/settings.json
     Mapper = PiStream
     # Binding: the id is looked up in the cwd's folder only — a moved project needs its logs moved.
     survives_move = False
@@ -261,6 +263,9 @@ class PiAdapter(Adapter):
             for p in glob.glob(str(sessions_dir(home) / dir_name(root) / "*.jsonl")):
                 out.append({"agent": "pi", "nativeId": Path(p).stem.rsplit("_", 1)[-1], "path": Path(p), "cwd": root})
         return out
+
+    def is_header(self, rec: dict[str, Any]) -> bool:
+        return rec.get("type") == "session"
 
     def log_format(self, path: Path) -> str | None:
         try:

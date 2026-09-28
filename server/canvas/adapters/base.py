@@ -203,6 +203,14 @@ class Adapter:
     icon: str = ""  # mark name the page draws (web/src/session/AgentAvatar.tsx)
     # Days after which the CLI deletes an untouched session log itself (Claude: 30); None = never.
     prunes_logs_after_days: int | None = None
+    # Whether its model catalog depends on the project (Pi: .pi/settings.json enabledModels).
+    catalog_per_project: bool = False
+    # How it forks a session in a terminal (shown when it cannot fork headless).
+    terminal_fork: str = ""
+
+    def is_header(self, rec: dict[str, Any]) -> bool:
+        """Whether ``rec`` is the log's header record (it names the session's ``cwd``)."""
+        return False
 
     def installed(self) -> str | None:
         """Path of the first binary on PATH."""

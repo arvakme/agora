@@ -11,7 +11,8 @@ machine registry, or found in the CLIs' own logs. Found logs are matched back, s
 3. only the working directory: a session started in a terminal in this project that never went
    through Agora (listed last, collapsed by default on the page).
 
-Where each CLI's logs for a project are: Claude ``~/.claude/projects/<escaped root>/``, Pi
+Where each CLI's logs for a project are is its adapter's ``Locator.sessions_for``
+(server/canvas/adapters/): Claude ``~/.claude/projects/<escaped root>/``, Pi
 ``~/.pi/agent/sessions/--<escaped root>--/`` (for the current root and every earlier one), Codex
 its own index ``~/.codex/state_5.sqlite`` (``threads where cwd in roots``, read-only), else the
 first line of recent rollouts. Nothing here writes: importing is a binding made by the page.
@@ -19,19 +20,16 @@ first line of recent rollouts. Nothing here writes: importing is a binding made 
 
 from __future__ import annotations
 
-import glob
 import json
-import os
 import re
-import sqlite3
 from pathlib import Path
 from typing import Any
 
-from server.canvas import agents
+from server.canvas import adapters
+from server.canvas.adapters.codex import CODEX_FALLBACK, index_rows
 from server.canvas.transcript import MARKER, State, project, split_agora
 
 SCAN_MAX = 50 * 1024 * 1024  # bytes read per log (full-text search and stats)
-CODEX_FALLBACK = 400  # newest rollouts looked at when Codex has no index
 FOOTER = re.compile(r"\(((?:canvas|session|project)=[^()\n\"\\]{1,200})\)")
 
 
@@ -86,6 +84,7 @@ def scan_log(kind: str, path: Path, *, want: str | None = None) -> dict[str, Any
         out["agora"] = True
         out["footer"] = footer_ids(text)
     st = State()
+    a = adapters.get(kind)
     needle = want.casefold() if want else None
     for line in text.splitlines():
         try:
@@ -94,7 +93,7 @@ def scan_log(kind: str, path: Path, *, want: str | None = None) -> dict[str, Any
             continue
         if not isinstance(rec, dict):
             continue
-        if kind == "pi" and rec.get("type") == "session" and out["createdAt"] is None:
+        if a is not None and a.is_header(rec) and out["createdAt"] is None:
             out["cwd"] = rec.get("cwd")
         try:
             items, _ = project(kind, rec, st)
@@ -121,44 +120,16 @@ def scan_log(kind: str, path: Path, *, want: str | None = None) -> dict[str, Any
 
 
 def _codex_rows(roots: list[str], home: Path) -> list[dict[str, Any]]:
-    db = Path(os.environ.get("CODEX_HOME") or home / ".codex") / "state_5.sqlite"
-    if db.exists():
-        try:
-            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=1)
-            con.row_factory = sqlite3.Row
-            try:
-                q = f"select * from threads where cwd in ({','.join('?' * len(roots))})"
-                rows = [dict(r) for r in con.execute(q, roots).fetchall()]
-            finally:
-                con.close()
-            return [{"nativeId": r["id"], "path": Path(r["rollout_path"]), "cwd": r["cwd"]} for r in rows if r.get("rollout_path")]
-        except sqlite3.Error:
-            pass
-    out = []
-    files = sorted(glob.glob(str(Path(os.environ.get("CODEX_HOME") or home / ".codex") / "sessions" / "*" / "*" / "*" / "rollout-*.jsonl")))[-CODEX_FALLBACK:]
-    for p in files:
-        try:
-            with open(p, "rb") as fh:
-                meta = json.loads(fh.readline() or b"{}")
-        except (OSError, ValueError):
-            continue
-        pl = meta.get("payload") or {}
-        if meta.get("type") == "session_meta" and pl.get("id") and str(pl.get("cwd")) in roots:
-            out.append({"nativeId": str(pl["id"]), "path": Path(p), "cwd": pl.get("cwd")})
-    return out
+    return index_rows(roots, home)
 
 
 def native_sessions(roots: list[str], home: Path | None = None) -> list[dict[str, Any]]:
-    """Every native session of the three CLIs whose working directory is one of ``roots``."""
+    """Every native session of the session agents (T1) whose working directory is one of ``roots``:
+    each adapter's ``Locator.sessions_for``."""
     home = home or Path.home()
     found: list[dict[str, Any]] = []
-    for root in roots:
-        for p in glob.glob(str(home / ".claude" / "projects" / agents.claude_dir_name(root) / "*.jsonl")):
-            found.append({"agent": "claude", "nativeId": Path(p).stem, "path": Path(p), "cwd": root})
-        pi_dir = Path(os.environ.get("PI_CODING_AGENT_SESSION_DIR") or home / ".pi" / "agent" / "sessions") / agents.pi_dir_name(root)
-        for p in glob.glob(str(pi_dir / "*.jsonl")):
-            found.append({"agent": "pi", "nativeId": Path(p).stem.rsplit("_", 1)[-1], "path": Path(p), "cwd": root})
-    found += [{"agent": "codex", **r} for r in _codex_rows(roots, home)]
+    for kind in adapters.session_kinds():
+        found += adapters.need(kind).sessions_for(roots, home)
     return found
 
 

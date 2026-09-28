@@ -188,6 +188,7 @@ class ClaudeAdapter(Adapter):
     # Headless
     assigns_id = "agora"
     can_fork_headless = True
+    terminal_fork = "claude --fork-session"
     Mapper = ClaudeStream
     # Binding
     survives_move = True
