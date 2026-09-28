@@ -198,8 +198,12 @@ class Adapter:
     tested: VersionRange = VersionRange("")
     max_tier: Tier = "T2"
     seedmux_names: tuple[str, ...] = ()  # how Seedmux's meta.json `agent` names this CLI
-    log_hint: str = ""  # where its logs are, for people (AllDocs, doctor)
-    delete_hint: str = ""  # how to delete a native session by hand (trash)
+    log_hint: str = ""  # where its logs are, for people (doctor)
+    log_dir: str = ""  # the folder its native conversations live under (page: "原生对话在 …")
+    delete_hint: str = ""  # command that deletes a native session by hand, "{id}" = its id; "" = rm the log
+    # What the page can rely on (AgentInfo.caps): cost in USD, how "waiting for the person" is known.
+    has_cost: bool = False
+    waits: str = "none"  # "native" (the log says so) | "inferred" | "none"
     icon: str = ""  # mark name the page draws (web/src/session/AgentAvatar.tsx)
     # Days after which the CLI deletes an untouched session log itself (Claude: 30); None = never.
     prunes_logs_after_days: int | None = None

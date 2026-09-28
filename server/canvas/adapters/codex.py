@@ -330,7 +330,9 @@ class CodexAdapter(Adapter):
     seedmux_names = ("codex",)
     icon = "codex"
     log_hint = "~/.codex/sessions/年/月/日/rollout-*-<id>.jsonl"
-    delete_hint = "rm ~/.codex/sessions/*/*/*/rollout-*-<id>.jsonl"
+    log_dir = "~/.codex/sessions/"
+    delete_hint = "codex delete {id}"
+    waits = "native"
 
     assigns_id = "cli"
     can_fork_headless = False

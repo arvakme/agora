@@ -8,7 +8,7 @@ import { IconHistory, IconLayers, IconPlus, IconTrash } from "../app/icons";
 import { SPRING } from "../comments/motion";
 import { sessions } from "../session/store";
 import { SessionMark } from "../session/AgentAvatar";
-import { AGENT_NAMES, agents } from "../session/agents";
+import { AGENT_NAMES, agents, logDirOf } from "../session/agents";
 import { listGroups, type CanvasDoc, type Doc, type SessionDoc } from "./model";
 import { useTrash } from "./trash";
 
@@ -108,7 +108,7 @@ function Confirm({ doc, title, comments, sessions: linked, kids, onCancel, onCon
   const turns = doc.kind === "session" ? (sessions.get().sessions[doc.sessionId]?.turnIds.length ?? 0) : 0;
   const b = doc.kind === "session" ? agents.get().bindings[doc.sessionId] : undefined;
   const agent = b ? AGENT_NAMES[b.agent] : "CLI";
-  const where = b?.agent === "codex" ? "~/.codex/sessions/" : b?.agent === "pi" ? "~/.pi/agent/sessions/" : "~/.claude/projects/";
+  const where = logDirOf(b?.agent ?? "claude");
   // What moves to the trash, what stays, what ends — the plan's wording (web/docs/workspace-model.md §1).
   const what =
     doc.kind === "canvas"

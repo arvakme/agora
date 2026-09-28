@@ -1,4 +1,7 @@
-"""The three native coding agents a session can be bound to: Pi, Claude Code, Codex.
+"""The native coding agents a session can be bound to (tier T1 in the adapter registry,
+server/canvas/adapters/): today Pi, Claude Code, Codex. What is specific to each CLI lives in its
+adapter; this module keeps the public entry points (forwarding to the adapters) and the headless
+runner.
 
 Each is an ``AgentBackend`` (runner.py) for headless turns — the CLI's own print/exec
 mode, run in the **project directory** and resuming the session's native id — plus what

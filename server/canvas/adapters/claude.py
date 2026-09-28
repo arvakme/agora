@@ -226,7 +226,9 @@ class ClaudeAdapter(Adapter):
     seedmux_names = ("claude",)
     icon = "claude"
     log_hint = "~/.claude/projects/<目录>/<id>.jsonl"
-    delete_hint = "rm ~/.claude/projects/<目录>/<id>.jsonl"
+    log_dir = "~/.claude/projects/"
+    has_cost = True  # headless turns only (the result line)
+    waits = "native"
     prunes_logs_after_days = 30
 
     # Headless
