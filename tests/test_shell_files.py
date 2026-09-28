@@ -112,3 +112,34 @@ def test_the_lane_segment_of_a_test_run_stays_an_exec_on_its_file(tmp_path):
 def test_a_call_that_touches_nothing_of_the_project_has_no_file(tmp_path):
     segs = timeline("claude", _claude_log(tmp_path, "git status && pnpm install"), WT)["segments"]
     assert [(s["kind"], s.get("path")) for s in segs] == [("exec", None)]
+
+
+# ——— unexpanded shell variables never become project files (a `cd $WT/x` leaves the directory unknown) ———
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "sed -i '' 's/a/b/' $WT/controlplane/x.go",
+        "cd $WT/controlplane && sed -i '' 's/a/b/' internal/x.go && npx vitest run internal/x.test.go",
+        "cd ${ROOT} && cp a.py src/a.ts",
+        "sed -i '' 's/a/b/' ${ROOT}/a.ts",
+        "python3 - <<'EOF'\np='$(git rev-parse --show-toplevel)/b.py'\nopen(p,'w').write('x')\nEOF",
+        "cd $(git rev-parse --show-toplevel) && sed -i '' 's/a/b/' b.py",
+        "cat > `pwd`/c.md <<'EOF'\nx\nEOF",
+        "cd `pwd`/sub && touch d.md",
+        "pytest $WT/tests/test_x.py",
+    ],
+)
+def test_unexpanded_variables_are_dropped(cmd):
+    assert shell_files(cmd, WT, WT) == ([], [])
+
+
+def test_a_later_absolute_path_still_counts_after_an_unknown_cd():
+    assert shell_files(f"cd $WT/x && sed -i '' 's/a/b/' {WT}/web/a.ts", WT, WT) == (["web/a.ts"], [])
+
+
+def test_home_directory_paths_are_expanded_and_then_fall_outside_the_project(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert shell_files("sed -i '' 's/a/b/' ~/notes.md && cd ~ && touch todo.md", WT, WT) == ([], [])
+    assert shell_files("sed -i '' 's/a/b/' ~nobody-here/notes.md", WT, WT) == ([], [])
+    monkeypatch.setenv("HOME", WT)  # a home that is the project itself
+    assert shell_files("sed -i '' 's/a/b/' ~/notes.md", WT, WT) == (["notes.md"], [])
