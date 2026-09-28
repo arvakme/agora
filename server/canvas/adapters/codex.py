@@ -330,6 +330,24 @@ def spawn_edges(parent_id: str, home: Path) -> dict[str, str]:
         return {}
 
 
+# children() per (rollout, its size and mtime, the index's mtime): a large parent rollout is read once
+# per change, not on every /api/agent/runs (review P2-6).
+_children_cache: dict[tuple, list] = {}
+
+
+def _children_key(ref: Any, home: Path) -> tuple | None:
+    try:
+        st = ref.path.stat() if ref.path is not None else None
+    except OSError:
+        return None
+    db = codex_home(home) / "state_5.sqlite"
+    try:
+        dbm = (db.stat().st_mtime, (db.parent / "state_5.sqlite-wal").stat().st_mtime if (db.parent / "state_5.sqlite-wal").exists() else 0)
+    except OSError:
+        dbm = (0, 0)
+    return (ref.native_id, str(ref.path), st.st_size if st else 0, st.st_mtime if st else 0, dbm, str(home))
+
+
 CODEX_FALLBACK = 400  # newest rollouts looked at when Codex has no index
 
 
@@ -465,6 +483,18 @@ class CodexAdapter(Adapter):
         each child rollout's ``session_meta.source.subagent.thread_spawn.parent_thread_id``. Guardian
         threads (``source.subagent.other == "guardian"``, approval checks) are not workers: hidden."""
         home = home or Path.home()
+        key = _children_key(ref, home)
+        hit = _children_cache.get(key) if key else None
+        if hit is not None:
+            return hit
+        out = self._children(ref, home)
+        if key:
+            if len(_children_cache) > 256:
+                _children_cache.clear()
+            _children_cache[key] = out
+        return out
+
+    def _children(self, ref: NativeRef, home: Path) -> list[NativeRef]:
         acts: dict[str, dict[str, Any]] = {}
         if ref.path is not None:
             for rec in read_jsonl(ref.path):
