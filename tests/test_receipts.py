@@ -117,7 +117,7 @@ def test_workers_link_to_the_session_that_dispatched_them(env):
     r = {x["id"]: x for x in tree["runs"]}
 
     w = r[f"claude:{W}"]  # 1. the parent's own dispatch output, and the worker's log via the sid
-    assert w["parent"] == {"runId": f"claude:{P}", "via": "seedmux", "toolCallId": "toolu_S", "taskId": "T-aaa111", "evidence": f"父会话日志里 smx-team 打印的 task=T-aaa111 pane={PANE_W}"}
+    assert w["parent"] == {"runId": f"claude:{P}", "via": "seedmux", "toolCallId": "toolu_S", "taskId": "T-aaa111", "evidence": f"父会话日志里 smx-team 打印的 task=T-aaa111 pane={PANE_W}；worker 会话 33333333 来自 delivery.json"}
     assert w["state"] == "done" and w["receipt"]["accept"] == "ok" and w["receipt"]["changed"] == ["server/app.py"] and w["receipt"]["replyPreview"] == "改好了 server/app.py"
     assert [(x["kind"], x.get("path")) for x in w["timeline"]["segments"]] == [("write", "server/app.py")]
 
@@ -189,3 +189,89 @@ def test_reads_only_core_files(env):
     assert set(t["meta"]) <= set(receipts.META_KEYS) and "noise" not in t["meta"]
     assert "prompt" not in json.dumps(t)
     assert [x["meta"]["task"] for x in receipts.tickets(str(s.root))] == ["T-fff666"]
+
+
+# ——— review P1-1: Seedmux reuses panes ———
+def main_log(home, root, t0, extra=()):
+    d = home / ".claude" / "projects" / agents.claude_dir_name(root)
+    return jl(d / f"{P}.jsonl", [
+        {"type": "user", "uuid": "u1", "timestamp": iso(t0), "cwd": root, "message": {"content": "编排"}},
+        *extra,
+        {"type": "assistant", "uuid": "a9", "timestamp": iso(t0 + 600), "message": {"id": "m9", "stop_reason": "end_turn", "content": [{"type": "text", "text": "ok"}]}},
+    ])
+
+
+def dispatch(tid, pane, at, tu):
+    return [
+        {"type": "assistant", "uuid": f"a-{tu}", "timestamp": iso(at), "message": {"id": f"m-{tu}", "content": [{"type": "tool_use", "id": tu, "name": "Bash", "input": {"command": "smx-team spawn --agent claude"}}]}},
+        {"type": "user", "uuid": f"r-{tu}", "timestamp": iso(at + 1), "message": {"content": [{"type": "tool_result", "tool_use_id": tu, "content": f"task={tid} pane={pane}"}]}},
+    ]
+
+
+def test_pane_sid_is_used_only_for_the_panes_latest_unreplied_ticket_and_only_inside_the_project(env, monkeypatch):
+    home, s, tasks = env
+    root = str(s.root)
+    t0 = time.time() - 3600
+    other_sid = "66666666-0000-0000-0000-000000000001"
+    # The pane's current session belongs to ANOTHER project.
+    d = home / ".claude" / "projects" / agents.claude_dir_name("/other/project")
+    jl(d / f"{other_sid}.jsonl", [{"type": "user", "uuid": "o", "timestamp": iso(t0), "cwd": "/other/project", "message": {"content": "other project's secret"}}])
+    monkeypatch.setattr(receipts, "panes", lambda: {PANE_W: {"sid": other_sid, "agent": "claude"}})
+    log = main_log(home, root, t0, [*dispatch("T-old001", PANE_W, t0 + 10, "tu1"), *dispatch("T-new002", PANE_W, t0 + 100, "tu2")])
+    # Old ticket on the pane (replied, no sid in delivery) and the latest one (not replied, no sid).
+    ticket(tasks, "T-old001", {"from_pane": "", "to_pane": PANE_W, "agent": "claude", "cwd": root, "created_at": t0 + 10, "status": "replied:done", "replied_at": t0 + 50}, {"state": "replied:done"})
+    ticket(tasks, "T-new002", {"from_pane": "", "to_pane": PANE_W, "agent": "claude", "cwd": root, "created_at": t0 + 100, "status": "dispatched"}, {"state": "running_observed"})
+    tree = runs.build(NativeRef("claude", P, log, root), root=root, store=s, with_items=True)
+    r = {x["id"]: x for x in tree["runs"]}
+    assert f"claude:{other_sid}" not in r and "secret" not in json.dumps(tree)
+    assert "smx:T-old001" in r  # replied: never takes the pane's current sid
+    assert "smx:T-new002" in r and "不在这个项目里" in r["smx:T-new002"]["parent"]["evidence"]
+    # A later ticket on the same pane from another project makes T-new002 no longer the latest: no /panes lookup at all.
+    ticket(tasks, "T-else03", {"to_pane": PANE_W, "agent": "claude", "cwd": "/other/project", "created_at": t0 + 200, "status": "dispatched"})
+    scan = receipts.Scan(root)
+    assert not scan.latest_on_pane(receipts.receipt(receipts.read_ticket(tasks / "T-new002")))
+
+
+def test_from_pane_links_only_while_that_worker_held_the_pane(env):
+    home, s, tasks = env
+    root = str(s.root)
+    t0 = time.time() - 3600
+    log = main_log(home, root, t0, dispatch("T-w00001", PANE_W, t0 + 10, "tu1"))
+    ticket(tasks, "T-w00001", {"to_pane": PANE_W, "agent": "devin", "cwd": root, "created_at": t0 + 10, "status": "replied:done", "replied_at": t0 + 100})
+    # Dispatched from that pane while the worker held it → its child; long after it replied → not.
+    ticket(tasks, "T-in0002", {"from_pane": PANE_W, "to_pane": PANE_ME, "agent": "codex", "cwd": root, "created_at": t0 + 50, "status": "dispatched"})
+    ticket(tasks, "T-late03", {"from_pane": PANE_W, "agent": "codex", "cwd": root, "created_at": t0 + 3000, "status": "dispatched"})
+    r = {x["id"]: x for x in runs.build(NativeRef("claude", P, log, root), root=root, store=s)["runs"]}
+    assert r["smx:T-in0002"]["parent"]["runId"] == "smx:T-w00001"
+    assert "smx:T-late03" not in r
+
+
+def test_one_worker_session_serving_several_tickets_keeps_every_receipt(env):
+    home, s, tasks = env
+    root = str(s.root)
+    t0 = time.time() - 3600
+    log = main_log(home, root, t0, [*dispatch("T-one001", PANE_W, t0 + 10, "tu1"), *dispatch("T-two002", PANE_W, t0 + 200, "tu2")])
+    d = home / ".claude" / "projects" / agents.claude_dir_name(root)
+    jl(d / f"{W}.jsonl", [{"type": "user", "uuid": "wu", "timestamp": iso(t0 + 11), "cwd": root, "message": {"content": "T-one001"}}])
+    ticket(tasks, "T-one001", {"to_pane": PANE_W, "agent": "claude", "cwd": root, "created_at": t0 + 10, "status": "replied:done", "replied_at": t0 + 100}, {"sid": W})
+    ticket(tasks, "T-two002", {"to_pane": PANE_W, "agent": "claude", "cwd": root, "created_at": t0 + 200, "status": "replied:blocked", "replied_at": t0 + 300, "resume_session": W}, {"sid": W})
+    r = {x["id"]: x for x in runs.build(NativeRef("claude", P, log, root), root=root, store=s)["runs"]}
+    w = r[f"claude:{W}"]
+    assert [x["taskId"] for x in w["receipts"]] == ["T-one001", "T-two002"] and w["receipt"]["taskId"] == "T-two002" and w["state"] == "blocked"
+    ms = [(m["kind"], m.get("taskId")) for m in r[f"claude:{P}"]["timeline"]["moments"]]
+    assert ("dispatch", "T-one001") in ms and ("dispatch", "T-two002") in ms and ("handoff", "T-two002") in ms
+
+
+def test_symlinked_or_oversized_ticket_files_are_skipped(env, tmp_path):
+    home, s, tasks = env
+    root = str(s.root)
+    real = ticket(tmp_path / "elsewhere", "T-real01", {"agent": "codex", "cwd": root, "created_at": 1.0, "status": "replied:done"})
+    tasks.mkdir(parents=True, exist_ok=True)
+    (tasks / "T-link01").symlink_to(real)
+    d = tasks / "T-big001"
+    d.mkdir()
+    (d / "meta.json").write_text(json.dumps({"task": "T-big001", "cwd": root, "pad": "x" * (receipts.MAX_JSON + 10)}))
+    d2 = tasks / "T-lnkf01"
+    d2.mkdir()
+    (d2 / "meta.json").symlink_to(real / "meta.json")
+    assert receipts.tickets(root) == []

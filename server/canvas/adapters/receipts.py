@@ -80,8 +80,14 @@ def unified_state(meta: dict[str, Any], delivery: dict[str, Any] | None, now: fl
 _ticket_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
 
 
+MAX_JSON = 256 * 1024  # meta.json / delivery.json larger than this are not read (a ticket's are a few KB)
+
+
 def _json(p: Path) -> dict[str, Any] | None:
+    """A small JSON object file; symlinks and oversized files are skipped (review P2-9)."""
     try:
+        if p.is_symlink() or p.stat().st_size > MAX_JSON:
+            return None
         v = json.loads(p.read_text())
     except (OSError, ValueError):
         return None
@@ -104,8 +110,9 @@ def read_ticket(d: Path) -> dict[str, Any] | None:
     delivery = _json(d / "delivery.json")
     reply = None
     try:
-        with open(d / "reply.md", "rb") as fh:
-            reply = fh.read(1200).decode("utf-8", "replace")
+        if not (d / "reply.md").is_symlink():
+            with open(d / "reply.md", "rb") as fh:
+                reply = fh.read(1200).decode("utf-8", "replace")
     except OSError:
         pass
     t = {
@@ -140,26 +147,41 @@ def in_project(cwd: str | None, roots: list[str]) -> bool:
     return any(c == r or c.startswith(r.rstrip("/") + "/") for r in roots)
 
 
-def tickets(root: str, *, since: float | None = None, base: Path | None = None) -> list[dict[str, Any]]:
-    """This project's tickets (cwd in the root or a worktree), oldest first; ``since`` in seconds."""
-    base = base or tasks_dir()
-    if not base.is_dir():
-        return []
-    roots = worktrees(root)
-    out = []
-    for d in base.iterdir():
-        if not d.name.startswith("T-") or not d.is_dir():
-            continue
-        try:
-            if since and d.stat().st_mtime < since:
+class Scan:
+    """One read of the tickets folder for one run-tree build (review P2-6): this project's tickets,
+    the project's roots (``git worktree list`` once), and when each Seedmux pane last got a ticket
+    from *any* project — panes are reused, so only a pane's latest ticket may take its current sid."""
+
+    def __init__(self, root: str, base: Path | None = None) -> None:
+        self.roots = worktrees(root)
+        self.mine: list[dict[str, Any]] = []
+        self.pane_latest: dict[str, float] = {}
+        base = base or tasks_dir()
+        if not base.is_dir():
+            return
+        for d in base.iterdir():
+            if not d.name.startswith("T-") or d.is_symlink() or not d.is_dir():
                 continue
-        except OSError:
-            continue
-        t = read_ticket(d)
-        if t is None or not in_project(t["meta"].get("cwd"), roots):
-            continue
-        out.append(t)
-    return sorted(out, key=lambda t: float(t["meta"].get("created_at") or 0))
+            t = read_ticket(d)
+            if t is None:
+                continue
+            m = t["meta"]
+            pane = str(m.get("to_pane") or "").upper()
+            created = float(m.get("created_at") or 0)
+            if pane and created >= self.pane_latest.get(pane, 0):
+                self.pane_latest[pane] = created
+            if in_project(m.get("cwd"), self.roots):
+                self.mine.append(t)
+        self.mine.sort(key=lambda t: float(t["meta"].get("created_at") or 0))
+
+    def latest_on_pane(self, rc: dict[str, Any]) -> bool:
+        pane = (rc.get("toPane") or "").upper()
+        return bool(pane) and rc.get("createdAt") is not None and abs(self.pane_latest.get(pane, -1) * 1000 - rc["createdAt"]) < 1
+
+
+def tickets(root: str, *, base: Path | None = None) -> list[dict[str, Any]]:
+    """This project's tickets (cwd in the root, a worktree, or a folder inside them), oldest first."""
+    return Scan(root, base).mine
 
 
 _panes: tuple[float, dict[str, dict[str, Any]]] | None = None
@@ -247,42 +269,78 @@ def _windows(store: Any, root: str, skip: str | None) -> list[tuple[str, int, in
     return out
 
 
-def worker_ref(t: dict[str, Any], rc: dict[str, Any], parent: ParentLink) -> NativeRef:
-    """The worker as a run: its native session when Seedmux knows the sid (delivery / panes) and its
-    CLI has an adapter that finds the log; else a receipts-only run ``smx:T-xx``."""
+def _replied(rc: dict[str, Any]) -> bool:
+    return bool(rc.get("repliedAt")) or str(rc.get("status") or "").startswith("replied:")
+
+
+def worker_ref(t: dict[str, Any], rc: dict[str, Any], parent: ParentLink, scan: Scan) -> NativeRef:
+    """The worker as a run: its native session when its sid is known and its log is in this project;
+    else a receipts-only run ``smx:T-xx``.
+
+    Where the sid comes from (review P1-1): ``delivery.json``; failing that, the pane's *current* sid
+    from ``/panes`` — but only when this ticket is the latest one that pane received (from any
+    project) and has not replied yet, since Seedmux reuses panes. A found log must say it ran in the
+    project root or one of its worktrees; another project's transcript is never attached."""
     a = by_seedmux_name(rc["agent"])
-    sid = rc.get("sid") or (panes().get((rc.get("toPane") or "").upper()) or {}).get("sid")
+    sid = rc.get("sid")
+    how = "delivery.json"
+    if not sid and not _replied(rc) and scan.latest_on_pane(rc):
+        cand = (panes().get((rc.get("toPane") or "").upper()) or {}).get("sid")
+        sid, how = (cand, "/panes") if valid_id(cand) else (None, "")
     label = f"{rc['taskId']} · {rc['agent'] or 'worker'}"
     meta = {"state": rc["state"], "dispatchedAt": rc["createdAt"], "doneAt": rc["repliedAt"] if rc["state"] in ("done", "failed", "blocked") else None, "receipt": rc, "role": "seedmux worker"}
+    note = ""
     if a is not None and sid and hasattr(a, "locate"):
         look = a.locate(sid, rc.get("cwd"), None)
         if look.path is not None:
-            return NativeRef(a.kind, sid, look.path, rc.get("cwd"), parent, label=label, meta=meta)
+            cwd = a.log_cwd(look.path)
+            if in_project(cwd, scan.roots):
+                ev = parent.evidence + f"；worker 会话 {sid[:8]} 来自 {how}"
+                return NativeRef(a.kind, sid, look.path, cwd, ParentLink(parent.via, parent.parent_run, parent.tool_call_id, parent.task_id, ev), label=label, meta=meta)
+            note = f"；{how} 给的会话 {sid[:8]} 不在这个项目里（{cwd or '日志没写 cwd'}），没有接上"
     finder = getattr(a, "worker_for_ticket", None) if a is not None else None
     if finder is not None:
         got = finder(rc)
         if got is not None:
-            nid, path, how = got
-            return NativeRef(a.kind, nid, path, rc.get("cwd"), ParentLink(parent.via if how == "seedmux" else "inferred", parent.parent_run, parent.tool_call_id, parent.task_id, parent.evidence + f"；worker 会话按 cwd 与时间窗找到（{how}）"), label=label, meta=meta)
-    return NativeRef(a.kind if a is not None else (rc["agent"] or "seedmux"), rc["taskId"], None, rc.get("cwd"), parent, label=label, meta={**meta, "receiptsOnly": True})
+            nid, path, how2 = got
+            return NativeRef(a.kind, nid, path, rc.get("cwd"), ParentLink(parent.via if how2 == "seedmux" else "inferred", parent.parent_run, parent.tool_call_id, parent.task_id, parent.evidence + f"；worker 会话按 cwd 与时间窗找到（{how2}）"), label=label, meta=meta)
+    link = ParentLink(parent.via, parent.parent_run, parent.tool_call_id, parent.task_id, parent.evidence + note)
+    return NativeRef(a.kind if a is not None else (rc["agent"] or "seedmux"), rc["taskId"], None, rc.get("cwd"), link, label=label, meta={**meta, "receiptsOnly": True})
 
 
-def attach(runs: dict[str, dict[str, Any]], *, root: str | None, store: Any, depth: int | None, folded: dict[str, int], links: list | None = None, home: Path | None = None, placed: set[str] | None = None, with_items: bool = False) -> list[tuple[NativeRef, dict[str, Any]]]:
+def _interval(run: dict[str, Any], rc: dict[str, Any], now_ms: int) -> tuple[int, int]:
+    """When a worker held its pane for this ticket: from dispatch to its reply, else to its last
+    activity (+ pad), else — still going — until now."""
+    lo = rc.get("createdAt") or run.get("startedAt") or 0
+    if rc.get("repliedAt"):
+        return lo, rc["repliedAt"]
+    if run.get("lastAt"):
+        return lo, max(run["lastAt"], lo) + WINDOW_PAD_MS
+    if rc["state"] in ("done", "failed", "blocked", "exited", "unknown", "session_changed"):
+        return lo, lo + WINDOW_PAD_MS
+    return lo, now_ms
+
+
+def attach(runs: dict[str, dict[str, Any]], *, root: str | None, store: Any, depth: int | None, folded: dict[str, int], links: list | None = None, home: Path | None = None, placed: set[str] | None = None, with_items: bool = False, scan: Scan | None = None) -> list[tuple[NativeRef, dict[str, Any]]]:
     """Add this project's Seedmux workers to the run tree ``runs`` (mutated), linked to their parents.
     Returns the worker runs it added that have a native session (their own sub-agents are the
-    caller's to expand). ``placed``: tickets already in the tree (kept across calls)."""
+    caller's to expand). ``placed``: tickets already in the tree (kept across calls); ``scan``: the
+    build's one read of the tickets folder."""
     from server.canvas.adapters.runs import _moments, run_of
 
     added: list[tuple[NativeRef, dict[str, Any]]] = []
     placed = placed if placed is not None else set()
     if not root:
         return added
-    all_t = tickets(root)
+    scan = scan or Scan(root)
+    all_t = scan.mine
     if not all_t:
         return added
     top = next(iter(runs.values()))
-    # 1. dispatches in the runs' own logs (task=T-xx pane=… in a tool's output)
+    now_ms = int(time.time() * 1000)
+
     def dispatches() -> dict[str, tuple[str, str]]:
+        """1. dispatches in the runs' own logs (``smx-team spawn/assign`` output: task=T-xx pane=…)"""
         found: dict[str, tuple[str, str]] = {}
         for r in list(runs.values()):
             for it in r.get("_items") or []:
@@ -293,9 +351,22 @@ def attach(runs: dict[str, dict[str, Any]], *, root: str | None, store: Any, dep
 
     agora_panes = _agora_panes(store) if store is not None else {}
     session_of_top = top.get("sessionId")
+    top_lo = top.get("startedAt")
+    top_hi = ((top.get("lastAt") or top_lo or 0) + WINDOW_PAD_MS) if top_lo else None
     others = None
-    # pane → run of the workers already in the tree (their to_pane), for tickets they dispatched in turn
-    worker_panes = {str(r["receipt"]["toPane"]).upper(): rid for rid, r in runs.items() if (r.get("receipt") or {}).get("toPane")}
+    # pane → every interval a worker in the tree held it: (from, to, run id). A reused pane has many.
+    worker_panes: dict[str, list[tuple[int, int, str]]] = {}
+    for rid, r in runs.items():
+        for rc0 in r.get("receipts") or ([r["receipt"]] if r.get("receipt") else []):
+            if rc0.get("toPane"):
+                worker_panes.setdefault(rc0["toPane"].upper(), []).append((*_interval(r, rc0, now_ms), rid))
+
+    def pane_holder(pane: str, at: int | None) -> str | None:
+        if at is None:
+            return None
+        hits = [(lo, rid) for lo, hi, rid in worker_panes.get(pane.upper(), []) if lo <= at <= hi]
+        return max(hits)[1] if hits else None
+
     changed = True
     while changed:  # a worker's own log can dispatch further workers
         changed = False
@@ -306,17 +377,17 @@ def attach(runs: dict[str, dict[str, Any]], *, root: str | None, store: Any, dep
             if tid in placed:
                 continue
             parent_id, tool_id, via, ev = None, None, None, ""
+            holder = pane_holder(rc["fromPane"], rc.get("createdAt")) if rc.get("fromPane") else None
             if tid in by_task:
                 parent_id, tool_id = by_task[tid]
                 via, ev = "seedmux", f"父会话日志里 smx-team 打印的 task={tid} pane={rc.get('toPane') or '?'}"
-            elif rc.get("fromPane") and agora_panes.get(rc["fromPane"].upper()) == session_of_top and session_of_top:
-                parent_id, via, ev = top["id"], "seedmux", f"工单 meta.from_pane = 持有这个会话的 Seedmux pane（{rc['fromPane'][:8]}）"
-            elif rc.get("fromPane") and rc["fromPane"].upper() in worker_panes:
-                parent_id, via = worker_panes[rc["fromPane"].upper()], "seedmux"
-                ev = f"工单 meta.from_pane = worker {runs[parent_id].get('receipt', {}).get('taskId', '')} 的 to_pane（{rc['fromPane'][:8]}）"
-            elif not rc.get("fromPane") and top.get("startedAt") and rc.get("createdAt"):
-                lo, hi = top["startedAt"], (top.get("lastAt") or top["startedAt"]) + WINDOW_PAD_MS
-                if lo <= rc["createdAt"] <= hi:
+            elif rc.get("fromPane") and session_of_top and agora_panes.get(rc["fromPane"].upper()) == session_of_top and top_lo and rc.get("createdAt") and top_lo <= rc["createdAt"] <= top_hi:
+                parent_id, via, ev = top["id"], "seedmux", f"工单 meta.from_pane = 持有这个会话的 Seedmux pane（{rc['fromPane'][:8]}），且在会话活跃期间创建"
+            elif holder is not None:
+                parent_id, via = holder, "seedmux"
+                ev = f"工单 meta.from_pane = worker {(runs[holder].get('receipt') or {}).get('taskId', '')} 的 to_pane（{rc['fromPane'][:8]}），且创建时那个 worker 还占着这个 pane"
+            elif not rc.get("fromPane") and top_lo and rc.get("createdAt"):
+                if top_lo <= rc["createdAt"] <= top_hi:
                     if others is None:
                         others = _windows(store, root, session_of_top) if store is not None else []
                     if not any(a <= rc["createdAt"] <= b for _, a, b in others):
@@ -326,33 +397,42 @@ def attach(runs: dict[str, dict[str, Any]], *, root: str | None, store: Any, dep
             placed.add(tid)
             prun = runs[parent_id]
             link = ParentLink(via, parent_id, tool_id, tid, ev)
-            ref = worker_ref(t, rc, link)
+            ref = worker_ref(t, rc, link, scan)
             kd = prun["depth"] + 1
             if depth is not None and kd > depth:
                 folded[prun["id"]] = folded.get(prun["id"], 0) + 1
                 prun["hiddenDescendants"] += 1
                 continue
-            if ref.run_id in runs:
-                continue
-            krun = run_of(ref, root, depth=kd, links=links, with_items=with_items)
-            if ref.meta.get("receiptsOnly"):
-                krun["id"] = f"smx:{tid}"
-                krun["tier"] = "T3"
-                krun.pop("nativeId", None)
-            if ref.meta.get("receiptsOnly") or krun["state"] not in ("running", "waiting"):
-                # Seedmux's own verdict, unless the worker's log shows it working or waiting right now.
-                krun["state"] = rc["state"]
-            krun["receipt"] = rc
+            rid = f"smx:{tid}" if ref.meta.get("receiptsOnly") else ref.run_id
+            if rid in runs:
+                # The same worker session served another ticket (resume_session): one run, every receipt (review P2-8).
+                krun = runs[rid]
+                krun.setdefault("receipts", [krun["receipt"]] if krun.get("receipt") else []).append(rc)
+                if (rc.get("createdAt") or 0) >= ((krun.get("receipt") or {}).get("createdAt") or 0):
+                    krun["receipt"] = rc
+                    if krun["state"] not in ("running", "waiting"):
+                        krun["state"] = rc["state"]
+            else:
+                krun = run_of(ref, root, depth=kd, links=links, with_items=with_items)
+                if ref.meta.get("receiptsOnly"):
+                    krun["id"] = rid
+                    krun["tier"] = "T3"
+                    krun.pop("nativeId", None)
+                if ref.meta.get("receiptsOnly") or krun["state"] not in ("running", "waiting"):
+                    # Seedmux's own verdict, unless the worker's log shows it working or waiting right now.
+                    krun["state"] = rc["state"]
+                krun["receipt"] = rc
+                krun["receipts"] = [rc]
+                runs[rid] = krun
+                if ref.path is not None:
+                    added.append((ref, krun))
             if rc.get("repliedAt"):
                 krun["timeline"]["moments"].append({"kind": "receipt", "at": rc["repliedAt"], "taskId": tid, "state": rc["state"]})
-            runs[krun["id"]] = krun
+            before = len(prun["timeline"]["moments"])
             _moments(prun, krun, ref, prun.get("_items") or [])
-            for m in prun["timeline"]["moments"]:
-                if m.get("childRunId") == krun["id"]:
-                    m["taskId"] = tid
+            for m in prun["timeline"]["moments"][before:]:
+                m["taskId"] = tid
             if rc.get("toPane"):
-                worker_panes[rc["toPane"].upper()] = krun["id"]
-            if ref.path is not None:
-                added.append((ref, krun))
+                worker_panes.setdefault(rc["toPane"].upper(), []).append((*_interval(krun, rc, now_ms), rid))
             changed = True
     return added

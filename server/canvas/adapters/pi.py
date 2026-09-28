@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from server.canvas import agent_models
-from server.canvas.adapters.base import valid_id, Adapter, tool_facts, VersionRange
+from server.canvas.adapters.base import first_cwd, valid_id, Adapter, tool_facts, VersionRange
 from server.canvas.adapters.tools import activity_of, shell_reads, spawn_in_output
 from server.canvas.adapters.common import (
     MAX_TEXT,
@@ -301,6 +301,9 @@ class PiAdapter(Adapter):
         except (OSError, ValueError):
             return None
         return str(head.get("version")) if isinstance(head, dict) and head.get("type") == "session" and head.get("version") is not None else None
+
+    def log_cwd(self, path: Path) -> str | None:
+        return first_cwd(path)
 
     # ——— Projector ———
     handled_types = frozenset({"message", "model_change", "thinking_level_change"})

@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from server.canvas import agent_models
-from server.canvas.adapters.base import valid_id, Adapter, NativeRef, ParentLink, VersionRange, tool_facts
+from server.canvas.adapters.base import first_cwd, valid_id, Adapter, NativeRef, ParentLink, VersionRange, tool_facts
 from server.canvas.adapters.tools import activity_of, shell_reads, spawn_in_output
 from server.canvas.adapters.common import (
     MAX_FULL,
@@ -398,6 +398,9 @@ class CodexAdapter(Adapter):
 
     def sessions_for(self, roots: list[str], home: Path | None = None) -> list[dict[str, Any]]:
         return [{"agent": "codex", **r} for r in index_rows(roots, home or Path.home())]
+
+    def log_cwd(self, path: Path) -> str | None:
+        return first_cwd(path)
 
     # ——— Projector ———
     # ``record_type``: top-level type, ``event_msg/<type>``, ``response_item/<type>``, or
