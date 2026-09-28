@@ -2,9 +2,10 @@
 // also yields an undo batch for the session card when an agent did it (`agora canvas link`).
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { byId, codePathsOf, isShape, labelOf, live, type El } from "../canvas/scene";
+import { byId, codePathsOf, isShape, labelOf, type El } from "../canvas/scene";
 import type { Batch } from "../ops/apply";
 import type { Link } from "./codeLinks";
+import { resolveNode } from "../canvas/nodes";
 
 export const cleanGlobs = (globs: string[]) => [...new Set(globs.map((g) => g.trim().replace(/\\/g, "/").replace(/^\.\//, "")).filter(Boolean))];
 
@@ -33,19 +34,8 @@ export function writeCodePaths(api: ExcalidrawImperativeAPI, updates: Map<string
   return { before, after: new Map([...before.keys()].map((id) => [id, settled.get(id)!.version])) };
 }
 
-/** Resolve what an agent named: an element id, or the exact label of one box / frame (case-insensitive). */
-export function resolveElement(ref: string, scene: readonly El[]): { id?: string; error?: string } {
-  const map = byId(scene);
-  const target = (e: El | undefined) => live(e) && (isShape(e!) || e!.type === "frame");
-  if (target(map.get(ref))) return { id: ref };
-  const t = map.get(ref);
-  if (live(t) && t.type === "text" && t.containerId && target(map.get(t.containerId))) return { id: t.containerId };
-  const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
-  const hits = scene.filter((e) => target(e) && norm(labelOf(e, map)) === norm(ref));
-  if (hits.length === 1) return { id: hits[0].id };
-  if (hits.length > 1) return { error: `"${ref}" matches ${hits.length} elements (${hits.map((h) => h.id).join(", ")}): pass an id` };
-  return { error: `no box or frame with id or label "${ref}" (see \`agora canvas read\`)` };
-}
+/** Resolve what an agent named to a node id (canvas/nodes.ts resolveNode). */
+export const resolveElement = resolveNode;
 
 /** The elements that carry code paths (live boxes and frames). */
 export function linksOf(elements: readonly El[]): Link[] {

@@ -3,11 +3,11 @@
 // "may be out of date" mark), the breadcrumb above a child canvas, and the node menu that makes,
 // expands (by the session's agent), enters or unlinks a child.
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { IconEnter, IconHint, IconNested, IconSparkles } from "../app/icons";
+import { IconBack, IconEnter, IconHint, IconNested, IconSparkles } from "../app/icons";
 import type { CanvasViewState } from "../canvas/CanvasView";
-import { bbox, codePathsOf, isShape, labelOf, live, type El } from "../canvas/scene";
+import { codePathsOf, isShape, labelOf, live, type El } from "../canvas/scene";
+import { childNodeAt, nodeBox } from "../canvas/nodes";
 import { clipPath } from "../canvas/chrome";
 import type { Box } from "../canvas/clearance";
 import { threadStores } from "../comments/threads";
@@ -17,7 +17,8 @@ import { sessions } from "../session/store";
 import { ui } from "../session/ui";
 import { pointerFollow } from "../pointer/follow";
 import { ancestry, childOf, descendants, openThreads, staleness, type Staleness } from "./graph";
-import { nav, nested, useNested } from "./store";
+import { blankChild, nav, nested, useNested } from "./store";
+import { backHintSeen, markBackHintSeen, onBackHintSeen, upKeyLabel } from "./up";
 import { writeChildLink } from "./writeChild";
 import "./nested.css";
 
@@ -49,9 +50,10 @@ export function ChildMarkers({ view, canvasId, info, onEnter, chrome = [] }: { v
         const child = childOf(e)!;
         const i = info(child);
         if (!i) return null;
-        const b = bbox(e);
-        const x = (b.x + b.width + a.scrollX) * z;
-        const y = (b.y + b.height + a.scrollY) * z;
+        // Bottom-right of the whole node: a library icon's or group's parts and label included.
+        const b = nodeBox(e, view.map, view.elements);
+        const x = (b.x + b.w + a.scrollX) * z;
+        const y = (b.y + b.h + a.scrollY) * z;
         const stale = !!i.stale?.files.length;
         return (
           <button
@@ -101,21 +103,35 @@ export function OwnerChildMarkers({ view, canvasId, chrome }: { view: CanvasView
   );
 }
 
-/** The canvas's place in its tree: 总架构 › 后端 › 订单模块. Shown only on a child canvas. */
-export function Breadcrumb({ path, current, onGo, extra }: { path: { id: string; title: string }[]; current: string; onGo: (id: string) => void; extra?: React.ReactNode }) {
+/**
+ * The canvas's place in its tree, shown only on a child canvas: a 「← 返回 <父画布>」 button first
+ * (the obvious way back), then 总架构 › 后端 › 订单模块 (any level is one click).
+ */
+export function Breadcrumb({ path, current, onGo, extra, keyLabel, hint }: { path: { id: string; title: string }[]; current: string; onGo: (id: string) => void; extra?: React.ReactNode; keyLabel?: string; hint?: React.ReactNode }) {
   if (path.length < 2) return null;
+  const at = path.findIndex((p) => p.id === current);
+  const up = path[(at < 0 ? path.length - 1 : at) - 1];
+  const name = (t: string) => t || "未命名画布";
   return (
     <nav className="nest-crumbs" aria-label="画布层级">
-      <IconNested size={14} />
+      {up && (
+        <span className="nest-back-wrap">
+          <button className="nest-back" onClick={() => onGo(up.id)} title={`返回上一级「${name(up.title)}」${keyLabel ? `（${keyLabel}）` : ""}`} aria-keyshortcuts={keyLabel === "⌘↑" ? "Meta+ArrowUp" : keyLabel ? "Control+ArrowUp" : undefined}>
+            <IconBack size={14} />
+            <span>返回 {name(up.title)}</span>
+          </button>
+          {hint}
+        </span>
+      )}
       <ol>
         {path.map((p, i) => (
           <li key={p.id}>
             {i > 0 && <span className="nest-sep" aria-hidden>›</span>}
             {p.id === current ? (
-              <b aria-current="page">{p.title || "未命名画布"}</b>
+              <b aria-current="page">{name(p.title)}</b>
             ) : (
-              <button onClick={() => onGo(p.id)} title={`回到「${p.title}」`}>
-                {p.title || "未命名画布"}
+              <button onClick={() => onGo(p.id)} title={`回到「${name(p.title)}」`}>
+                {name(p.title)}
               </button>
             )}
           </li>
@@ -123,6 +139,21 @@ export function Breadcrumb({ path, current, onGo, extra }: { path: { id: string;
       </ol>
       {extra}
     </nav>
+  );
+}
+
+/** 「在子图里。点左上角返回，或按 ⌘↑」 the first time someone is on a child canvas (once per browser). */
+function BackHint({ keyLabel }: { keyLabel: string }) {
+  const [show, setShow] = useState(() => !backHintSeen());
+  useEffect(() => onBackHintSeen(() => setShow(false)), []);
+  if (!show) return null;
+  return (
+    <span className="nest-hint" role="status">
+      在子图里。点左上角返回，或按 {keyLabel}
+      <button className="nest-act quiet" onClick={() => markBackHintSeen()}>
+        知道了
+      </button>
+    </span>
   );
 }
 
@@ -140,11 +171,14 @@ export function OwnerBreadcrumb({ canvasId }: { canvasId: string }) {
   const [sent, setSent] = useState(false);
   useEffect(() => setSent(false), [canvasId]);
   const files = [...new Set(stale?.files.map((f) => f.path) ?? [])];
+  const keyLabel = upKeyLabel();
   return (
     <Breadcrumb
       path={chain.map((id) => ({ id, title: st.titles[id] ?? id }))}
       current={canvasId}
-      onGo={(id) => nav.go(canvasId, id)}
+      onGo={(id) => (markBackHintSeen(), nav.go(canvasId, id))}
+      keyLabel={keyLabel}
+      hint={<BackHint keyLabel={keyLabel} />}
       extra={
         files.length > 0 && (
           <span className="nest-stale" role="status">
@@ -207,87 +241,59 @@ const updatePrompt = (canvasId: string, title: string, files: string[]) =>
     `读 \`agora canvas read --canvas ${canvasId}\` 和这些代码，只更新变了的部分（节点、连线、代码路径），然后说明改了什么。`,
   ].join("\n");
 
-/** Selected node → 「子图」 menu: make a blank child, let the agent expand it, enter it, or unlink it. */
-export function NodeChildMenu({ api, view, canvasId }: { api: ExcalidrawImperativeAPI; view: CanvasViewState; canvasId: string }) {
+/** The label a node's 「子图」 pill shows (node action bar, canvas/NodeBar.tsx). */
+export function useChildPill(target: El): { has: boolean; text: string; title: string } {
   const st = useNested();
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
-  const ids = Object.keys(view.appState.selectedElementIds ?? {}).map((id) => {
-    const e = view.map.get(id);
-    return e?.type === "text" && e.containerId ? e.containerId : id;
-  });
-  const uniq = [...new Set(ids)].filter((id) => {
-    const e = view.map.get(id);
-    return live(e) && (isShape(e) || e.type === "frame");
-  });
-  const target = uniq.length === 1 ? view.map.get(uniq[0]) : undefined;
-  useEffect(() => setOpen(false), [target?.id]);
-  useEffect(() => setBusy(null), [target?.id]);
-  if (!target) return null;
-  const a = view.appState;
-  const z = a.zoom.value;
-  const b = bbox(target);
+  const child = childOf(target);
+  const has = !!child && st.scenes.has(child);
+  return has
+    ? { has, text: `子图 · ${st.titles[child!] ?? ""}`, title: `这个节点打开子图「${st.titles[child!] ?? child}」` }
+    : { has, text: "子图", title: "把这个节点展开成一张子画布" };
+}
+
+/** The 「子图」 menu of the selected node: make a blank child, let the agent expand it, enter it, or unlink it. */
+export function ChildMenu({ api, view, canvasId, target, onAct }: { api: ExcalidrawImperativeAPI; view: CanvasViewState; canvasId: string; target: El; onAct: (what: string) => void }) {
+  const st = useNested();
   const label = labelOf(target, view.map).replace(/\s+/g, " ").trim() || "未命名节点";
   const firstLine = labelOf(target, view.map).split("\n").map((l) => l.trim()).find(Boolean) ?? label;
   const child = childOf(target);
   const has = !!child && st.scenes.has(child);
-  const act = async (what: string, f: () => Promise<void> | void) => {
-    setBusy(what);
-    setOpen(false);
-    await f();
+  const act = (what: string, f: () => Promise<unknown> | unknown) => {
+    onAct(what);
+    void f();
   };
-  const left = Math.round((b.x + b.width + a.scrollX) * z + 8);
-  const flip = left + 260 > a.width; // near the pane's right edge the menu opens leftwards
   return (
-    <div className="nest-menu ptr-ui" style={{ left, top: Math.round((b.y + a.scrollY) * z + 34) }}>
-      <button className="ptr-pill" aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen((o) => !o)} title={has ? `这个节点打开子图「${st.titles[child!]}」` : "把这个节点展开成一张子画布"}>
-        <IconNested size={14} />
-        {has ? `子图 · ${st.titles[child!] ?? ""}` : busy === "ai" ? "已交给 Agent" : "子图"}
-      </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div className="menu nest-pop" data-flip={flip || undefined} role="menu" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -2, transition: { duration: 0.1 } }} transition={{ duration: 0.16 }}>
-            {has ? (
-              <>
-                <button role="menuitem" onClick={() => void act("enter", () => nav.go(canvasId, child!))}>
-                  <IconEnter size={14} />进入子图<kbd>双击</kbd>
-                </button>
-                {st.scenes.get(child!)?.some((e) => live(e)) ? (
-                  <button role="menuitem" onClick={() => void act("ai", () => askAgent(child!, updatePrompt(child!, st.titles[child!] ?? child!, [])))}>
-                    <IconSparkles size={14} />让 AI 更新子图
-                  </button>
-                ) : (
-                  <button role="menuitem" onClick={() => void act("ai", () => askAgent(canvasId, expandPrompt(canvasId, target, label)))}>
-                    <IconSparkles size={14} />让 AI 画子图
-                    <span className="nest-sub">子图还是空的：读代码，画出下一层</span>
-                  </button>
-                )}
-                <button role="menuitem" onClick={() => void act("unlink", () => void writeChildLink(api, target.id, null))} title="节点不再打开它；子画布本身留在「所有画布」里">
-                  <IconHint size={14} />断开（子图保留）
-                </button>
-              </>
-            ) : (
-              <>
-                <button role="menuitem" onClick={() => void act("ai", () => askAgent(canvasId, expandPrompt(canvasId, target, label)))}>
-                  <IconSparkles size={14} />让 AI 展开
-                  <span className="nest-sub">读{codePathsOf(target).length ? "关联的" : "对应的"}代码，画出下一层</span>
-                </button>
-                <button
-                  role="menuitem"
-                  onClick={() =>
-                    void act("blank", async () => {
-                      const id = await nav.createChild(firstLine.slice(0, 60));
-                      if (id) (writeChildLink(api, target.id, id), nav.go(canvasId, id));
-                    })
-                  }
-                >
-                  <IconNested size={14} />新建空白子图
-                </button>
-              </>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+    <div className="nest-pop" role="menu">
+      {has ? (
+        <>
+          <button role="menuitem" onClick={() => act("enter", () => nav.go(canvasId, child!))}>
+            <IconEnter size={14} />进入子图<kbd>双击</kbd>
+          </button>
+          {st.scenes.get(child!)?.some((e) => live(e)) ? (
+            <button role="menuitem" onClick={() => act("ai", () => askAgent(child!, updatePrompt(child!, st.titles[child!] ?? child!, [])))}>
+              <IconSparkles size={14} />让 AI 更新子图
+            </button>
+          ) : (
+            <button role="menuitem" onClick={() => act("ai", () => askAgent(canvasId, expandPrompt(canvasId, target, label)))}>
+              <IconSparkles size={14} />让 AI 画子图
+              <span className="nest-sub">子图还是空的：读代码，画出下一层</span>
+            </button>
+          )}
+          <button role="menuitem" onClick={() => act("unlink", () => writeChildLink(api, target.id, null))} title="节点不再打开它；子画布本身留在「所有画布」里">
+            <IconHint size={14} />断开（子图保留）
+          </button>
+        </>
+      ) : (
+        <>
+          <button role="menuitem" onClick={() => act("ai", () => askAgent(canvasId, expandPrompt(canvasId, target, label)))}>
+            <IconSparkles size={14} />让 AI 展开
+            <span className="nest-sub">读{codePathsOf(target).length ? "关联的" : "对应的"}代码，画出下一层</span>
+          </button>
+          <button role="menuitem" onClick={() => act("blank", () => blankChild(canvasId, firstLine.slice(0, 60), (id) => writeChildLink(api, target.id, id)))}>
+            <IconNested size={14} />新建空白子图
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -295,14 +301,5 @@ export function NodeChildMenu({ api, view, canvasId }: { api: ExcalidrawImperati
 /** The node (with a child canvas) under a screen point in the stage, for double-click → enter. */
 export function childAt(view: CanvasViewState, x: number, y: number): string | null {
   const a = view.appState;
-  const sx = x / a.zoom.value - a.scrollX;
-  const sy = y / a.zoom.value - a.scrollY;
-  for (let i = view.elements.length - 1; i >= 0; i--) {
-    const e = view.elements[i];
-    const c = live(e) ? childOf(e) : null;
-    if (!c) continue;
-    const b = bbox(e);
-    if (sx >= b.x && sx <= b.x + b.width && sy >= b.y && sy <= b.y + b.height) return c;
-  }
-  return null;
+  return childNodeAt(view.elements, view.map, x / a.zoom.value - a.scrollX, y / a.zoom.value - a.scrollY, (e) => childOf(e))?.child ?? null;
 }

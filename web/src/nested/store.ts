@@ -73,6 +73,19 @@ export const nav = {
   review: (_canvasId: string, _at: number) => {},
 };
 
+/**
+ * 新建空白子图: make the canvas, link the node to it, then go there — in that order, so the link
+ * is in the parent's scene when `go` takes the parent's live scene with it (App.tsx) and the
+ * parent's view unmounts.
+ */
+export async function blankChild(canvasId: string, title: string, link: (child: string) => unknown, shell: Pick<typeof nav, "createChild" | "go"> = nav): Promise<string | undefined> {
+  const id = await shell.createChild(title);
+  if (!id) return undefined;
+  link(id);
+  shell.go(canvasId, id);
+  return id;
+}
+
 /** `?canvas=<id>` in the address bar, keeping every other parameter. */
 export function urlFor(canvasId: string, href = location.href): string {
   const u = new URL(href);

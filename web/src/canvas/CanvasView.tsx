@@ -15,7 +15,7 @@ import { bbox, byId, live, type El } from "./scene";
 import type { ThreadStore } from "../comments/threads";
 import { useHighlight } from "../session/ui";
 import { PointerLayer } from "../pointer/PointerLayer";
-import { childAt, NodeChildMenu, OwnerBreadcrumb, OwnerChildMarkers } from "../nested/NestedLayer";
+import { childAt, OwnerBreadcrumb, OwnerChildMarkers } from "../nested/NestedLayer";
 import { nav } from "../nested/store";
 import { TimelinePanel, Workers, WorkstationToggle } from "../workstation/Workstation";
 import { useWorkstation } from "../workstation/clock";
@@ -261,7 +261,6 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
           {!readOnly && <HighlightLayer canvasId={doc.id} view={view} />}
           {readOnly ? overlay?.(view, chrome) : <OwnerChildMarkers view={view} canvasId={doc.id} chrome={chrome} />}
           {!readOnly && <PointerLayer api={api} view={view} chrome={chrome} />}
-          {!readOnly && <NodeChildMenu api={api} view={view} canvasId={doc.id} />}
           {workstation && <Workers view={view} chrome={chrome} />}
         </>
       )}

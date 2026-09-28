@@ -34,6 +34,28 @@ export function childOf(el: El | undefined): string | null {
   return typeof v === "string" && v ? v : null;
 }
 
+/**
+ * The scene with node `elementId` opening `child` (null removes the link), or null when nothing
+ * changes. The link is the node's `customData.childCanvas` — on a library icon or group, the node
+ * element the model view lists (canvas/nodes.ts), the same element that carries its code paths.
+ */
+export function withChildLink(scene: readonly El[], elementId: string, child: string | null, now = Date.now()): El[] | null {
+  let changed = false;
+  const next = scene.map((e) => {
+    if (e.id !== elementId || childOf(e) === child) return e;
+    changed = true;
+    const { childCanvas: _old, ...rest } = (e.customData ?? {}) as Record<string, unknown>;
+    return {
+      ...e,
+      customData: child ? { ...rest, childCanvas: child } : Object.keys(rest).length ? rest : undefined,
+      version: e.version + 1,
+      versionNonce: Math.floor(Math.random() * 2 ** 31),
+      updated: now,
+    } as El;
+  });
+  return changed ? next : null;
+}
+
 /** Live nodes of a scene that link to a child canvas that exists. */
 export function childLinks(scene: readonly El[], exists: (id: string) => boolean = () => true): { elementId: string; canvasId: string }[] {
   const out: { elementId: string; canvasId: string }[] = [];

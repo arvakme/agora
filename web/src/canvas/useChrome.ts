@@ -4,7 +4,7 @@
 // keep the same array, so nothing re-renders for nothing.
 import { useEffect, useRef, useState } from "react";
 import type { Box } from "./clearance";
-import { CHROME_SELECTORS, GLOBAL_CHROME } from "./chrome";
+import { CHROME_SELECTORS, GLOBAL_CHROME, NODE_BAR_SELECTORS } from "./chrome";
 
 const NONE: Box[] = [];
 
@@ -18,7 +18,7 @@ export function useChrome(container: HTMLElement | null, key: unknown): Box[] {
       if (!container) return;
       const c = container.getBoundingClientRect();
       const out: Box[] = [];
-      const add = (el: Element) => {
+      const add = (el: Element, own = false) => {
         const r = el.getBoundingClientRect();
         if (r.width < 2 || r.height < 2) return;
         const s = getComputedStyle(el);
@@ -28,10 +28,10 @@ export function useChrome(container: HTMLElement | null, key: unknown): Box[] {
         const x2 = Math.min(r.right, c.right);
         const y2 = Math.min(r.bottom, c.bottom);
         if (x2 - x < 2 || y2 - y < 2) return;
-        out.push({ x: Math.round(x - c.left), y: Math.round(y - c.top), w: Math.round(x2 - x), h: Math.round(y2 - y) });
+        out.push({ x: Math.round(x - c.left), y: Math.round(y - c.top), w: Math.round(x2 - x), h: Math.round(y2 - y), ...(own ? { own } : {}) });
       };
-      for (const sel of CHROME_SELECTORS) container.querySelectorAll(sel).forEach(add);
-      for (const sel of GLOBAL_CHROME) document.querySelectorAll(sel).forEach(add);
+      for (const sel of CHROME_SELECTORS) container.querySelectorAll(sel).forEach((el) => add(el, NODE_BAR_SELECTORS.includes(sel)));
+      for (const sel of GLOBAL_CHROME) document.querySelectorAll(sel).forEach((el) => add(el));
       const k = JSON.stringify(out);
       if (k !== last.current) {
         last.current = k;

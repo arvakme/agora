@@ -126,3 +126,46 @@ async def test_guests_step_into_children_of_the_shared_canvas_only(env):  # noqa
     store.write("canvas", "c1", {"elements": [box("api", paths=["server/**"]), box("db")]}, base=store.read("canvas", "c1")[1])
     assert (await g.get("/api/guest/state", params={"canvas": "be"})).status_code == 403
     assert store.read("canvas", "be") is not None
+
+
+def library_api(child=None):
+    """The demo's 「API 服务」: a library icon — a transparent root with the icon's data, its parts in
+    nested groups, a free label in the icon's group (web/src/canvas/nodes.ts)."""
+    g = "lib-api-c7kyx76q"
+    cd = {"agora": {"group": g, "label": "api-label", "library": "official/dwelle/network-topology-icons#5", "name": "Server"}, "codePaths": ["server/**"]}
+    if child:
+        cd["childCanvas"] = child
+    part = lambda i, t, groups: {"id": i, "type": t, "x": 360, "y": 210, "width": 80, "height": 60, "isDeleted": False, "groupIds": groups + [g]}  # noqa: E731
+    return [
+        {"id": "api", "type": "rectangle", "x": 360, "y": 210, "width": 80, "height": 101, "isDeleted": False, "groupIds": [g], "customData": cd},
+        part("api-h1f9llad", "rectangle", ["g-ve71qy8l"]),
+        part("api-0ckl4bra", "line", ["g-7q0ezcue", "g-umhrcw2c", "g-ve71qy8l"]),
+        part("api-rnifsm7u", "line", ["g-oz17ic9o", "g-umhrcw2c", "g-ve71qy8l"]),
+        {"id": "api-label", "type": "text", "x": 373, "y": 317, "width": 54, "height": 16, "isDeleted": False, "groupIds": [g], "text": "API 服务"},
+    ]
+
+
+def test_a_library_icon_is_one_node_and_carries_its_child_on_the_root(store):
+    store.write("canvas", "c1", {"elements": library_api(child="be")}, base=store.read("canvas", "c1")[1])
+    view = model_view(store.read("canvas", "c1")[0]["elements"])
+    # One node for the whole icon (its parts are hidden), with the code paths and the child link.
+    assert [n["id"] for n in view["nodes"]] == ["api"]
+    assert view["nodes"][0] == {"id": "api", "type": "library", "component": "Server", "label": "API 服务", "x": 360, "y": 210, "width": 80, "height": 101,
+                                "codePaths": ["server/**"], "child": {"canvasId": "be"}}
+    top = file_read(store, "c1")["scene"]
+    assert top["nodes"][0]["child"] == {"canvasId": "be", "name": "后端"}
+    # The child knows its parent by the icon's node id and label; `child list` names it the same way.
+    deep = file_read(store, "be")["scene"]
+    assert deep["parent"] == {"canvasId": "c1", "name": "架构图", "nodeId": "api", "nodeLabel": "API 服务"}
+    assert [p["name"] for p in deep["path"]] == ["架构图", "后端"]
+    assert nested.list_children(store, "c1", {"be": "后端"}) == [{"nodeId": "api", "nodeLabel": "API 服务", "canvasId": "be", "name": "后端", "children": 1}]
+    assert nested.reachable(store, "c1") == {"c1", "be", "orders"}
+
+
+def test_a_link_left_on_an_icon_part_is_not_a_node(store):
+    """Only the root is the icon's node: a part carrying a link (hand-edited) is hidden like the rest."""
+    els = library_api()
+    els[1]["customData"] = {"childCanvas": "be"}
+    store.write("canvas", "c1", {"elements": els}, base=store.read("canvas", "c1")[1])
+    view = model_view(store.read("canvas", "c1")[0]["elements"])
+    assert [n["id"] for n in view["nodes"]] == ["api"] and "child" not in view["nodes"][0]

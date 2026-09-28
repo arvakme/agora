@@ -8,7 +8,8 @@
 // - placeBeside: where a label goes around a box: the first side with room, in order.
 import type { El } from "./scene";
 
-export type Box = { x: number; y: number; w: number; h: number };
+/** A screen or scene rectangle. `own` marks a measured box of the node action bar (chrome.ts). */
+export type Box = { x: number; y: number; w: number; h: number; own?: boolean };
 type Pt = { x: number; y: number };
 
 const liveEl = (e: El | undefined): e is El => !!e && !e.isDeleted;

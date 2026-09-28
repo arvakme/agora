@@ -4,7 +4,6 @@
  * (canvases 1–2), clipped around every panel (canvas/chrome.ts). The path editor is our own
  * popover the person opened, so it sits above the UI in its own layer. */
 .ptr-layer { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
-.ptr-edit-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
 .ptr-edge { position: absolute; left: 0; top: 0; display: inline-flex; align-items: center; gap: 2px; height: 28px; padding: 0 var(--space-3) 0 var(--space-2); border-radius: var(--r-pill); background: var(--surface); box-shadow: 0 0 0 1px var(--accent-ring), var(--lift-2); color: var(--accent); }
 .ptr-edge:hover { background: var(--raised); }
 .ptr-edge .agent-avatar + .agent-avatar { margin-left: -5px; box-shadow: 0 0 0 1.5px var(--surface); border-radius: 50%; }
@@ -42,7 +41,6 @@ button.ptr-row:hover, .ptr-list li[data-open="true"] > .ptr-row { background: va
 
 .ptr-outside { position: absolute; left: 12px; bottom: 64px; }
 
-.ptr-edit { position: absolute; }
 .ptr-editor { position: relative; top: 0; width: 320px; }
 .ptr-editor textarea { display: block; width: 100%; margin: var(--space-2) 0; padding: var(--space-4) var(--space-5); border-radius: var(--r-sm); background: var(--well); color: var(--fg); font: var(--text-sm) / 1.6 var(--font-mono); resize: vertical; }
 .ptr-hint { margin: 0 var(--space-3) var(--space-3); color: var(--fg-subtle); font-size: var(--text-xs); }
