@@ -1,19 +1,21 @@
 // Pins over one canvas + the thread card / composer anchored to them.
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { AnimatePresence } from "motion/react";
-import { useRef, useState } from "react";
-import { hitTest, resolveAnchor } from "../canvas/anchors";
-import { IconCheck, IconHint, IconPlus } from "../app/icons";
-import { bbox, isArrow } from "../canvas/scene";
+import { AnimatePresence, motion } from "motion/react";
+import { useMemo, useRef, useState } from "react";
+import { resolveAnchor } from "../canvas/anchors";
+import { layoutPins, sceneBlocks } from "./pinLayout";
+import { IconCheck, IconClose, IconHint, IconPlus } from "../app/icons";
 import { useThreads, type Anchor, type ThreadStore } from "./threads";
 import type { CanvasViewState } from "../canvas/CanvasView";
 import { Composer, ThreadCard } from "./ThreadCard";
+import { Aim, snap } from "./Aim";
+import { dismissUndo, runUndo, useUndo } from "./undo";
+import { SPRING } from "./motion";
 
 /** An unsent comment: where it is pinned and what has been typed so far. */
 export type Draft = { anchor: Anchor; text: string };
 const CARD_W = 320;
 const DOCK_CLEAR = 76;
-const PIN_STEP = 30;
 export type CardPos = { left: number; top?: number; bottom?: number; maxH: number; flip: boolean; up: boolean };
 
 type Props = {
@@ -53,36 +55,25 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
     else leaveTimer.current = window.setTimeout(() => setHoverId(null), 140);
   };
 
-  const onPointerDown = (e: React.PointerEvent) => {
-    e.preventDefault();
-    const r = layer.current!.getBoundingClientRect();
-    const sx = (e.clientX - r.left) / a.zoom.value - a.scrollX;
-    const sy = (e.clientY - r.top) / a.zoom.value - a.scrollY;
-    const hit = hitTest(view.elements, sx, sy, a.zoom.value);
-    if (!hit) return setMiss({ x: e.clientX - r.left, y: e.clientY - r.top, k: Date.now() });
-    const b = bbox(hit);
-    const rel = isArrow(hit)
-      ? { x: 0.5, y: 0.5 }
-      : { x: clamp01((sx - b.x) / (b.width || 1)), y: clamp01((sy - b.y) / (b.height || 1)) };
-    store.close();
-    setDraft({ anchor: { ids: [hit.id], rel, last: { x: sx, y: sy } }, text: "" });
-  };
-
-  // Several threads on one box share its corner: fan them out to the right instead of stacking.
-  const taken = new Map<string, number>();
-  const resolved = list.map((t) => {
-    const st = resolveAnchor(t.anchor, view.map);
-    const key = `${Math.round(st.point.x)},${Math.round(st.point.y)}`;
-    const k = taken.get(key) ?? 0;
-    taken.set(key, k + 1);
-    return { t, st, p: { x: toScreen(st.point).x + k * PIN_STEP, y: toScreen(st.point).y } };
-  });
+  const blocks = useMemo(() => sceneBlocks(view), [view.elements, view.map, a.scrollX, a.scrollY, a.zoom.value]);
+  const { pins, landing } = layoutPins(list, view, blocks);
+  const resolved = pins.map((r) => ({ ...r, p: { x: snap(r.p.x), y: snap(r.p.y) } }));
   const shownId = activeId ?? hoverId;
   const shown = resolved.find((r) => r.t.id === shownId);
 
   return (
     <div className="comment-layer" ref={layer}>
-      {mode === "comment" && <div className="capture" onPointerDown={onPointerDown} />}
+      {mode === "comment" && (
+        <Aim
+          view={view}
+          landing={landing}
+          onMiss={(at) => setMiss({ ...at, k: Date.now() })}
+          onPick={(anchor) => {
+            store.close();
+            setDraft({ anchor, text: "" });
+          }}
+        />
+      )}
       {miss && (
         <div key={miss.k} className="miss" style={{ left: miss.x, top: miss.y }} onAnimationEnd={() => setMiss(null)}>
           点在一个元素上
@@ -125,13 +116,13 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
           />
         )}
       </AnimatePresence>
-      {draft && <DraftPin draft={draft} view={view} toScreen={toScreen} />}
+      {draft && <DraftPin at={landing(draft.anchor)} />}
       <AnimatePresence>
         {draft && (
           <Composer
             key="composer"
             names={resolveAnchor(draft.anchor, view.map).names}
-            pos={cardPos(toScreen(resolveAnchor(draft.anchor, view.map).point))}
+            pos={cardPos(landing(draft.anchor))}
             text={draft.text}
             onText={(text) => setDraft({ ...draft, text })}
             onCancel={() => setDraft(null)}
@@ -143,17 +134,31 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
           />
         )}
       </AnimatePresence>
+      <UndoToast canvasId={store.canvasId} />
     </div>
   );
 }
 
-function DraftPin({ draft, view, toScreen }: { draft: Draft; view: CanvasViewState; toScreen: (p: { x: number; y: number }) => { x: number; y: number } }) {
-  const p = toScreen(resolveAnchor(draft.anchor, view.map).point);
+function DraftPin({ at }: { at: { x: number; y: number } }) {
   return (
-    <div className="pin draft" style={{ transform: `translate3d(${p.x}px, ${p.y}px, 0)` }}>
+    <div className="pin draft" style={{ transform: `translate3d(${snap(at.x)}px, ${snap(at.y)}px, 0)` }}>
       <span className="pin-body"><IconPlus size={14} /></span>
     </div>
   );
 }
 
-const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
+/** "已删除… · 撤销" for the last deletion on this canvas. */
+function UndoToast({ canvasId }: { canvasId: string }) {
+  const u = useUndo();
+  return (
+    <AnimatePresence>
+      {u && u.canvasId === canvasId && (
+        <motion.div key={u.key} className="toast undo-toast" role="status" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4, transition: { duration: 0.12 } }} transition={SPRING}>
+          <span>{u.label}</span>
+          <button className="btn sm ghost" onClick={runUndo}>撤销</button>
+          <button className="icon-btn sm muted" aria-label="关闭提示" onClick={dismissUndo}><IconClose size={14} /></button>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}

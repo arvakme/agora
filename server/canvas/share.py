@@ -39,6 +39,7 @@ UNITS = {"s": 1, "m": 60, "min": 60, "h": 3600, "d": 86400, "w": 7 * 86400}
 FOREVER = ("forever", "never", "manual", "0")
 MAX_TTL_S = 90 * 86400
 MIN_TTL_S = 60
+MAX_OPENS = 10000
 READY_TIMEOUT_S = 45.0
 
 
@@ -60,6 +61,18 @@ def check_ttl(secs: int | None) -> int | None:
     if secs < MIN_TTL_S or secs > MAX_TTL_S:
         raise ValueError(f"duration must be between 1 minute and 90 days, got {secs}s")
     return int(secs)
+
+
+def check_max_opens(n: int | None) -> int | None:
+    if n is None:
+        return None
+    if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= MAX_OPENS:
+        raise ValueError(f"max opens must be a whole number from 1 to {MAX_OPENS}, got {n!r}")
+    return n
+
+
+def guest_key(guest_id: str) -> str:
+    return hashlib.sha256(f"agora-guest:{guest_id}".encode()).hexdigest()[:24]
 
 
 def token_hash(token: str) -> str:
@@ -113,13 +126,19 @@ class Share:
     dnsRecordId: str | None = None
     tunnelId: str | None = None
     cleanup: list[str] = field(default_factory=list)  # what is still left to remove after it ended
+    # Opening limit: None = unlimited. ``opens`` counts distinct guests (guest-id cookies) that
+    # entered through /s/<token>; ``admitted`` holds their hashed ids so a returning guest (same
+    # browser) is not counted again, and so that once the limit is reached only they get in.
+    maxOpens: int | None = None
+    opens: int = 0
+    admitted: list[str] = field(default_factory=list)
 
     def active(self, now_ms: int) -> bool:
         return self.endedAt is None and (self.expiresAt is None or now_ms < self.expiresAt)
 
     def public(self, now_ms: int) -> dict[str, Any]:
         """What the owner's page and ``agora share list`` see (no hash)."""
-        d = {k: v for k, v in asdict(self).items() if k != "tokenHash"}
+        d = {k: v for k, v in asdict(self).items() if k not in ("tokenHash", "admitted")}
         d["status"] = "active" if self.active(now_ms) else (self.endReason or "expired")
         d["url"] = f"https://{self.host}/"
         d["remainingMs"] = None if self.expiresAt is None or not self.active(now_ms) else self.expiresAt - now_ms
@@ -198,11 +217,11 @@ def guest_threads(file: dict[str, Any] | None) -> dict[str, Any]:
     for t in (file or {}).get("threads") or []:
         msgs = []
         for m in t.get("messages") or []:
-            gm = {k: m[k] for k in ("id", "author", "text", "at", "tone") if k in m}
+            gm = {k: m[k] for k in ("id", "author", "text", "at", "tone", "editedAt", "updatedAt", "deleted") if k in m}
             if m.get("by"):
                 gm["by"] = guest_person(m["by"])
             msgs.append(gm)
-        gt = {k: t[k] for k in ("id", "n", "anchor", "resolved", "createdAt") if k in t}
+        gt = {k: t[k] for k in ("id", "n", "anchor", "resolved", "createdAt", "updatedAt", "deleted") if k in t}
         if t.get("createdBy"):
             gt["createdBy"] = guest_person(t["createdBy"])
         gt["messages"] = msgs
@@ -305,6 +324,26 @@ class ShareManager:
             return None
         return share if hmac.compare_digest(token_hash(token), share.tokenHash) else None
 
+    def admit(self, share: Share, guest_id: str) -> bool:
+        """A guest enters through /s/<token>. The first entry of each guest counts as one opening;
+        once ``maxOpens`` openings are used up, only guests who already entered get in."""
+        key = guest_key(guest_id)
+        with self.lock:
+            if key in share.admitted:
+                return True
+            if share.maxOpens is not None and share.opens >= share.maxOpens:
+                return False
+            share.admitted.append(key)
+            share.opens += 1
+            self._save()
+            return True
+
+    def is_admitted(self, share: Share, guest_id: str | None) -> bool:
+        """Past /s/: an opening-limited share only serves guests it admitted (a copied share cookie
+        without an admitted guest id doesn't get around the limit). Unlimited shares serve anyone
+        holding the token."""
+        return share.maxOpens is None or (guest_id is not None and guest_key(guest_id) in share.admitted)
+
     def note_visit(self, share: Share, new_guest: bool) -> None:
         with self.lock:
             share.visits += 1
@@ -318,9 +357,10 @@ class ShareManager:
             self._save()
 
     # ——— create ———
-    def create(self, canvas_id: str, ttl_s: int | None, canvas_title: str = "") -> tuple[dict[str, Any], str]:
+    def create(self, canvas_id: str, ttl_s: int | None, canvas_title: str = "", max_opens: int | None = None) -> tuple[dict[str, Any], str]:
         """New share → (public record, full URL with the token). The token is not kept."""
         check_ttl(ttl_s)
+        check_max_opens(max_opens)
         if self.gateway_port is None:
             raise ShareError("the share gateway is not running (start the project with `agora up`)")
         with self.lock:
@@ -336,6 +376,7 @@ class ShareManager:
                 tokenHash=token_hash(token),
                 createdAt=now,
                 expiresAt=None if ttl_s is None else now + ttl_s * 1000,
+                maxOpens=max_opens,
             )
             tunnel_id = self._ensure_tunnel()
             self.tunnel_dirty = True

@@ -139,9 +139,9 @@ def guest(app, host: str) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app.state.gateway), base_url=f"https://{host}")
 
 
-async def make_share(app, ttl=600) -> tuple[dict, str, str, str]:
+async def make_share(app, ttl=600, max_opens=None) -> tuple[dict, str, str, str]:
     async with owner(app) as c:
-        r = await c.post("/api/share", json={"canvasId": "c1", "ttl": ttl})
+        r = await c.post("/api/share", json={"canvasId": "c1", "ttl": ttl, "maxOpens": max_opens})
     assert r.status_code == 200, r.text
     url = r.json()["url"]
     host = url.split("/")[2]
@@ -423,6 +423,132 @@ async def test_owner_page_sees_guest_comments_live(env):
     assert "o2" in json.dumps(guest_view)
 
 
+# ——— editing and deleting comments ———
+async def test_guest_edits_and_deletes_only_their_own_messages(env):
+    store, shares, dns, tunnels, clock, app = env
+    _, _, host, token = await make_share(app)
+    a = await joined(app, host, token)
+    b = await joined(app, host, token)
+    post = lambda g, **body: g.post("/api/guest/comments", json={"name": "甲", **body})
+    assert (await post(a, op="reply", threadId="t1", id="ga1", text="写错了")).status_code == 200
+    # another guest (or someone without the author's guest cookie) can't touch it
+    assert (await post(b, op="edit", threadId="t1", id="ga1", text="冒充")).status_code == 403
+    assert (await post(b, op="delete", threadId="t1", id="ga1")).status_code == 403
+    # nobody can change the owner's message or an agent's through the gateway
+    for mid in ("m1", "m2"):
+        assert (await post(a, op="edit", threadId="t1", id=mid, text="x")).status_code == 403
+        assert (await post(a, op="delete", threadId="t1", id=mid)).status_code == 403
+    assert (await post(a, op="edit", threadId="t1", id="nope", text="x")).status_code == 404
+
+    r = await post(a, op="edit", threadId="t1", id="ga1", text="改好了的话")
+    assert r.status_code == 200
+    m = next(x for x in store.read("threads", "c1")[0]["threads"][0]["messages"] if x["id"] == "ga1")
+    assert m["text"] == "改好了的话" and m["editedAt"] == m["updatedAt"] > 0
+
+    assert (await post(a, op="delete", threadId="t1", id="ga1")).status_code == 200
+    t1 = store.read("threads", "c1")[0]["threads"][0]
+    m = next(x for x in t1["messages"] if x["id"] == "ga1")
+    assert m["deleted"] is True and m["text"] == "" and "改好了的话" not in json.dumps(t1, ensure_ascii=False)
+    assert all(p["id"] != "guest:" + a.cookies["agora_guest"] for p in t1["participants"])
+    assert (await post(a, op="edit", threadId="t1", id="ga1", text="x")).status_code == 404  # deleted: restore, don't edit
+    view = (await b.get("/api/guest/state")).json()["threads"]["threads"][0]
+    assert next(x for x in view["messages"] if x["id"] == "ga1")["deleted"] is True
+    # undo: the page that deleted it sends the text back
+    assert (await post(b, op="restore", threadId="t1", id="ga1", text="偷偷复活")).status_code == 403
+    assert (await post(a, op="restore", threadId="t1", id="ga1", text="改好了的话", editedAt=m.get("updatedAt", 1))).status_code == 200
+    m = next(x for x in store.read("threads", "c1")[0]["threads"][0]["messages"] if x["id"] == "ga1")
+    assert m["text"] == "改好了的话" and not m.get("deleted")
+    assert shares.get(shares.list()[0]["id"]).comments == 1  # edits and deletes are not new comments
+
+
+async def test_owner_deletes_any_message_and_whole_threads(env):
+    store, shares, dns, tunnels, clock, app = env
+    _, _, host, token = await make_share(app)
+    g = await joined(app, host, token)
+    await g.post("/api/guest/comments", json={"op": "reply", "threadId": "t1", "id": "gx", "name": "甲", "text": "广告"})
+    t1 = store.read("threads", "c1")[0]["threads"][0]
+    later = int(clock.t * 1000) + 5000
+    # the owner's page deletes the guest's message (tombstone, newer than the file's copy)
+    page = {"seq": 1, "threads": [{**t1, "messages": [x if x["id"] != "gx" else {"id": "gx", "author": "human", "by": x["by"], "at": x["at"], "text": "", "deleted": True, "updatedAt": later} for x in t1["messages"]]}]}
+    async with owner(app) as c:
+        r = await c.post("/api/project/threads/c1/merge", json={"data": page})
+    gx = next(x for x in r.json()["data"]["threads"][0]["messages"] if x["id"] == "gx")
+    assert gx["deleted"] and gx["text"] == ""
+    # an older copy (another tab that still has the text) doesn't bring it back
+    async with owner(app) as c:
+        r = await c.post("/api/project/threads/c1/merge", json={"data": {"seq": 1, "threads": [t1]}})
+    assert next(x for x in r.json()["data"]["threads"][0]["messages"] if x["id"] == "gx")["deleted"]
+    # the whole thread (an orphaned one, say) goes as a tombstone that keeps its number
+    tomb = {"id": "t1", "n": 1, "deleted": True, "resolved": True, "updatedAt": later + 1, "messages": []}
+    async with owner(app) as c:
+        r = await c.post("/api/project/threads/c1/merge", json={"data": {"seq": 1, "threads": [tomb]}})
+    t = r.json()["data"]["threads"][0]
+    assert t["deleted"] and t["messages"] == [] and t["n"] == 1 and "看这里" not in json.dumps(r.json(), ensure_ascii=False)
+    async with owner(app) as c:  # a stale page can't resurrect it either
+        r = await c.post("/api/project/threads/c1/merge", json={"data": {"seq": 1, "threads": [t1]}})
+    assert r.json()["data"]["threads"][0]["deleted"]
+    assert (await g.post("/api/guest/comments", json={"op": "reply", "threadId": "t1", "id": "gy", "name": "甲", "text": "还在吗"})).status_code == 404
+    # undo on the owner's page: the full thread again, newer than the tombstone
+    async with owner(app) as c:
+        r = await c.post("/api/project/threads/c1/merge", json={"data": {"seq": 1, "threads": [{**t1, "updatedAt": later + 2}]}})
+    assert not r.json()["data"]["threads"][0].get("deleted") and r.json()["data"]["threads"][0]["messages"][0]["text"] == "看这里"
+    # a new thread after that still gets a fresh number
+    r = await g.post("/api/guest/comments", json={"op": "create", "threadId": "g9", "id": "g9m", "name": "甲", "text": "新的", "anchor": {"ids": ["db"], "rel": {"x": 0, "y": 0}, "last": {"x": 0, "y": 0}}})
+    assert r.json()["thread"]["n"] == 2
+
+
+def test_merge_takes_the_later_edit():
+    disk = {"seq": 1, "threads": [{"id": "t1", "n": 1, "messages": [
+        {"id": "g", "at": 3, "text": "访客改过", "editedAt": 50, "updatedAt": 50, "by": {"id": "guest:x", "name": "G"}},
+        {"id": "o", "at": 4, "text": "旧", "by": {"id": "mailto:o", "name": "O"}},
+    ]}]}
+    page = {"seq": 1, "threads": [{"id": "t1", "n": 1, "messages": [
+        {"id": "g", "at": 3, "text": "访客原文", "by": {"id": "guest:x", "name": "G"}},  # stale copy
+        {"id": "o", "at": 4, "text": "作者改过", "editedAt": 60, "updatedAt": 60, "by": {"id": "mailto:o", "name": "O"}},
+    ]}]}
+    out = merge_thread_files(disk, page)
+    assert [m["text"] for m in out["threads"][0]["messages"]] == ["访客改过", "作者改过"]
+
+
+# ——— opening limit ———
+async def test_opening_limit_counts_new_guests_once_and_keeps_those_inside(env):
+    store, shares, dns, tunnels, clock, app = env
+    share, _, host, token = await make_share(app, max_opens=2)
+    assert share["maxOpens"] == 2 and share["opens"] == 0
+    a = await joined(app, host, token)
+    assert (await a.get(f"/s/{token}")).status_code == 303  # same browser again: not another opening
+    for _ in range(3):
+        assert (await a.get("/api/guest/state")).status_code == 200  # refreshing never counts
+    b = await joined(app, host, token)
+    row = shares.list()[0]
+    assert row["opens"] == 2 and row["maxOpens"] == 2 and "admitted" not in row and row["visits"] == 3
+    c = guest(app, host)
+    r = await c.get(f"/s/{token}")
+    assert r.status_code == 403 and "打开次数已用完" in r.text and "agora_share" not in c.cookies
+    # a copied share cookie without an admitted guest id doesn't get around it
+    c.cookies.set("agora_share", token)
+    assert (await c.get("/api/guest/state")).status_code == 403 and (await c.get("/")).status_code == 403
+    c.cookies.set("agora_guest", "0123456789abcdef")
+    assert (await c.get("/api/guest/state")).status_code == 403
+    # the ones who got in stay in
+    assert (await a.get("/api/guest/state")).status_code == 200 and (await b.get(f"/s/{token}")).status_code == 303
+    assert shares.list()[0]["opens"] == 2
+    rec = json.loads((store.dir / "shares" / "shares.json").read_text())["shares"][0]
+    assert len(rec["admitted"]) == 2 and a.cookies["agora_guest"] not in json.dumps(rec)  # hashed
+
+
+async def test_unlimited_share_counts_openings_and_bad_limits_are_refused(env):
+    store, shares, dns, tunnels, clock, app = env
+    share, _, host, token = await make_share(app)
+    assert share["maxOpens"] is None
+    gs = [await joined(app, host, token) for _ in range(3)]
+    await gs[0].get(f"/s/{token}")
+    assert shares.list()[0]["opens"] == 3
+    async with owner(app) as c:
+        for bad in (0, -1, 10001, 1.5, "many"):
+            assert (await c.post("/api/share", json={"canvasId": "c1", "ttl": 600, "maxOpens": bad})).status_code in (400, 422), bad
+
+
 # ——— CLI ———
 def test_cli_share_without_server(env, capsys):
     from agora_cli.main import main
@@ -434,3 +560,4 @@ def test_cli_share_without_server(env, capsys):
     assert main(["share", "list", "--project", root]) == 0
     assert "没有分享" in capsys.readouterr().out
     assert main(["share", "revoke", "--project", root]) == 2
+    assert main(["share", "create", "--project", root, "--max-opens", "0"]) == 2

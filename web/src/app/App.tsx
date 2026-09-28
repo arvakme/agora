@@ -387,6 +387,8 @@ export function App({ boot }: { boot: Boot }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = (e.target as HTMLElement)?.closest("input, textarea, [contenteditable]");
+      // Editing a comment in place: Esc cancels just that edit.
+      if ((e.target as HTMLElement)?.closest?.("[data-esc-local]")) return;
       if (e.key === "Escape" && canvasDoc) {
         setMode("browse");
         storeFor(canvasDoc.id).close();

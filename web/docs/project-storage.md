@@ -77,6 +77,9 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
 - 本机用户：`git config user.email` 有值时 id 为 `mailto:<email>`，否则 `local:<登录名>`；显示名取 `git config user.name`，没有就用登录名。由服务端在 `/api/project` 的 `me` 里给出。
 - Agent 回复用 `turnId` 指向会话里的那一轮；会话记录不提交时，别人克隆后看得到回复文字，看不到那一轮的步骤。
 - 线程是否正在等 Agent（内存里的 `agent: running`）不落盘。
+- **编辑**：改过的消息带 `editedAt`（界面显示「已编辑」）。只有写这条消息的人能改（`by.id` 相同；没有 `by` 的旧消息算本机用户的）。
+- **删除是墓碑**：删掉的消息留 `{id, author, at, by, text: "", deleted: true, updatedAt}`，正文不留；删掉的整条线程留 `{id, n, createdAt, createdBy, anchor, deleted: true, resolved: true, updatedAt, messages: []}`，编号 `n` 不复用。留墓碑是为了按 id 合并时不被另一方手里的旧副本「合并回来」。界面不显示墓碑；一条线程的消息全删光了，线程也不再显示。每个人能删自己的消息；本机用户（作者）还能删任何人的消息和整条线程（包括锚点丢失的）。删除在页面里可撤销一次（提示条，6 秒）：撤销把原文重新写回，不是从文件里找回（文件里已经没有正文）。
+- **`updatedAt`**：线程或消息写入之后又被改动（编辑、删除、撤销、解决 / 重新打开）的时间。合并时同一个 id 两边都有，就取 `updatedAt` 更晚的一份；都没有时以作者页为准（与之前一致）。
 
 ### sessions/<id>.agent.json
 
@@ -158,4 +161,4 @@ cd my-project && path/to/agora/bin/agora open --dev --web-port 5181
 
 ## 6. 分享
 
-已实现，见 [分享](sharing.md)：访客身份 `guest:<随机>` 与本机用户同构写进同一个线程文件；访客只读画布、只写评论（新线程、回复）；线程写入改成服务端按操作 / 按 id 合并；访客的新评论经 SSE 推到作者页。和当初预留的差别：访客不能标记解决（改由作者决定）；访客拿不到 workspace 和会话，只拿到被分享的那一块画布。
+已实现，见 [分享](sharing.md)：访客身份 `guest:<随机>` 与本机用户同构写进同一个线程文件；访客只读画布、只写评论（新线程、回复，以及编辑 / 删除 / 撤销删除自己的消息）；线程写入改成服务端按操作 / 按 id 合并；访客的新评论经 SSE 推到作者页。和当初预留的差别：访客不能标记解决（改由作者决定）；访客拿不到 workspace 和会话，只拿到被分享的那一块画布。

@@ -22,7 +22,7 @@ from pydantic import BaseModel
 
 from server.canvas.events import Events
 from server.canvas.project import Conflict, NotEmpty, ProjectStore
-from server.canvas.share import ShareError, ShareManager, check_ttl
+from server.canvas.share import ShareError, ShareManager, check_max_opens, check_ttl
 from server.canvas.runner import DEFAULT_BACKEND, DEFAULT_MODEL, EFFORTS, ExecOptions
 
 REPO = Path(__file__).resolve().parents[2]
@@ -52,6 +52,7 @@ class Merge(BaseModel):
 class NewShare(BaseModel):
     canvasId: str
     ttl: int | None = None  # seconds; None = until revoked
+    maxOpens: int | None = None  # distinct guests that may open it; None = unlimited
 
 
 def sse(events: Events, request: Request, accept=None, *, tick: float = 15.0) -> StreamingResponse:
@@ -184,12 +185,13 @@ def create_share_router(store: ProjectStore, shares: ShareManager, events: Event
     def create_share(body: NewShare):
         try:
             check_ttl(body.ttl)
+            check_max_opens(body.maxOpens)
             if store.read("canvas", body.canvasId) is None:
                 raise ValueError(f"no canvas {body.canvasId!r} in this project")
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         try:
-            share, url = shares.create(body.canvasId, body.ttl, title_of(body.canvasId))
+            share, url = shares.create(body.canvasId, body.ttl, title_of(body.canvasId), max_opens=body.maxOpens)
         except ShareError as e:
             raise HTTPException(status_code=502, detail=str(e)) from e
         except Exception as e:  # Cloudflare / cloudflared failures: say what failed, keep serving

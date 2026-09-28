@@ -93,6 +93,10 @@ export function GuestApp({ initial }: { initial: State }) {
     return createThreadStore(initial.canvas.id, threadsFromFile(initial.threads), {
       create: (t: Thread) => void post({ op: "create", threadId: t.id, id: t.messages[0].id, anchor: t.anchor, text: t.messages[0].text }),
       reply: (threadId: string, m: Message) => void post({ op: "reply", threadId, id: m.id, text: m.text }),
+      // Only one's own messages; the gateway checks that again (web/docs/sharing.md §3).
+      edit: (threadId: string, m: Message) => void post({ op: "edit", threadId, id: m.id, text: m.text }),
+      remove: (threadId: string, id: string) => void post({ op: "delete", threadId, id }),
+      restore: (threadId: string, m: Message) => void post({ op: "restore", threadId, id: m.id, text: m.text, ...(m.editedAt && { editedAt: m.editedAt }) }),
     });
   }, []);
 

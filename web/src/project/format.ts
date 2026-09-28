@@ -16,7 +16,7 @@ export type ThreadsFile = { seq: number; threads: FileThread[] };
 
 export function participants(t: Pick<Thread, "messages" | "createdBy">): Person[] {
   const seen = new Map<string, Person>();
-  for (const p of [t.createdBy, ...t.messages.map((m) => m.by)]) if (p && !seen.has(p.id)) seen.set(p.id, p);
+  for (const p of [t.createdBy, ...t.messages.filter((m) => !m.deleted).map((m) => m.by)]) if (p && !seen.has(p.id)) seen.set(p.id, p);
   return [...seen.values()];
 }
 

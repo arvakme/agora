@@ -3,10 +3,13 @@
 // for an element's code paths. Rules and data flow: docs/progress-pointer.md.
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { threadStores } from "../comments/threads";
+import { layoutPins } from "../comments/pinLayout";
 import { IconCode, IconHint, IconTarget } from "../app/icons";
 import type { CanvasViewState } from "../canvas/CanvasView";
 import { bbox, codePathsOf, isShape, labelOf, live, type El } from "../canvas/scene";
+import { footprint, inflate, obstacles, overlaps, placeBeside, type Box } from "../canvas/clearance";
 import { AGENT_NAMES, useAgents } from "../session/agents";
 import { buildTurns, filesOf } from "../session/trajectoryModel";
 import { openTrajectory, ui } from "../session/ui";
@@ -19,6 +22,9 @@ const clock = (at: number) => new Date(at).toLocaleTimeString("zh-CN", { hour: "
 const OP: Record<string, string> = { edit: "改", write: "写", add: "新建", delete: "删" };
 const base = (p: string) => p.split("/").pop() || p;
 const GLIDE = { type: "spring", stiffness: 170, damping: 26 } as const;
+
+const NONE: never[] = [];
+const noSub = () => () => {};
 
 function goTurn(sessionId: string, turn: number) {
   ui.openSession(sessionId);
@@ -55,7 +61,26 @@ export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view
   };
   const cur = state.current;
   const el = cur?.element ? view.map.get(cur.element) : undefined;
-  const pos = live(el) ? screen(el) : null;
+  // The ring goes around the node and its caption (an icon's name below it), with room to spare,
+  // so neither its edge nor its tint crosses the node's text.
+  const toScreen = (b: Box): Box => ({ x: (b.x + a.scrollX) * z, y: (b.y + a.scrollY) * z, w: b.w * z, h: b.h * z });
+  const pos = live(el) ? inflate(toScreen(footprint(el, view.map, view.elements)), 6) : null;
+  // The label sits outside the ring on the first side where it covers nothing else.
+  const chipRef = useRef<HTMLDivElement>(null);
+  const [chip, setChip] = useState({ w: 200, h: 28 });
+  useLayoutEffect(() => {
+    const r = chipRef.current?.firstElementChild as HTMLElement | null | undefined;
+    if (r && (r.offsetWidth !== chip.w || r.offsetHeight !== chip.h)) setChip({ w: r.offsetWidth, h: r.offsetHeight });
+  });
+  // Comment pins count too: the label must not hide a pin on the node's corner.
+  const tstore = threadStores.get(view.id);
+  const threads = useSyncExternalStore(tstore?.subscribe ?? noSub, () => tstore?.get().threads ?? NONE);
+  const blocks = useMemo(() => {
+    if (!pos) return [];
+    const drawing = obstacles(view.elements, view.map).map(toScreen).filter((b) => !overlaps(b, pos, -8));
+    return [...drawing, ...layoutPins(threads, view).boxes];
+  }, [view.elements, view.map, a.scrollX, a.scrollY, z, pos?.x, pos?.y, pos?.w, pos?.h, threads]);
+  const label = pos ? placeBeside(pos, chip.w, chip.h, blocks, { x: 0, y: 0, w: a.width, h: a.height }, { gap: 6 }) : null;
 
   // Glide only when the pointer moves to another element; panning and zooming follow at once.
   const [gliding, setGliding] = useState(false);
@@ -79,8 +104,8 @@ export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view
     <div className="ds ptr-layer">
       {links.length > 0 && pos && cur && sid && (
         <>
-          <motion.span className="ptr-ring" initial={false} animate={{ x: pos.x - 5, y: pos.y - 5, width: pos.w + 10, height: pos.h + 10 }} transition={glide ? GLIDE : { duration: 0 }} />
-          <motion.div className="ptr ptr-ui" initial={false} animate={{ x: pos.x, y: pos.y - 34 }} transition={glide ? GLIDE : { duration: 0 }} data-running={turns.at(-1)?.running}>
+          <motion.span className="ptr-ring" initial={false} animate={{ x: pos.x, y: pos.y, width: pos.w, height: pos.h }} transition={glide ? GLIDE : { duration: 0 }} />
+          <motion.div ref={chipRef} className="ptr ptr-ui" data-side={label!.side} initial={false} animate={{ x: Math.round(label!.x), y: Math.round(label!.y) }} transition={glide ? GLIDE : { duration: 0 }} data-running={turns.at(-1)?.running}>
             <button className="ptr-chip" onClick={() => setOpen(open === "pointer" ? null : "pointer")} aria-expanded={open === "pointer"} title={`${agentName} 最近在改「${labelOf(el!, view.map)}」的代码`}>
               <IconTarget size={16} replayKey={state.placed.length} />
               <b>{agentName}</b>
