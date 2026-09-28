@@ -20,11 +20,12 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { IconHistory } from "../app/icons";
 import type { CanvasViewState } from "../canvas/CanvasView";
 import { clipPath } from "../canvas/chrome";
-import { overlaps, type Box } from "../canvas/clearance";
+import type { Box } from "../canvas/clearance";
 import { viewport, type Viewport } from "../canvas/viewport";
 import { useNested } from "../nested/store";
 import { ui } from "../session/ui";
 import { clock, prefersReducedMotion, useReplay } from "./clock";
+import { placeBubbles, type BubbleIn } from "./bubbles";
 import { pickBubbles, slots } from "./crowd";
 import { FigureNode } from "./figureNode";
 import { figurePositions, focus, useFocus } from "./focus";
@@ -39,7 +40,7 @@ import "./workstation.css";
 
 const SNAP_MS = 250;
 /** Screen px between figures standing side by side. */
-const SLOT_PX = 40;
+const SLOT_PX = 56;
 const BUBBLE_EXIT_MS = 120;
 const RING_EXIT_MS = 300;
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -124,7 +125,7 @@ function ringsOf(list: FlatRun[], states: Map<string, RunState>, conflicts: Writ
 }
 
 /** What a worker's bubble says (the prototype's wording). `key` changes when the words do (cross-fade). */
-function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflicts: WriteConflict[], byId: Map<string, FlatRun>, folded: number): { kind: string; key: string; body: ReactNode } {
+function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflicts: WriteConflict[], byId: Map<string, FlatRun>, folded: number, quiet = 0): { kind: string; key: string; body: ReactNode } {
   const run = f.run;
   const g = st.seg;
   const par = f.parent;
@@ -170,6 +171,7 @@ function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflic
         {st.portal && <span className="portal" title={`在子图「${st.portal.label}」里`}>↘ 子图 · {st.portal.label}</span>}
         {par && st.receipt && <span className="rc" data-r={st.receipt}>{RECEIPT_NAMES[st.receipt]}</span>}
         {folded > 0 && <span className="kbadge" title={`它又派了 ${folded} 个子代理（更深一层不画在图上，见时间线）`}>+{folded}</span>}
+        {quiet > 0 && <span className="kbadge" data-quiet title={`${quiet} 个子代理的气泡收起了（这里挤不下；悬停小人或看时间线）`}>+{quiet}</span>}
       </>
     ),
   };
@@ -256,6 +258,15 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
   /** …and where it is on its way there: a Hermite glide per axis, so a move or a flip starts
    * gently, keeps its speed if retargeted mid-way, and settles at rest. */
   const bubbleCur = useRef(new Map<string, { x: Glide; y: Glide }>());
+  /** Measured size and placement priority of each bubble (from the placement pass), and how visible
+   * it is while it waits for a higher-priority bubble to move out of its way (0–1, per frame). */
+  const bubbleSize = useRef(new Map<string, { w: number; h: number }>());
+  const bubbleRank = useRef(new Map<string, number>());
+  const bubbleVis = useRef(new Map<string, number>());
+  /** Sub-agent bubbles folded for lack of room, counted as +N on the nearest shown ancestor's bubble. */
+  const [foldCounts, setFoldCounts] = useState<Map<string, number>>(() => new Map());
+  const foldKey = useRef<{ key: string; counts: Map<string, number> }>({ key: "", counts: new Map() });
+  const foldPass = useRef<{ snap: Snap | null; n: number }>({ snap: null, n: 0 });
   const chipEls = useRef(new Map<string, HTMLElement>());
   const trayEl = useRef<HTMLDivElement>(null);
   const bannerTime = useRef<HTMLElement>(null);
@@ -391,6 +402,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
         // Side by side at a node: the slot offset glides, so an arrival or a departure never jumps.
         let off = offs.current.get(run.id);
         if (!off) offs.current.set(run.id, (off = new Glide()));
+        // along the edge from the dock, far enough apart that heads and props never touch
         const want = x.slot * SLOT_PX * k;
         const dx = still || fresh || reset ? off.reset(want, now / 1000) : off.step(now / 1000, want);
         let wx = j.root.x + dx;
@@ -417,6 +429,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
         p.setAttribute("d", `M${px(a0.x)} ${px(a0.y)}Q${px((a0.x + b0.x) / 2)} ${px(Math.min(a0.y, b0.y) - 34 * k)} ${px(b0.x)} ${px(b0.y)}`);
       }
       // HTML pieces follow in screen coordinates, at sub-pixel positions.
+      const drawnB: { id: string; el: HTMLElement; x: number; y: number }[] = [];
       for (const [id, el] of bubbleEls.current) {
         const h = heads.current.get(id);
         const o = bubbleOff.current.get(id);
@@ -439,11 +452,26 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
           alphas.set(id, Math.min(alphas.get(id) ?? 1, xf.a));
         }
         el.style.transform = `translate3d(${px(sx)}px, ${px(sy)}px, 0)`;
-        if (still) {
-          const a = alphas.get(id) ?? 1;
-          const op = a >= 0.999 ? "" : a.toFixed(3);
-          if (el.style.opacity !== op) el.style.opacity = op;
-        }
+        drawnB.push({ id, el, x: sx, y: sy });
+      }
+      // Between placements (≤ 4 Hz) a bubble follows a walking figure or glides to its new spot; if
+      // it would touch a higher-priority bubble on the way, it fades out quickly until clear.
+      drawnB.sort((a, b) => (bubbleRank.current.get(a.id) ?? 99) - (bubbleRank.current.get(b.id) ?? 99));
+      const shown: Box[] = [];
+      for (const d of drawnB) {
+        const inner = d.el.firstElementChild as HTMLElement | null;
+        // live size (the words change while it waits); layout is clean here, so this reads cheaply
+        const sz = inner ? { w: inner.offsetWidth, h: inner.offsetHeight } : bubbleSize.current.get(d.id);
+        const r = sz && !d.el.hasAttribute("data-folded") ? { x: d.x, y: d.y, w: sz.w, h: sz.h } : null;
+        const near = (m: number) => !!r && shown.some((p) => p.x < r.x + r.w + m && r.x < p.x + p.w + m && p.y < r.y + r.h + m && r.y < p.y + p.h + m);
+        const prev = bubbleVis.current.get(d.id) ?? 0;
+        // touching: gone this frame; about to touch: fading fast; clear: back in 120 ms
+        const vis = !r || near(0) ? 0 : reset || still ? (near(12) ? 0 : 1) : Math.max(0, Math.min(1, prev + (near(12) ? -step / 0.06 : step / 0.12)));
+        bubbleVis.current.set(d.id, vis);
+        if (r && vis > 0 && !d.el.hasAttribute("data-folded")) shown.push(r);
+        const a = (still ? (alphas.get(d.id) ?? 1) : 1) * vis;
+        const op = a >= 0.999 ? "" : a.toFixed(3);
+        if (d.el.style.opacity !== op) d.el.style.opacity = op;
       }
       for (const [place, el] of chipEls.current) {
         const b = g.boxOf(place);
@@ -476,64 +504,85 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
       if (el) sizes.set(id, { w: el.offsetWidth, h: el.offsetHeight });
     }
     frame.flush(); // heads for this snapshot (a new figure has none yet)
-    const cell = 96;
-    const grid = new Map<string, Box[]>();
-    const cells = (r: Box, f: (key: string) => void) => {
-      for (let i = Math.floor(r.x / cell); i <= Math.floor((r.x + r.w) / cell); i++) for (let j = Math.floor(r.y / cell); j <= Math.floor((r.y + r.h) / cell); j++) f(`${i},${j}`);
-    };
-    for (const b of geom.boxes.values()) {
+    const nodes: Box[] = [];
+    for (const b of geom.obstacles) {
       const r = { x: (b.x + v.scrollX) * v.zoom - 2, y: (b.y + v.scrollY) * v.zoom - 2, w: b.w * v.zoom + 4, h: b.h * v.zoom + 4 };
       if (r.x > v.width || r.y > v.height || r.x + r.w < 0 || r.y + r.h < 0) continue;
-      cells(r, (key) => grid.set(key, [...(grid.get(key) ?? []), r]));
+      nodes.push(r);
     }
-    const hits = (r: Box) => {
-      let hit = false;
-      cells(r, (key) => (hit ||= (grid.get(key) ?? []).some((b) => overlaps(r, b))));
-      return hit;
+    // Priority: whoever needs you, then the main agent, then sub-agents (writers first, as picked).
+    const need = (id: string) => {
+      const k = snap.states.get(id)?.seg?.kind;
+      return k === "wait" || !!conflictAt(conflicts, id, snap.t);
     };
-    const placed: Box[] = [...chrome];
-    const next = new Map<string, { dx: number; dy: number }>();
-    for (const id of snap.bubbles) {
-      const el = bubbleEls.current.get(id)?.firstElementChild as HTMLElement | null | undefined;
+    const rank = (id: string) => (need(id) ? 0 : (snap.byId.get(id)?.depth ?? 1) === 0 ? 1 : 2);
+    const list: BubbleIn[] = [];
+    for (const id of [...snap.bubbles].sort((a, b) => rank(a) - rank(b))) {
       const h = heads.current.get(id);
       const size = sizes.get(id);
-      if (!el || !h || !size) continue;
-      const hx = (h.x + v.scrollX) * v.zoom;
-      const hy = (h.y + v.scrollY) * v.zoom;
-      const { w, h: hh } = size;
-      const inView = (x: number, y: number) => x >= 8 && x + w <= v.width - 8 && y >= 8 && y + hh <= v.height - 8;
-      const ok = (x: number, y: number) => inView(x, y) && !hits({ x, y, w, h: hh }) && !placed.some((p) => overlaps(p, { x, y, w, h: hh }, 2));
-      const cands: [number, number, string | null][] = [
-        [hx - 20, hy - hh - 14, "d"],
-        [hx - w + 28, hy - hh - 14, "dr"],
-      ];
-      for (let up = 1; up <= 4; up++) cands.push([hx - 20, hy - hh - 14 - up * 30, null], [hx - w + 28, hy - hh - 14 - up * 30, null]);
-      // No room above (the canvas's top, its toolbar, other bubbles): under the node instead.
+      if (!h || !size) continue;
       const place = snap.figs.find((x) => x.f.run.id === id)?.place;
       const nb = place ? geom.boxOf(place) : undefined;
-      if (nb) {
-        const bottom = (nb.y + nb.h + v.scrollY) * v.zoom + 10;
-        for (let i = 0; i < 4; i++) cands.push([hx - 20, bottom + i * 30, null], [hx - w + 28, bottom + i * 30, null]);
+      list.push({
+        id,
+        x: (h.x + v.scrollX) * v.zoom,
+        y: (h.y + v.scrollY) * v.zoom,
+        ...size,
+        foldable: rank(id) === 2 && id !== fo.selected,
+        below: nb ? (nb.y + nb.h + v.scrollY) * v.zoom : undefined,
+      });
+    }
+    const { at, folded } = placeBubbles(list, { width: v.width, height: v.height, nodes, avoid: chrome });
+    bubbleSize.current = sizes;
+    bubbleRank.current = new Map(list.map((b, i) => [b.id, i]));
+    const next = new Map<string, { dx: number; dy: number }>();
+    for (const b of list) {
+      const wrap = bubbleEls.current.get(b.id);
+      const el = wrap?.firstElementChild as HTMLElement | null | undefined;
+      const p = at.get(b.id);
+      if (!wrap || !el) continue;
+      if (!p) {
+        // folded: hidden where it was, counted on its dispatcher's bubble
+        wrap.dataset.folded = "";
+        const o = bubbleOff.current.get(b.id);
+        if (o) next.set(b.id, o);
+        continue;
       }
-      // Nothing is clear: the spot that covers the least.
-      const cost = ([x, y]: [number, number, string | null]) => {
-        const r = { x, y, w, h: hh };
-        let c = inView(x, y) ? 0 : 1e6;
-        for (const p of placed) if (overlaps(p, r)) c += (Math.min(p.x + p.w, x + w) - Math.max(p.x, x)) * (Math.min(p.y + p.h, y + hh) - Math.max(p.y, y));
-        return c + (hits(r) ? 500 : 0);
-      };
-      const pick = cands.find(([x, y]) => ok(x, y)) ?? [...cands].sort((p, q) => cost(p) - cost(q))[0];
-      next.set(id, { dx: pick[0] - hx, dy: pick[1] - hy });
-      placed.push({ x: pick[0], y: pick[1], w, h: hh });
-      if (pick[2]) el.dataset.tail = pick[2];
+      if (wrap.hasAttribute("data-folded")) {
+        // unfolding: start invisible, the frame loop fades it in once it is clear
+        wrap.style.opacity = "0";
+        bubbleVis.current.set(b.id, 0);
+      }
+      delete wrap.dataset.folded;
+      next.set(b.id, { dx: p.x - b.x, dy: p.y - b.y });
+      if (p.tail) el.dataset.tail = p.tail;
       else delete el.dataset.tail;
+    }
+    // +N on the nearest shown ancestor's bubble
+    const counts = new Map<string, number>();
+    for (const id of folded) {
+      let p = snap.byId.get(id)?.parent;
+      while (p && !at.has(p.id)) p = snap.byId.get(p.id)?.parent;
+      if (p) counts.set(p.id, (counts.get(p.id) ?? 0) + 1);
+    }
+    const key = [...counts].sort().join(",");
+    if (key !== foldKey.current.key) {
+      // the badge changes a bubble's width: render it, then place once more (bounded per snapshot)
+      foldKey.current = { key, counts };
+      if (foldPass.current.snap !== snap || foldPass.current.n < 2) {
+        foldPass.current = { snap, n: foldPass.current.snap === snap ? foldPass.current.n + 1 : 1 };
+        setFoldCounts(counts);
+      }
     }
     // keep the last offset of bubbles on their way out
     for (const [id, o] of bubbleOff.current) if (!next.has(id) && bubbleEls.current.has(id)) next.set(id, o);
     bubbleOff.current = next;
     for (const id of bubbleCur.current.keys()) if (!bubbleEls.current.has(id)) bubbleCur.current.delete(id);
     frame.flush();
-  }, [snap, chrome]);
+  }, [snap, chrome, foldCounts]);
+  // Any other commit can change a bubble's words (its width): settle positions and visibility before
+  // the browser can paint it.
+  useLayoutEffect(() => void frame.flush());
 
   const t = snap.t;
   // What each bubble says, remembered so a leaving bubble keeps its words while it fades.
@@ -542,7 +591,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
     const f = snap.byId.get(id);
     const st = snap.states.get(id);
     if (!f || !st) return [];
-    const b = bubbleBody(f, st, t, geom, conflicts, snap.byId, snap.folded.get(id) ?? 0);
+    const b = bubbleBody(f, st, t, geom, conflicts, snap.byId, snap.folded.get(id) ?? 0, foldCounts.get(id) ?? 0);
     bodies.current.set(id, { ...b, sub: f.depth > 0 });
     return [{ key: id }];
   });
