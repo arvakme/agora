@@ -13,6 +13,7 @@ import { Composer, ThreadCard } from "./ThreadCard";
 export type Draft = { anchor: Anchor; text: string };
 const CARD_W = 320;
 const DOCK_CLEAR = 76;
+const PIN_STEP = 30;
 export type CardPos = { left: number; top?: number; bottom?: number; maxH: number; flip: boolean; up: boolean };
 
 type Props = {
@@ -67,7 +68,15 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
     setDraft({ anchor: { ids: [hit.id], rel, last: { x: sx, y: sy } }, text: "" });
   };
 
-  const resolved = list.map((t) => ({ t, st: resolveAnchor(t.anchor, view.map) }));
+  // Several threads on one box share its corner: fan them out to the right instead of stacking.
+  const taken = new Map<string, number>();
+  const resolved = list.map((t) => {
+    const st = resolveAnchor(t.anchor, view.map);
+    const key = `${Math.round(st.point.x)},${Math.round(st.point.y)}`;
+    const k = taken.get(key) ?? 0;
+    taken.set(key, k + 1);
+    return { t, st, p: { x: toScreen(st.point).x + k * PIN_STEP, y: toScreen(st.point).y } };
+  });
   const shownId = activeId ?? hoverId;
   const shown = resolved.find((r) => r.t.id === shownId);
 
@@ -79,8 +88,7 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
           点在一个元素上
         </div>
       )}
-      {resolved.map(({ t, st }) => {
-        const p = toScreen(st.point);
+      {resolved.map(({ t, st, p }) => {
         return (
           <button
             key={t.id}
@@ -112,7 +120,7 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
             mode={shown.t.id === activeId ? "full" : "preview"}
             api={api}
             store={store}
-            pos={cardPos(toScreen(shown.st.point))}
+            pos={cardPos(shown.p)}
             onHover={(inside) => shown.t.id !== activeId && hover(inside ? shown.t.id : null)}
           />
         )}
