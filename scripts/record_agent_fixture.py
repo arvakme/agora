@@ -261,7 +261,8 @@ def grok_collect(cwd: str, since: float, stream: list[dict]) -> tuple[str, list[
     look = a.locate(sid)
     if not look.path:
         raise SystemExit(f"grok: no session for {sid}")
-    return sid, [look.path.parent]
+    # The folder for the temp cwd (it also gets a prompt_history.jsonl) is the run's own.
+    return sid, [look.path.parent, look.path.parent.parent]
 
 
 def main() -> int:
@@ -390,9 +391,9 @@ def main() -> int:
 def delete_native(kind: str, sid: str | None, created: list[Path], children: list[str]) -> list[str]:
     done = []
     if kind == "codex" and sid:
-        for tid in [sid, *children]:
-            r = subprocess.run(["codex", "delete", tid], capture_output=True, text=True, env=child_env(), timeout=60, input="y\n")
-            done.append(f"codex delete {tid}: exit {r.returncode}")
+        for tid in [*children, sid]:  # children first: deleting the parent removes their index rows too
+            r = subprocess.run(["codex", "delete", "--force", tid], capture_output=True, text=True, env=child_env(), timeout=60, stdin=subprocess.DEVNULL)
+            done.append(f"codex delete --force {tid}: exit {r.returncode}")
     if kind == "grok" and sid:
         for tid in [sid, *children]:
             r = subprocess.run(["grok", "sessions", "delete", tid], capture_output=True, text=True, env=child_env(), timeout=60, input="y\n")
