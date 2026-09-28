@@ -5,8 +5,10 @@
 // Opens `<url>/?mock=runs&perf` (the prototype's scripted scenario: one main agent, a Seedmux
 // worker with tool calls, a receipts-only worker, a Claude Task sub-agent) in Playwright's
 // Chromium at 1440×900, and records, frame by frame with requestAnimationFrame timestamps, the
-// on-screen box of every figure and bubble and the playhead's transform. Windows: a walk, a pose
-// change, bubbles entering / leaving (dispatch, hand-back), and replay scrubbing on the timeline.
+// on-screen box of every figure and bubble and the playhead's transform. Windows: walking over a
+// bridge, climbing ladders (剖面: up, down, getting on and off), a pose change, bubbles entering /
+// leaving (dispatch, hand-back), a scaffold to the 图外 tray, a glance (a short read: the figure stays,
+// a dashed line to the node), and replay scrubbing on the timeline.
 // Per window it reports
 //   frames, dropped      frames the display should have shown but the page missed (60 Hz)
 //   maxGap               the longest time between two frames
@@ -19,7 +21,7 @@
 // and saves a video of the whole run plus an MP4 and a GIF per window (ffmpeg).
 import { chromium, type Page } from "playwright";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const [url, out = "evidence/focus/motion"] = process.argv.slice(2);
@@ -133,24 +135,34 @@ const at = async (sec: number) => {
   const wait = base + sec * 1000 - Date.now();
   if (wait > 0) await page.waitForTimeout(wait);
 };
-type Win = ReturnType<typeof analyse> & { from: number; to: number };
+type Win = ReturnType<typeof analyse> & { from: number; to: number; crop?: string };
 const windows: Record<string, Win> = {};
-const capture = async (name: string, from: number, to: number, during?: () => Promise<void>, expectJumps?: string[]) => {
+/** The clips' crop (ffmpeg w:h:x:y): the right of the page by default; `CANVAS`: the diagram in the canvas pane. */
+const CANVAS = "860:540:0:180";
+const capture = async (name: string, from: number, to: number, during?: () => Promise<void>, expectJumps?: string[], crop?: string) => {
   await at(from);
   await startSampler(page);
   const v0 = (Date.now() - t0) / 1000;
   if (during) await during();
   await at(to);
   const s = await stopSampler(page);
-  windows[name] = { ...analyse(s, { expectJumps }), from: v0, to: (Date.now() - t0) / 1000 };
+  windows[name] = { ...analyse(s, { expectJumps }), from: v0, to: (Date.now() - t0) / 1000, ...(crop ? { crop } : {}) };
   console.log(name, JSON.stringify({ ...windows[name], tracked: undefined }));
 };
-// The scenario (runs/fixtures.ts): Claude Code walks from Web to the API node at 5.5 s; Pi walks to
-// the DB node at 6.5 s and back to write at 12 s; sub-agents are dispatched at 19.6–20.5 s; Codex
-// claims done at 33.6 s and walks back to hand over; the worker exits at 38 s.
-await capture("walk", 4.8, 9.5);
+// The scenario (runs/fixtures.ts) on the prototype's diagram (scripts/fidelity/setup.ts), 剖面 walking:
+// Claude Code sets off from Web 前端 at 5.5 s over the HTTP bridge and along API 服务, then down a
+// ladder beside API 服务 to 支付服务; Pi climbs the ladder where the SQL arrow runs upright (x = 610) to
+// MySQL at 6.5 s and back down at 12 s (Claude Code back up at 11.5 s); sub-agents are dispatched at
+// 19.6–20.5 s; Codex goes over a scaffold to the 图外 tray at 24 s; the Claude sub-agent glances at
+// docs/payments.md (the tray) from 支付服务 at 28.9–30.8 s without walking there; Codex claims done at
+// 33.6 s and goes back over the scaffold to hand over; the worker exits at 38 s. Windows are recorded
+// one after another, so they never overlap.
+await capture("bridge", 5.2, 6.5, undefined, undefined, CANVAS);
+await capture("ladder", 6.5, 9.3, undefined, undefined, CANVAS);
 await capture("pose", 11, 15.5);
 await capture("bubbles-enter", 18.8, 23.5);
+await capture("scaffold", 23.6, 27, undefined, undefined, CANVAS);
+await capture("glance", 28.6, 31.2, undefined, undefined, CANVAS);
 await capture("handoff-exit", 33, 39.5);
 // Replay: drag the strip's playhead from near now back to the start, then forward again.
 await at(41);
@@ -183,7 +195,10 @@ await ctx.close();
 await browser.close();
 
 // Videos: the whole run, and one short clip (MP4 + GIF) per window.
-const raw = readdirSync(vidDir).find((f) => f.endsWith(".webm"));
+// this run's recording: the newest, not an earlier run's full*.webm in the same directory
+const raw = readdirSync(vidDir)
+  .filter((f) => f.endsWith(".webm") && !f.startsWith("full"))
+  .sort((a, b) => statSync(join(vidDir, b)).mtimeMs - statSync(join(vidDir, a)).mtimeMs)[0];
 const suffix = `${dark ? "-dark" : ""}${reduced ? "-reduced" : ""}`;
 if (raw) {
   const full = join(vidDir, `full${suffix}.webm`);
@@ -193,8 +208,9 @@ if (raw) {
     const gif = join(out, `${name}${suffix}.gif`);
     const len = String(Math.max(1, w.to - w.from + 0.4));
     const ss = String(Math.max(0, w.from - 0.2));
-    execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-ss", ss, "-t", len, "-i", full, "-vf", "crop=1000:620:440:150,fps=30", "-c:v", "libx264", "-pix_fmt", "yuv420p", mp4]);
-    execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-ss", ss, "-t", len, "-i", full, "-vf", "crop=1000:620:440:150,fps=20,scale=720:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer", gif]);
+    const crop = `crop=${w.crop ?? "1000:620:440:150"}`;
+    execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-ss", ss, "-t", len, "-i", full, "-vf", `${crop},fps=30`, "-c:v", "libx264", "-pix_fmt", "yuv420p", mp4]);
+    execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-ss", ss, "-t", len, "-i", full, "-vf", `${crop},fps=20,scale=720:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer`, gif]);
   }
 }
 writeFileSync(join(out, `motion${suffix}.json`), JSON.stringify({ url, dark, reduced, at: new Date().toISOString(), windows }, null, 2));

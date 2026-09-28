@@ -1,13 +1,16 @@
 // Where things are on one canvas, in scene (world) coordinates: node boxes, the docks workers stand
-// on, the 图外 tray, and which node a file belongs to (with the child canvas it lies in, if any).
-// Built once per scene version (./Overlay.tsx), never per frame. Pure.
+// on, the 图外 tray, which node a file belongs to (with the child canvas it lies in, if any), and the
+// walking map (./route.ts: floors, and the arrows between nodes as ways). Built once per scene version
+// (./Overlay.tsx), never per frame. Pure (type-only imports from scene.ts, which pulls in Excalidraw),
+// so it runs under vitest in node.
 import { footprint, type Box } from "../canvas/clearance";
-import { labelOf, live, type El } from "../canvas/scene";
-import { effectiveLinks, type Scenes } from "../nested/graph";
+import type { El } from "../canvas/scene";
+import { effectiveLinks, labelOf, type Scenes } from "../nested/graph";
 import { elementFor } from "../pointer/codeLinks";
-import { routeAround, type Pt } from "./rig";
-import { OUTSIDE, type Located } from "./place";
+import type { Pt } from "./rig";
+import { OUTSIDE, type Located, type Spot } from "./place";
 import { dockSpots, inside, REF_K, trayBox } from "./docks";
+import { route as routeOn, walkMap, type Connector, type Route } from "./route";
 export { dockSpots, FIG_BOX, REF_K, SLOT, trayBox } from "./docks";
 
 export type Geometry = {
@@ -27,9 +30,11 @@ export type Geometry = {
   boxOf: (place: string) => Box | undefined;
   /** Child canvas a node opens, if any. */
   childOf: Map<string, string>;
-  /** Waypoints around the nodes between two docks. */
-  route: (a: Pt, b: Pt) => Pt[];
+  /** The way from one spot to another (./route.ts): along the arrows between nodes, else over a scaffold. */
+  route: (from: Spot, to: Spot) => Route;
 };
+
+const live = (e: El | undefined): e is El => !!e && !e.isDeleted;
 
 export function buildGeometry(canvasId: string, elements: readonly El[], map: Map<string, El>, scenes: Scenes, childTitle: (id: string) => string | undefined): Geometry {
   const everything = new Map(scenes).set(canvasId, elements);
@@ -64,7 +69,6 @@ export function buildGeometry(canvasId: string, elements: readonly El[], map: Ma
     return out;
   };
   const all = [...boxes.values()];
-  const route = (a: Pt, b: Pt) => routeAround(a, b, all);
   // Everything drawn that a figure or a bubble must not cover: linked nodes (with their labels),
   // shapes, icons, images, free text and arrow labels. Not arrows or loose lines, and not a big
   // shape that only frames others (a zone or a group box): its empty inside is free space.
@@ -98,5 +102,27 @@ export function buildGeometry(canvasId: string, elements: readonly El[], map: Ma
     return s;
   };
   const dock = (place: string): Pt => spots(place, REF_K, 1)[0];
+  // The ways between floors: arrows bound at both ends to linked nodes — directly, through a label
+  // (its container) or through another member of a node's group (a library icon's drawing).
+  const groupNode = new Map<string, string | null>(); // a group's one linked node (null: more than one)
+  for (const id of boxes.keys()) for (const g of map.get(id)?.groupIds ?? []) groupNode.set(g, groupNode.has(g) && groupNode.get(g) !== id ? null : id);
+  const nodeOf = (id: string | undefined, label = true): string | null => {
+    const e = id ? map.get(id) : undefined;
+    if (!live(e)) return null;
+    if (boxes.has(e.id)) return e.id;
+    if (label && e.type === "text" && e.containerId) return nodeOf(e.containerId, false);
+    for (const g of e.groupIds ?? []) if (groupNode.get(g)) return groupNode.get(g)!;
+    return null;
+  };
+  const connectors: Connector[] = [];
+  for (const e of elements) {
+    if (!live(e) || e.type !== "arrow") continue;
+    const a = e as unknown as { startBinding?: { elementId: string } | null; endBinding?: { elementId: string } | null; points: readonly (readonly [number, number])[] };
+    const from = nodeOf(a.startBinding?.elementId);
+    const to = nodeOf(a.endBinding?.elementId);
+    if (from && to) connectors.push({ from, to, pts: a.points.map(([x, y]) => ({ x: e.x + x, y: e.y + y })) });
+  }
+  const ways = walkMap(new Map([...boxes, [OUTSIDE, tray]]), connectors, obstacles);
+  const route = (from: Spot, to: Spot): Route => routeOn(ways, from, to);
   return { canvasId, boxes, labels, obstacles, tray, locate, dock, spots, boxOf, childOf, route };
 }
