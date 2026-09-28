@@ -47,6 +47,56 @@ export class Spring {
   }
 }
 
+/**
+ * A retargetable glide (cubic Hermite in time): from where it is, with the speed it has, to a new
+ * target that it reaches at rest after `D` seconds. Starting from rest its acceleration is small
+ * (6·Δ/D²), and a new target mid-flight keeps position and speed continuous — no pop, no lurch.
+ * Used for bubbles moving or flipping sides. `now` in seconds.
+ */
+export class Glide {
+  p0 = 0;
+  v0 = 0;
+  p1 = 0;
+  t0 = 0;
+  D = 0.4;
+  started = false;
+  reset(x: number, now: number) {
+    this.p0 = this.p1 = x;
+    this.v0 = 0;
+    this.t0 = now;
+    this.started = true;
+    return x;
+  }
+  private at(now: number): [number, number] {
+    const u = this.D > 0 ? Math.min(1, Math.max(0, (now - this.t0) / this.D)) : 1;
+    if (u >= 1) return [this.p1, 0];
+    const u2 = u * u;
+    const u3 = u2 * u;
+    const h00 = 2 * u3 - 3 * u2 + 1;
+    const h10 = u3 - 2 * u2 + u;
+    const h01 = -2 * u3 + 3 * u2;
+    const p = h00 * this.p0 + h10 * this.D * this.v0 + h01 * this.p1;
+    const d00 = 6 * u2 - 6 * u;
+    const d10 = 3 * u2 - 4 * u + 1;
+    const d01 = -6 * u2 + 6 * u;
+    const v = (d00 * this.p0 + d01 * this.p1) / this.D + d10 * this.v0;
+    return [p, v];
+  }
+  /** Position at `now`, heading for `target` (a changed target starts a new glide from here). */
+  step(now: number, target: number) {
+    if (!this.started) return this.reset(target, now);
+    if (Math.abs(target - this.p1) > 0.25) {
+      const [p, v] = this.at(now);
+      this.p0 = p;
+      this.v0 = v;
+      this.p1 = target;
+      this.t0 = now;
+      this.D = Math.min(0.65, 0.34 + Math.abs(target - p) / 900);
+    }
+    return this.at(now)[0];
+  }
+}
+
 export type Bone = { jx: number; jy: number; ex: number; ey: number };
 /** Two-bone IK by the law of cosines: root (rx, ry) → target (tx, ty), bones a and b. bend +1 bends clockwise (y down). */
 export function ik(rx: number, ry: number, tx: number, ty: number, a: number, b: number, bend: number): Bone {
@@ -66,26 +116,56 @@ const smooth = (u: number) => u * u * (3 - 2 * u);
 /** One walk from one dock to another, starting at t (ms). `slot` is the spot at the destination. */
 export type Move = { from: string; to: string; t: number; slot: number; fromSlot?: number; ret?: boolean };
 export type Step = { foot: 0 | 1; t0: number; t1: number; from: Pt; to: Pt };
-export type WalkPlan = { a: Pt; b: Pt; f: 1 | -1; steps: Step[]; t0: number; t1: number; dist: number };
+export type WalkPlan = { a: Pt; b: Pt; f: 1 | -1; steps: Step[]; t0: number; t1: number; dist: number; path: Pt[] };
 
-/** World px per ms. */
+/** World px per ms (cruising). */
 export const WALK_SPEED = 0.15;
 export const WALK_MIN_MS = 700;
-export const WALK_MAX_MS = 2400;
+export const WALK_MAX_MS = 2600;
+/** A beat to turn and shift weight before the first step. */
+export const SET_OFF_MS = 160;
+
+/** Progress along the path at time fraction u: sine ease-in-out (starts and stops gently). */
+const ease = (u: number) => (1 - Math.cos(Math.PI * u)) / 2;
+/** Its inverse: the time fraction at which progress p is reached. */
+const easeInv = (p: number) => Math.acos(1 - 2 * Math.max(0, Math.min(1, p))) / Math.PI;
+
+/** A point `s` along a polyline (and the length). */
+function along(path: Pt[]): { len: number; at: (s: number) => Pt } {
+  const seg = path.slice(1).map((p, i) => Math.hypot(p.x - path[i].x, p.y - path[i].y));
+  const len = seg.reduce((n, x) => n + x, 0);
+  return {
+    len,
+    at(s: number) {
+      let left = Math.max(0, Math.min(len, s));
+      for (let i = 0; i < seg.length; i++) {
+        if (left <= seg[i] || i === seg.length - 1) {
+          const k = seg[i] ? left / seg[i] : 0;
+          return { x: path[i].x + (path[i + 1].x - path[i].x) * k, y: path[i].y + (path[i + 1].y - path[i].y) * k };
+        }
+        left -= seg[i];
+      }
+      return path[path.length - 1];
+    },
+  };
+}
 
 /**
- * Footstep plan for one move (pure): n steps of equal length so the last one lands on the dock, then
- * a short closing step. Feet are planted except while they swing. `a` / `b` are the docks.
+ * Footstep plan for one move (pure): after a short set-off, n steps of equal length along the path
+ * (through `via`, the waypoints around nodes in the way) so the last one lands on the dock, then a
+ * short closing step. Step times follow an ease-in-out curve, so the walk starts and stops gently
+ * instead of at constant speed. Feet are planted except while they swing.
  */
-export function planWalk(m: Move, a: Pt, b: Pt): WalkPlan {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const dist = Math.hypot(dx, dy);
-  const dur = Math.max(WALK_MIN_MS, Math.min(WALK_MAX_MS, dist / WALK_SPEED));
+export function planWalk(m: Move, a: Pt, b: Pt, via: Pt[] = []): WalkPlan {
+  const path = [a, ...via, b];
+  const P = along(path);
+  const dist = P.len;
+  const dur = Math.max(WALK_MIN_MS, Math.min(WALK_MAX_MS, (dist / WALK_SPEED) * 1.25));
   const n = Math.max(2, Math.round(dist / 16));
-  const sd = dur / n;
+  const dx = b.x - a.x;
   const f: 1 | -1 = Math.abs(dx) < 8 ? 1 : dx > 0 ? 1 : -1;
-  const at = (s: number) => (dist ? { x: a.x + (dx * s) / dist, y: a.y + (dy * s) / dist } : { ...a });
+  const start = m.t + SET_OFF_MS;
+  const time = (k: number) => start + dur * easeInv(k / n);
   const steps: Step[] = [];
   let feet: Pt[] = [
     { x: a.x + RIG.stance * f, y: a.y },
@@ -93,16 +173,46 @@ export function planWalk(m: Move, a: Pt, b: Pt): WalkPlan {
   ];
   for (let k = 1; k <= n; k++) {
     const foot = (k % 2) as 0 | 1; // far foot leads
-    const p = at((dist * k) / n);
+    const p = P.at((dist * k) / n);
     const to = k === n ? { x: b.x + (foot ? -1 : 1) * RIG.stance * f, y: b.y } : p;
-    steps.push({ foot, t0: m.t + (k - 1) * sd, t1: m.t + k * sd, from: feet[foot], to });
+    steps.push({ foot, t0: time(k - 1), t1: time(k), from: feet[foot], to });
     feet = feet.map((x, i) => (i === foot ? to : x));
   }
   const last = steps[steps.length - 1].foot;
   const other = (1 - last) as 0 | 1;
   const close = { x: b.x + (other ? -1 : 1) * RIG.stance * f, y: b.y };
-  steps.push({ foot: other, t0: m.t + dur, t1: m.t + dur + sd * 0.7, from: feet[other], to: close });
-  return { a, b, f, steps, t0: m.t, t1: m.t + dur + sd * 0.7, dist };
+  const sd = Math.max(120, (dur / n) * 1.4);
+  steps.push({ foot: other, t0: start + dur, t1: start + dur + sd, from: feet[other], to: close });
+  return { a, b, f, steps, t0: m.t, t1: start + dur + sd, dist, path };
+}
+
+/** Walk progress at t along the plan (0 → 1, eased), for bubbles and tests. */
+export const walkProgress = (plan: WalkPlan, t: number) => (t <= plan.t0 + SET_OFF_MS ? 0 : t >= plan.t1 ? 1 : ease(Math.min(1, (t - plan.t0 - SET_OFF_MS) / (plan.t1 - plan.t0 - SET_OFF_MS))));
+
+/**
+ * Waypoints around the nodes a straight walk from a to b would cross (a simple hop over them):
+ * docks sit on nodes' top edges, so the walk rises above the highest box in the way and comes
+ * down at the destination. `boxes` are node boxes in world coordinates. Pure.
+ */
+export function routeAround(a: Pt, b: Pt, boxes: readonly { x: number; y: number; w: number; h: number }[], clearance = 18): Pt[] {
+  const on = (p: Pt, r: { x: number; y: number; w: number; h: number }) => p.x >= r.x - 2 && p.x <= r.x + r.w + 2 && p.y >= r.y - 2 && p.y <= r.y + r.h + 2;
+  const hits = boxes.filter((r) => {
+    if (on(a, r) || on(b, r)) return false;
+    const i = { x: r.x - 6, y: r.y - 6, w: r.w + 12, h: r.h + 12 };
+    // segment / rectangle intersection by sampling (boxes are few; this runs once per walk plan)
+    for (let k = 1; k < 24; k++) {
+      const x = a.x + ((b.x - a.x) * k) / 24;
+      const y = a.y + ((b.y - a.y) * k) / 24;
+      if (x >= i.x && x <= i.x + i.w && y >= i.y && y <= i.y + i.h) return true;
+    }
+    return false;
+  });
+  if (!hits.length) return [];
+  const top = Math.min(a.y, b.y, ...hits.map((r) => r.y)) - clearance;
+  return [
+    { x: a.x, y: top },
+    { x: b.x, y: top },
+  ];
 }
 
 export type Foot = Pt & { lift: number };
@@ -131,12 +241,14 @@ export function feetAt(plan: WalkPlan, t: number): { feet: [Foot, Foot]; swing: 
   return { feet, swing, phase };
 }
 
-/** Where the body is along a walk at t (between the feet), for placing bubbles and chips. */
+/**
+ * Where the body is along a walk at t: on the path at the eased progress — a continuous glide,
+ * so the body never lurches with each step; the feet are planted and swing around it.
+ */
 export function rootAt(plan: WalkPlan, t: number): Pt {
   if (t <= plan.t0) return plan.a;
   if (t >= plan.t1) return plan.b;
-  const { feet } = feetAt(plan, t);
-  return { x: (feet[0].x + feet[1].x) / 2 + 1.5 * plan.f, y: (feet[0].y + feet[1].y) / 2 };
+  return along(plan.path).at(plan.dist * walkProgress(plan, t));
 }
 
 export type Pose = "walk" | "read" | "write" | "exec" | "think" | "wait" | "idle" | "delegate" | "handoff" | "unknown";
@@ -147,7 +259,9 @@ export type Targets = { near: [number, number]; far: [number, number]; lean: num
  * The pose's targets at time t (ms; pure). Hands are relative to the shoulder, x along the facing.
  * `since`: ms into the current segment. `bump`: 0→1→0 over the first 800 ms of a conflict.
  */
-export function poseTargets(pose: Pose, t: number, since: number, o: { still: boolean; conflict?: boolean; bump?: number; unknownReceipt?: boolean }): Targets {
+export function poseTargets(pose: Pose, t: number, since: number, o: { still: boolean; conflict?: boolean; bump?: number; unknownReceipt?: boolean; coarse?: boolean }): Targets {
+  // `t` drives only the small loops (breathing, typing): the caller passes wall-clock time, so a
+  // 16× replay does not make hands flicker. What the worker does comes from the timeline.
   const s = t / 1000;
   const osc = (period: number, amp: number, off = 0) => (o.still ? 0 : Math.sin((s / period + off) * 2 * Math.PI) * amp);
   const T: Targets = { near: [1.6, 16.4], far: [-1.4, 16.6], lean: 0, tilt: 0, sway: osc(3.6, 0.7), prop: null, mark: null, facing: 1 };
@@ -220,7 +334,8 @@ export function poseTargets(pose: Pose, t: number, since: number, o: { still: bo
       T.near = [2.2, 14];
       T.far = [-0.5, 14.5];
       T.sway = osc(6, 0.6);
-      if (o.unknownReceipt) {
+      // Known only by its receipts: it stays put with a grey ?.
+      if (o.unknownReceipt || o.coarse) {
         T.mark = "?";
         T.markMuted = true;
       }
@@ -243,11 +358,12 @@ export function poseTargets(pose: Pose, t: number, since: number, o: { still: bo
 }
 
 /** A worker's springs (smooth hands, lean, head tilt, sway), kept per run between frames. */
-export type Springs = { t: number | null; nx: Spring; ny: Spring; fx: Spring; fy: Spring; lean: Spring; tilt: Spring; sway: Spring };
+export type Springs = { t: number | null; nx: Spring; ny: Spring; fx: Spring; fy: Spring; lean: Spring; tilt: Spring; sway: Spring; turn: Spring; f: 1 | -1 | 0; prop: Spring; propKind: Prop };
 export function makeSprings(): Springs {
   const hand = () => new Spring(3.2, 0.55, 0.4);
-  const body = () => new Spring(2, 0.7, 0.3);
-  return { t: null, nx: hand(), ny: hand(), fx: hand(), fy: hand(), lean: body(), tilt: new Spring(3, 0.45, 1.2), sway: body() };
+  // The body settles with a small, damped overshoot (arriving, standing up from a pose).
+  const body = () => new Spring(2.2, 0.5, 0.3);
+  return { t: null, nx: hand(), ny: hand(), fx: hand(), fy: hand(), lean: body(), tilt: new Spring(3, 0.45, 1.2), sway: body(), turn: new Spring(4, 0.8, 0), f: 0, prop: new Spring(4, 0.9, 0), propKind: null };
 }
 
 /** Solved joints in figure space (origin = the root on the ground, facing applied). */
@@ -271,18 +387,24 @@ export type Joints = {
   shN: Pt;
   shF: Pt;
   prop: Prop;
+  /** 0 → 1 while a prop (laptop, sheet, terminal) fades and scales in; the kind fading out stays until 0. */
+  propAlpha: number;
+  /** Horizontal scale while turning: −1 (still facing the old way) → 1 (facing the new way). */
+  turn: number;
   mark: Targets["mark"];
   markMuted: boolean;
   walking: boolean;
 };
 
 /**
- * Solve one worker at time t: from its dock (standing) or its walk plan (walking), the pose's
- * targets and its springs. A jump (time going backwards or more than 250 ms since the last solve)
- * resets the springs so a paused frame is exact.
+ * Solve one worker at timeline time t: from its dock (standing) or its walk plan (walking), the
+ * pose's targets and its springs. Springs integrate wall-clock time (`dt`, seconds), so a replay at
+ * 16× still blends at human speed. They are reset only on a real jump (`reset`: a seek or scrub,
+ * or the tab coming back after a long pause), so a paused frame is exact and live updates blend.
  */
-export function solve(o: { t: number; pose: Pose; since: number; dock: Pt; walk: WalkPlan | null; still: boolean; conflict?: boolean; bump?: number; unknownReceipt?: boolean; readingWhileWalking?: boolean }, sp: Springs): Joints {
+export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolean; pose: Pose; since: number; dock: Pt; walk: WalkPlan | null; still: boolean; conflict?: boolean; bump?: number; unknownReceipt?: boolean; coarse?: boolean; readingWhileWalking?: boolean }, sp: Springs): Joints {
   const { t, still } = o;
+  const wall = o.wall ?? t;
   const walking = !still && o.walk && t >= o.walk.t0 && t < o.walk.t1 ? o.walk : null;
   let root: Pt;
   let feet: Foot[];
@@ -296,7 +418,7 @@ export function solve(o: { t: number; pose: Pose; since: number; dock: Pt; walk:
     f = walking.f;
     swingFoot = r.swing;
     swingPhase = r.phase;
-    root = { x: (feet[0].x + feet[1].x) / 2 + 1.5 * f, y: (feet[0].y + feet[1].y) / 2 };
+    root = rootAt(walking, t);
     bob = Math.min(2.2, (Math.abs(feet[0].x - feet[1].x) + Math.abs(feet[0].y - feet[1].y)) * 0.09);
   } else {
     root = { ...o.dock };
@@ -309,7 +431,7 @@ export function solve(o: { t: number; pose: Pose; since: number; dock: Pt; walk:
   if (walking) {
     const sw = swingFoot === 0 ? Math.sin(Math.PI * swingPhase) : swingFoot === 1 ? -Math.sin(Math.PI * swingPhase) : 0;
     T = { near: [-4.5 * sw, 15.8], far: [4.5 * sw, 15.8], lean: 3, tilt: 0, sway: 0, prop: o.readingWhileWalking ? "carry" : null, mark: null, facing: 1 };
-  } else T = poseTargets(o.pose, t, o.since, { still, conflict: o.conflict, bump: o.bump, unknownReceipt: o.unknownReceipt });
+  } else T = poseTargets(o.pose, wall, o.since, { still, conflict: o.conflict, bump: o.bump, unknownReceipt: o.unknownReceipt, coarse: o.coarse });
   if (!walking && T.facing === -1) {
     f = -1;
     feet = [
@@ -317,16 +439,35 @@ export function solve(o: { t: number; pose: Pose; since: number; dock: Pt; walk:
       { x: o.dock.x + RIG.stance, y: o.dock.y, lift: 0 },
     ];
   }
-  const dt = sp.t == null ? -1 : (t - sp.t) / 1000;
-  const jump = still || dt < 0 || dt > 0.25;
+  // Without an explicit wall-clock step (tests, one-off solves), fall back to the timeline step.
+  const dt = o.dt ?? (sp.t == null ? -1 : (t - sp.t) / 1000);
+  const jump = still || !!o.reset || sp.t == null || dt < 0 || dt > 1;
   sp.t = t;
-  const S = (s: Spring, x: number) => (jump ? s.reset(x) : s.step(dt, x));
+  const step = Math.min(dt, 0.05);
+  const S = (s: Spring, x: number) => (jump ? s.reset(x) : s.step(step, x));
   const near = [S(sp.nx, T.near[0]), S(sp.ny, T.near[1])];
   const far = [S(sp.fx, T.far[0]), S(sp.fy, T.far[1])];
   const lean = S(sp.lean, T.lean);
   const tilt = S(sp.tilt, T.tilt);
   const sway = S(sp.sway, T.sway);
 
+  // Turning: when the facing flips, the figure starts mirrored (still facing the old way) and a
+  // spring brings it round through edge-on — a quick turn before it steps off.
+  if (sp.f !== f) {
+    if (sp.f !== 0 && !jump) sp.turn.reset(-Math.abs(sp.turn.y || 1));
+    sp.f = f;
+  }
+  const turn = jump ? sp.turn.reset(1) : sp.turn.step(step, 1);
+  // Props fade and scale in and out (never pop): the old one shrinks away before the new one grows.
+  let propAlpha: number;
+  if (jump) {
+    sp.propKind = T.prop;
+    propAlpha = sp.prop.reset(T.prop ? 1 : 0);
+  } else if (T.prop === sp.propKind) propAlpha = sp.prop.step(step, T.prop ? 1 : 0);
+  else {
+    propAlpha = sp.prop.step(step, 0);
+    if (propAlpha < 0.05) sp.propKind = T.prop;
+  }
   const L = (x: number) => x * f;
   const px = L(sway);
   const py = -RIG.hip + bob * 0.6;
@@ -364,7 +505,9 @@ export function solve(o: { t: number; pose: Pose; since: number; dock: Pt; walk:
     hipF,
     shN,
     shF,
-    prop: T.prop,
+    prop: sp.propKind,
+    propAlpha: Math.max(0, Math.min(1, propAlpha)),
+    turn: Math.max(-1, Math.min(1, turn)),
     mark: T.mark,
     markMuted: !!T.markMuted,
     walking: !!walking,

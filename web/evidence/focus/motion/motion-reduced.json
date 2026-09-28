@@ -1,0 +1,330 @@
+{
+  "url": "http://127.0.0.1:5393",
+  "dark": false,
+  "reduced": true,
+  "at": "2026-09-28T11:16:38.999Z",
+  "windows": {
+    "walk": {
+      "frames": 282,
+      "seconds": 4.68,
+      "dropped": 0,
+      "maxGap": 16.8,
+      "jank25": 0,
+      "maxStep": 0.86,
+      "maxSnap": 0.87,
+      "snaps": 0,
+      "snapList": [],
+      "tracked": [
+        "fig:mock-pi",
+        "fig:mock-cc",
+        "bub:Pi",
+        "bub:Claude Code",
+        "playhead"
+      ],
+      "from": 6.417,
+      "to": 11.142
+    },
+    "pose": {
+      "frames": 270,
+      "seconds": 4.48,
+      "dropped": 0,
+      "maxGap": 16.8,
+      "jank25": 0,
+      "maxStep": 0.86,
+      "maxSnap": 0.87,
+      "snaps": 0,
+      "snapList": [],
+      "tracked": [
+        "fig:mock-pi",
+        "fig:mock-cc",
+        "bub:Pi",
+        "bub:Claude Code",
+        "playhead"
+      ],
+      "from": 12.615,
+      "to": 17.139
+    },
+    "bubbles-enter": {
+      "frames": 282,
+      "seconds": 4.68,
+      "dropped": 0,
+      "maxGap": 16.8,
+      "jank25": 0,
+      "maxStep": 0.86,
+      "maxSnap": 0.87,
+      "snaps": 0,
+      "snapList": [],
+      "tracked": [
+        "fig:mock-pi",
+        "fig:mock-cc",
+        "bub:Pi",
+        "bub:Claude Code",
+        "playhead",
+        "fig:smx:T-41",
+        "fig:smx:T-42",
+        "bub:Codex"
+      ],
+      "from": 20.417,
+      "to": 25.15
+    },
+    "handoff-exit": {
+      "frames": 390,
+      "seconds": 6.48,
+      "dropped": 0,
+      "maxGap": 16.8,
+      "jank25": 0,
+      "maxStep": 7.81,
+      "maxSnap": 7.86,
+      "snaps": 12,
+      "snapList": [
+        {
+          "el": "playhead",
+          "at": 350,
+          "px": 7.86,
+          "abc": [
+            [
+              1187.1,
+              869,
+              1
+            ],
+            [
+              1194.9,
+              869,
+              1
+            ],
+            [
+              1194.9,
+              869,
+              1
+            ]
+          ]
+        },
+        {
+          "el": "playhead",
+          "at": 333,
+          "px": 7.81,
+          "abc": [
+            [
+              1187.1,
+              869,
+              1
+            ],
+            [
+              1187.1,
+              869,
+              1
+            ],
+            [
+              1194.9,
+              869,
+              1
+            ]
+          ]
+        },
+        {
+          "el": "playhead",
+          "at": 367,
+          "px": 7.73,
+          "abc": [
+            [
+              1194.9,
+              869,
+              1
+            ],
+            [
+              1194.9,
+              869,
+              1
+            ],
+            [
+              1202.6,
+              869,
+              1
+            ]
+          ]
+        },
+        {
+          "el": "playhead",
+          "at": 383,
+          "px": 7.68,
+          "abc": [
+            [
+              1194.9,
+              869,
+              1
+            ],
+            [
+              1202.6,
+              869,
+              1
+            ],
+            [
+              1202.6,
+              869,
+              1
+            ]
+          ]
+        },
+        {
+          "el": "playhead",
+          "at": 300,
+          "px": 7.48,
+          "abc": [
+            [
+              1179.6,
+              869,
+              1
+            ],
+            [
+              1179.6,
+              869,
+              1
+            ],
+            [
+              1187.1,
+              869,
+              1
+            ]
+          ]
+        },
+        {
+          "el": "playhead",
+          "at": 317,
+          "px": 7.48,
+          "abc": [
+            [
+              1179.6,
+              869,
+              1
+            ],
+            [
+              1187.1,
+              869,
+              1
+            ],
+            [
+              1187.1,
+              869,
+              1
+            ]
+          ]
+        },
+        {
+          "el": "playhead",
+          "at": 400,
+          "px": 6.72,
+          "abc": [
+            [
+              1202.6,
+              869,
+              1
+            ],
+            [
+              1202.6,
+              869,
+              1
+            ],
+            [
+              1209.4,
+              869,
+              1
+            ]
+          ]
+        },
+        {
+          "el": "playhead",
+          "at": 417,
+          "px": 6.68,
+          "abc": [
+            [
+              1202.6,
+              869,
+              1
+            ],
+            [
+              1209.4,
+              869,
+              1
+            ],
+            [
+              1209.4,
+              869,
+              1
+            ]
+          ]
+        },
+        {
+          "el": "playhead",
+          "at": 267,
+          "px": 6.1,
+          "abc": [
+            [
+              1173.5,
+              869,
+              1
+            ],
+            [
+              1173.5,
+              869,
+              1
+            ],
+            [
+              1179.6,
+              869,
+              1
+            ]
+          ]
+        },
+        {
+          "el": "playhead",
+          "at": 283,
+          "px": 6.06,
+          "abc": [
+            [
+              1173.5,
+              869,
+              1
+            ],
+            [
+              1179.6,
+              869,
+              1
+            ],
+            [
+              1179.6,
+              869,
+              1
+            ]
+          ]
+        }
+      ],
+      "tracked": [
+        "fig:mock-pi",
+        "fig:mock-cc",
+        "fig:smx:T-41",
+        "fig:smx:T-42",
+        "fig:claude:agent-7f3",
+        "bub:Pi",
+        "bub:Claude Code",
+        "bub:Codex",
+        "playhead"
+      ],
+      "from": 34.616,
+      "to": 41.16
+    },
+    "replay-scrub": {
+      "frames": 306,
+      "seconds": 5.08,
+      "dropped": 0,
+      "maxGap": 16.8,
+      "jank25": 0,
+      "maxStep": 0,
+      "maxSnap": 0,
+      "snaps": 0,
+      "snapList": [],
+      "tracked": [],
+      "from": 42.816,
+      "to": 47.942
+    }
+  }
+}

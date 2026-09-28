@@ -6,12 +6,15 @@
 //
 // React never re-renders per frame from here: drawing reads `clock.time()` inside the one frame
 // loop (./frame.ts); components that show a time use `useTick` (a coarse timer).
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { advance } from "./axis";
 
 export type Replay = { at: number; playing: boolean; speed: number; since: number; until: number; gaps?: readonly { a: number; b: number }[] };
 
 let replay: Replay | null = null;
+/** Bumped on every real jump in time (seek, scrub, play from a point, back to live): the figures'
+ * springs reset only then, so live updates blend and a paused frame is exact. */
+let gen = 0;
 const ls = new Set<() => void>();
 const emit = () => ls.forEach((l) => l());
 
@@ -33,13 +36,18 @@ export const clock = {
   subscribe: (l: () => void) => (ls.add(l), () => void ls.delete(l)),
   /** The time to draw: the replay position, or now. */
   time: (now = Date.now()) => (replay ? replayTime(replay, now) : now),
+  /** Changes on every jump in time (see `gen`). */
+  gen: () => gen,
   /** Jump to a moment (pauses). */
   seek(at: number, until: number, gaps?: Replay["gaps"]) {
     replay = { at, playing: false, speed: replay?.speed ?? 1, since: Date.now(), until, gaps: gaps ?? replay?.gaps };
+    gen++;
     emit();
   },
   play(from: number, until: number, speed = replay?.speed ?? 1, gaps?: Replay["gaps"]) {
+    const cur = replay ? replayTime(replay, Date.now()) : null;
     replay = { at: from, playing: true, speed, since: Date.now(), until, gaps: gaps ?? replay?.gaps };
+    if (cur == null || Math.abs(cur - from) > 50) gen++;
     emit();
   },
   pause() {
@@ -57,6 +65,7 @@ export const clock = {
   live() {
     if (!replay) return;
     replay = null;
+    gen++;
     emit();
   },
   /** 工位视图 on / off (per browser; on by default). Off: a compact presence chip per agent instead of figures. */
@@ -76,7 +85,38 @@ export const clock = {
   },
 };
 
-export const useReplay = () => useSyncExternalStore(clock.subscribe, clock.get);
+/**
+ * The replay state for React, at most 4 updates a second (a scrub moves the clock on every pointer
+ * move; what React shows from it — the banner, the lanes' state, the trajectory's grey — does not
+ * need more; the playhead and the figures read the clock in the frame loop). Entering or leaving a
+ * replay shows at once.
+ */
+export function useReplay(): Replay | null {
+  const [r, setR] = useState(replay);
+  const cur = useRef(replay);
+  useEffect(() => {
+    let last = 0;
+    let timer = 0;
+    const push = () => {
+      timer = 0;
+      last = performance.now();
+      cur.current = replay;
+      setR(replay);
+    };
+    const on = () => {
+      const edge = (replay == null) !== (cur.current == null);
+      const wait = 250 - (performance.now() - last);
+      if (edge || wait <= 0) {
+        clearTimeout(timer);
+        push();
+      } else if (!timer) timer = window.setTimeout(push, wait);
+    };
+    on();
+    const off = clock.subscribe(on);
+    return () => (off(), clearTimeout(timer));
+  }, []);
+  return r;
+}
 export const useWorkstation = (_canvasId?: string) => useSyncExternalStore(clock.subscribe, () => on);
 
 const reduced = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;

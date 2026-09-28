@@ -110,3 +110,13 @@ describe("writeConflicts", () => {
     expect(conflictAt(list, "a", 11 * S)).toBeNull();
   });
 });
+
+describe("appearing", () => {
+  it("fades in over a moment instead of popping", async () => {
+    const { APPEAR_MS } = await import("./place.ts");
+    const r = run([seg("read", 10, 20, "server/a.py")]);
+    const c = ctx([r]);
+    expect(stateAt(r, 10 * S + APPEAR_MS / 2, c).fade).toBeCloseTo(0.5, 5);
+    expect(stateAt(r, 10 * S + APPEAR_MS + 1, c).fade).toBe(1);
+  });
+});

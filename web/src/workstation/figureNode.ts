@@ -105,10 +105,15 @@ export class FigureNode {
     const S = (n: Element, k: string, a: string, v: number | string) => this.set(n, k, a, typeof v === "number" ? f2(v) : v);
     const d = (x0: number, y0: number, b: { jx: number; jy: number; ex: number; ey: number }) => `M${f2(x0)} ${f2(y0)}L${f2(b.jx)} ${f2(b.jy)}L${f2(b.ex)} ${f2(b.ey)}`;
     const foot = (b: { ex: number; ey: number }) => `M${f2(b.ex - L(0.6))} ${f2(b.ey)}h${f2(L(3.6))}`;
+    // Turning: the whole body is mirrored through edge-on (−1 → 1) around its root.
+    S(this.body, "bd0", "transform", j.turn >= 0.999 ? "" : `scale(${f2(Math.abs(j.turn) < 0.08 ? 0.08 * Math.sign(j.turn || 1) : j.turn)} 1)`);
     S(this.shadow, "sh", "cx", j.px * 0.3);
-    const desk = !j.walking && (j.prop === "laptop" || j.prop === "terminal");
+    const desk = !j.walking && (j.prop === "laptop" || j.prop === "terminal") && j.propAlpha > 0.01;
     S(this.desk, "dk", "display", desk ? "inline" : "none");
     if (desk) {
+      // the standing desk fades and rises in / out (never pops)
+      S(this.desk, "dk", "opacity", Math.min(1, j.propAlpha * 1.2));
+      S(this.desk, "dk", "transform", j.propAlpha >= 0.999 ? "" : `translate(0 ${f2((1 - j.propAlpha) * 3)})`);
       const top = -20.5;
       S(this.deskStand, "ds", "d", `M${f2(L(16.5))} ${top}V0M${f2(L(12.5))} 0h${f2(L(8))}`);
       S(this.deskTop, "dt", "x", Math.min(L(9), L(24)));
@@ -143,14 +148,16 @@ export class FigureNode {
     S(this.legN, "ln", "d", d(j.hipN.x, j.hipN.y, j.legN));
     S(this.footN, "fn", "d", foot(j.legN));
     S(this.head, "hd", "transform", `translate(${f2(j.hx)} ${f2(j.hy)})`);
-    const hold = j.prop === "sheet" || j.prop === "carry";
+    const hold = (j.prop === "sheet" || j.prop === "carry") && j.propAlpha > 0.01;
     S(this.prop, "pp", "display", hold ? "inline" : "none");
     if (hold) {
+      S(this.prop, "pp", "opacity", Math.min(1, j.propAlpha * 1.2));
       const u = (t % 1800) / 1800;
       const flip = still ? 1 : Math.cos((u < 0.12 ? u / 0.12 : 0) * Math.PI);
       const w = j.prop === "carry" ? 6 : 8.5;
       const h = j.prop === "carry" ? 8 : 11;
-      S(this.prop, "pp", "transform", `translate(${f2(j.armN.ex - (j.prop === "carry" ? 3 : 1) * j.f)} ${f2(j.armN.ey - h + 2)}) rotate(${-8 * j.f}) scale(${f2(flip * j.f)} 1)`);
+      const sc = 0.6 + 0.4 * j.propAlpha;
+      S(this.prop, "pp", "transform", `translate(${f2(j.armN.ex - (j.prop === "carry" ? 3 : 1) * j.f)} ${f2(j.armN.ey - h + 2)}) rotate(${-8 * j.f}) scale(${f2(flip * j.f * sc)} ${f2(sc)})`);
       S(this.propRect, "pr0", "x", -w / 2);
       S(this.propRect, "pr0", "width", w);
       S(this.propRect, "pr0", "height", h);

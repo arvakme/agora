@@ -1,0 +1,243 @@
+{
+  "url": "http://127.0.0.1:5393",
+  "dark": false,
+  "reduced": false,
+  "at": "2026-09-28T11:17:45.565Z",
+  "windows": {
+    "walk": {
+      "frames": 282,
+      "seconds": 4.68,
+      "dropped": 0,
+      "maxGap": 16.8,
+      "jank25": 0,
+      "maxStep": 12.17,
+      "maxSnap": 2.08,
+      "snaps": 3,
+      "snapList": [
+        {
+          "el": "bub:Claude Code",
+          "at": 3183,
+          "px": 2.08,
+          "abc": [
+            [
+              954.7,
+              216.2,
+              1
+            ],
+            [
+              962.7,
+              216.2,
+              1
+            ],
+            [
+              968.8,
+              216.1,
+              1
+            ]
+          ]
+        },
+        {
+          "el": "fig:mock-cc",
+          "at": 2300,
+          "px": 2.07,
+          "abc": [
+            [
+              845.3,
+              339.1,
+              1
+            ],
+            [
+              849.7,
+              339.2,
+              1
+            ],
+            [
+              852,
+              339.3,
+              1
+            ]
+          ]
+        },
+        {
+          "el": "bub:Claude Code",
+          "at": 2300,
+          "px": 2.07,
+          "abc": [
+            [
+              600.8,
+              243.6,
+              1
+            ],
+            [
+              605.2,
+              243.2,
+              1
+            ],
+            [
+              607.5,
+              242.8,
+              1
+            ]
+          ]
+        }
+      ],
+      "tracked": [
+        "fig:mock-pi",
+        "fig:mock-cc",
+        "bub:Pi",
+        "bub:Claude Code",
+        "playhead"
+      ],
+      "from": 6.392,
+      "to": 11.113
+    },
+    "pose": {
+      "frames": 270,
+      "seconds": 4.48,
+      "dropped": 0,
+      "maxGap": 16.8,
+      "jank25": 0,
+      "maxStep": 0.46,
+      "maxSnap": 0.44,
+      "snaps": 0,
+      "snapList": [],
+      "tracked": [
+        "fig:mock-pi",
+        "fig:mock-cc",
+        "bub:Pi",
+        "bub:Claude Code",
+        "playhead"
+      ],
+      "from": 12.591,
+      "to": 17.111
+    },
+    "bubbles-enter": {
+      "frames": 282,
+      "seconds": 4.68,
+      "dropped": 0,
+      "maxGap": 16.8,
+      "jank25": 0,
+      "maxStep": 10.06,
+      "maxSnap": 1.5,
+      "snaps": 0,
+      "snapList": [],
+      "tracked": [
+        "fig:mock-pi",
+        "fig:mock-cc",
+        "bub:Pi",
+        "bub:Claude Code",
+        "playhead",
+        "fig:smx:T-41",
+        "fig:smx:T-42",
+        "bub:Codex"
+      ],
+      "from": 20.392,
+      "to": 25.118
+    },
+    "handoff-exit": {
+      "frames": 389,
+      "seconds": 6.47,
+      "dropped": 0,
+      "maxGap": 16.8,
+      "jank25": 0,
+      "maxStep": 9.87,
+      "maxSnap": 3.18,
+      "snaps": 3,
+      "snapList": [
+        {
+          "el": "playhead",
+          "at": 367,
+          "px": 3.18,
+          "abc": [
+            [
+              1205.7,
+              869,
+              1
+            ],
+            [
+              1208.9,
+              869,
+              1
+            ],
+            [
+              1208.9,
+              869,
+              1
+            ]
+          ]
+        },
+        {
+          "el": "bub:Pi",
+          "at": 5950,
+          "px": 2.06,
+          "abc": [
+            [
+              965.8,
+              317.7,
+              1
+            ],
+            [
+              972.1,
+              319.7,
+              1
+            ],
+            [
+              978.6,
+              323.7,
+              1
+            ]
+          ]
+        },
+        {
+          "el": "bub:Pi",
+          "at": 6233,
+          "px": 2.04,
+          "abc": [
+            [
+              1010.8,
+              356.7,
+              1
+            ],
+            [
+              1012.3,
+              357.2,
+              1
+            ],
+            [
+              1013.9,
+              359.7,
+              1
+            ]
+          ]
+        }
+      ],
+      "tracked": [
+        "fig:mock-pi",
+        "fig:mock-cc",
+        "fig:smx:T-41",
+        "fig:smx:T-42",
+        "fig:claude:agent-7f3",
+        "bub:Pi",
+        "bub:Claude Code",
+        "bub:Codex",
+        "playhead"
+      ],
+      "from": 34.592,
+      "to": 41.148
+    },
+    "replay-scrub": {
+      "frames": 306,
+      "seconds": 5.08,
+      "dropped": 0,
+      "maxGap": 16.8,
+      "jank25": 0,
+      "maxStep": 0,
+      "maxSnap": 0,
+      "snaps": 0,
+      "snapList": [],
+      "tracked": [],
+      "from": 42.791,
+      "to": 47.917
+    }
+  }
+}

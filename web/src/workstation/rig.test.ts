@@ -1,7 +1,7 @@
 // The rig's pure parts: footstep plans, where the feet are at t, two-bone IK, springs that settle
 // and reset on a jump (so a paused replay frame is exact).
 import { describe, expect, it } from "vitest";
-import { feetAt, ik, makeSprings, planWalk, RIG, rootAt, solve, Spring, WALK_MAX_MS, WALK_MIN_MS } from "./rig.ts";
+import { feetAt, ik, makeSprings, planWalk, RIG, rootAt, routeAround, solve, Spring, WALK_MAX_MS, WALK_MIN_MS } from "./rig.ts";
 
 const A = { x: 0, y: 0 };
 const B = { x: 300, y: 0 };
@@ -87,5 +87,31 @@ describe("springs", () => {
     for (let t = 0; t < 2000; t += 16) at(t);
     const fresh = solve({ t: 500, pose: "write", since: 0, dock: A, walk: null, still: false }, makeSprings());
     expect(at(500)).toEqual(fresh); // went backwards: reset, same as solving from scratch
+  });
+});
+
+describe("walking motion", () => {
+  it("eases in and out: the first and last steps take longer than the middle ones", () => {
+    const p = planWalk(move, A, B);
+    const full = p.steps.slice(0, -1).map((s) => s.t1 - s.t0);
+    const mid = full[Math.floor(full.length / 2)];
+    expect(full[0]).toBeGreaterThan(mid * 1.5);
+    expect(full[full.length - 1]).toBeGreaterThan(mid * 1.5);
+  });
+  it("sets off after a short beat (turning to face the way)", () => {
+    const p = planWalk(move, A, B);
+    expect(p.steps[0].t0).toBeGreaterThan(p.t0);
+  });
+  it("walks around nodes in the way, not through them", () => {
+    const box = { x: 120, y: -10, w: 60, h: 60 };
+    const via = routeAround(A, B, [box]);
+    expect(via).toHaveLength(2);
+    expect(Math.max(...via.map((v) => v.y))).toBeLessThan(box.y);
+    const p = planWalk(move, A, B, via);
+    // no footstep lands inside the box
+    for (const s of p.steps) expect(s.to.x > box.x && s.to.x < box.x + box.w && s.to.y > box.y && s.to.y < box.y + box.h).toBe(false);
+    expect(routeAround(A, B, [{ x: 120, y: 200, w: 60, h: 60 }])).toEqual([]);
+    // the nodes it starts and ends on are not "in the way"
+    expect(routeAround({ x: 10, y: 0 }, { x: 290, y: 0 }, [{ x: 0, y: 0, w: 60, h: 40 }, { x: 260, y: 0, w: 60, h: 40 }])).toEqual([]);
   });
 });
