@@ -18,6 +18,7 @@ from typing import Any, Callable
 
 from server.canvas import agent_models
 from server.canvas.adapters.base import Adapter, tool_facts, NativeRef, ParentLink, VersionRange
+from server.canvas.adapters.tools import activity_of, shell_reads, spawn_in_output
 from server.canvas.adapters.common import (
     MAX_TEXT,
     LogLookup,
@@ -99,6 +100,44 @@ def files(name: str, inp: Any, root: str | None) -> list[dict[str, str]]:
     return [{"path": rel_path(str(path), root), "op": op}] if isinstance(path, str) and path else []
 
 
+READ_KEYS = ("file_path", "notebook_path", "path")
+
+
+def classify(name: str, args: Any, root: str | None, cwd: str | None = None) -> dict[str, Any]:
+    """Claude Code's tool vocabulary → tool facts (activity, reads, waitsUser, spawn, files)."""
+    a = args if isinstance(args, dict) else {}
+    fs = files(name, args, root)
+    act = activity_of(name)
+    reads: list[str] = []
+    waits = False
+    spawn = None
+    if name in ("Read", "NotebookRead"):
+        p = next((a[k] for k in READ_KEYS if isinstance(a.get(k), str) and a.get(k)), None)
+        reads = [rel_path(p, root)] if p else []
+    elif name == "Grep" and isinstance(a.get("path"), str) and "." in a["path"].rsplit("/", 1)[-1]:
+        reads = [rel_path(a["path"], root)]
+    elif name == "Bash":
+        got, reads = shell_reads(a.get("command"), root, cwd or root)
+        act = got or act
+    elif name in ("Agent", "Task"):
+        spawn = {"childKind": "claude", "via": "native", **({"role": str(a["subagent_type"])} if a.get("subagent_type") else {})}
+    elif name in ("AskUserQuestion", "ExitPlanMode"):
+        act, waits = "questions", True
+    return tool_facts(act, files=fs, reads=reads, waits_user=waits, spawn=spawn)
+
+
+def result_spawn(rec: dict[str, Any], output: str) -> dict[str, Any] | None:
+    """The child a finished tool call started: an ``Agent`` result's ``agentId``, or a Seedmux ticket in a Bash output."""
+    r = rec.get("toolUseResult")
+    if isinstance(r, dict) and isinstance(r.get("agentId"), str) and r.get("agentId"):
+        return {"childKind": "claude", "childId": r["agentId"], "via": "native", **({"state": str(r["status"])} if r.get("status") else {})}
+    return spawn_in_output(output)
+
+
+def _facts_only(facts: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in facts.items() if k != "files"}
+
+
 def project(rec: dict[str, Any], st: State) -> Out:
     items: list[dict[str, Any]] = []
     turns: list[dict[str, Any]] = []
@@ -124,7 +163,11 @@ def project(rec: dict[str, Any], st: State) -> Out:
                 tid = str(b.get("tool_use_id"))
                 st.pending.discard(tid)
                 out = text_of(b.get("content")) or (b.get("content") if isinstance(b.get("content"), str) else "")
-                items.append({"id": tid, "kind": "tool", "at": at, "endAt": at, "tool": {"output": _full(str(out)), "isError": bool(b.get("is_error"))}})
+                done: dict[str, Any] = {"output": _full(str(out)), "isError": bool(b.get("is_error"))}
+                sp = result_spawn(rec, str(out)) if len(results) == 1 else spawn_in_output(str(out))
+                if sp:
+                    done["spawn"] = sp
+                items.append({"id": tid, "kind": "tool", "at": at, "endAt": at, "tool": done})
             return items, turns
         text = text_of(content)
         if not text.strip() or text.lstrip().startswith(("<command-", "<local-command", "<system-reminder>", "<bash-")):
@@ -148,9 +191,10 @@ def project(rec: dict[str, Any], st: State) -> Out:
                 name = str(b.get("name"))
                 st.pending.add(tid)
                 tool: dict[str, Any] = {"name": name, "input": _summary(b.get("input")), "args": _full(b.get("input"))}
-                fs = files(name, b.get("input"), st.root)
-                if fs:
-                    tool["files"] = fs
+                facts = classify(name, b.get("input"), st.root, rec.get("cwd") if isinstance(rec.get("cwd"), str) else None)
+                if facts.get("files"):
+                    tool["files"] = facts["files"]
+                tool.update(_facts_only(facts))
                 items.append({"id": tid, "kind": "tool", "at": at, "msg": mid, "tool": tool})
         u = msg.get("usage")
         model = msg.get("model")
@@ -246,8 +290,7 @@ class ClaudeAdapter(Adapter):
 
     # ——— ToolVocab ———
     def classify(self, name: str, args: Any, root: str | None = None) -> dict[str, Any]:
-        """Tool facts for one call (the write files; activities come with the page's vocabulary)."""
-        return tool_facts("tools", files=files(name, args, root))
+        return classify(name, args, root)
 
     # ——— Headless ———
     def headless_args(self, cmd: list[str], req: Any, *, log_exists: Callable[[str], bool] | bool = False, skill_dir: Path | None = None) -> list[str]:

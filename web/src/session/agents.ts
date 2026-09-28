@@ -58,6 +58,18 @@ export type Item = {
     outputLen?: number;
     isError?: boolean;
     files?: { path: string; op: FileOp }[];
+    /**
+     * Tool facts the server derives from the CLI's own vocabulary (server/canvas/adapters/): the
+     * page never needs to know tool names. Older snapshots lack them: `activityOf` / `readPath`
+     * are the fallback.
+     */
+    activity?: string;
+    /** Files this call reads, relative to the project root. */
+    reads?: string[];
+    /** The call waits for the person (a question, an approval gate). */
+    waitsUser?: boolean;
+    /** The call started another agent: a native sub-agent, or a Seedmux ticket (`taskId`, `pane`). */
+    spawn?: { childKind?: string; childId?: string; taskId?: string; pane?: string; role?: string; state?: string; via?: "native" | "seedmux" | "inferred" };
   };
   usage?: Usage;
   model?: string;
