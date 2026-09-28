@@ -241,6 +241,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
   useEffect(() => rebuild.current(), [runs, ctx, conflicts, figuresOn, fo.selected]);
 
   // ── imperative nodes: figures and tethers, created per snapshot, moved per frame ──
+  const rootEl = useRef<HTMLDivElement>(null);
   const svgWorld = useRef<SVGGElement>(null);
   const figLayer = useRef<SVGGElement>(null);
   const tetherLayer = useRef<SVGGElement>(null);
@@ -340,6 +341,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
     const FADE_OUT = 120;
     const FADE_IN = 160;
     return frame.add((now) => {
+      // A pane in the background (another tab of its group) draws nothing.
+      if (rootEl.current?.closest('[data-hidden="true"]')) return;
       const v = viewport.get(view.id);
       const s = snapRef.current;
       const g = geomRef.current;
@@ -546,7 +549,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
   const bubbles = useExiting(live, BUBBLE_EXIT_MS);
   const rings = useExiting(snap.rings.map((r) => ({ ...r, key: r.place })), RING_EXIT_MS);
   return (
-    <div className="ws-layer" style={{ clipPath: clip }}>
+    <div className="ws-layer" ref={rootEl} style={{ clipPath: clip }}>
       <svg className="ws-svg" aria-hidden={!figuresOn}>
         <g ref={svgWorld}>
           <g className="ws-rings">

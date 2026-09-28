@@ -44,17 +44,18 @@ async function startSampler(page: Page) {
     const tick = (t: number) => {
       if (!w.__sampling) return;
       const els: S["els"] = {};
-      document.querySelectorAll<SVGGElement>(".ws-worker").forEach((g) => {
+      const pane = document.querySelector('[data-pane]:not([data-hidden="true"]) .canvas-view') ?? document;
+      pane.querySelectorAll<SVGGElement>(".ws-worker").forEach((g) => {
         const r = g.querySelector(".ws-hit")!.getBoundingClientRect();
         els[`fig:${g.dataset.run}`] = [r.x + r.width / 2, r.y + r.height, Number(g.getAttribute("opacity") ?? 1)];
       });
-      document.querySelectorAll<HTMLElement>(".ws-bub-pos").forEach((b, i) => {
+      pane.querySelectorAll<HTMLElement>(".ws-bub-pos").forEach((b, i) => {
         const inner = b.firstElementChild as HTMLElement;
         const r = inner.getBoundingClientRect();
         const key = inner.querySelector(".who")?.textContent ?? String(i);
         els[`bub:${key}`] = [r.x, r.y, b.style.visibility === "hidden" ? 0 : Number(getComputedStyle(b).opacity) * Number(getComputedStyle(inner).opacity)];
       });
-      const ph = document.querySelector<HTMLElement>(".ws-tl .mph, .ws-tl .ph");
+      const ph = pane.querySelector<HTMLElement>(".ws-tl .mph, .ws-tl .ph");
       if (ph) {
         const r = ph.getBoundingClientRect();
         els.playhead = [r.x, r.y, 1];
@@ -125,7 +126,7 @@ const ctx = await browser.newContext({
 });
 const page = await ctx.newPage();
 const t0 = Date.now();
-await page.goto(`${url.replace(/\/$/, "")}/?mock=runs&perf`);
+await page.goto(`${url.replace(/\/$/, "")}/?mock=runs&perf&canvas=c1`);
 await page.waitForFunction(() => (window as unknown as { __mockBase?: number }).__mockBase, undefined, { timeout: 30_000 });
 const base = await page.evaluate(() => (window as unknown as { __mockBase: number }).__mockBase);
 const at = async (sec: number) => {
@@ -153,7 +154,7 @@ await capture("bubbles-enter", 18.8, 23.5);
 await capture("handoff-exit", 33, 39.5);
 // Replay: drag the strip's playhead from near now back to the start, then forward again.
 await at(41);
-const box = await page.locator(".ws-tl .mini").boundingBox();
+const box = await page.locator('[data-pane]:not([data-hidden="true"]) .ws-tl .mini').first().boundingBox();
 await capture(
   "replay-scrub",
   41.2,

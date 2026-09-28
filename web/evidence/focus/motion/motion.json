@@ -2,7 +2,7 @@
   "url": "http://127.0.0.1:5393",
   "dark": false,
   "reduced": false,
-  "at": "2026-09-28T11:17:45.565Z",
+  "at": "2026-09-28T11:51:59.767Z",
   "windows": {
     "walk": {
       "frames": 282,
@@ -10,95 +10,8 @@
       "dropped": 0,
       "maxGap": 16.8,
       "jank25": 0,
-      "maxStep": 12.17,
-      "maxSnap": 2.08,
-      "snaps": 3,
-      "snapList": [
-        {
-          "el": "bub:Claude Code",
-          "at": 3183,
-          "px": 2.08,
-          "abc": [
-            [
-              954.7,
-              216.2,
-              1
-            ],
-            [
-              962.7,
-              216.2,
-              1
-            ],
-            [
-              968.8,
-              216.1,
-              1
-            ]
-          ]
-        },
-        {
-          "el": "fig:mock-cc",
-          "at": 2300,
-          "px": 2.07,
-          "abc": [
-            [
-              845.3,
-              339.1,
-              1
-            ],
-            [
-              849.7,
-              339.2,
-              1
-            ],
-            [
-              852,
-              339.3,
-              1
-            ]
-          ]
-        },
-        {
-          "el": "bub:Claude Code",
-          "at": 2300,
-          "px": 2.07,
-          "abc": [
-            [
-              600.8,
-              243.6,
-              1
-            ],
-            [
-              605.2,
-              243.2,
-              1
-            ],
-            [
-              607.5,
-              242.8,
-              1
-            ]
-          ]
-        }
-      ],
-      "tracked": [
-        "fig:mock-pi",
-        "fig:mock-cc",
-        "bub:Pi",
-        "bub:Claude Code",
-        "playhead"
-      ],
-      "from": 6.392,
-      "to": 11.113
-    },
-    "pose": {
-      "frames": 270,
-      "seconds": 4.48,
-      "dropped": 0,
-      "maxGap": 16.8,
-      "jank25": 0,
-      "maxStep": 0.46,
-      "maxSnap": 0.44,
+      "maxStep": 12.75,
+      "maxSnap": 1.75,
       "snaps": 0,
       "snapList": [],
       "tracked": [
@@ -108,8 +21,28 @@
         "bub:Claude Code",
         "playhead"
       ],
-      "from": 12.591,
-      "to": 17.111
+      "from": 6.398,
+      "to": 11.119
+    },
+    "pose": {
+      "frames": 270,
+      "seconds": 4.48,
+      "dropped": 0,
+      "maxGap": 16.8,
+      "jank25": 0,
+      "maxStep": 0.45,
+      "maxSnap": 0.43,
+      "snaps": 0,
+      "snapList": [],
+      "tracked": [
+        "fig:mock-pi",
+        "fig:mock-cc",
+        "bub:Pi",
+        "bub:Claude Code",
+        "playhead"
+      ],
+      "from": 12.596,
+      "to": 17.12
     },
     "bubbles-enter": {
       "frames": 282,
@@ -117,8 +50,8 @@
       "dropped": 0,
       "maxGap": 16.8,
       "jank25": 0,
-      "maxStep": 10.06,
-      "maxSnap": 1.5,
+      "maxStep": 9.66,
+      "maxSnap": 1.44,
       "snaps": 0,
       "snapList": [],
       "tracked": [
@@ -131,36 +64,36 @@
         "fig:smx:T-42",
         "bub:Codex"
       ],
-      "from": 20.392,
-      "to": 25.118
+      "from": 20.4,
+      "to": 25.12
     },
     "handoff-exit": {
-      "frames": 389,
-      "seconds": 6.47,
+      "frames": 390,
+      "seconds": 6.48,
       "dropped": 0,
       "maxGap": 16.8,
       "jank25": 0,
-      "maxStep": 9.87,
-      "maxSnap": 3.18,
+      "maxStep": 10.17,
+      "maxSnap": 3.12,
       "snaps": 3,
       "snapList": [
         {
           "el": "playhead",
-          "at": 367,
-          "px": 3.18,
+          "at": 383,
+          "px": 3.12,
           "abc": [
             [
-              1205.7,
+              1204.5,
               869,
               1
             ],
             [
-              1208.9,
+              1207.6,
               869,
               1
             ],
             [
-              1208.9,
+              1207.6,
               869,
               1
             ]
@@ -168,44 +101,44 @@
         },
         {
           "el": "bub:Pi",
-          "at": 5950,
+          "at": 5783,
+          "px": 2.62,
+          "abc": [
+            [
+              857.3,
+              264.1,
+              1
+            ],
+            [
+              865,
+              265.6,
+              1
+            ],
+            [
+              874.6,
+              269,
+              1
+            ]
+          ]
+        },
+        {
+          "el": "bub:Pi",
+          "at": 5683,
           "px": 2.06,
           "abc": [
             [
-              965.8,
-              317.7,
+              815.2,
+              250.7,
               1
             ],
             [
-              972.1,
-              319.7,
+              820.4,
+              252.2,
               1
             ],
             [
-              978.6,
-              323.7,
-              1
-            ]
-          ]
-        },
-        {
-          "el": "bub:Pi",
-          "at": 6233,
-          "px": 2.04,
-          "abc": [
-            [
-              1010.8,
-              356.7,
-              1
-            ],
-            [
-              1012.3,
-              357.2,
-              1
-            ],
-            [
-              1013.9,
-              359.7,
+              826.9,
+              255.1,
               1
             ]
           ]
@@ -222,12 +155,12 @@
         "bub:Codex",
         "playhead"
       ],
-      "from": 34.592,
-      "to": 41.148
+      "from": 34.596,
+      "to": 41.149
     },
     "replay-scrub": {
-      "frames": 306,
-      "seconds": 5.08,
+      "frames": 307,
+      "seconds": 5.1,
       "dropped": 0,
       "maxGap": 16.8,
       "jank25": 0,
@@ -236,8 +169,8 @@
       "snaps": 0,
       "snapList": [],
       "tracked": [],
-      "from": 42.791,
-      "to": 47.917
+      "from": 42.796,
+      "to": 47.943
     }
   }
 }

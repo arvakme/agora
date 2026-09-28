@@ -20,6 +20,51 @@ import { RunAvatar } from "./RunAvatar";
 import { useRuns } from "./runs/store";
 import { FINAL, RECEIPT_NAMES, receiptAt, type AgentRun, type FlatRun, type RunSeg } from "./runs/types";
 
+const MINI_COLORS: Record<string, string> = { write: "--accent-fill", read: "--accent-soft", exec: "--series-3", think: "--line-strong", wait: "--caution-dot", delegate: "--accent", gap: "--line-strong" };
+let miniPalette: { theme: string; c: Record<string, string> } | null = null;
+/** The strip: up to three main agents as thin rows, collapsed idle stretches hatched. `prev` + `u` blend a rebuilt axis in. */
+function drawMini(cv: HTMLCanvasElement, runs: AgentRun[], A: Axis, prev: Axis | null, u: number, now: number) {
+  const w = cv.clientWidth;
+  const h = cv.clientHeight;
+  if (!w || !h) return;
+  const dpr = devicePixelRatio || 1;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+  }
+  const theme = document.documentElement.dataset.resolved ?? "";
+  if (!miniPalette || miniPalette.theme !== theme) {
+    const cs = getComputedStyle(cv);
+    miniPalette = { theme, c: Object.fromEntries(Object.entries(MINI_COLORS).map(([k, v]) => [k, cs.getPropertyValue(v).trim() || "#999"])) };
+  }
+  const c = miniPalette.c;
+  const g = cv.getContext("2d")!;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const sx = w / A.width;
+  const at = (X: Axis, t: number) => (t <= X.end ? X.toPx(t) : X.toPx(X.end) + (t - X.end) * X.pps);
+  const X = (t: number) => (u >= 1 || !prev ? at(A, t) : at(prev, t) + (at(A, t) - at(prev, t)) * u) * sx;
+  const n = runs.length;
+  runs.forEach((r, i) => {
+    const y = (i * h) / n + 1;
+    const rh = h / n - 2;
+    for (const s of r.segs) {
+      if (s.start >= now) break;
+      const x0 = X(s.start);
+      const x1 = X(Math.min(s.end, now));
+      g.fillStyle = c[s.kind] ?? c.think;
+      g.fillRect(x0, y, Math.max(1, x1 - x0 - 0.5), rh);
+    }
+  });
+  g.fillStyle = c.gap;
+  for (const p of A.pieces) {
+    if (p.kind === "act") continue;
+    const x0 = X(p.a + 1);
+    const x1 = X(p.b - 1);
+    for (let x = x0; x < x1; x += 4) g.fillRect(x, 0, 1, h);
+  }
+}
+
 const LANE = 30;
 const SUB = 26;
 const RULER = 18;
@@ -82,6 +127,8 @@ export function Timeline({ empty, placeOf, onLocate }: { empty?: boolean; placeO
   const miniRef = useMemo(() => observe(mini), []);
   // Expand / collapse animate the height (the full view's height is measured).
   const [fullH, setFullH] = useState(240);
+  // Clip only while the height animates (the legend pops out above the timeline otherwise).
+  const [animating, setAnimating] = useState(false);
   const innerRO = useMemo(() => (typeof ResizeObserver === "undefined" ? null : new ResizeObserver((es) => setFullH(Math.ceil(es[0].contentRect.height)))), []);
   const innerRef = useMemo(() => {
     let cur: HTMLDivElement | null = null;
@@ -123,11 +170,18 @@ export function Timeline({ empty, placeOf, onLocate }: { empty?: boolean; placeO
   // When an axis is rebuilt with a different shape (a new collapsed gap, a rescale) the playhead
   // blends from the old mapping to the new one over 250 ms — the same glide the segments make.
   const shown = useRef({ x: -1, mx: -1 });
-  const axRef = useRef({ axis, maxis, from: null as { x: number; mx: number } | null, at: 0 });
-  if (axRef.current.axis !== axis || axRef.current.maxis !== maxis) axRef.current = { axis, maxis, from: shown.current.x >= 0 ? { ...shown.current } : null, at: performance.now() };
+  const axRef = useRef({ axis, maxis, prevM: null as Axis | null, from: null as { x: number; mx: number } | null, at: 0 });
+  if (axRef.current.axis !== axis || axRef.current.maxis !== maxis) axRef.current = { axis, maxis, prevM: axRef.current.maxis, from: shown.current.x >= 0 ? { ...shown.current } : null, at: performance.now() };
+  // The mini strip is one <canvas> drawn in the frame loop (a few hundred rectangles cost well
+  // under a millisecond), so it moves continuously: its segments glide from the old axis to the
+  // new one after each 4 Hz rebuild, and the running call grows every frame — no DOM to relayout.
+  const miniCanvas = useRef<HTMLCanvasElement>(null);
+  const sectionEl = useRef<HTMLElement>(null);
+  const miniRuns = useRef<AgentRun[]>([]);
   useEffect(
     () =>
       frame.add((n) => {
+        if (sectionEl.current?.closest('[data-hidden="true"]')) return;
         const tt = clock.time(n);
         const { axis: A, maxis: M, from, at: since } = axRef.current;
         const lin = from ? Math.min(1, (performance.now() - since) / 300) : 1;
@@ -150,6 +204,8 @@ export function Timeline({ empty, placeOf, onLocate }: { empty?: boolean; placeO
         const mx = blend(M, from?.mx, Math.min(tt, n));
         shown.current.mx = mx;
         if (mph.current) mph.current.style.transform = `translate3d(${mx.toFixed(2)}px, 0, 0)`;
+        const cv = miniCanvas.current;
+        if (cv) drawMini(cv, miniRuns.current, M, axRef.current.prevM, u, n);
       }),
     [],
   );
@@ -226,6 +282,7 @@ export function Timeline({ empty, placeOf, onLocate }: { empty?: boolean; placeO
 
   // ── the strip's words ──
   const tops = runs.flat.filter((f) => f.depth === 0);
+  miniRuns.current = tops.slice(0, 3).map((f) => f.run);
   const subs = runs.flat.filter((f) => f.depth > 0).length;
   const waiting = tops.filter((f) => f.run.segs.some((g) => g.kind === "wait" && g.start <= now && now < g.end));
   const busy = tops.filter((f) => f.run.running || f.run.segs.some((g) => g.start <= now && now < g.end));
@@ -253,8 +310,16 @@ export function Timeline({ empty, placeOf, onLocate }: { empty?: boolean; placeO
   const visible = rows.filter((r) => r.y + r.h >= scroll.top - 200 && r.y <= scroll.top + scroll.h + 200);
 
   return (
-    <section className="ws-tl" data-open={open || undefined} data-replay={replay ? "" : undefined} aria-label="工位时间线">
-      <motion.div className="ws-tl-anim" initial={false} animate={{ height: open ? fullH : 34 }} transition={reducedMotion() ? { duration: 0 } : { type: "spring", stiffness: 380, damping: 36 }}>
+    <section className="ws-tl" ref={sectionEl} data-open={open || undefined} data-replay={replay ? "" : undefined} aria-label="工位时间线">
+      <motion.div
+        className="ws-tl-anim"
+        data-animating={animating || undefined}
+        initial={false}
+        animate={{ height: open ? fullH : 34 }}
+        transition={reducedMotion() ? { duration: 0 } : { type: "spring", stiffness: 380, damping: 36 }}
+        onAnimationStart={() => setAnimating(true)}
+        onAnimationComplete={() => setAnimating(false)}
+      >
       <div ref={innerRef}>
       {!open ? (
         <div className="ws-bar">
@@ -264,16 +329,7 @@ export function Timeline({ empty, placeOf, onLocate }: { empty?: boolean; placeO
           </button>
           <span className="stt" data-k={state.k}>{replay ? <><b className="rp">回放 {hhmmss(t)}</b>比实时晚 {dur(now - t)}</> : state.node}</span>
           <div className="mini" ref={miniRef} {...scrub(maxis)} title="拖动回看任意时刻" role="slider" aria-label="回放位置" aria-valuemin={maxis.start} aria-valuemax={maxis.end} aria-valuenow={Math.round(t)} aria-valuetext={hhmmss(t)} tabIndex={0} onKeyDown={onKey}>
-            {tops.slice(0, 3).map((f, i, all) => (
-              <div key={f.run.id} className="mr" style={{ top: `${(i * 22) / all.length + 1}px`, height: `${22 / all.length - 2}px` }}>
-                {f.run.segs.filter((g) => g.start < liveNow).map((g, j) => (
-                  <span key={j} className="ms" data-k={g.kind} style={X(maxis, g.start, Math.min(g.end, liveNow))} />
-                ))}
-              </div>
-            ))}
-            {maxis.pieces.filter((p) => p.kind !== "act").map((p) => (
-              <span key={p.a} className="mg" style={{ transform: tx(p.x0), width: p.x1 - p.x0 }} title={`空闲 ${dur(p.b - p.a)}`} />
-            ))}
+            <canvas ref={miniCanvas} className="mini-cv" aria-hidden />
             <span className="mph" ref={mph} data-replay={replay ? "" : undefined} />
           </div>
           {counts}
@@ -326,7 +382,7 @@ export function Timeline({ empty, placeOf, onLocate }: { empty?: boolean; placeO
               </div>
               {axis.pieces.filter((p) => p.kind !== "act").map((p) => (
                 <span key={p.a} className="gap" data-kind={p.kind} data-at={replay && axis.gapAt(t) === p ? "" : undefined} style={{ transform: tx(p.x0), width: p.x1 - p.x0, top: RULER, height: height - RULER }} title={`${hhmmss(p.a)}–${hhmmss(p.b)} 没有会话在干活（${dur(p.b - p.a)}），已压缩显示`}>
-                  <span className="gl">{p.kind === "tail" ? "空闲中" : "空闲"}<br />{dur(p.b - p.a)}</span>
+                  {p.x1 - p.x0 >= 44 && <span className="gl">{p.kind === "tail" ? "空闲中" : "空闲"}<br />{dur(p.b - p.a)}</span>}
                 </span>
               ))}
               {visible.map((r) => (

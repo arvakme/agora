@@ -38,7 +38,7 @@ Agora 把这三件事放到同一张图上：图就在仓库里，agent 能读�
 
 ### 4. 进度指针：AI 正在改架构图的哪一块
 
-给节点关联代码路径（glob，存在元素的 `customData.codePaths` 里，随图提交），可以手动设，也可以让 agent 按目录结构批量关联。agent 每写一个文件，图上唯一的指针就滑到这个文件所属的节点；不属于任何节点的文件列在「在架构图之外」。终端里发生的改动同样驱动指针。见[进度指针](web/docs/progress-pointer.md)。
+给节点关联代码路径（glob，存在元素的 `customData.codePaths` 里，随图提交），可以手动设，也可以让 agent 按目录结构批量关联。agent 读写哪个文件，它的小人就走到这个文件所属的节点上干活（小人就是指针，见[工位视图](web/docs/workstation.md)）；不属于任何节点的文件在图外托盘。终端里发生的改动同样驱动它。映射规则见[进度指针](web/docs/progress-pointer.md)。
 
 ![指针停在「浏览器」节点上，点开是这个节点最近改动的文件和所在轮次](docs/media/pointer.png)
 

@@ -42,11 +42,13 @@ export function buildAxis(intervals: readonly (readonly [number, number])[], now
   else last[1] = Math.max(last[1], now);
   const act = pieces.filter((p) => p.kind === "act").reduce((s, p) => s + (p.b - p.a), 0);
   const nGap = pieces.filter((p) => p.kind !== "act").length;
-  const pps = Math.max(1e-6, (width - nGap * gapPx - 10) / Math.max(act, minActive));
+  // Breaks never take more than 40% of the width together (a sparse history stays readable).
+  const gw = nGap ? Math.min(gapPx, Math.max(10, (width * 0.4) / nGap)) : gapPx;
+  const pps = Math.max(1e-6, (width - nGap * gw - 10) / Math.max(act, minActive));
   let x = 0;
   for (const p of pieces) {
     p.x0 = x;
-    x += p.kind === "act" ? (p.b - p.a) * pps : gapPx;
+    x += p.kind === "act" ? (p.b - p.a) * pps : gw;
     p.x1 = x;
   }
   const toPx = (t: number) => {
