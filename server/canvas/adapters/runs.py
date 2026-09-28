@@ -4,14 +4,14 @@ Seedmux — one tree, each run with its own timeline (web/docs/cli-adapters.md �
 ``GET /api/agent/runs?session=<sid>`` (or ``?kind=<cli>&native=<id>`` for a session Agora does
 not own) returns::
 
-    {root, runs: [AgentRun…], folded: {runId: n}, depth, generatedAt}
+    {root, runs: [AgentRun…], folded: {runId: n}, depth, generatedAt}      (depth: None = all, the default)
 
 ``AgentRun``::
 
     {id, kind, nativeId?, tier, sessionId?, label, role?, model?, depth,
      parent?: {runId, via: native|seedmux|inferred, toolCallId?, taskId?, evidence},
      cwd?, worktree?, state, startedAt?, endedAt?, lastAt?, logPath?,
-     hiddenDescendants, receipt?: {...Seedmux ticket...},
+     childCount, descendants, hiddenDescendants, receipt?: {...Seedmux ticket...},
      timeline: {segments: [{kind, start, end, path?, node?, itemId, label, turn}],
                 turns: [{n, start, end}],
                 moments: [{kind: dispatch|handoff|receipt, at, childRunId?, toolCallId?, taskId?, state?}],
@@ -19,8 +19,9 @@ not own) returns::
 
 Parent/child evidence, strongest first: ``native`` (the CLI wrote the link), ``seedmux`` (a
 dispatch record: the parent's own ``task=T-xx pane=…`` output, then ``meta.from_pane``), then
-``inferred`` (cwd and a time window). Only the first level below the root is expanded by default
-(user decision); deeper runs are counted in their ancestor's ``hiddenDescendants``.
+``inferred`` (cwd and a time window). The whole tree is returned by default; every run says how
+many runs are below it (``descendants``) so the page can show one level and fold the rest into a
+badge (user decision). ``depth=N`` stops expanding below N (``hiddenDescendants`` counts the rest).
 """
 
 from __future__ import annotations
@@ -288,9 +289,12 @@ def run_of(ref: NativeRef, root: str | None, *, depth: int, links: list | None =
     return run
 
 
-def build(ref: NativeRef, *, root: str | None, session_id: str | None = None, depth: int | None = 1, store: Any = None, canvas: str | None = None, with_items: bool = False, receipts: bool = True, home: Path | None = None) -> dict[str, Any]:
-    """The run tree under ``ref``. ``depth`` levels are expanded (None = all); deeper runs are only
-    counted (``folded`` and the ancestor's ``hiddenDescendants``)."""
+def build(ref: NativeRef, *, root: str | None, session_id: str | None = None, depth: int | None = None, store: Any = None, canvas: str | None = None, with_items: bool = False, receipts: bool = True, home: Path | None = None) -> dict[str, Any]:
+    """The run tree under ``ref``: its native sub-agents and — with a project ``store`` — the Seedmux
+    workers it dispatched (and theirs, and their sub-agents'…). ``depth`` levels are expanded
+    (None = all, the default); deeper runs are only counted (``folded``, ``hiddenDescendants``).
+    Every run says how many runs are below it (``descendants``) so a page can fold the tree itself
+    (the default view shows one level: user decision 2026-09-28)."""
     links = canvas_links(store, canvas) if store is not None and canvas else None
     top = run_of(ref, root, depth=0, links=links, child=False, session_id=session_id, with_items=with_items)
     runs: dict[str, dict[str, Any]] = {top["id"]: top}
@@ -299,44 +303,64 @@ def build(ref: NativeRef, *, root: str | None, session_id: str | None = None, de
     queue: list[tuple[NativeRef, dict[str, Any], bool]] = [(ref, top, False)]
     seen = {top["id"]}
     hidden_parent: dict[str, dict[str, Any]] = {}  # folded run id → the expanded ancestor counting it
-    while queue:
-        pref, prun, is_folded = queue.pop(0)
-        a = ADAPTERS.get(pref.kind)
-        if a is None or not isinstance(a, Subagents):
-            continue
-        try:
-            kids = a.children(pref, home)
-        except Exception:
-            kids = []
-        for kref in kids:
-            if kref.run_id in seen:
-                continue
-            seen.add(kref.run_id)
-            # Claude lists every level in one folder; a nested agent names its parent agent.
-            pid = kref.parent.parent_run if kref.parent else None
-            parent_run = runs.get(pid or "") or hidden_parent.get(pid or "") or prun
-            folded_into = hidden_parent.get(pid or "") or (prun if is_folded else None)
-            kd = (parent_run["depth"] + 1) if folded_into is None else depth + 1  # type: ignore[operator]
-            if folded_into is not None or (depth is not None and kd > depth):
-                anc = folded_into or parent_run
-                folded[anc["id"]] = folded.get(anc["id"], 0) + 1
-                anc["hiddenDescendants"] += 1
-                hidden_parent[kref.run_id] = anc
-                queue.append((kref, anc, True))
-                continue
-            krun = run_of(kref, root, depth=kd, links=links, with_items=with_items)
-            runs[krun["id"]] = krun
-            _moments(parent_run, krun, kref, parent_run["_items"])
-            queue.append((kref, krun, False))
-    from server.canvas.adapters.experimental import enabled
 
-    if receipts and store is not None and enabled("seedmux-receipts"):  # v2, off by default
+    def expand() -> None:
+        while queue:
+            pref, prun, is_folded = queue.pop(0)
+            a = ADAPTERS.get(pref.kind)
+            if pref.path is None or a is None or not isinstance(a, Subagents):
+                continue
+            try:
+                kids = a.children(pref, home)
+            except Exception:
+                kids = []
+            for kref in kids:
+                if kref.run_id in seen:
+                    continue
+                seen.add(kref.run_id)
+                # Claude lists every level in one folder; a nested agent names its parent agent.
+                pid = kref.parent.parent_run if kref.parent else None
+                parent_run = runs.get(pid or "") or hidden_parent.get(pid or "") or prun
+                folded_into = hidden_parent.get(pid or "") or (prun if is_folded else None)
+                kd = (parent_run["depth"] + 1) if folded_into is None else depth + 1  # type: ignore[operator]
+                if folded_into is not None or (depth is not None and kd > depth):
+                    anc = folded_into or parent_run
+                    folded[anc["id"]] = folded.get(anc["id"], 0) + 1
+                    anc["hiddenDescendants"] += 1
+                    hidden_parent[kref.run_id] = anc
+                    queue.append((kref, anc, True))
+                    continue
+                krun = run_of(kref, root, depth=kd, links=links, with_items=with_items)
+                runs[krun["id"]] = krun
+                _moments(parent_run, krun, kref, parent_run["_items"])
+                queue.append((kref, krun, False))
+
+    expand()
+    if receipts and store is not None:
         from server.canvas.adapters import receipts as rc
 
-        rc.attach(runs, root=root, store=store, depth=depth, folded=folded, links=links, home=home)
+        placed: set[str] = set()
+        while True:  # workers can have native sub-agents, which can dispatch workers again
+            new = rc.attach(runs, root=root, store=store, depth=depth, folded=folded, links=links, home=home, placed=placed, with_items=with_items)
+            if not new:
+                break
+            for kref, krun in new:
+                seen.add(krun["id"])
+                queue.append((kref, krun, False))
+            expand()
+    kids: dict[str, list[str]] = {}
     for r in runs.values():
         r.pop("_items", None)
         r["timeline"]["moments"].sort(key=lambda m: m["at"])
-        r["childCount"] = sum(1 for x in runs.values() if (x.get("parent") or {}).get("runId") == r["id"])
+        pid = (r.get("parent") or {}).get("runId")
+        if pid:
+            kids.setdefault(pid, []).append(r["id"])
+
+    def below(rid: str) -> int:
+        return sum(1 + below(c) for c in kids.get(rid, [])) + runs[rid]["hiddenDescendants"]
+
+    for r in runs.values():
+        r["childCount"] = len(kids.get(r["id"], []))
+        r["descendants"] = below(r["id"])
     ordered = sorted(runs.values(), key=lambda r: (r["depth"], r.get("startedAt") or 0))
     return {"root": top["id"], "runs": ordered, "folded": folded, "depth": depth, "generatedAt": int(time.time() * 1000)}

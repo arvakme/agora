@@ -2,7 +2,7 @@
 unless ``AGORA_EXPERIMENTAL`` names them (comma-separated, or ``all``).
 
 - ``grok``: the Grok adapter (T2, observed only) — registry.py registers it only when enabled.
-- ``seedmux-receipts``: Seedmux tickets as T3 runs in ``/api/agent/runs`` (receipts.py).
+  Without it a Grok worker dispatched through Seedmux still shows, as a receipt-only (T3) run.
 
 Backlog and what is still missing: web/docs/cli-adapters.md §9.
 """
@@ -13,7 +13,6 @@ import os
 
 FLAGS = {
     "grok": "Grok adapter (T2): trajectory, native sub-agents, Seedmux sid",
-    "seedmux-receipts": "Seedmux tickets as T3 runs linked to the dispatching session (read-only)",
 }
 
 

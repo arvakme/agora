@@ -9,8 +9,8 @@
 | 档 | 名字 | 需要的能力 | Agora 里能得到什么 | 现在是谁 |
 |---|---|---|---|---|
 | **T1** | 会话 agent | T2 全部 + `Headless`、`Interactive`、`Catalog`、`Binding` | 选择器、面板发消息、在终端打开、双向同步、花费 | Pi、Claude Code、Codex（用户定：只有这三家） |
-| **T2** | 被观察的 agent | `Locator`、`Projector`、`ToolVocab`（可选 `Subagents`） | 只读轨迹、进度指针、工位小人（UI 待做） | T1 的原生子 agent；Grok（v2，默认关闭） |
-| **T3** | 只有回执 | `ReceiptSource`（Seedmux 工单） | 状态带、回执里的改动文件 | v2，默认关闭 |
+| **T2** | 被观察的 agent | `Locator`、`Projector`、`ToolVocab`（可选 `Subagents`） | 只读轨迹、进度指针、工位小人（UI 待做） | T1 的原生子 agent 与有 sid 的 Seedmux worker；Grok（v2，默认不注册） |
+| **T3** | 只有回执 | `ReceiptSource`（Seedmux 工单） | 状态带、回执（状态、改动文件、验收、reply 预览） | Seedmux 派出的、没有 T1/T2 适配器或不知道原生会话的 worker（v1 里 Devin、Cursor、Grok 的 worker 都在这一档） |
 | **T0** | 推断 | 无 | 文件事件按 cwd、时间窗归属，一律标「推断」 | v2，未开始 |
 
 - 档位 = 实现了的能力（`isinstance(a, Locator)` 等，`base.py` 的 runtime-checkable protocol），再被适配器的 `max_tier` 封顶（Devin、Cursor、Grok、Droid 写死 T2）。
@@ -28,8 +28,9 @@
 | `adapters/registry.py` | `ADAPTERS`、`implemented_tier`、`info`（`AgentInfo`）、`adapter_infos`、`session_kinds`、`by_seedmux_name`、`cached_version` |
 | `adapters/drift.py` | `probe` / `probe_all`（`agora doctor --agents`）、`observe`（跟随会话时计数）、`trust`（`.agora/agents.toml`） |
 | `adapters/runs.py` | `AgentRun` 树与每个 run 的时间线（`/api/agent/runs`）、画布节点映射（移植 `codeLinks.ts`） |
-| `adapters/experimental.py` | v2 开关：`AGORA_EXPERIMENTAL=grok,seedmux-receipts`（或 `all`） |
-| `adapters/grok.py`、`adapters/receipts.py` | v2，默认关闭（§9） |
+| `adapters/receipts.py` | Seedmux 工单作为回执（T3），连到派发它的 run（§5.1） |
+| `adapters/experimental.py` | v2 开关：`AGORA_EXPERIMENTAL=grok`（或 `all`） |
+| `adapters/grok.py` | v2，默认不注册（§9） |
 | `scripts/record_agent_fixture.py` | 录样本（§6） |
 
 `sessions.py`、`discover.py`、`local.py`、`agent_router.py`、`project.py`、`agora_cli/` 里原来按 `kind ==` 写死的地方都改成问能力：
@@ -66,6 +67,7 @@
 | Binding | ✓ 全局续接 | ✓ 全局续接 | ✓ 需迁移（`migrate`） | 续接全局有效（实测），但 T2 不需要 |
 | 日志格式版本 | 每行 `version` | `session_meta.cli_version` | 头部 `version`（3） | `summary.json` `chat_format_version`（1） |
 | 花费 | 无头才有 | — | ✓ | ✓ `costUsdTicks` |
+| 作为 Seedmux worker | 有 sid → 原生 run（T2） | 有 sid → 原生 run（T2） | 有 sid → 原生 run（T2） | v1：只有回执（T3） |
 
 ## 4. 工具事实（服务端加注）
 
@@ -113,23 +115,25 @@ type AgentInfo = {
 参数：
 
 - `session=<Agora 会话 id>`，或 `kind=<cli>&native=<原生 id>`（任何 Agora 读得到的原生会话）；
-- `depth`：展开几层，默认 `1`（用户定：默认一层，更深的折叠成徽标），`all` 全部；
+- `depth`：展开几层，默认 `all`（整棵树）；每个 run 带 `descendants`（它下面一共多少个 run），页面默认只显示一层、其余折叠成徽标（用户定）。给了数字就只展开到那一层，更深的只计数（`hiddenDescendants`、`folded`）；
 - `canvas=<画布 id>`：按节点的 `customData.codePaths` 给每个片段标上 `node`（规则同 `web/src/pointer/codeLinks.ts`）；
 - `items=1`：每个 run 带上它的转录条目（和会话面板同一形状，UI 可以直接 `buildLane`）；
-- `receipts=0`：不附 Seedmux 工单（v2 开关打开时才有意义）。
+- `receipts=0`：不附 Seedmux 工单（默认附上）。
 
 ```ts
 type RunTree = { root: string; runs: AgentRun[]; folded: Record<string, number>; depth: number | null; generatedAt: number };
 type AgentRun = {
-  id: string;                       // "claude:<id>"、"claude:<父 id>/<agentId>"、"codex:<thread id>"、"smx:T-xx"（v2）
+  id: string;                       // "claude:<id>"、"claude:<父 id>/<agentId>"、"codex:<thread id>"、"smx:T-xx"（只有回执的 worker）
   kind: string; nativeId?: string; tier: Tier; sessionId?: string;
   label: string; role?: string; model?: string; depth: number;
   parent?: { runId: string; via: "native" | "seedmux" | "inferred"; toolCallId?: string; taskId?: string; evidence: string };
   cwd?: string; worktree?: string;  // cwd 不是项目根时（worktree、子目录）
   state: "dispatched" | "acknowledged" | "running" | "waiting" | "idle_no_reply" | "done" | "failed" | "blocked" | "exited" | "session_changed" | "unknown" | "idle";
   startedAt?: number | null; endedAt?: number | null; lastAt?: number | null; logPath?: string;
-  hiddenDescendants: number; childCount: number;
-  receipt?: Receipt;                // v2
+  childCount: number;               // 直接子 run
+  descendants: number;              // 下面一共多少个 run（含没展开的）
+  hiddenDescendants: number;        // depth=N 时没展开的
+  receipt?: Receipt;                // Seedmux worker：见 §5.1
   timeline: {
     segments: { kind: "read" | "write" | "exec" | "think" | "wait"; start: number; end: number; itemId: string; turn: number; label: string; path?: string; node?: string; spawn?: {...} }[];
     turns: { n: number; start: number; end: number }[];
@@ -147,7 +151,34 @@ type AgentRun = {
 - 状态：CLI 自己说完成了的（结果、通知、边关闭）用它；否则日志 2 分钟内有写入算 `running`；在等人算 `waiting`；说不清的是 `unknown`，**不画成运行中**。
 - 时间线片段在服务端按 `tool.activity` 算（与 `web/src/workstation/timeline.ts` 的对应相同）；想要思考段、并行调用排开等细节，用 `items=1` 在前端 `buildLane`。
 
-前端类型与 `fetchRuns(sessionId, {depth, canvas, items})` 在 `web/src/session/agents.ts`；**还没有界面消费它**（工位视图的子小人、系绳、子泳道是下一步，§9）。
+前端类型与 `fetchRuns(sessionId, {depth, canvas, items, receipts})` 在 `web/src/session/agents.ts`；**还没有界面消费它**（工位视图的子小人、系绳、子泳道由 UI 那边接着做，§9）。
+
+### 5.1 Seedmux worker（T3 回执）
+
+用户的常规用法是**一个主 agent 编排多个子 agent**（两个顶层 agent 同时改一个项目会被禁止），所以 `/runs?session=<主会话>` 把主会话经 Seedmux 派出的 worker 也放进同一棵树，worker 自己的原生子 agent、worker 再派出的 worker 也一样。
+
+- **只读**（用户定）：`~/.seedmux/team/tasks/T-*/meta.json` 与 `delivery.json` 的核心键（`META_KEYS`、`DELIVERY_KEYS`）、`reply.md` 的前 1200 字节，外加每 15 秒至多一次 `GET /panes`（找没写 sid 的 worker 的 pane）。绝不 send / capture / spawn / wake。只收 `meta.cwd` 在项目根、它的 git worktree（`git worktree list`）或其子目录下的工单。`AGORA_SEEDMUX_TASKS` 可改目录，`AGORA_SEEDMUX_PANES=0` 关掉 `/panes`（测试用）。
+- **连到父 run**，证据从强到弱：
+  1. 父 run 自己的日志里，`smx-team spawn/assign` 打印的 `task=T-xx pane=<UUID>`（工具事实的 `spawn.taskId`；`toolCallId` 就是那次 Bash 调用）；
+  2. `meta.from_pane` 是 Agora 记下的持有这个会话的 Seedmux pane（`.agora/run/seedmux/agora-<sid>.json`），或是树里某个 worker 的 `to_pane`（worker 派出的 worker）；
+  3. `inferred`：`from_pane` 为空（派发者在 Agora 自己的 tmux 里）、cwd 对得上、在主会话活跃期间（首条记录到末条后 5 分钟）创建，且当时没有这个项目的别的 Agora 会话活跃。
+- **worker 本身**：`delivery.sid`（或 `native.sid`、`/panes` 里 `to_pane` 的 sid）加上它的 CLI 有 T1/T2 适配器、找得到日志 → 带完整轨迹的原生 run（`tier: "T2"`，它的原生子 agent 继续展开）；否则是 `smx:T-xx`（`tier: "T3"`，`kind` 是工单的 agent 名），只有状态和回执。v1 里 Devin、Cursor、Grok 的 worker 都是后者。
+- **统一状态**：`meta.status` 的 `replied:done|failed|blocked` → `done|failed|blocked`（`replied:unknown` → `unknown`）；否则 `delivery.state`：`awaiting_ack`、`ack_overdue` → `dispatched`，`running_observed` → `running`，`waiting` → `waiting`，`idle_without_reply` → `idle_no_reply`，`exited_without_reply` → `exited`，`session_changed`，`reply_unconfirmed` / `unknown` → `unknown`；只有 `ack_at` → `acknowledged`；没有 delivery 记录的旧工单只在创建后 60 秒内算 `dispatched`，之后 `unknown`（**不画成运行中**）。有原生日志且 2 分钟内在写的 worker 算 `running`。
+- **回执**：
+
+```ts
+type Receipt = { taskId: string; agent: string; cwd?: string; createdAt?: number; repliedAt?: number;
+  status?: string;          // meta.status 原样
+  seedmuxState?: string;    // delivery.state 原样
+  state: RunState;          // 上面的统一状态
+  toPane?: string; fromPane?: string; sid?: string;
+  changed?: string[];       // meta.verify.changed
+  accept?: string | null;   // meta.verify.accept：replied:done 不等于验收通过，分开显示
+  replyPreview?: string; replyPath?: string };
+```
+
+- **时刻**：父 run 上 `dispatch`（工单 `created_at`，带 `taskId`、`toolCallId`）和 `handoff`（`replied_at`，终态时）；worker 自己的时间线上有一个 `receipt`（`replied_at`）。
+- 2026-09-28 对本机真实工单只读验证：T-19c9ab（Devin，T3）与 T-dfa7cb（Claude worker，经 delivery sid 找到日志）都按第 1 条证据连回派发它们的会话。
 
 ## 6. 跟上 CLI 的更新
 
@@ -206,6 +237,7 @@ trust_untested = true
 ## 8. 用户已定
 
 - T1 会话 agent 只有 Pi、Claude Code、Codex；Devin、Cursor（cursor-agent）、Grok、Droid 只做子 agent（T2/T3/T0）。
+- 常规用法是一个主 agent 编排多个子 agent（原生子 agent 或 Seedmux worker）；两个顶层 agent 同时改一个项目很少见，之后会被禁止。所以 run 树以主会话为根。
 - Seedmux 只读：`meta.json` 核心键、`delivery.json` 核心键、`reply.md`，外加一次 `GET /panes`；只收 cwd 是本项目根或其 worktree 的工单；绝不 send / capture / spawn / wake。
 - Devin 的 `sessions.db` 可以只读查询，契约测试兜底；Cursor 只读 agent-transcripts，不碰 `store.db`。
 - T0 只在有 Seedmux worker 或未归属 pane 活跃时开启，一律标「推断」。
@@ -214,11 +246,11 @@ trust_untested = true
 
 ## 9. v2 待办
 
-v1 = 上面 §1–§7（步骤 0–6）。以下是 v2，按设计稿的顺序；调研依据是 2026-09-28 的设计稿《Agora 的 CLI 适配层》与原始调研附录（agora-cli-adapters-research.md，A–F 节），要点摘在每项里。
+v1 = 上面 §1–§7（步骤 0–6 与 8：适配层、工具事实、漂移、原生子 agent、Seedmux 回执）。以下是 v2，按设计稿的顺序；调研依据是 2026-09-28 的设计稿《Agora 的 CLI 适配层》与原始调研附录（agora-cli-adapters-research.md，A–F 节），要点摘在每项里。
 
-1. **工位视图（步骤 7）**：子小人、系绳（按 `parent.via` 与 `state` 画实线 / 虚线 / 提示色）、子泳道（默认折叠成状态带）、父泳道上的派发 / 回收三角（`moments`）；指针标签「Devin（Pi 派）· service.py」，父子同改只提示不标红；超过一层折叠成 `hiddenDescendants` 徽标。数据已经在 `/api/agent/runs`；另需：run 树变化时的 SSE（现在只能轮询）、`items=1` 大会话的分页。
-2. **Seedmux 回执（步骤 8）——已写好，默认关**：`AGORA_EXPERIMENTAL=seedmux-receipts`。`adapters/receipts.py`：统一状态映射、父子连线（父日志 `task=T-xx pane=<UUID>` → `meta.from_pane` = Agora 记下的 pane → cwd + 时间窗推断）、有 sid 的 worker 带原生轨迹、否则 `smx:T-xx` 的 T3 run；`tests/test_receipts.py`。2026-09-28 只读验证：T-19c9ab（Devin）与 T-dfa7cb（Claude worker，经 delivery sid 找到日志）都连回派发它们的会话。打开前要补：前端展示、`reply.md` 预览入口、`verify.accept` 与 `replied:done` 分开显示。
-3. **Grok（步骤 9）——已写好，默认关**：`AGORA_EXPERIMENTAL=grok`。`adapters/grok.py` + 真实样本 `grok/1.0.41`（spawn_subagent）。附录 D：`updates.jsonl` 是权威日志，`turn_completed.usage.inputTokens` 含缓存（已减），等待用户只能推断，绝不调用 `grok trace`；Seedmux 的 delivery sid 能直接找到会话（与回执一起打开）。
+1. **工位视图（步骤 7，UI 那边在做）**：子小人、系绳（按 `parent.via` 与 `state` 画实线 / 虚线 / 提示色）、子泳道（默认折叠成状态带）、父泳道上的派发 / 回收三角（`moments`）、回执预览（`reply.md`，`accept` 与 `replied:done` 分开）；指针标签「Devin（Pi 派）· service.py」，父子同改只提示不标红；超过一层折叠成 `descendants` 徽标。服务端还缺：run 树变化时的 SSE（现在只能轮询）、`items=1` 大会话的分页。
+2. **没有 sid 的 worker 补原生会话**：Devin、Cursor 的 pane 里 Seedmux 不知道 sid。按 `meta.agent`、`meta.cwd` 与 pane 起始时间窗找这个 CLI 在该 cwd 下新出现、未被占用的会话，再用 worker 日志里的 `smx-team ack/reply T-xx` 核对，核对上才算 seedmux 级（`receipts.worker_ref` 已留 `worker_for_ticket` 钩子）。依赖下面的 Devin / Cursor 适配器。
+3. **Grok（步骤 9）——已写好，默认不注册**：`AGORA_EXPERIMENTAL=grok`。`adapters/grok.py` + 真实样本 `grok/1.0.41`（spawn_subagent）。附录 D：`updates.jsonl` 是权威日志，`turn_completed.usage.inputTokens` 含缓存（已减），等待用户只能推断，绝不调用 `grok trace`；Seedmux 的 delivery sid 能直接找到会话（与回执一起打开）。
 4. **Devin（步骤 10，T2）**：附录 B。`~/.local/share/devin/cli/sessions.db`（SQLite WAL，约 2.3 GB）：`sessions`（`working_directory`、`created_at`、`main_chain_id`）、`message_nodes`（OpenAI 风格消息，按 `row_id` 增量）、`tool_call_state`（ACP ToolCall，`locations[].path` 是写入文件，`kind` execute/read/edit/search）、`subagent_heads`（原生子 agent，本机 0 行未验证）；`refinery_schema_history` 迁移号（V17）作漂移信号。只读 `mode=ro`，只按 session_id 加 row_id 游标查；回合结束靠「最后一条 assistant 无工具调用」推断。Seedmux 里 Devin 的 pane 没有 sid：按 `working_directory` + pane 起始时间窗找会话，再用 worker 日志里的 `smx-team reply T-xx` 核对，核对上才算 seedmux 级（`receipts.worker_ref` 已留 `worker_for_ticket` 钩子）。样本：录制在 2026-09-28 被权限拦下，需要用户同意后再录。
 5. **Cursor（步骤 11，T2）**：附录 C。`~/.cursor/projects/<realpath 去掉首 "/"，"/"→"-">/agent-transcripts/<chatId>/<chatId>.jsonl`，只有 `{role, message:{content}}` 和 `{type:"turn_ended", status}`；没有工具调用 id、没有工具结果、没有时间戳（`times_inferred`：用读到的时刻或 mtime，界面标「推断」）；工具名随模型变（`ApplyPatch` 要解析 `*** Add File:` 头）；子 agent 靠 `<父>/subagents/<子>.jsonl` 目录嵌套。chat id 按 cwd 隔离（换目录续接会静默开新会话）。**不碰加密的 `store.db`**。附录 F 有一份 stream-json 样本。
 6. **Droid（步骤 12）**：附录 E。等用户登录并在 Seedmux 的 `agents.json` 里配上后再做：`~/.factory/sessions/-<cwd 仅 "/"→"-">/<id>.jsonl`（头部 `version: 2`），子 agent 头部 `callingSessionId` / `callingToolUseId` 直接指向父 tool_use；`droid exec` 失败时退出码仍为 0，要看 `error` 事件。先录样本，再写投影。

@@ -72,7 +72,6 @@ def env(tmp_path, monkeypatch):
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("AGORA_SEEDMUX_PANES", "0")  # never talk to a real Seedmux in tests
-    monkeypatch.setenv("AGORA_EXPERIMENTAL", "seedmux-receipts")  # v2 feature, off by default
     monkeypatch.setattr(receipts, "_panes", None)
     monkeypatch.setattr(agents, "check_binding", lambda *a: None)
     s = ProjectStore(tmp_path / "proj")
@@ -134,14 +133,53 @@ def test_workers_link_to_the_session_that_dispatched_them(env):
     assert {(m["kind"], m.get("taskId")) for m in moments} >= {("dispatch", "T-aaa111"), ("handoff", "T-aaa111"), ("dispatch", "T-bbb222"), ("dispatch", "T-ccc333")}
 
 
-def test_receipts_are_off_by_default(env, monkeypatch):
+def test_receipts_can_be_left_out(env):
     home, s, tasks = env
-    monkeypatch.delenv("AGORA_EXPERIMENTAL")
     ticket(tasks, "T-ggg777", {"from_pane": "", "agent": "codex", "cwd": str(s.root), "created_at": time.time(), "status": "dispatched"})
     d = home / ".claude" / "projects" / agents.claude_dir_name(str(s.root))
     log = jl(d / f"{P}.jsonl", [{"type": "user", "uuid": "u1", "timestamp": iso(time.time() - 5), "cwd": str(s.root), "message": {"content": "hi"}}])
-    tree = runs.build(NativeRef("claude", P, log, str(s.root)), root=str(s.root), store=s)
-    assert [r["id"] for r in tree["runs"]] == [f"claude:{P}"]
+    with_ = runs.build(NativeRef("claude", P, log, str(s.root)), root=str(s.root), store=s)
+    assert [r["id"] for r in with_["runs"]] == [f"claude:{P}", "smx:T-ggg777"] and with_["runs"][1]["state"] == "dispatched"
+    without = runs.build(NativeRef("claude", P, log, str(s.root)), root=str(s.root), store=s, receipts=False)
+    assert [r["id"] for r in without["runs"]] == [f"claude:{P}"]
+
+
+def test_workers_of_workers_and_their_sub_agents(env):
+    """The main session dispatches a Codex worker (sid known); the worker spawns a native sub-agent
+    and dispatches a Grok worker from its own pane: all of it is one tree (Grok is v2 → receipt only)."""
+    home, s, tasks = env
+    root = str(s.root)
+    t0 = time.time() - 900
+    d = home / ".claude" / "projects" / agents.claude_dir_name(root)
+    main = jl(d / f"{P}.jsonl", [
+        {"type": "user", "uuid": "u1", "timestamp": iso(t0), "cwd": root, "message": {"content": "派一个 codex"}},
+        {"type": "assistant", "uuid": "a1", "timestamp": iso(t0 + 1), "cwd": root, "message": {"id": "m1", "content": [{"type": "tool_use", "id": "toolu_S", "name": "Bash", "input": {"command": "smx-team spawn --agent codex"}}]}},
+        {"type": "user", "uuid": "r1", "timestamp": iso(t0 + 2), "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_S", "content": f"task=T-c0dex1 pane={PANE_W}"}]}},
+    ])
+    cx = home / ".codex" / "sessions" / "2026" / "09" / "28"
+    ms = lambda s_: int((t0 + s_) * 1000)  # noqa: E731
+    jl(cx / "rollout-2026-09-28T01-00-00-cx-worker.jsonl", [
+        {"type": "session_meta", "timestamp": iso(t0 + 3), "payload": {"id": "cx-worker", "cwd": root, "cli_version": "0.157.1", "source": "cli"}},
+        {"type": "event_msg", "timestamp": iso(t0 + 4), "payload": {"type": "task_started", "turn_id": "t1"}},
+        {"type": "event_msg", "timestamp": iso(t0 + 5), "payload": {"type": "item_completed", "completed_at_ms": ms(5), "item": {"type": "CollabAgentToolCall", "id": "exec-spawn", "tool": "spawn_agent", "status": "completed", "receiver_thread_ids": ["cx-sub"], "receiver_agents": [{"thread_id": "cx-sub", "agent_nickname": "Parfit"}], "prompt": "写 a.py", "agents_states": {"cx-sub": "pending_init"}}}},
+        {"type": "event_msg", "timestamp": iso(t0 + 9), "payload": {"type": "item_completed", "completed_at_ms": ms(9), "item": {"type": "CollabAgentToolCall", "id": "exec-wait", "tool": "wait", "status": "completed", "receiver_thread_ids": ["cx-sub"], "agents_states": {"cx-sub": {"completed": "done"}}}}},
+    ])
+    jl(cx / "rollout-2026-09-28T01-00-05-cx-sub.jsonl", [
+        {"type": "session_meta", "timestamp": iso(t0 + 5), "payload": {"id": "cx-sub", "cwd": root, "source": {"subagent": {"thread_spawn": {"parent_thread_id": "cx-worker", "depth": 1, "agent_nickname": "Parfit"}}}}},
+        {"type": "event_msg", "timestamp": iso(t0 + 6), "payload": {"type": "item_completed", "completed_at_ms": ms(6), "item": {"type": "FileChange", "id": "fc1", "status": "completed", "changes": {f"{root}/a.py": {"type": "add", "content": "x"}}}}},
+    ])
+    ticket(tasks, "T-c0dex1", {"from_pane": PANE_ME, "to_pane": PANE_W, "agent": "codex", "cwd": root, "created_at": t0 + 2, "status": "replied:done", "replied_at": t0 + 100}, {"state": "replied:done", "sid": "cx-worker"})
+    ticket(tasks, "T-9r0k01", {"from_pane": PANE_W, "to_pane": "C" * 8 + "-0000-0000-0000-000000000000", "agent": "grok", "cwd": root, "created_at": t0 + 20, "status": "dispatched"}, {"state": "waiting", "sid": "grok-sid-1"})
+    tree = runs.build(NativeRef("claude", P, main, root), root=root, store=s)
+    r = {x["id"]: x for x in tree["runs"]}
+    w, sub, g = r["codex:cx-worker"], r["codex:cx-sub"], r["smx:T-9r0k01"]
+    assert w["parent"]["runId"] == f"claude:{P}" and w["receipt"]["taskId"] == "T-c0dex1" and w["depth"] == 1
+    assert sub["parent"] == {"runId": "codex:cx-worker", "via": "native", "toolCallId": "exec-spawn", "evidence": sub["parent"]["evidence"]} and sub["depth"] == 2
+    assert [(x["kind"], x.get("path")) for x in sub["timeline"]["segments"]] == [("write", "a.py")]
+    assert g["parent"]["runId"] == "codex:cx-worker" and "to_pane" in g["parent"]["evidence"]
+    assert g["tier"] == "T3" and g["kind"] == "grok" and g["state"] == "waiting"  # Grok is v2: receipt only
+    assert r[f"claude:{P}"]["descendants"] == 3 and w["descendants"] == 2 and w["childCount"] == 2
+    assert {(m["kind"], m.get("childRunId")) for m in w["timeline"]["moments"]} >= {("dispatch", "codex:cx-sub"), ("handoff", "codex:cx-sub"), ("dispatch", "smx:T-9r0k01")}
 
 
 def test_reads_only_core_files(env):

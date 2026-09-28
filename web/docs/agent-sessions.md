@@ -136,7 +136,7 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 |---|---|---|
 | GET | `/catalog` | 三个 agent 的安装状态、模型、强度 |
 | GET | `/adapters` | 每个有适配器的 CLI 的 `AgentInfo`：档位、测过的版本、能力、日志目录、删除命令、漂移提示（[CLI 适配层 §5](cli-adapters.md#5-接口)） |
-| GET | `/runs?session=…` | 会话的 run 树：它自己、原生子 agent（以及 v2 的 Seedmux worker），每个带时间线（[CLI 适配层 §5](cli-adapters.md#5-接口)） |
+| GET | `/runs?session=…` | 会话的 run 树：它自己、原生子 agent、经 Seedmux 派出的 worker（只读回执），每个带时间线（[CLI 适配层 §5](cli-adapters.md#5-接口)） |
 | PUT | `/sessions/{id}` | 绑定 `{agent, model, effort, nativeId?}`；不同选择 409 |
 | GET | `/sessions/{id}` | 状态（绑定、运行、排队、终端） |
 | POST | `/sessions/{id}/send` | `{text, canvasId?, context?}` → `{sendId, route: terminal\|headless}` |

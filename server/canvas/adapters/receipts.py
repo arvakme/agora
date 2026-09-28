@@ -1,6 +1,4 @@
-"""**v2, off by default** — enabled with ``AGORA_EXPERIMENTAL=seedmux-receipts`` (experimental.py).
-
-Seedmux tickets as receipts (tier T3): workers a session dispatched through Seedmux, what state
+"""Seedmux tickets as receipts (tier T3): workers a session dispatched through Seedmux, what state
 their delivery is in, and — when the worker's CLI has an adapter and its session id is known — the
 worker's own trajectory (web/docs/cli-adapters.md §5.2–5.3).
 
@@ -17,7 +15,8 @@ Parent links, strongest first:
 1. ``seedmux``: the parent's own log has the dispatch — ``smx-team spawn/assign`` prints
    ``task=T-xx pane=<UUID>``, which the tool facts carry as ``spawn.taskId`` (tools.py);
 2. ``seedmux``: ``meta.from_pane`` is the Seedmux pane Agora recorded as holding that session
-   (``.agora/run/seedmux/agora-<sid>.json``); empty when the dispatcher ran in Agora's own tmux;
+   (``.agora/run/seedmux/agora-<sid>.json``), or the ``to_pane`` of a worker already in the tree
+   (a worker dispatching its own workers); empty when the dispatcher ran in Agora's own tmux;
 3. ``inferred``: same cwd, created while the session was active, and no other Agora session of
    this project was active then.
 """
@@ -268,15 +267,19 @@ def worker_ref(t: dict[str, Any], rc: dict[str, Any], parent: ParentLink) -> Nat
     return NativeRef(a.kind if a is not None else (rc["agent"] or "seedmux"), rc["taskId"], None, rc.get("cwd"), parent, label=label, meta={**meta, "receiptsOnly": True})
 
 
-def attach(runs: dict[str, dict[str, Any]], *, root: str | None, store: Any, depth: int | None, folded: dict[str, int], links: list | None = None, home: Path | None = None) -> None:
-    """Add this project's Seedmux workers to the run tree ``runs`` (mutated), linked to their parents."""
+def attach(runs: dict[str, dict[str, Any]], *, root: str | None, store: Any, depth: int | None, folded: dict[str, int], links: list | None = None, home: Path | None = None, placed: set[str] | None = None, with_items: bool = False) -> list[tuple[NativeRef, dict[str, Any]]]:
+    """Add this project's Seedmux workers to the run tree ``runs`` (mutated), linked to their parents.
+    Returns the worker runs it added that have a native session (their own sub-agents are the
+    caller's to expand). ``placed``: tickets already in the tree (kept across calls)."""
     from server.canvas.adapters.runs import _moments, run_of
 
+    added: list[tuple[NativeRef, dict[str, Any]]] = []
+    placed = placed if placed is not None else set()
     if not root:
-        return
+        return added
     all_t = tickets(root)
     if not all_t:
-        return
+        return added
     top = next(iter(runs.values()))
     # 1. dispatches in the runs' own logs (task=T-xx pane=… in a tool's output)
     def dispatches() -> dict[str, tuple[str, str]]:
@@ -291,7 +294,8 @@ def attach(runs: dict[str, dict[str, Any]], *, root: str | None, store: Any, dep
     agora_panes = _agora_panes(store) if store is not None else {}
     session_of_top = top.get("sessionId")
     others = None
-    placed: set[str] = set()
+    # pane → run of the workers already in the tree (their to_pane), for tickets they dispatched in turn
+    worker_panes = {str(r["receipt"]["toPane"]).upper(): rid for rid, r in runs.items() if (r.get("receipt") or {}).get("toPane")}
     changed = True
     while changed:  # a worker's own log can dispatch further workers
         changed = False
@@ -307,6 +311,9 @@ def attach(runs: dict[str, dict[str, Any]], *, root: str | None, store: Any, dep
                 via, ev = "seedmux", f"父会话日志里 smx-team 打印的 task={tid} pane={rc.get('toPane') or '?'}"
             elif rc.get("fromPane") and agora_panes.get(rc["fromPane"].upper()) == session_of_top and session_of_top:
                 parent_id, via, ev = top["id"], "seedmux", f"工单 meta.from_pane = 持有这个会话的 Seedmux pane（{rc['fromPane'][:8]}）"
+            elif rc.get("fromPane") and rc["fromPane"].upper() in worker_panes:
+                parent_id, via = worker_panes[rc["fromPane"].upper()], "seedmux"
+                ev = f"工单 meta.from_pane = worker {runs[parent_id].get('receipt', {}).get('taskId', '')} 的 to_pane（{rc['fromPane'][:8]}）"
             elif not rc.get("fromPane") and top.get("startedAt") and rc.get("createdAt"):
                 lo, hi = top["startedAt"], (top.get("lastAt") or top["startedAt"]) + WINDOW_PAD_MS
                 if lo <= rc["createdAt"] <= hi:
@@ -327,7 +334,7 @@ def attach(runs: dict[str, dict[str, Any]], *, root: str | None, store: Any, dep
                 continue
             if ref.run_id in runs:
                 continue
-            krun = run_of(ref, root, depth=kd, links=links)
+            krun = run_of(ref, root, depth=kd, links=links, with_items=with_items)
             if ref.meta.get("receiptsOnly"):
                 krun["id"] = f"smx:{tid}"
                 krun["tier"] = "T3"
@@ -343,4 +350,9 @@ def attach(runs: dict[str, dict[str, Any]], *, root: str | None, store: Any, dep
             for m in prun["timeline"]["moments"]:
                 if m.get("childRunId") == krun["id"]:
                     m["taskId"] = tid
+            if rc.get("toPane"):
+                worker_panes[rc["toPane"].upper()] = krun["id"]
+            if ref.path is not None:
+                added.append((ref, krun))
             changed = True
+    return added
