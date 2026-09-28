@@ -45,7 +45,8 @@ STATES = ("dispatched", "acknowledged", "running", "waiting", "idle_no_reply", "
 
 
 # ——— canvas nodes (port of web/src/pointer/codeLinks.ts) ———
-def glob_re(glob: str) -> re.Pattern[str]:
+def normalize_glob(glob: str) -> str:
+    """The matching form: a bare dir ``server`` or ``server/`` means ``server/**``."""
     g = glob.strip().replace("\\", "/")
     g = g[2:] if g.startswith("./") else g
     g = g[1:] if g.startswith("/") else g
@@ -53,6 +54,11 @@ def glob_re(glob: str) -> re.Pattern[str]:
         g += "**"
     elif not re.search(r"[*?\[{]", g) and not re.search(r"\.[^/]*$", g.split("/")[-1] if g else ""):
         g += "/**"
+    return g
+
+
+def glob_re(glob: str) -> re.Pattern[str]:
+    g = normalize_glob(glob)
     out = ""
     i = 0
     esc = lambda c: re.sub(r"([.+^$()|\[\]\\])", r"\\\1", c)  # noqa: E731
@@ -86,7 +92,9 @@ def glob_re(glob: str) -> re.Pattern[str]:
 
 
 def specificity(glob: str) -> int:
-    g = glob.strip()
+    """Literal prefix before the first wildcard × 1000 + total length, on the matching form; only a
+    real file literal gets the +1000 bonus (same as web/src/pointer/codeLinks.ts)."""
+    g = normalize_glob(glob)
     m = re.search(r"[*?\[{]", g)
     return ((len(g) + 1000) if m is None else m.start()) * 1000 + len(g)
 
