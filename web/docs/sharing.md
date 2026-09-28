@@ -50,6 +50,8 @@ agora share revoke <id>                # 立即结束一个；--all 结束本项
 
 **每个请求**先按 Host 找有效分享（找不到：403，连静态文件也不给）；`/s/` 之后的请求都要带这个分享的令牌 cookie，用 `hmac.compare_digest` 比对哈希（恒定时间）；限制了打开次数的分享还要求访客 id cookie 是它放进来过的（只拿到令牌 cookie 绕不过次数）。
 
+**嵌套画布**：`/api/guest/state?canvas=<id>` 与评论的 `canvasId` 可以是被分享画布下面的任一子画布（逐级可达），其他画布 403；节点只保留指向可达子图的 `customData.childCanvas`，见[嵌套画布 §8](nested-canvas.md#8-分享访客逐级进入)。
+
 访客**不能**：改图（页面是 Excalidraw 的只读模式，且网关没有任何写画布的路由）、改或删别人的消息、删除整条线程、解决/重开线程、「交给 Agent」、撤销 Agent 的修改、看会话或轨迹、看进度指针（访客页不挂 `PointerLayer`，元素的 `customData` 整个去掉，所以 `codePaths` 也没有）、看本地路径（`root`、会话 id、turn id 都不下发）、访问 `/api/project`、`/api/agent`（包括终端和 `agora canvas apply` 用的桥接）、`/api/canvas`、`/api/share`、`/libraries`。
 
 访客看到的线程经过 `guest_threads` 脱敏：消息只留 `id / author / text / at / tone / by / editedAt / updatedAt / deleted`（线程另留 `updatedAt / deleted`，墓碑让访客页也把删掉的收起来）；非访客的身份 id（作者的 `mailto:邮箱`）换成 `member:<sha256 前 10 位>`，只保留显示名（git `user.name`）。
