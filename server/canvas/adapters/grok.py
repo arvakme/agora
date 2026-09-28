@@ -28,7 +28,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from server.canvas.adapters.base import Adapter, NativeRef, ParentLink, VersionRange, tool_facts
+from server.canvas.adapters.base import valid_id, Adapter, NativeRef, ParentLink, VersionRange, tool_facts
 from server.canvas.adapters.common import MAX_TEXT, LogLookup, Out, State, _clip, _end, _full, _ms, _start, _summary, _usage, read_jsonl, rel_path, user_item
 from server.canvas.adapters.tools import activity_of, shell_reads, spawn_in_output
 
@@ -185,7 +185,7 @@ class GrokAdapter(Adapter):
 
     # ——— Locator ———
     def locate(self, native_id: str | None, root: Path | str | None = None, home: Path | None = None, hint: str | Path | None = None) -> LogLookup:
-        if not native_id:
+        if not valid_id(native_id):  # also refuses "", None, "/" and ".." (never a path or a glob)
             return LogLookup("missing")
         hits = sorted(Path(p) for p in glob.glob(str(grok_home(home) / "sessions" / "*" / glob.escape(native_id) / "updates.jsonl")))
         if len(hits) == 1:

@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from server.canvas import agent_models
-from server.canvas.adapters.base import Adapter, NativeRef, ParentLink, VersionRange, tool_facts
+from server.canvas.adapters.base import valid_id, Adapter, NativeRef, ParentLink, VersionRange, tool_facts
 from server.canvas.adapters.tools import activity_of, shell_reads, spawn_in_output
 from server.canvas.adapters.common import (
     MAX_FULL,
@@ -383,7 +383,7 @@ class CodexAdapter(Adapter):
 
     # ——— Locator ———
     def locate(self, native_id: str | None, root: Path | str | None = None, home: Path | None = None, hint: str | Path | None = None) -> LogLookup:
-        if not native_id:
+        if not valid_id(native_id):  # also refuses "", None, "/" and ".." (never a path or a glob)
             return LogLookup("missing")
         home = home or Path.home()
         base = codex_home(home) / "sessions"
