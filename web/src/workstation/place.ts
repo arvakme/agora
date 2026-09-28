@@ -40,6 +40,11 @@ export const DOOR_SCALE = 0.5;
 /** A comment's turn has ended — its answer went to the thread — for this long: the pin's check, a nod. */
 export const ANSWER_MS = 1000;
 
+/** A path outside the project: absolute (`/…`, or a Windows drive `C:\` / `C:/`). The server turns every file
+ * of the repository, other worktrees included, into a relative path; what is still absolute lies elsewhere
+ * (an agent's scratchpad, /tmp, ~/.claude). Such work happens where the worker stands, like thinking. */
+export const outsideProject = (path: string) => path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
+
 export type Located = { place: string; portal?: { canvasId: string; label: string } };
 /** Where a worker stands: its place and its feet (world coordinates). */
 export type Spot = { place: string; at: Pt };
@@ -115,6 +120,7 @@ type Walk = { at: string; portal?: Located["portal"]; behind: boolean; startBehi
  * the worker already is. */
 function where(ctx: Ctx, s: RunSeg): Here | null {
   let l: Located | null;
+  if (s.path && outsideProject(s.path)) return null;
   if (s.path) l = ctx.locate(s.path);
   else if (s.comment?.anchor.length && ctx.anchor) l = ctx.anchor(s.comment.anchor);
   else return null;
