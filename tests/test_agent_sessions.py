@@ -197,7 +197,7 @@ def test_resolve_canvas(store):
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="needs tmux")
 async def test_terminal_pane_both_directions(store, tmp_path, monkeypatch):
     log = tmp_path / "native.jsonl"
-    monkeypatch.setattr(agents, "locate_log", lambda kind, nid, root=None, home=None: agents.LogLookup("found", log, (log,)) if nid else agents.LogLookup("missing"))
+    monkeypatch.setattr(agents, "locate_log", lambda kind, nid, root=None, home=None, hint=None: agents.LogLookup("found", log, (log,)) if nid else agents.LogLookup("missing"))
     monkeypatch.setattr(agents, "interactive_argv", lambda *a, **k: [sys.executable, str(TUI), str(log)])
     hub = AgentHub(store)
     store.bind("s-t", agent="pi", native_id="n-1")
@@ -313,7 +313,7 @@ async def test_terminal_in_seedmux_both_directions(store, tmp_path, monkeypatch)
     from server.canvas.terminal import Terminals
 
     log = tmp_path / "native.jsonl"
-    monkeypatch.setattr(agents, "locate_log", lambda kind, nid, root=None, home=None: agents.LogLookup("found", log, (log,)) if nid else agents.LogLookup("missing"))
+    monkeypatch.setattr(agents, "locate_log", lambda kind, nid, root=None, home=None, hint=None: agents.LogLookup("found", log, (log,)) if nid else agents.LogLookup("missing"))
     monkeypatch.setattr(agents, "interactive_argv", lambda *a, **k: [sys.executable, str(TUI), str(log)])
     fake = FakeSeedmux(shutil.which("tmux"))
     terms = Terminals(store.root, store.run_dir, seedmux=Seedmux(fake.cfg, fake.sock, fake.tmux))
@@ -358,6 +358,15 @@ async def test_terminal_in_seedmux_both_directions(store, tmp_path, monkeypatch)
         assert again["paneId"] == pane and not again["created"] and len(fake.spawned) == 1
         with pytest.raises(Exception, match="Seedmux"):
             await asyncio.to_thread(hub.open_terminal, "s-x", launch=False)
+
+        # Review P2-6: `agora down` after .agora/run/ was lost (git clean -fdx) still closes the
+        # Seedmux pane: its holder record is mirrored under $AGORA_STATE_DIR.
+        shutil.rmtree(store.run_dir / "seedmux")
+        down = Terminals(store.root, store.run_dir, seedmux=Seedmux(fake.cfg, fake.sock, fake.tmux))
+        assert down.holder("s-x") == {"app": "seedmux", "paneId": pane}
+        down.shutdown()
+        assert f"smx-{pane}" not in fake.sessions() and not terms.alive("s-x")
+        pane = (await asyncio.to_thread(hub.open_terminal, "s-x", launch=False, app="seedmux"))["paneId"]
 
         # Closing from Agora ends only that pane.
         await asyncio.to_thread(hub.close_terminal, "s-x")

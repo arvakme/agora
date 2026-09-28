@@ -74,12 +74,16 @@ def test_losing_run_dir_never_starts_a_second_server_and_down_still_stops_it(tmp
     from agora_cli.main import alive, free_port
     from server.canvas.terminal import Terminals
 
+    from server.canvas.local import Local
+    from server.canvas.project import ProjectStore
+
     proj = tmp_path / "proj"
     proj.mkdir()
     root = proj.resolve()
-    terms = Terminals(root, root / ".agora" / "run")
+    terms = None
     try:
         assert agora("up", cwd=proj).returncode == 0
+        terms = Terminals(root, root / ".agora" / "run", socket=Local(ProjectStore(root)).socket())  # the instance's socket
         first = json.loads((proj / ".agora" / "run" / "server.json").read_text())
         terms.open("s-x", ["sleep", "300"], cwd=root, env={})  # a session's pane on this project's tmux server
         assert "agora-s-x" in terms.sessions()
@@ -100,4 +104,59 @@ def test_losing_run_dir_never_starts_a_second_server_and_down_still_stops_it(tmp
         assert terms.sessions() == []  # the project's tmux server is gone too
     finally:
         agora("down", cwd=proj)
-        terms.kill_server()
+        if terms is not None:
+            terms.kill_server()
+
+
+def test_down_stops_a_hung_server_whose_run_dir_and_record_are_gone(tmp_path):
+    """Review P2-3: a server that no longer answers, with run/ and its record gone: `up` said "run
+    `agora down`", `down` said "not running" and left it holding the lock. The pid it wrote into its
+    lock file finds it; its command line is checked before it is stopped."""
+    import signal
+
+    from agora_cli.main import Project, alive
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    assert agora("up", cwd=proj).returncode == 0
+    pid = json.loads((proj / ".agora" / "run" / "server.json").read_text())["pid"]
+    p = Project(str(proj))
+    try:
+        os.kill(pid, signal.SIGSTOP)  # hung: holds the lock, answers nothing
+        shutil.rmtree(proj / ".agora" / "run")
+        p.record.unlink()
+        up = agora("up", cwd=proj)
+        assert up.returncode == 2 and "agora down" in up.stderr
+        down = agora("down", cwd=proj)
+        assert down.returncode == 0 and "stopped" in down.stdout, down.stdout + down.stderr
+        assert not alive(pid)
+    finally:
+        if alive(pid):
+            os.kill(pid, signal.SIGKILL)
+
+
+def test_moving_a_running_project_stops_the_old_server_and_down_clears_old_sockets(tmp_path):
+    """B6 with instance ids: the server left behind at the old path (refusing writes) is stopped by
+    `up` at the new path; `down` also stops tmux servers under the old path-hash names."""
+    import subprocess as sp
+
+    from agora_cli.main import alive
+    from server.canvas.local import legacy_socket
+
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir()
+    old_sock = legacy_socket(a.resolve())
+    try:
+        assert agora("up", cwd=a).returncode == 0
+        first = json.loads((a / ".agora" / "run" / "server.json").read_text())
+        sp.run(["tmux", "-L", old_sock, "-f", "/dev/null", "new-session", "-d", "-s", "agora-s-old", "sleep", "300"], check=True)
+        a.rename(b)
+        up = agora("up", cwd=b)
+        assert up.returncode == 0 and "started" in up.stdout and "移到了" in up.stdout, up.stdout + up.stderr
+        assert not alive(first["pid"])
+        down = agora("down", cwd=b)
+        assert down.returncode == 0 and f"stopped tmux server {old_sock}" in down.stdout, down.stdout
+        assert sp.run(["tmux", "-L", old_sock, "list-sessions"], capture_output=True).returncode != 0
+    finally:
+        agora("down", cwd=b)
+        sp.run(["tmux", "-L", old_sock, "kill-server"], capture_output=True)

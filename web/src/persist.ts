@@ -19,8 +19,35 @@ export const project = createClient();
 
 export type ProjectInfo = { id: string; name: string; root: string; me: Person };
 type Versioned<T> = { data: T; version: string };
-/** A project file the server could not read (server/canvas/project.py `file_error`). */
-export type FileError = { file: string; error: "merge-conflict" | "invalid-json"; line?: number | null; detail?: string; kind?: string; id?: string | null };
+/** A project file the server could not read (server/canvas/project.py `file_error`, `_read_checked`). */
+export type FileError = { file: string; error: "merge-conflict" | "invalid-json" | "unreadable"; line?: number | null; detail?: string; kind?: string; id?: string | null };
+/** What changed about this copy of the project since the page last looked (server/canvas/local.py `reconcile`). */
+export type LocalChange = {
+  kind: "fresh" | "reattached" | "moved" | "copied";
+  from?: string;
+  at: number;
+  migrated?: { sessionId: string; nativeId: string; path: string }[];
+  failed?: { sessionId: string; nativeId: string; error: string; fallback?: string }[];
+  sessions?: string[];
+};
+/**
+ * A listed session that cannot simply be resumed here (server/canvas/local.py `session_origins`):
+ * `copy` came along with `cp -r` (read-only until forked), `recoverable` has its binding in this
+ * machine's registry, `other-copy` belongs to another copy on this machine, `foreign` was made elsewhere.
+ */
+export type Origin = {
+  state: "copy" | "recoverable" | "other-copy" | "foreign";
+  agent?: "pi" | "claude" | "codex";
+  model?: string;
+  effort?: string;
+  nativeId?: string | null;
+  started?: boolean;
+  canvasId?: string;
+  topic?: string;
+  root?: string;
+  from?: string;
+  log?: string | null;
+};
 type Snapshot = ProjectInfo & {
   /** Nothing in the project yet (no workspace.json, no canvas file): the first run may write the sample. */
   empty: boolean;
@@ -30,6 +57,8 @@ type Snapshot = ProjectInfo & {
   sessions: Parameters<typeof foldSessions>[0] & Record<string, { version: string }>;
   /** Agent bindings (sessions/<id>.agent.json), written by the server only. */
   bindings?: Record<string, Binding>;
+  local?: { instanceId: string; change: LocalChange | null };
+  origins?: Record<string, Origin>;
 };
 export type Loaded = {
   project: ProjectInfo;
@@ -40,10 +69,10 @@ export type Loaded = {
   sessions: SessionsState;
   bindings: Record<string, Binding>;
   imported: boolean;
+  change: LocalChange | null;
+  origins: Record<string, Origin>;
 };
 
-/** Last body written (or loaded) per slot: unchanged saves send nothing. */
-const written = new Map<string, string>();
 /** Per session: what its log already holds. */
 const logged = new Map<string, Logged>();
 let latestSessions: SessionsState = { sessions: {}, turns: {}, batches: {} };
@@ -81,15 +110,15 @@ export async function connect(): Promise<Loaded> {
     if (slot) project.block(slot, describeFileError(e));
   }
   project.seen("workspace", snap.workspace?.version ?? null);
-  if (snap.workspace) written.set("workspace", JSON.stringify(snap.workspace.data));
+  if (snap.workspace) project.remember("workspace", JSON.stringify(snap.workspace.data));
   const canvases: Loaded["canvases"] = {};
   for (const [id, c] of Object.entries(snap.canvases)) {
     project.seen(`canvas:${id}`, c.version);
     project.seen(`threads:${id}`, c.threads?.version ?? null);
     const threads = threadsFromFile(c.threads?.data);
     canvases[id] = { elements: c.scene.elements ?? [], threads };
-    written.set(`canvas:${id}`, JSON.stringify(canvases[id].elements));
-    if (threads) written.set(`threads:${id}`, JSON.stringify(threadsToFile(threads)));
+    project.remember(`canvas:${id}`, JSON.stringify(canvases[id].elements));
+    if (threads) project.remember(`threads:${id}`, JSON.stringify(threadsToFile(threads)));
   }
   for (const [id, s] of Object.entries(snap.sessions)) project.seen(`session:${id}`, s.version);
   const folded = foldSessions(snap.sessions);
@@ -104,22 +133,17 @@ export async function connect(): Promise<Loaded> {
     sessions: folded.state,
     bindings: snap.bindings ?? {},
     imported,
+    change: snap.local?.change ?? null,
+    origins: snap.origins ?? {},
   };
 }
 
-function putIfChanged(slot: string, path: string, data: unknown, compare: string = JSON.stringify(data)) {
-  if (written.get(slot) === compare) return;
-  written.set(slot, compare);
-  void project.write(slot, { op: { kind: "put", path, data } });
-}
+/** The move / copy / clone notice was shown: the server forgets it. */
+export const ackChange = () => project.post("/local/ack", {}).catch(() => undefined);
 
+const putIfChanged = (slot: string, path: string, data: unknown, compare: string = JSON.stringify(data)) => void project.writeIfChanged(slot, compare, { kind: "put", path, data });
 /** Threads are merged on the server, not overwritten: share guests write the same file. */
-function mergeIfChanged(slot: string, path: string, data: unknown) {
-  const compare = JSON.stringify(data);
-  if (written.get(slot) === compare) return;
-  written.set(slot, compare);
-  void project.write(slot, { op: { kind: "merge", path, data } });
-}
+const mergeIfChanged = (slot: string, path: string, data: unknown) => void project.writeIfChanged(slot, JSON.stringify(data), { kind: "merge", path, data });
 
 /** Someone else's comments (share guests) arrive from the server as the merged file. */
 export function followProject(onShares?: () => void) {
@@ -132,7 +156,7 @@ export function followProject(onShares?: () => void) {
     const store = threadStores.get(ev.canvasId);
     const snap = threadsFromFile(ev.data);
     if (!store || !snap) return;
-    if (store.merge(snap)) written.set(`threads:${ev.canvasId}`, JSON.stringify(threadsToFile(store.snapshot())));
+    if (store.merge(snap)) project.remember(`threads:${ev.canvasId}`, JSON.stringify(threadsToFile(store.snapshot())));
     if (ev.version) project.seen(`threads:${ev.canvasId}`, ev.version);
   };
   return () => es.close();
@@ -197,8 +221,8 @@ export function discard(key: string) {
   pending.delete(key);
   if (!key.startsWith("canvas:")) return Promise.resolve();
   const id = key.slice("canvas:".length);
-  written.delete(`canvas:${id}`);
-  written.delete(`threads:${id}`);
+  project.forget(`canvas:${id}`);
+  project.forget(`threads:${id}`);
   return project.write(`canvas:${id}`, { op: { kind: "delete", path: `/canvases/${id}` } }).then(() => project.seen(`threads:${id}`, null));
 }
 
@@ -213,6 +237,7 @@ export function slotOfFile(file: string): string | undefined {
 /** One line for the banner: which file, what is wrong, where. */
 export function describeFileError(e: FileError): string {
   const where = e.line ? `第 ${e.line} 行` : "";
+  if (e.error === "unreadable") return `.agora/${e.file} 读不了（${e.detail ?? "没有权限"}）`;
   return e.error === "merge-conflict" ? `.agora/${e.file} 有合并冲突（${where || "冲突标记"}）` : `.agora/${e.file} 不是有效的 JSON${where ? `（${where}）` : ""}`;
 }
 

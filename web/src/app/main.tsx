@@ -24,6 +24,7 @@ async function boot(): Promise<Boot> {
   document.title = `${p.project.name} · Agora`;
   if (Object.keys(p.sessions.sessions).length) sessions.hydrate(p.sessions);
   agents.hydrateBindings(p.bindings);
+  agents.hydrateOrigins(p.origins);
   // This page executes `agora canvas …` edits and follows the agent sessions live.
   installBridge();
   connectAgents();
@@ -33,7 +34,7 @@ async function boot(): Promise<Boot> {
   // Every canvas on disk, listed or not: recovery mode (prepareBoot) rebuilds the list from them.
   const canvases: Boot["canvases"] = {};
   for (const [id, c] of Object.entries(p.canvases)) canvases[id] = { elements: c.elements, threads: c.threads ?? { threads: [], seq: 0 } };
-  return { workspace: workspace?.docs?.length ? workspace : undefined, canvases, project: p.project, empty: p.empty, errors: p.errors };
+  return { workspace: workspace?.docs?.length ? workspace : undefined, canvases, project: p.project, empty: p.empty, errors: p.errors, change: p.change };
 }
 
 function Offline({ error }: { error: unknown }) {

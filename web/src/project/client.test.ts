@@ -130,4 +130,24 @@ describe("project client", () => {
     expect(srv.calls).toEqual([]);
     expect(c.status().blocked).toEqual([{ slot: "workspace", reason: ".agora/workspace.json 有合并冲突（第 1 行）" }]);
   });
+
+  // Review P2-2: what the file holds only moves once the server took the write. Before, a refused
+  // save was remembered as written, so saving the same content again sent nothing.
+  it("writeIfChanged remembers a body only after the server took it", async () => {
+    const srv = fakeServer();
+    let refuse = true;
+    const fetchImpl = async (url: string, init: RequestInit) => (refuse ? new Response(JSON.stringify({ error: "保存失败：磁盘空间不足" }), { status: 507 }) : srv.fetchImpl(url, init));
+    const c = createClient({ fetchImpl });
+    c.seen("canvas:c1", null);
+    const op = { kind: "put" as const, path: "/canvases/c1", data: "a" };
+    await c.writeIfChanged("canvas:c1", "a", op);
+    expect(c.status().failed).toHaveLength(1);
+    refuse = false;
+    await c.retry();
+    await c.writeIfChanged("canvas:c1", "a", op); // not remembered from the refused try: goes out again
+    expect(srv.calls.filter((x) => x.method === "PUT")).toHaveLength(2);
+    await c.writeIfChanged("canvas:c1", "a", op); // now the server has it: nothing sent
+    expect(srv.calls.filter((x) => x.method === "PUT")).toHaveLength(2);
+  });
 });
+

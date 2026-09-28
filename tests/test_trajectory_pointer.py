@@ -152,7 +152,7 @@ async def test_hub_items_in_full_and_runner_usage(store, tmp_path, monkeypatch):
     log.write_text("\n".join(json.dumps(r) for r in CLAUDE) + "\n")
     from server.canvas.agents import LogLookup
 
-    monkeypatch.setattr("server.canvas.agents.locate_log", lambda kind, nid, root=None, home=None: LogLookup("found", log, (log,)) if nid else LogLookup("missing"))
+    monkeypatch.setattr("server.canvas.agents.locate_log", lambda kind, nid, root=None, home=None, hint=None: LogLookup("found", log, (log,)) if nid else LogLookup("missing"))
 
     class Costly(FakeBackend):
         async def run(self, req):

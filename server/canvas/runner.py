@@ -67,6 +67,10 @@ class ExecOptions:
     # ``session`` names a native session that has never run yet: the CLI may create it
     # (Claude ``--session-id``). Otherwise it must already exist (``--resume``).
     new_session: bool = False
+    # Continue another native session as a fork (a new native id with its full history): the
+    # session was copied along with the project, or its Pi log could not be moved.
+    fork_from: str | None = None
+    fork_path: str | None = None
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> ExecOptions:

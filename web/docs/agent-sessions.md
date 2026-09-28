@@ -16,7 +16,11 @@ Agora 里的一个会话，就是用户选定的原生 coding agent 的一个原
 | 已开始 | 绑定里的 `started`：原生日志第一次被找到、或一轮无头续接成功后置为 true（绑定时就带着 `nativeId` 的——撤销删除——直接是 true；没有这个字段的旧绑定按 true 算）。只有没开始过的会话会用 `--session-id` 新建；开始过的永远续接 |
 | 原生记录缺失 | 开始过的会话找不到原生日志（Claude 默认 30 天清理、换机器、`~/.claude` 被清），或找到多份不知跟哪份，或 Pi 的日志只在别的目录下（项目移动过）：发消息和「在终端打开」都返回 `409 {nativeMissing: true, native: {state, candidates, message}}`，不启动 CLI；面板把输入框换成说明（丢了什么、候选文件），只读保留已有轨迹，提供「开新会话」（同一块画布、同样的 agent 和模型，新的原生 id）。Agora 不会用同一个 id 静默新开对话 |
 | 对话记录 | 以 CLI 自己的会话日志为准（见 §4），不另存一份；`.agora/sessions/<id>.jsonl` 只记这个会话里的画布修改（每次 `agora canvas apply/anim` 一条 turn，带整批撤销数据） |
-| 删除 | 删除会话同时删绑定文件，关掉它的终端 pane（Agora 的 tmux 或 Seedmux）、停掉正在跑的无头续接；原生日志不删。撤销删除时用原来的 agent / 模型 / 强度 / 原生 id 重新绑定 |
+| 删除 | 删除会话同时删绑定文件，关掉它的终端 pane（Agora 的 tmux 或 Seedmux）、停掉正在跑的无头续接（之后才结束的那一轮不再写回原生 id、用量和状态）；原生日志不删。撤销删除时用原来的 agent / 模型 / 强度 / 原生 id 重新绑定：带着原生 id 的绑定是恢复，不再按当前的模型目录校验 |
+| 身份与恢复 | 绑定里另有 `natives`（这个会话用过的每个原生 id 和原因）、`log`（上次找到日志的路径）、`pendingFork`（下一次运行要从哪个原生会话分叉）。`nativeId` 只在记录在案的恢复流程里改：分叉（副本在这里继续、Pi 日志没能迁移）、以后的「带着摘要开新会话」。每次绑定和改绑都记进本机注册表（[项目存储 §1](project-storage.md#本机状态localagora-之外的注册表)） |
+| 移动之后 | Claude Code、Codex 按 id 全局续接，什么都不用做。Pi 只在当前目录的文件夹里找：`agora up` 发现项目移动过，就把 Pi 会话的日志挪到新目录（先写新文件再原子替换，首行 `cwd` 改成新路径，其余字节不动，旧文件改名为 `….jsonl.agora-moved.bak`）；终端里还开着的会话不动，提示关掉后重新 `up`；挪不了（目标已存在、只读）就标记为下一次分叉继续（`pi --fork <旧文件>`，新的原生 id，完整历史） |
+| 复制出来的项目 | `cp -r` 带过来的会话在副本里只读（原来那份还在用同一个原生会话）：面板把输入框换成「来自 A 的副本」，提供「在这里分叉继续」和「留给原来那份」（从副本里删掉它）。分叉后下一条消息用 `claude --resume <旧 id> --fork-session` / `pi --fork <旧日志>` 得到新的原生 id；Codex 没有无头分叉，只能「在终端打开」（`codex fork <旧 id>`），新的会话出现在这个项目里就自动接上。同一台机器上的另一份克隆或 worktree 里的会话（注册表知道它属于另一份）同样可以分叉 |
+| 来自另一台机器 | 清单里有 agent、本机既没有绑定、注册表也不知道：显示只读卡片（agent、主题、所属画布、模型、原生 id 前 8 位），**不显示 agent 选择器**；可以「在这里开新会话」（同一块画布、同样的 agent 和模型）。本机注册表里有它的绑定（`.agora/sessions/` 被 `git clean` 清掉了）时，卡片提供「恢复这个会话」，按原来的 agent、模型和原生 id 重新绑定 |
 
 会话面板只显示这一个 agent（名字就是 Pi / Claude Code / Codex，配各自的官方标志，来源与商标说明见 README「许可与致谢」；标志也用在选择 agent、tab、所有画布列表、进度指针标签、轨迹记录和评论线程里该会话的答复上）。所有位置都经过一个组件 `AgentAvatar`（`web/src/session/AgentAvatar.tsx`）：圆形底盘用主题 token（`--avatar-tile` 加 `--avatar-edge` 发丝线，亮色浅灰、暗色石墨），标志居中、不加阴影或光晕；Pi 与 Claude Code 是矢量（Pi 的单色徽标随主题取 `#111` / `#f6f6f6`），Codex 是 64/128px 两档位图按尺寸 × 设备像素比取用；尺寸 16（tab、行内）、26（评论线程里与人的头像并列）、32（会话头部）、40（选择卡片）：「对话 / 轨迹」两种视图（见 §7）、它改画布的卡片（撤销、在画布中高亮）、状态行（处理中 / 排队原因 / 出错）、「在终端打开」。来自终端的轮次带「终端」标记。头部显示这个会话累计的轮数、tokens、耗时和花费。没有 @ 提及、没有派发步骤。
 
@@ -34,7 +38,7 @@ Agora 里的一个会话，就是用户选定的原生 coding agent 的一个原
 | Pi | `pi -p --mode json --session-id <uuid> --model <provider/id> --thinking <level> --skill <repo>/skills/agora-canvas -- "<提示词>"` | `pi --session-id <uuid> --model … --models …（锁住 Ctrl+P 轮换）--thinking … --skill …` |
 | Codex | `codex exec --json --skip-git-repo-check [-m] [-c model_reasoning_effort="…"] -`（首轮）/ `codex exec resume <id> --json … -`，提示词走 stdin | `codex resume <id> -m … -c model_reasoning_effort=…`（还没有 id 时 `codex`，id 从新 rollout 认领） |
 
-日志定位（`agents.locate_log`）：先找**当前项目根**对应的位置（Claude `~/.claude/projects/<根路径非字母数字换成 ->/`，Pi `~/.pi/agent/sessions/--<根路径>--/`），它就是 CLI 续接时用的那份；不在那里时，Claude 只有一份就跟那份（`--resume` 全局查找），多份就报「找到多份」；Pi 只在别的目录下时报「在别的目录」（`--session-id` 在这里会新开空会话）。本项目那份之外还有同 id 的副本时，面板顶部提示一次，照常跟随本项目那份。
+日志定位（`agents.locate_log`）：先找**当前项目根**对应的位置（Claude `~/.claude/projects/<根路径非字母数字换成 ->/`，Pi `~/.pi/agent/sessions/--<根路径>--/`），它就是 CLI 续接时用的那份；不在那里时，Claude 只有一份就跟那份（`--resume` 全局查找），多份就报「找到多份」；Pi 只在别的目录下时报「在别的目录」（`--session-id` 在这里会新开空会话）。Codex 先按 rollout 文件名找，找不到再看绑定记下的路径和 Codex 自己的索引（`~/.codex/state_5.sqlite` 的 `threads.rollout_path`，只读打开），归档或存储迁移后照样找得到。本项目那份之外还有同 id 的副本时，面板顶部提示一次，照常跟随本项目那份。跟随中每 5 秒重新定位一次，日志换了位置（Pi 迁移、分叉）就换过去。
 
 Agora 发出的消息末尾有一行隐藏页脚：`[[agora]] 来自 Agora · 画布「…」(canvas=<画布 id> session=<Agora 会话 id> project=<项目 id 前 8 位>)。…`，面板里不显示；以后能按它把原生日志认回到 Agora 会话。
 
@@ -103,7 +107,7 @@ agora canvas schema ops|anim          # 精确 JSON Schema
 
 **终端**：「在终端打开」是一个下拉（按钮 + ▾），选 **Kitty** 或 **Seedmux**（按钮和菜单项用两个应用自己的图标，取自本机应用包，见 README「许可与致谢」），选择记在浏览器 `localStorage`（`agora.terminalApp`，默认 Kitty）。
 
-- **Kitty**：每个项目一个独立的 tmux 服务器 `tmux -L agora-<项目路径哈希>`，配置用 `.agora/run/tmux.conf`（不读 `~/.tmux.conf`），每个会话一个 tmux 会话 `agora-<会话 id>`，pane 里直接跑 §2 的交互式续接命令（不经 shell）：CLI 退出 = tmux 会话结束 = 不再持有。打开时创建或复用这个 pane，用 Kitty（`kitty --detach`）打开窗口，没有 Kitty 用 macOS Terminal（`osascript`），并在面板上给出 attach 命令（复制时带 `env -u TMUX`，在 tmux 或 Seedmux 的 pane 里也能直接运行）。
+- **Kitty**：每份项目一个独立的 tmux 服务器 `tmux -L agora-<实例 id 前 10 位>`（和路径无关，移动后照样找得到原来的 pane；旧版本用路径哈希，`agora down` 一并清掉），配置用 `.agora/run/tmux.conf`（不读 `~/.tmux.conf`），每个会话一个 tmux 会话 `agora-<会话 id>`，pane 里直接跑 §2 的交互式续接命令（不经 shell）：CLI 退出 = tmux 会话结束 = 不再持有。打开时创建或复用这个 pane，用 Kitty（`kitty --detach`）打开窗口，没有 Kitty 用 macOS Terminal（`osascript`），并在面板上给出 attach 命令（复制时带 `env -u TMUX`，在 tmux 或 Seedmux 的 pane 里也能直接运行）。
 - **Seedmux**（`server/canvas/seedmux.py`）：经 Seedmux **官方控制桥**新开一个 pane，CLI 直接跑在里面，不经 Agora 的 tmux。桥是 Seedmux 自带、在应用内文档（`Seedmux.app/Contents/Resources/team/references/operations.md`）里写明的本机 HTTP 接口：配置 `~/Library/Application Support/Seedmux/team-bridge.json`（`port`、`token`，可用 `SEEDMUX_TEAM_BRIDGE_PATH` 覆盖），请求头 `X-Token`；Agora 只调 `GET /panes`（探测可用）和 `POST /spawn {cwd, launch, focus, direction}`，这也是它的 `smx-team` CLI 开 pane 用的那个调用。不走 `smx-team spawn` 的派工流程（不写工单、不发信封）。Seedmux 把 `launch` 敲进新 pane 的登录 shell，Agora 给的是 `cd <项目> && exec env -u <嵌套标记> AGORA_*=… PATH=<Agora bin>:"$PATH" <§2 的交互式命令>`：`exec` 让 pane 就是这个 CLI，CLI 退出时 pane 自动消失；保留 pane 自己的 PATH（实测 Seedmux 不会把这种 pane 识别成 agent pane，岛上没有它的状态，不影响同步）。
   - 新 pane 由 Seedmux 放在**当前聚焦的标签页**旁边（它的放置规则；桥没有「新标签页」参数），`focus: true`。
   - 谁持有：`.agora/run/seedmux/<tmux 名>.json` 记 `{paneId, at, socket}`。Seedmux 的每个 pane 是它自己 tmux 服务器（`~/.seedmux/tmux.sock`）上的会话 `smx-<paneId>`；Agora 之后**只**对这一个会话做：看它是否还在跑（`pane_current_command` 不是 shell；刚开的 20 秒内是 shell 也算启动中）、读它客户端的最后按键时间、往里 bracketed paste + Enter、「关闭终端」时 `kill-session` 它。用户已有的 pane 和会话一概不读不写。
@@ -132,6 +136,7 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 | PUT | `/sessions/{id}` | 绑定 `{agent, model, effort, nativeId?}`；不同选择 409 |
 | GET | `/sessions/{id}` | 状态（绑定、运行、排队、终端） |
 | POST | `/sessions/{id}/send` | `{text, canvasId?, context?}` → `{sendId, route: terminal\|headless}` |
+| POST | `/sessions/{id}/fork` | `{source?}`：在这里分叉继续（副本带来的会话；或带着 `source` 的、另一份副本的会话）→ 绑定带 `pendingFork` |
 | POST | `/sessions/{id}/interrupt` | 停止当前无头一轮并清空排队 |
 | POST / DELETE | `/sessions/{id}/terminal` | 打开（`{launch, app: kitty\|seedmux}`）/ 关闭终端；状态里的 `terminal.app` 是 `tmux` 或 `seedmux`（带 `paneId`） |
 | GET | `/terminals` | 能在哪儿打开：`{kitty, seedmux: {available, reason?}}` |

@@ -16,10 +16,29 @@
   sessions/<id>.agent.json 会话绑定的 agent / 模型 / 强度 / 原生 id  不提交
   run/                     server.json（pid、端口、URL）、日志、锁、usage/（无头续接的用量）  不提交
   shares/shares.json       分享记录（令牌只存哈希，见 [分享](sharing.md)），目录自带 `*` 的 .gitignore  不提交
-  .gitignore               由 agora 生成：sessions/ run/ shares/ *.tmp *.lock
+  local/instance.json      这份副本的身份（实例 id、根路径、inode）与待提示的变化，见下文      不提交
+  local/copies.json        `cp -r` 带过来、在这里只读的会话                                 不提交
+  .gitignore               由 agora 生成：sessions/ run/ shares/ local/ trash/ *.tmp *.lock
 ```
 
-`.gitignore` 只在不存在时生成，之后归用户管；想提交会话记录就删掉 `sessions/` 那一行。
+`.gitignore` 只在不存在时生成，之后归用户管；想提交会话记录就删掉 `sessions/` 那一行。`shares/`、`local/`、`trash/` 各自带一个内容为 `*` 的 `.gitignore`，所以在 `.gitignore` 早于它们的旧项目里也不会被提交。
+
+### 本机状态：`local/`、`.agora` 之外的注册表
+
+`config.toml` 的 `project.id` 表示「同一个项目」，所有克隆共用；**实例 id**（`local/instance.json`：`{instanceId, projectId, root, dev, ino, createdAt}`）表示「这台机器上的这一份副本」。按副本区分的名字都用它：tmux 服务器 `agora-<实例 id 前 10 位>`、分享隧道 `agora-share-<项目 id 前 8 位>-<实例 id 前 6 位>`、服务锁与记录 `$AGORA_STATE_DIR/servers/<实例 id>.{lock,json}`。移动之后这些名字不变；两份副本互不相干。
+
+**本机注册表** `$AGORA_STATE_DIR/registry.jsonl`（默认 `~/.local/state/agora/`）：机器上所有项目共用一个文件，只追加，每行一个事件（`instance`、`root`、`copy`、`bind`、`rebind`、`import`，阶段 2 起还有 `trash`、`restore`、`purge`），只有 id、路径、agent、模型、画布 id 和主题，**没有对话内容**。它不怕 `git clean -fdx`、仓库被删或被移动：找回会话的绑定、认出另一份副本的会话、`agora down` 清理这个实例用过的旧 socket，都靠它。读的时候跳过坏行，写的时候加文件锁。
+
+**`agora up` 和服务启动时先对一次账**（`server/canvas/local.py` 的 `reconcile`），比较项目现在的位置和 `instance.json` 记下的位置：
+
+| 现象 | 判断 | 处理 |
+|---|---|---|
+| 记下的就是这里 | 没变 | 同一路径换了目录（inode 变了）只更新记录 |
+| 路径变了，旧路径上没有同一个实例 | **移动** | 实例 id 不变；注册表记 `root`；Pi 会话的日志移到新目录并改首行 `cwd`（见 [Agent 会话 §1](agent-sessions.md#1-会话模型)），终端里还开着的不动；Claude、Codex 什么都不用做 |
+| 路径变了，旧路径上还有同一个实例 | **复制**（`cp -r`） | 这一份换新的实例 id；带过来的已绑定会话记进 `copies.json`，在这里只读，直到「在这里分叉继续」（两份项目不会续接同一个原生会话） |
+| 没有 `instance.json` | 新项目、新 clone、另一台机器，或 `git clean -fdx` | 注册表里有「最后在这个路径」的实例就沿用它（`git clean` 之后身份不变），否则新建 |
+
+结果（移动 / 复制 / 新 clone）存在 `instance.json` 的 `change` 里，`agora up` 打印一段说明，页面顶部提示一次，点「知道了」后清掉（`POST /api/project/local/ack`）。
 
 ### config.toml
 
@@ -103,9 +122,18 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
 
 ### workspace.json
 
-`{ "v": 2, "docs": [...], "root": <分屏树>, "focused": "<doc id>" }`，语义见 [工作区交互模型](workspace-model.md)：docs 列出所有画布和会话（含已关闭，带名字），root 是分组、tab 和分屏比例。只有服务端说项目是空的（`snapshot.empty`：没有 workspace.json，也没有任何画布文件）时，首次打开才建示例画布和它的会话，而且写示例画布时 `base: null`，文件已经存在就 409，绝不覆盖。workspace.json 缺失、为空或读不了、但 `canvases/` 里有文件时进入**恢复模式**：按磁盘上的画布（名字「已恢复画布 <id>」）和会话记录重建列表，页面顶部说明一次。清单里有、但 `sessions/<id>.jsonl` 不在的会话（`git clean -fdx`、重新 clone 后）显示在「未关联画布」下，不替它编一个画布、也不写盘，直到用户选了画布或 agent。
+`{ "v": 2, "docs": [...], "root": <分屏树>, "focused": "<doc id>" }`，语义见 [工作区交互模型](workspace-model.md)：docs 列出所有画布和会话（含已关闭，带名字），root 是分组、tab 和分屏比例。
 
-读不了的文件（git 合并冲突、无效 JSON）不会让整个 snapshot 失败：`snapshot.errors` 逐个列出 `{file, error: "merge-conflict" | "invalid-json", line}`，其余照常返回；页面说明是哪个文件第几行，并且不写这个文件，直到解决后刷新。
+会话条目带着会话的身份，随 git 走（没有任何对话内容）：
+
+```json
+{ "id": "p-s-…", "kind": "session", "sessionId": "s-…", "title": "", "topic": "加 Kafka",
+  "canvasId": "c2", "agent": "claude", "model": "haiku", "effort": "", "nativeId": "…uuid…", "createdAt": 1790573159939, "started": true }
+```
+
+页面保存工作区时从会话记录和绑定填进去（绑定、关联画布变了就跟着变）；`sessions/` 仍是本机的权威。新 clone、换机器或 `git clean -fdx` 之后：会话仍挂在原来的画布下，名字仍是「Claude Code · 加 Kafka」，不会被当成空白的新会话，也不会显示 agent 选择器，而是按情况显示成卡片（`snapshot.origins`，见 [Agent 会话 §1](agent-sessions.md#1-会话模型)）。只有服务端说项目是空的（`snapshot.empty`：没有 workspace.json，也没有任何画布文件）时，首次打开才建示例画布和它的会话，而且写示例画布时 `base: null`，文件已经存在就 409，绝不覆盖。workspace.json 缺失、为空或读不了、但 `canvases/` 里有文件时进入**恢复模式**：按磁盘上的画布（名字「已恢复画布 <id>」）和会话记录重建列表，页面顶部说明一次。清单里有、但 `sessions/<id>.jsonl` 不在的会话（`git clean -fdx`、重新 clone 后）挂在条目记下的画布下（旧条目没有 `canvasId` 的显示在「未关联画布」下），不写盘，直到这个会话里发生了什么（选了画布、恢复、分叉、开始一轮）。
+
+读不了的文件（git 合并冲突、无效 JSON、没有读权限）不会让整个 snapshot 失败：`snapshot.errors` 逐个列出 `{file, error: "merge-conflict" | "invalid-json" | "unreadable", line}`，其余照常返回；页面说明是哪个文件第几行，并且不写这个文件，直到解决后刷新。workspace.json 缺失而磁盘上唯一的画布读不了时，也算「不是首次运行」：恢复模式把它列出来（「已恢复画布 c7（文件读不了）」），不写示例。
 
 ## 2. 写入：原子 + 版本
 
@@ -122,9 +150,10 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `` | 项目信息：id、name、root、config、me、empty |
+| GET | `` | 项目信息：id、name、root、config、me、empty、instanceId |
 | GET | `/health` | `{ok, root, pid}`，`agora up` 用来确认端口上是不是这个项目 |
-| GET | `/snapshot` | 全部内容与版本：workspace、canvases（scene + threads）、sessions（折叠后） |
+| GET | `/snapshot` | 全部内容与版本：workspace、canvases（scene + threads）、sessions（折叠后）、bindings、errors、`local`（实例 id 与待提示的变化）、`origins`（不能直接续接的会话） |
+| POST | `/local/ack` | 页面已经提示过移动 / 复制 / 新 clone，清掉 |
 | PUT | `/workspace`、`/canvases/{id}`、`/threads/{id}` | `{data, base, force?}` → `{version}` 或 409 |
 | POST | `/threads/{id}/merge` | `{data}` → `{version, data}`：按 id 合并进磁盘上的线程文件，从不 409。页面保存线程走这个（分享访客会同时写同一个文件，见 [分享 §4](sharing.md#4-两方同时写评论按操作合并)） |
 | GET | `/events` | SSE：`threads`（别人写入后的整份线程文件与版本）、`shares`（分享列表变了） |
@@ -149,8 +178,9 @@ path/to/agora/bin/agora init               # 只建 .agora/
 - `bin/agora` 包一层 `uv run --project <agora 仓库>`，当前目录保持为项目目录；也可以 `PYTHONPATH=<仓库> uv run --project <仓库> python -m agora_cli up`。
 - 默认服务构建好的 `web/dist`（先 `cd web && npm run build`）。`--dev` 另起 vite（热更新）代理到本项目后端，页面地址是 vite 的；`--web-port` 指定 vite 端口。
 - 同一项目重复 `up` 复用在跑的实例（按 `run/server.json` 的 pid + `/health` 的项目根确认）；两个 `up` 同时进来由 `run/up.lock` 串行。进程崩溃留下的旧记录会被清掉重启。
-- 服务进程另在项目外持有一把锁并留一份记录：`$AGORA_STATE_DIR/servers/<项目根路径的 sha1 前 16 位>.{lock,json}`（默认 `~/.local/state/agora`）。`run/` 丢了（`git clean -fdx`）时，`up` 从这份记录找到还在跑的服务并写回 `run/server.json`，不会起第二个；记录也没了时，第二个 `serve` 拿不到锁直接退出。`down` 同样按这份记录停掉服务，并关掉这个项目的 tmux 服务器。
-- 服务运行中项目目录被移走、改名或删除（按路径和 inode 判断）：所有写入返回 `410 {gone: true}`，不会在旧路径上重新长出 `.agora/`；页面提示在新位置运行 `agora up`，没保存的改动留在页面里。其他写入失败（磁盘满、没权限、只读）返回 `{error, file}`（500 / 507），页面显示「保存失败」和原因，保留改动，可以重试。
+- `up` 先对账（上面的表）：移动、复制、新 clone 各打印一段说明。
+- 服务进程另在项目外持有一把锁并留一份记录：`$AGORA_STATE_DIR/servers/<实例 id>.{lock,json}`（默认 `~/.local/state/agora`；旧版本按根路径哈希命名的记录照样认）。锁文件里写着服务的 pid。`run/` 丢了（`git clean -fdx`）时，`up` 从这份记录找到还在跑的服务并写回 `run/server.json`，不会起第二个；记录也没了时，第二个 `serve` 拿不到锁直接退出。`down` 同样按这份记录停掉服务；服务卡住不应答、`run/` 和记录都没了时，按锁文件里的 pid 找到它，确认命令行是 `agora_cli serve --project <这个项目>` 再停。`down` 还会关掉这个实例的 tmux 服务器、它开过的 Seedmux pane（持有记录在 `$AGORA_STATE_DIR/seedmux/` 另有一份，`run/` 丢了也找得到），以及旧版本按路径哈希命名、这个实例在以前的位置用过的 tmux 服务器。
+- 服务运行中项目目录被移走、改名或删除：比较 inode（设备号变了但 inode 相同、`config.toml` 里的项目 id 也相同时算重新挂载，不算移走），所有写入返回 `410 {gone: true}`，不会在旧路径上重新长出 `.agora/`；页面提示在新位置运行 `agora up`，没保存的改动留在页面里，可以「下载为 .excalidraw」。只删了 `.agora/`、项目目录还在时单独说明（「.agora 被删除了」）。`/health` 带着 `gone`：`up` 不会复用这样的服务；项目移走后在新位置 `up`，会先停掉留在旧路径上的那个。其他写入失败（磁盘满、没权限、只读）返回 `{error, file}`（500 / 507），页面显示「保存失败」和原因，保留改动，可以重试或下载；页面只在服务端确认写入之后才记下「这个文件已经是这些内容」。
 - 只监听 `127.0.0.1`。
 
 ## 5. 从浏览器旧数据迁移

@@ -4,13 +4,28 @@
 // the transcript read from the CLI's own log, and live status — and sends messages.
 // Canvas bridge requests from `agora canvas …` are executed by ./agentBridge.ts.
 import { useSyncExternalStore } from "react";
+import type { Origin } from "../persist";
 
 export type AgentKind = "pi" | "claude" | "codex";
 export const AGENT_NAMES: Record<AgentKind, string> = { pi: "Pi", claude: "Claude Code", codex: "Codex" };
 export const AGENT_KINDS: AgentKind[] = ["pi", "claude", "codex"];
 
-/** `started`: the native session exists (it ran once); from then on it is only ever resumed. */
-export type Binding = { agent: AgentKind; model: string; effort: string; nativeId: string | null; createdAt: number; started?: boolean };
+/**
+ * `started`: the native session exists (it ran once); from then on it is only ever resumed.
+ * `pendingFork`: the next run continues `from` as a fork (a new native id with its history) — a
+ * session copied along with the project, or a Pi log that could not be moved. `natives`: every
+ * native id the session has had (a fork or a fresh start after a lost log adds one).
+ */
+export type Binding = {
+  agent: AgentKind;
+  model: string;
+  effort: string;
+  nativeId: string | null;
+  createdAt: number;
+  started?: boolean;
+  pendingFork?: { from: string; path?: string | null; reason?: string; at?: number } | null;
+  natives?: { id: string; at: number; reason: string }[];
+};
 export type FileOp = "edit" | "write" | "add" | "delete";
 /** One model request's accounting (server/canvas/transcript.py `_usage`, runner `Usage`). */
 export type Usage = {
@@ -60,6 +75,8 @@ export type Item = {
 export type NativeProblem = { state: "missing" | "ambiguous" | "elsewhere" | "duplicates"; blocking: boolean; nativeId: string; candidates: string[]; message: string };
 export type Status = {
   native?: NativeProblem | null;
+  /** Brought along by `cp -r` of the project: read-only here until forked. */
+  copy?: { from: string; fromInstance: string; at: number } | null;
   running: boolean;
   busy: boolean;
   queued: number;
@@ -115,6 +132,8 @@ export type Inflight = { sendId: string; sessionId: string; canvasId: string; th
 type State = {
   connected: boolean;
   bindings: Record<string, Binding>;
+  /** Listed sessions that cannot simply be resumed here (copied, recoverable, another copy's, another machine's). */
+  origins: Record<string, Origin>;
   items: Record<string, Item[]>;
   status: Record<string, Status>;
   /** Last time something happened in a session (picks the canvas's session for comments). */
@@ -122,7 +141,7 @@ type State = {
   inflight: Record<string, Inflight>;
 };
 
-let state: State = { connected: false, bindings: {}, items: {}, status: {}, activeAt: {}, inflight: {} };
+let state: State = { connected: false, bindings: {}, origins: {}, items: {}, status: {}, activeAt: {}, inflight: {} };
 const listeners = new Set<() => void>();
 const set = (patch: Partial<State>) => {
   state = { ...state, ...patch };
@@ -207,6 +226,26 @@ export const agents = {
   get: () => state,
   subscribe: (l: () => void) => (listeners.add(l), () => void listeners.delete(l)),
   hydrateBindings: (b: Record<string, Binding>) => set({ bindings: { ...state.bindings, ...b } }),
+  hydrateOrigins: (o: Record<string, Origin>) => set({ origins: o }),
+  /** The session went to the trash: its binding, status and transcript leave this page (the pointer moves on). */
+  forget(sessionId: string) {
+    const drop = <T,>(r: Record<string, T>) => Object.fromEntries(Object.entries(r).filter(([k]) => k !== sessionId));
+    set({ bindings: drop(state.bindings), status: drop(state.status), items: drop(state.items), activeAt: drop(state.activeAt), inflight: drop(state.inflight), origins: drop(state.origins) });
+  },
+
+  /**
+   * Continue here as a fork of the session's native session: one this copy of the project brought
+   * along, or (with `source`) one another copy on this machine owns. The next message — or the
+   * terminal — creates the new native id with the full history.
+   */
+  async fork(sessionId: string, source?: Origin): Promise<Binding> {
+    const b = (await json(
+      await fetch(`/api/agent/sessions/${sessionId}/fork`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: source ?? null }) }),
+    )) as Binding;
+    const { [sessionId]: _, ...origins } = state.origins;
+    set({ bindings: { ...state.bindings, [sessionId]: b }, origins });
+    return b;
+  },
   catalog: () => (catalogP ??= fetch("/api/agent/catalog").then(json) as Promise<Catalog>),
 
   /** Fix the session's agent, model and effort (once; the server refuses a different choice). */
@@ -214,7 +253,8 @@ export const agents = {
     const b = (await json(
       await fetch(`/api/agent/sessions/${sessionId}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ agent, model, effort, nativeId: nativeId ?? null, started: started ?? null }) }),
     )) as Binding;
-    set({ bindings: { ...state.bindings, [sessionId]: b }, activeAt: { ...state.activeAt, [sessionId]: Date.now() } });
+    const { [sessionId]: _, ...origins } = state.origins;
+    set({ bindings: { ...state.bindings, [sessionId]: b }, origins, activeAt: { ...state.activeAt, [sessionId]: Date.now() } });
     return b;
   },
 

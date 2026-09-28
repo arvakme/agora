@@ -7,7 +7,7 @@ import { replayEval, runEval, TASKS, type EvalProgress, type EvalRow } from "../
 import { buildFixture } from "../eval/fixture";
 import { IconClose, IconCols, IconComment, IconGrid, IconHint, IconLayers, IconList, IconPlus, IconPointer, IconRows, IconSelect, IconSingle, IconTrash, IconWorkspace } from "./icons";
 import { ThemeButton } from "./ThemeButton";
-import { discard, PERSIST, project, reloadFromDisk, save, slotFile } from "../persist";
+import { ackChange, discard, PERSIST, project, reloadFromDisk, save, slotFile, type LocalChange } from "../persist";
 import { byId, type El } from "../canvas/scene";
 import { SessionPane } from "../session/SessionPane";
 import { sessions, type Session, type Turn } from "../session/store";
@@ -52,8 +52,19 @@ export { prepareBoot, type Boot, type WorkspaceState } from "./boot";
 
 const uid = (p: string) => `${p}-${Math.random().toString(36).slice(2, 8)}`;
 
-/** Bound agents as a stable string, so the shell re-renders when a binding appears, not on every status event. */
-const bindingKey = () => Object.entries(agents.get().bindings).map(([id, b]) => `${id}:${b.agent}`).join(",");
+/** Bound agents as a stable string, so the shell re-renders when a binding appears or changes identity, not on every status event. */
+const bindingKey = () => Object.entries(agents.get().bindings).map(([id, b]) => `${id}:${b.agent}:${b.nativeId ?? ""}:${b.started ? 1 : 0}`).join(",");
+/** What workspace.json records about a session (no conversation content): its canvas and its binding. */
+const sessionMeta = (sessionId: string) => {
+  const s = sessions.get().sessions[sessionId];
+  const b = agents.get().bindings[sessionId];
+  if (!s && !b) return undefined;
+  return {
+    canvasId: s?.canvasId || undefined,
+    createdAt: s?.createdAt,
+    ...(b ? { agent: b.agent, model: b.model || undefined, effort: b.effort || undefined, nativeId: b.nativeId ?? undefined, started: b.started } : {}),
+  };
+};
 /** What one delete removed, kept in memory for a single undo. */
 type Removed =
   | { kind: "canvas"; doc: CanvasDoc; index: number; at: { groupId: string; index: number } | null; elements: readonly El[]; store?: ThreadStore }
@@ -76,6 +87,7 @@ export function App({ boot }: { boot: Boot }) {
   const [listOpen, setListOpen] = useState<{ confirm?: string } | null>(null);
   const [removed, setRemoved] = useState<Removed | null>(null);
   const [recoveredNote, setRecoveredNote] = useState(boot.recovered);
+  const [change, setChange] = useState<LocalChange | null | undefined>(boot.change);
   const [evalProgress, setEvalProgress] = useState<EvalProgress | null>(null);
   const handles = useRef(new Map<string, CanvasHandle>());
   const [, bump] = useState(0);
@@ -118,7 +130,10 @@ export function App({ boot }: { boot: Boot }) {
   const bindings = agents.get().bindings;
   const names: Record<string, string> = {
     ...Object.fromEntries(docs.map((d) => [d.id, d.title])),
-    ...sessionTitles(docs, (sid) => ({ agent: bindings[sid] && AGENT_NAMES[bindings[sid].agent] })),
+    ...sessionTitles(docs, (sid, d) => {
+      const kind = bindings[sid]?.agent ?? d.agent;
+      return { agent: kind && AGENT_NAMES[kind] };
+    }),
   };
   const isDraftDoc = (d: Doc | undefined) => d?.kind === "session" && sessions.isDraft(d.sessionId);
 
@@ -127,11 +142,17 @@ export function App({ boot }: { boot: Boot }) {
     const d = docs.find((x) => x.id === focused);
     if (d?.kind === "session") pointerFollow.set(d.sessionId);
   }, [focused, docs]);
-  // Persist the workspace shape (drafts left out); sessions persist themselves on every change.
+  // Persist the workspace shape (drafts left out) with each session's identity (canvas, agent,
+  // native id); sessions persist their records themselves on every change.
   const [committed, setCommitted] = useState(0);
+  const saveWorkspace = () => PERSIST && save("workspace", () => savedWorkspace({ docs: docsRef.current, root: rootRef.current, focused: focusedRef.current }, sessions.isDraft, sessionMeta));
   useEffect(() => {
-    if (PERSIST) save("workspace", () => savedWorkspace({ docs, root, focused }, sessions.isDraft));
+    if (PERSIST) save("workspace", () => savedWorkspace({ docs, root, focused }, sessions.isDraft, sessionMeta));
   }, [docs, root, focused, committed]);
+  // A binding or a canvas link changed: the entry's identity follows (unchanged content writes nothing).
+  const identityKey = useSyncExternalStore(sessions.subscribe, () => Object.values(sessions.get().sessions).map((s) => `${s.id}:${s.canvasId}`).join(","));
+  const boundKey = useSyncExternalStore(agents.subscribe, bindingKey);
+  useEffect(() => void saveWorkspace(), [identityKey, boundKey]);
   useEffect(() => {
     if (!PERSIST) return;
     save("sessions", sessions.persisted); // the first-run session is created before this subscription
@@ -402,6 +423,10 @@ export function App({ boot }: { boot: Boot }) {
       ui.openSession(s.id);
       return wait;
     };
+    ui.trashSession = (sessionId) => {
+      const doc = docsRef.current.find((d) => d.kind === "session" && d.sessionId === sessionId);
+      if (doc) setListOpen({ confirm: doc.id });
+    };
     ui.openSession = (sessionId, turnId) => {
       const session = sessions.get().sessions[sessionId];
       if (!session) return; // deleted
@@ -508,7 +533,8 @@ export function App({ boot }: { boot: Boot }) {
           <button className="btn quiet new-session" onClick={() => addSession()} title="新建会话：关联当前画布"><IconPlus size={16} /><span className="btn-label">新建会话</span></button>
           <button className="btn primary" onClick={() => addCanvas()} title="新建画布"><IconPlus size={16} /><span className="btn-label">新建画布</span></button>
         </header>
-        <SaveBanner docTitle={(id) => names[id]} />
+        <SaveBanner docTitle={(id) => names[id]} scene={(id) => scenes.current.get(id)} />
+        {change && <ChangeBanner change={change} onDismiss={() => (setChange(null), void ackChange())} />}
         {recoveredNote && (
           <div className="notice save-banner" role="status" data-tone="caution">
             <IconHint size={16} />
@@ -527,7 +553,7 @@ export function App({ boot }: { boot: Boot }) {
           titles={names}
           subtitles={Object.fromEntries(docs.flatMap((d) => (d.kind === "session" ? [[d.id, sessionSubtitle(d)]] : [])))}
           kinds={Object.fromEntries(docs.map((d) => [d.id, d.kind]))}
-          marks={Object.fromEntries(docs.flatMap((d) => (d.kind === "session" ? [[d.id, <SessionMark key={d.id} sessionId={d.sessionId} />]] : [])))}
+          marks={Object.fromEntries(docs.flatMap((d) => (d.kind === "session" ? [[d.id, <SessionMark key={d.id} sessionId={d.sessionId} fallback={d.agent} />]] : [])))}
           focused={focused}
           onFocus={focus}
           onNew={onNew}
@@ -655,8 +681,11 @@ function Dock({ at, mode, setMode, selCount, drawerOpen, toggleDrawer, store, on
  * refused (disk full, permissions…), a file changed on disk since this page loaded it, a file on
  * disk that cannot be read (not written from here), or the project server is unreachable.
  */
-function SaveBanner({ docTitle }: { docTitle: (id: string) => string | undefined }) {
+function SaveBanner({ docTitle, scene }: { docTitle: (id: string) => string | undefined; scene: (id: string) => readonly El[] | undefined }) {
   const st = useSyncExternalStore(project.subscribe, project.status);
+  // The canvases whose unsaved state lives only in this page: download them before anything else.
+  const unsaved = [...new Set(st.failed.map((f) => f.slot.split(":")).filter(([k]) => k === "canvas" || k === "threads").map(([, id]) => id))];
+  const download = (ids: string[]) => ids.forEach((id) => downloadScene(docTitle(id) ?? id, scene(id) ?? []));
   const gone = st.failed.find((f) => f.gone);
   if (gone)
     return (
@@ -664,6 +693,7 @@ function SaveBanner({ docTitle }: { docTitle: (id: string) => string | undefined
         <IconHint size={16} />
         <b>项目目录不在了</b>
         <span>{gone.message}</span>
+        {unsaved.length > 0 && <button className="btn sm quiet" onClick={() => download(unsaved)}>下载为 .excalidraw{unsaved.length > 1 ? `（${unsaved.length} 块）` : ""}</button>}
         <button className="btn sm ghost" onClick={() => void project.retry()}>重试</button>
       </div>
     );
@@ -678,6 +708,7 @@ function SaveBanner({ docTitle }: { docTitle: (id: string) => string | undefined
           {failed.message.replace(/^保存失败：/, "")}
           {st.failed.length > 1 ? `（另有 ${st.failed.length - 1} 个文件）` : ""} · <code>.agora/{file}</code> · 改动还在这个页面里
         </span>
+        {unsaved.length > 0 && <button className="btn sm ghost" onClick={() => download(unsaved)}>下载为 .excalidraw</button>}
         <button className="btn sm quiet" onClick={() => void project.retry()}>重试</button>
       </div>
     );
@@ -716,4 +747,43 @@ function SaveBanner({ docTitle }: { docTitle: (id: string) => string | undefined
       </div>
     );
   return null;
+}
+
+/** Save a canvas as it is in this page as an .excalidraw file (opens on excalidraw.com as-is). */
+function downloadScene(title: string, elements: readonly El[]) {
+  const file = { type: "excalidraw", version: 2, source: "agora", elements: elements.filter((e) => !e.isDeleted), appState: { viewBackgroundColor: "#ffffff", gridSize: null }, files: {} };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(file, null, 2)], { type: "application/json" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: `${title.replace(/[\\/:*?"<>|]/g, "_") || "canvas"}.excalidraw` });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * What happened to this copy of the project since the page last looked (server/canvas/local.py):
+ * moved (Pi logs moved along), copied (sessions read-only until forked), a fresh clone or another
+ * machine (sessions shown as read-only cards). Shown once; 知道了 tells the server.
+ */
+function ChangeBanner({ change, onDismiss }: { change: LocalChange; onDismiss: () => void }) {
+  const failed = change.failed ?? [];
+  const [title, text] =
+    change.kind === "moved"
+      ? [
+          "项目移动过",
+          `从 ${change.from} 移到了这里。Claude Code 和 Codex 的会话照常续接${change.migrated?.length ? `；${change.migrated.length} 个 Pi 会话的日志已迁到新目录（旧文件留了 .agora-moved.bak）` : ""}${failed.length ? `；${failed.length} 个 Pi 会话没迁移：${failed.map((f) => f.error).join("；")}` : ""}。`,
+        ]
+      : change.kind === "copied"
+        ? ["这是一份副本", `从 ${change.from} 复制而来：带过来的 ${change.sessions?.length ?? 0} 个会话在这里只读（原来那份还在用它们），可以在会话里「在这里分叉继续」。`]
+        : change.kind === "fresh"
+          ? ["会话不在这台机器上", "这份项目是新 clone、换了机器或本机记录被清掉了：带着的会话显示为只读卡片，能在本机找回的会给出「恢复」。"]
+          : ["已认回这份项目", "本机记录（.agora/local）不见了，已按本机注册表认回；会话绑定可以在会话里恢复，或运行 agora doctor。"];
+  return (
+    <div className="notice save-banner" role="status" data-tone={failed.length ? "caution" : undefined}>
+      <IconHint size={16} />
+      <b>{title}</b>
+      <span>{text}</span>
+      <button className="btn sm ghost" onClick={onDismiss}>知道了</button>
+    </div>
+  );
 }

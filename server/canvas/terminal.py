@@ -1,7 +1,8 @@
 """Terminal panes for sessions: Agora's own tmux server, one tmux session per Agora session.
 
-Isolation: every project gets its own tmux server (``tmux -L agora-<hash>``, config
-``.agora/run/tmux.conf`` instead of the user's ``~/.tmux.conf``), so nothing here can
+Isolation: every copy of a project gets its own tmux server (``tmux -L agora-<instance id>``,
+see local.py; builds before instance ids used a hash of the path), config
+``.agora/run/tmux.conf`` instead of the user's ``~/.tmux.conf``, so nothing here can
 see or touch the user's own tmux sessions. The pane runs the agent CLI directly (no
 shell): the tmux session exists exactly as long as the CLI holds the native session.
 
@@ -11,7 +12,9 @@ attached client) lets the caller hold a delivery while someone is typing.
 
 The pane can instead live in Seedmux (``seedmux.py``): then the agent CLI runs directly in a
 Seedmux pane Agora asked for, and the same operations address that pane on Seedmux's tmux
-server. Which one holds a session is recorded in ``.agora/run/seedmux/<session>.json``.
+server. Which one holds a session is recorded in ``.agora/run/seedmux/<session>.json``, mirrored
+under ``$AGORA_STATE_DIR/seedmux/<socket>/`` so ``agora down`` still closes those panes after
+``.agora/run/`` was lost (``git clean -fdx``).
 """
 
 from __future__ import annotations
@@ -47,30 +50,42 @@ class TerminalError(RuntimeError):
 
 
 class Terminals:
-    def __init__(self, root: Path, run_dir: Path, tmux: str | None = None, seedmux: Seedmux | None = None) -> None:
+    def __init__(self, root: Path, run_dir: Path, tmux: str | None = None, seedmux: Seedmux | None = None, socket: str | None = None) -> None:
         self.root = root
         self.run_dir = run_dir
         self.tmux = tmux or shutil.which("tmux") or "tmux"
-        self.socket = f"agora-{hashlib.sha1(str(root).encode()).hexdigest()[:10]}"
+        # The instance's socket (stable across a move); the path hash only when there is no instance.
+        self.socket = socket or f"agora-{hashlib.sha1(str(root).encode()).hexdigest()[:10]}"
         self.conf = run_dir / "tmux.conf"
         self.smx = seedmux or Seedmux.default()
+        from server.canvas.local import state_dir
+
+        self.mirror = state_dir() / "seedmux" / self.socket
 
     # ——— Seedmux holder record ———
     def _smx_file(self, session_id: str) -> Path:
         return self.run_dir / "seedmux" / f"{self.name(session_id)}.json"
 
+    def _smx_files(self, session_id: str) -> list[Path]:
+        return [self._smx_file(session_id), self.mirror / self._smx_file(session_id).name]
+
     def seedmux_pane(self, session_id: str) -> str | None:
         """The Seedmux pane that holds this session, while it still runs (else the record is dropped)."""
-        f = self._smx_file(session_id)
-        try:
-            rec = json.loads(f.read_text())
-        except (OSError, ValueError):
+        rec = None
+        for f in self._smx_files(session_id):
+            try:
+                rec = json.loads(f.read_text())
+                break
+            except (OSError, ValueError):
+                continue
+        if rec is None:
             return None
         pane = rec.get("paneId")
         st = self.smx.state(pane) if isinstance(pane, str) else "gone"
         if st == "running" or (st == "starting" and time.time() - float(rec.get("at", 0)) < START_GRACE_S):
             return pane
-        f.unlink(missing_ok=True)
+        for f in self._smx_files(session_id):
+            f.unlink(missing_ok=True)
         return None
 
     def holder(self, session_id: str) -> dict | None:
@@ -187,7 +202,8 @@ class Terminals:
     def kill(self, session_id: str) -> None:
         if pane := self.seedmux_pane(session_id):
             self.smx.kill(pane)
-            self._smx_file(session_id).unlink(missing_ok=True)
+            for f in self._smx_files(session_id):
+                f.unlink(missing_ok=True)
         self._run("kill-session", "-t", f"={self.name(session_id)}", check=False)
         self._drop_dead_socket()
 
@@ -196,9 +212,24 @@ class Terminals:
         self._run("kill-server", check=False)
         self._drop_dead_socket()
 
+    def kill_other_servers(self, sockets: list[str]) -> list[str]:
+        """Stop tmux servers this project used under other names (the path-hash sockets of older
+        builds, the roots it had before a move). Returns the ones that were running."""
+        stopped = []
+        for name in sockets:
+            if name == self.socket:
+                continue
+            other = Terminals(self.root, self.run_dir, self.tmux, self.smx, socket=name)
+            if other._run("list-sessions", check=False).returncode == 0:
+                other.kill_server()
+                stopped.append(name)
+            else:
+                other._drop_dead_socket()
+        return stopped
+
     def shutdown(self) -> None:
         """``agora down``: the Seedmux panes this project opened, then its own tmux server."""
-        for f in sorted((self.run_dir / "seedmux").glob("*.json")):
+        for f in sorted([*(self.run_dir / "seedmux").glob("*.json"), *self.mirror.glob("*.json")]):
             try:
                 pane = json.loads(f.read_text()).get("paneId")
             except (OSError, ValueError):
@@ -231,9 +262,13 @@ class Terminals:
             pane = self.smx.spawn(attach, self.root)
             return {"paneId": pane, "created": False, "attached": True}
         pane = self.smx.spawn(self.seedmux_launch(argv, env), self.root)
-        f = self._smx_file(session_id)
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(json.dumps({"paneId": pane, "at": time.time(), "socket": str(self.smx.socket)}))
+        rec = json.dumps({"paneId": pane, "at": time.time(), "socket": str(self.smx.socket), "root": str(self.root)})
+        for f in self._smx_files(session_id):
+            try:
+                f.parent.mkdir(parents=True, exist_ok=True)
+                f.write_text(rec)
+            except OSError:
+                pass  # the mirror is a backstop; the run/ record is what normally counts
         return {"paneId": pane, "created": True, "attached": False}
 
     def seedmux_status(self) -> dict:

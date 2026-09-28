@@ -30,7 +30,7 @@ agora share revoke <id>                # 立即结束一个；--all 结束本项
 
 - **子域名**：每个分享新建一条代理的 CNAME `<slug>-<随机>.<域名>`（一级子域名，Cloudflare 的通用证书覆盖 `*.<域名>`，不用单独签证书）。撤销或到期时按记录 id 删掉它，名字本身就不存在了（权威 DNS 返回 NXDOMAIN），不只是令牌失效。
 - **令牌**：链接是 `https://<主机名>/s/<令牌>`，令牌 32 字节随机（`secrets.token_urlsafe(32)`）。网关验证后把它放进 `HttpOnly; Secure; SameSite=Lax` 的 cookie（有效期不超过分享本身），再 303 跳到 `/`，地址栏里就不再有令牌；`Referrer-Policy: no-referrer` 防止经 Referer 外泄。
-- **隧道**：每个项目一个命名隧道，第一次分享时创建，凭据写在 `~/.config/agora/tunnels/<隧道 id>.json`（600），配置 `.yml` 在同一目录，里面只有一条 ingress：本项目的分享网关。所有分享的主机名都指向这一个隧道，网关按 Host 区分分享，所以增删分享不用重启 cloudflared。协议固定 HTTP/2（`AGORA_TUNNEL_PROTOCOL` 可改）：QUIC 用的 UDP 7844 在很多网络被挡，cloudflared 会一直重试 QUIC 连不上。
+- **隧道**：每份项目（每个实例，见 [项目存储 §1](project-storage.md#本机状态localagora-之外的注册表)）一个命名隧道 `agora-share-<项目 id 前 8 位>-<实例 id 前 6 位>`：同一项目的两个克隆或 worktree 各用各的，撤销一边的最后一个分享不会拆掉另一边正在用的隧道。第一次分享时创建，凭据写在 `~/.config/agora/tunnels/<隧道 id>.json`（600），配置 `.yml` 在同一目录，里面只有一条 ingress：本项目的分享网关。所有分享的主机名都指向这一个隧道，网关按 Host 区分分享，所以增删分享不用重启 cloudflared。协议固定 HTTP/2（`AGORA_TUNNEL_PROTOCOL` 可改）：QUIC 用的 UDP 7844 在很多网络被挡，cloudflared 会一直重试 QUIC 连不上。
 - **进程**：cloudflared 是项目服务的子进程，和它在同一个进程组，`agora down` 一起停掉；pid、隧道 id、网关端口写在 `.agora/run/share-tunnel.json`，日志 `.agora/run/cloudflared.log`。
 
 **取舍**：另一种做法是一个固定主机名 + 路径令牌（整台机器一条 DNS 记录，分享之间只靠令牌区分）。它少了每次分享一次 DNS 写入（多一两秒），但撤销只能靠令牌检查，名字一直公开可探测；所有分享同源，一个分享页里的 cookie / 本地存储对其他分享可见；多个项目同时分享时还要一个机器级的进程统一路由。每个分享一个子域名把「撤销」做成了「这个名字不存在了」，也让分享之间天然隔离，所以选它。代价：每个分享要一次 Cloudflare API 调用；刚删掉的名字在别人的递归 DNS 缓存里可能还会留几分钟（这时它指向的隧道已删，Cloudflare 返回 530；网关也已不认这个主机名）。
@@ -79,7 +79,7 @@ agora share revoke <id>                # 立即结束一个；--all 结束本项
 - **判定**：令牌检查本身就看到期时间，到点那一刻起所有请求 403，不依赖清扫。
 - **清扫**：项目服务每 5 秒清扫一次：结束到期的分享，重试没做完的清理。
 - **结束一个分享**（撤销或到期）：先把 `endedAt / endReason` 写盘（此后令牌必然无效，Cloudflare 那边出什么错都不影响），通知在线访客页（`ended`），再按记录 id 删 DNS 记录；删失败记在 `cleanup: ["dns"]` 里，下次清扫重试（列表里显示「DNS 记录待清理」）。
-- **没有有效分享时**：停 cloudflared，按名字 `agora-share-<项目 id 前 8 位>` 找到本项目的隧道并删除（`cloudflared tunnel delete -f <id>`），删掉它的凭据和配置文件。只动这个名字的隧道，账号里其他隧道不碰。
+- **没有有效分享时**：停 cloudflared，按名字 `agora-share-<项目 id 前 8 位>-<实例 id 前 6 位>` 找到这份项目的隧道并删除（`cloudflared tunnel delete -f <id>`），删掉它的凭据和配置文件。旧版本用的是不带实例的名字 `agora-share-<项目 id 前 8 位>`（所有副本同名）：这个名字的隧道只在这份项目自己的分享记录里出现过它的 id 时才删。账号里其他隧道不碰。
 - **服务停止**（`agora down`）：cloudflared 一起停；有效分享留在记录里，下次 `agora up` 时先结束期间到期的，再为剩下的重新连上隧道。服务停着的这段时间，访客会看到 Cloudflare 的 530。
 - **创建失败**：隧道连不上或 DNS 建不了时不留分享记录，已建的隧道由下一次清扫删除。
 

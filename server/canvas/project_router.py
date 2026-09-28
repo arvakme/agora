@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from server.canvas.events import Events
+from server.canvas.local import Local, session_origins
 from server.canvas.project import Conflict, Gone, NotEmpty, ProjectStore
 from server.canvas.share import ShareError, ShareManager, check_max_opens, check_ttl
 from server.canvas.runner import DEFAULT_BACKEND, DEFAULT_MODEL, EFFORTS, ExecOptions
@@ -97,11 +98,13 @@ def sse(events: Events, request: Request, accept=None, *, tick: float = 15.0) ->
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"cache-control": "no-cache", "x-accel-buffering": "no"})
 
 
-def create_project_router(store: ProjectStore, events: Events | None = None, *, shares: ShareManager | None = None, hub=None) -> APIRouter:
+def create_project_router(store: ProjectStore, events: Events | None = None, *, shares: ShareManager | None = None, hub=None, local: Local | None = None) -> APIRouter:
     """``shares`` (optional): deleting a canvas ends its shares. ``hub`` (optional, an AgentHub):
-    deleting a session closes its terminal pane and stops its headless turn."""
+    deleting a session closes its terminal pane and stops its headless turn. ``local``: this copy's
+    machine-local state (instance, copies, registry)."""
     router = APIRouter()
     events = events or Events()
+    local = local or (hub.local if hub is not None else Local(store))
 
     def guard(f):
         try:
@@ -117,7 +120,7 @@ def create_project_router(store: ProjectStore, events: Events | None = None, *, 
 
     @router.get("")
     def info():
-        return {**store.info(), "empty": store.is_empty()}
+        return {**store.info(), "empty": store.is_empty(), "instanceId": local.instance_id()}
 
     @router.get("/health")
     def health():
@@ -125,7 +128,14 @@ def create_project_router(store: ProjectStore, events: Events | None = None, *, 
 
     @router.get("/snapshot")
     def snapshot():
-        return store.snapshot()
+        # ``local``: which copy this is and what changed since the page last looked (moved, copied,
+        # a fresh clone); ``origins``: listed sessions that cannot simply be resumed here.
+        return {**store.snapshot(), "local": {"instanceId": local.instance_id(), "change": local.change()}, "origins": session_origins(store, local)}
+
+    @router.post("/local/ack")
+    def ack_change():
+        """The page showed the move / copy / clone notice once; don't show it again."""
+        return guard(lambda: (local.ack(), {"ok": True})[1])
 
     @router.put("/workspace")
     def put_workspace(body: Write):
@@ -283,10 +293,16 @@ def create_project_app(
     from server.canvas.agent_router import create_agent_router
     from server.canvas.sessions import AgentHub
     from server.canvas.share_gateway import create_gateway_app
+    from server.canvas.terminal import Terminals
 
     store = ProjectStore(root)
     store.init()
-    hub = hub or AgentHub(store)
+    local = hub.local if hub is not None else Local(store)
+    # Moved, copied or freshly cloned since last time: settle this copy's identity first (a moved
+    # project's Pi logs follow it; a copy gets its own id and read-only sessions).
+    probe = Terminals(store.root, store.run_dir, socket=local.socket())
+    local.reconcile(alive=probe.alive)
+    hub = hub or AgentHub(store, local=local)
     events = Events()
     shares = shares or ShareManager(store)
     shares.on_change = lambda: events.publish({"t": "shares"})
@@ -341,7 +357,7 @@ def create_project_app(
             return JSONResponse({"error": "forbidden"}, status_code=403)
         return await call_next(request)
 
-    app.include_router(create_project_router(store, events, shares=shares, hub=hub), prefix="/api/project")
+    app.include_router(create_project_router(store, events, shares=shares, hub=hub, local=local), prefix="/api/project")
     app.include_router(create_share_router(store, shares, events), prefix="/api/share")
     app.include_router(create_agent_router(hub), prefix="/api/agent")
     if canvas_router is None:

@@ -88,8 +88,8 @@ export const sessions = {
   hydrate: (s: State) => set(s),
   reset: () => set({ sessions: {}, turns: {}, batches: {} }),
 
-  create(canvasId: string, id = uid("s"), opts: { draft?: boolean; placeholder?: boolean } = {}): Session {
-    const s: Session = { id, canvasId, createdAt: Date.now(), turnIds: [] };
+  create(canvasId: string, id = uid("s"), opts: { draft?: boolean; placeholder?: boolean; createdAt?: number } = {}): Session {
+    const s: Session = { id, canvasId, createdAt: opts.createdAt ?? Date.now(), turnIds: [] };
     if (opts.draft) drafts.add(id);
     if (opts.placeholder) placeholders.add(id);
     set({ ...state, sessions: { ...state.sessions, [id]: s } });

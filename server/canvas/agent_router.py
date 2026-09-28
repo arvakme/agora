@@ -13,8 +13,8 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from server.canvas import agents
-from server.canvas.project import Locked
-from server.canvas.sessions import AgentHub, Busy, NoPage, agora_prompt, canvas_names
+from server.canvas.project import Gone, Locked
+from server.canvas.sessions import AgentHub, Busy, Copied, NoPage, agora_prompt, canvas_names
 from server.canvas.terminal import TerminalError
 
 
@@ -25,6 +25,11 @@ class Bind(BaseModel):
     nativeId: str | None = None
     # Undoing a delete: whether that native session had already started (None: it did if nativeId is given).
     started: bool | None = None
+
+
+class Fork(BaseModel):
+    # {agent, model, effort, nativeId}: a session known only from the registry (no binding here yet).
+    source: dict[str, Any] | None = None
 
 
 class Send(BaseModel):
@@ -57,12 +62,16 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
     store = hub.store
 
     def fail(e: Exception):
+        if isinstance(e, Gone):
+            return JSONResponse(status_code=410, content={"gone": True, "error": str(e)})
         if isinstance(e, Locked):
             return JSONResponse(status_code=409, content={"error": str(e), "locked": True})
         if isinstance(e, Busy):
             return JSONResponse(status_code=409, content={"error": str(e)})
         if isinstance(e, agents.NativeMissing):
             return JSONResponse(status_code=409, content={"error": str(e), "nativeMissing": True, "native": e.public()})
+        if isinstance(e, Copied):
+            return JSONResponse(status_code=409, content={"error": str(e), "copied": True, "copy": e.info})
         if isinstance(e, NoPage):
             return JSONResponse(status_code=503, content={"error": str(e), "noPage": True})
         if isinstance(e, LookupError):
@@ -81,7 +90,10 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
             # A new binding's model must be one the agent may run (Pi: its enabledModels scope) and
             # its effort one that model really takes (the CLI's own catalog, agent_models.py); an
             # existing binding is only ever confirmed or refused (409).
-            if store.read_binding(sid) is None:
+            # A binding that carries a native id restores or imports a session that already exists
+            # with the model it ran with: the current catalog (Pi's enabledModels, a model the CLI
+            # no longer lists) must not refuse it and lose the link to the native session.
+            if store.read_binding(sid) is None and not body.nativeId:
                 await asyncio.to_thread(agents.check_binding, body.agent, body.model, body.effort, store.root)
             b = store.bind(sid, agent=body.agent, model=body.model, effort=body.effort, native_id=body.nativeId, at=int(time.time() * 1000), started=body.started)
         except Exception as e:
@@ -91,6 +103,7 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
             import uuid
 
             b = store.set_native(sid, str(uuid.uuid4()))
+        await asyncio.to_thread(hub.note_bind, sid, "import" if body.nativeId else "bind")
         # The terminal CLI finds the canvas skill in the project (Pi also gets --skill).
         try:
             await asyncio.to_thread(agents.install_skill, store.root, [body.agent])
@@ -126,6 +139,17 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
             return await asyncio.to_thread(hub.item, sid, item_id)
         except Exception as e:
             return fail(e)
+
+    @router.post("/sessions/{sid}/fork")
+    async def fork(sid: str, body: Fork):
+        """Continue here as a fork: a session this copy of the project brought along, or (with a
+        source) one another copy on this machine owns. The next message or terminal forks it."""
+        try:
+            b = await asyncio.to_thread(hub.fork, sid, body.source)
+        except Exception as e:
+            return fail(e)
+        hub.ensure_started()
+        return b
 
     @router.post("/sessions/{sid}/interrupt")
     def interrupt(sid: str):
