@@ -1,5 +1,7 @@
 # 进度指针：代码在更新，而且按架构图在走
 
+> 界面更新（2026-09-28）：画布上的指针胶囊、节点紫底已由[工位视图](workstation.md)的小人替代——小人就是指针，空闲一分钟离开画布。本文的代码路径与映射规则照旧适用。
+
 架构图上的节点可以代表一部分代码。会话里的 agent（Pi / Claude Code / Codex）每写一个文件，Agora 就把**一个**指针移到这个文件所属的节点上；不属于任何节点的文件列在画布左下角的「在架构图之外」。不管这一轮是在面板里发的（无头续接），还是在终端里直接敲的，都从 CLI 自己的会话日志读出来，所以两边都会驱动指针。
 
 实现：`web/src/pointer/`（`codeLinks.ts` 匹配规则，`writeLinks.ts` 写入与解析元素，`PointerLayer.tsx` 画布上的指针、越界列表和路径编辑，`follow.ts` 跟随哪个会话）；文件提取在 `server/canvas/transcript.py`；`agora canvas link` 在 `agora_cli/canvas.py` → `/api/agent/canvas/link` → 页面 `agentBridge.ts` 的 `linkFromAgent`。

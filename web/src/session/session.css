@@ -169,6 +169,7 @@
 /* ——— workbench focus (docs/workbench-focus.md): a one-line head, one line per canvas change ——— */
 .sp-head1 { min-height: 38px; gap: var(--space-2); padding: 0 var(--space-3) 0 var(--space-5); font-size: var(--text-sm); color: var(--fg-muted); }
 .sp-head1 .grow { flex: 1; }
+.sp-head1 .sp-lock { white-space: nowrap; flex: 0 1 auto; min-width: 0; }
 .sp-head1 .icon-btn { --icon: var(--fg-subtle); }
 .sp-head1 .icon-btn[data-on="true"] { background: var(--raised); --icon: var(--accent); }
 .sp-cv { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
