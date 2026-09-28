@@ -1,7 +1,7 @@
 // The timeline axis: real time where someone works, fixed-width breaks for idle stretches (and the
 // idle tail), adaptive ticks that never collide, and playback that skips the breaks.
 import { describe, expect, it } from "vitest";
-import { advance, buildAxis, ticks } from "./axis.ts";
+import { advance, buildAxis, fitsLabel, gapLabelFits, labelWidth, ticks } from "./axis.ts";
 
 const S = 1000;
 const T0 = Date.UTC(2026, 8, 28, 7, 57, 20);
@@ -71,5 +71,37 @@ describe("advance (replay playback)", () => {
     let t = 0;
     for (let i = 0; i < 100; i++) t = advance(t, 3, gaps);
     expect(t).toBe(advance(0, 300, gaps));
+  });
+});
+
+describe("labels are drawn only where they fit", () => {
+  it("a label needs its whole width (text + padding); CJK counts a full em", () => {
+    expect(fitsLabel("写 users.py", 200)).toBe(true);
+    expect(fitsLabel("写 users.py", 40)).toBe(false);
+    expect(fitsLabel("空闲", 30)).toBe(false); // 2 × 11 px + padding
+    expect(fitsLabel("空闲", 40)).toBe(true);
+    expect(fitsLabel("", 0)).toBe(false);
+  });
+
+  it("a collapsed break shows its words (two lines) only when the widest line fits; the details stay in its hover card", () => {
+    expect(gapLabelFits("空闲", "12 小时 5 分", 90)).toBe(true);
+    expect(gapLabelFits("空闲", "12 小时 5 分", 64)).toBe(false); // 12 小时 5 分 is wider than the default 64 px break: the words go to the hover card
+    expect(gapLabelFits("空闲", "12 小时 5 分", 24)).toBe(false);
+    expect(gapLabelFits("空闲中", "4 分 23 秒", 10)).toBe(false); // the narrowest break the axis makes
+  });
+
+  it("5 days, 100 sub-agents a session: every drawn tick label sits inside its stretch and clear of the next label", () => {
+    const iv: [number, number][] = [];
+    for (let d = 0; d < 8; d++) for (let i = 0; i < 100; i++) iv.push([T0 + d * 15 * 3600 * S + i * 24 * S, T0 + d * 15 * 3600 * S + i * 24 * S + 40 * S]); // 8 sessions, 100 sub-agents each
+    const now = T0 + 5 * 86400 * S;
+    const A = buildAxis(iv, now, 900, { gapMs: 20 * S, gapPx: 64 });
+    const drawn = ticks(A).filter((k) => k.label);
+    expect(drawn.length).toBeGreaterThan(0);
+    for (let i = 1; i < drawn.length; i++) expect(drawn[i].x - drawn[i - 1].x).toBeGreaterThanOrEqual(labelWidth(drawn[i].label) / 2 + labelWidth(drawn[i - 1].label) / 2);
+    for (const k of drawn) {
+      const p = A.pieces.find((q) => q.kind === "act" && k.x >= q.x0 - 4 && k.x <= q.x1 + 4)!;
+      expect(k.x - labelWidth(k.label) / 2).toBeGreaterThanOrEqual(p.x0 - 4);
+      expect(k.x + labelWidth(k.label) / 2).toBeLessThanOrEqual(p.x1 + 4);
+    }
   });
 });

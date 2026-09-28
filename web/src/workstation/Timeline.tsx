@@ -11,7 +11,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconBack, IconClose, IconEnter, IconHistory, IconMessage, IconPause, IconPlay, IconTarget } from "../app/icons";
 import { openTrajectory, ui } from "../session/ui";
-import { buildAxis, hhmmss, ticks, type Axis } from "./axis";
+import { buildAxis, fitsLabel, gapLabelFits, hhmmss, ticks, type Axis } from "./axis";
 import { clock, replayTime, useReplay, useTick } from "./clock";
 import { focus, useFocus, type SegRef } from "./focus";
 import { follow, useFollow } from "./follow";
@@ -137,7 +137,7 @@ const Finished = memo(
           const w = axis.toPx(g.end) - x0;
           return (
             <span key={i} className="sg" data-seg={i} data-run={run.id} data-k={g.kind} data-sel={selI === i || undefined} data-hover={hovI === i || undefined} style={{ left: x0, width: Math.max(0, w - 1), top, height: h }}>
-              {w > 34 && <span>{segText(g)}</span>}
+              {fitsLabel(segText(g), w - 1, 11, 6) && <span>{segText(g)}</span>}
             </span>
           );
         })}
@@ -588,7 +588,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
         const w = axis.toPx(e) - axis.toPx(g.start);
         out.push(
           <span key={`s${i}`} className="sg" data-seg={i} data-run={run.id} data-k={g.kind} data-sel={selI === i || undefined} data-hover={hovI === i || undefined} data-running={g.end > liveNow || undefined} style={{ ...X(axis, g.start, e), top: segTop, height: segH }}>
-            {w > 34 && <span>{segText(g)}</span>}
+            {fitsLabel(segText(g), w - 1, 11, 6) && <span>{segText(g)}</span>}
           </span>,
         );
       });
@@ -657,7 +657,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
             {axis.pieces.filter((p) => p.kind !== "act").map((p) => (
               <span key={p.a} className="gap" data-kind={p.kind} data-at={replay && axis.gapAt(t) === p ? "" : undefined} style={{ ...tx(p.x0), width: p.x1 - p.x0, top: PX.ruler, height: height - PX.ruler }} title={`${hhmmss(p.a)}–${hhmmss(p.b)} 没有会话在干活（${dur(p.b - p.a)}），已压缩显示`}>
                 <Zig h={height - PX.ruler} />
-                <span className="gl">{p.kind === "tail" ? "空闲中" : "空闲"}<br />{dur(p.b - p.a)}</span>
+                {gapLabelFits(p.kind === "tail" ? "空闲中" : "空闲", dur(p.b - p.a), p.x1 - p.x0) && <span className="gl">{p.kind === "tail" ? "空闲中" : "空闲"}<br />{dur(p.b - p.a)}</span>}
               </span>
             ))}
             {conflicts.filter((c) => c.start < liveNow).map((c, i) => (
