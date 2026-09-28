@@ -3,7 +3,7 @@
 // 30 days. This store lists the items and talks to /api/project/trash; the shell (App.tsx) puts
 // restored items back into the workspace.
 import { useSyncExternalStore } from "react";
-import type { Binding } from "../session/agents";
+import { deleteCommandOf, type Binding } from "../session/agents";
 import type { Doc } from "./model";
 
 export type TrashItem = {
@@ -85,6 +85,7 @@ export const useTrash = () => useSyncExternalStore(trash.subscribe, trash.get);
 /** How to remove a session's native conversation yourself (Agora never does). */
 export function nativeRemoval(native: TrashItem["native"]): string | null {
   if (!native?.nativeId) return null;
-  if (native.agent === "codex") return `codex delete ${native.nativeId}`;
+  const cmd = deleteCommandOf(native.agent);
+  if (cmd) return cmd.replace("{id}", native.nativeId);
   return native.logPath ? `rm ${native.logPath}` : null;
 }

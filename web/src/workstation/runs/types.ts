@@ -1,11 +1,10 @@
-// Agent runs (the CLI-adapter layer's unified "运行", docs/agora-cli-adapters.md §5): a top-level
-// Agora session and, below it, the sub-agents it dispatched — native (Claude Task / Agent tool,
-// Codex spawn), through Seedmux (smx-team workers), and theirs, to any depth. The 工位视图 draws
-// every run the same way; this is the one shape it reads.
-//
-// The adapter branch serves run trees at GET /api/agent/runs?session=<id> (./client.ts). Until it
-// is merged, top-level runs come from the transcripts on the page (./derive.ts), and the sub-agent
-// UI is exercised by fixtures (./fixtures.ts, also the `?mock=runs` dev mock).
+// What the 工位视图 draws: a top-level Agora session and, below it, the sub-agents it dispatched —
+// native (Claude Agent / Task, Codex spawn), Seedmux workers, and theirs. This is a view model:
+// the one wire shape is the server's `RunTree` / `AgentRun` (session/agents.ts, `fetchRuns`,
+// web/docs/cli-adapters.md §5), converted once in ./derive.ts (`fromTree`). The receipt states are
+// the server's unified `RunState`; what the page says for them (声明完成 vs 已返回结果 vs 验收通过)
+// is `receiptView`.
+import type { RunState } from "../../session/agents";
 
 /** What a worker is doing in one stretch of time. `delegate` = handing work to a sub-agent. */
 export type SegKind = "read" | "write" | "exec" | "think" | "wait" | "delegate";
@@ -32,8 +31,9 @@ export type RunSeg = {
 };
 
 /**
- * Unified receipt / lifecycle states (adapter doc §5.3). `claimed` = the worker says it is done
- * (Seedmux replied:done — not the same as accepted); `accepted` = the dispatcher verified it.
+ * What the page shows for a receipt. `claimed` = a Seedmux worker says it is done (replied:done —
+ * never green, not the same as accepted); `returned` = a native sub-agent handed its result back;
+ * `accepted` = the dispatcher verified it (`receipt.accept`). The rest are the server's states.
  */
 export type ReceiptState =
   | "dispatched"
@@ -68,13 +68,14 @@ export const FINAL: ReadonlySet<ReceiptState> = new Set(["claimed", "accepted", 
 /** Receipts the tree's 出问题 filter shows. */
 export const TROUBLE: ReadonlySet<ReceiptState> = new Set(["failed", "blocked", "exited", "unknown", "idle_no_reply"]);
 
-export type Receipt = { at: number; state: ReceiptState };
+/** One point of a run's lifecycle: the server's unified state, and whether the work was verified. */
+export type Receipt = { at: number; state: RunState; accepted?: boolean };
 
 /** How a sub-agent was dispatched, and how sure the parent link is (adapter doc §5.2). */
 export type Via = "task" | "native" | "seedmux";
 export type Evidence = "native" | "seedmux" | "inferred";
 
-export type AgentRun = {
+export type WorkRun = {
   /** `kind:nativeId`, `smx:T-xx`, or the Agora session id for a derived top-level run. */
   id: string;
   /** Agent kind: pi, claude, codex, or any other CLI's kind ("worker" when only receipts are known). */
@@ -98,15 +99,15 @@ export type AgentRun = {
   running: boolean;
   /** Last thing that happened (for the 1-minute presence window). */
   lastAt: number;
-  children: AgentRun[];
+  children: WorkRun[];
 };
 
 /** A run with its place in the tree, as the lanes and the agent tree list them. */
-export type FlatRun = { run: AgentRun; depth: number; parent: AgentRun | null; root: AgentRun };
+export type FlatRun = { run: WorkRun; depth: number; parent: WorkRun | null; root: WorkRun };
 
-export function flatten(roots: readonly AgentRun[]): FlatRun[] {
+export function flatten(roots: readonly WorkRun[]): FlatRun[] {
   const out: FlatRun[] = [];
-  const walk = (r: AgentRun, depth: number, parent: AgentRun | null, root: AgentRun) => {
+  const walk = (r: WorkRun, depth: number, parent: WorkRun | null, root: WorkRun) => {
     out.push({ run: r, depth, parent, root });
     for (const c of r.children) walk(c, depth + 1, r, root);
   };
@@ -114,9 +115,23 @@ export function flatten(roots: readonly AgentRun[]): FlatRun[] {
   return out;
 }
 
-/** The receipt in force at t. */
-export function receiptAt(run: AgentRun, t: number): ReceiptState | null {
+/** How the page names a receipt of this run (see ReceiptState). */
+export function receiptView(run: Pick<WorkRun, "via">, r: Receipt): ReceiptState {
+  if (r.accepted) return "accepted";
+  switch (r.state) {
+    case "done":
+      return run.via === "seedmux" ? "claimed" : "returned";
+    case "session_changed":
+    case "idle":
+      return "unknown";
+    default:
+      return r.state;
+  }
+}
+
+/** The receipt in force at t, as the page names it. */
+export function receiptAt(run: WorkRun, t: number): ReceiptState | null {
   let s: ReceiptState | null = null;
-  for (const r of run.receipts) if (r.at <= t) s = r.state;
+  for (const r of run.receipts) if (r.at <= t) s = receiptView(run, r);
   return s;
 }

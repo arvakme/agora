@@ -10,7 +10,7 @@
 //     worker never moves.
 // Places are node element ids or OUTSIDE (the 图外 tray next to the diagram).
 import { planWalk, WALK_MAX_MS, type Move, type Pose, type Pt, type WalkPlan } from "./rig";
-import { receiptAt, type AgentRun, type ReceiptState, type RunSeg } from "./runs/types";
+import { receiptAt, type WorkRun, type ReceiptState, type RunSeg } from "./runs/types";
 
 export const OUTSIDE = "\u0000outside";
 /** Idle this long and the worker leaves the canvas. */
@@ -32,7 +32,7 @@ export type Ctx = {
   route?: (a: Pt, b: Pt) => Pt[];
   reduced: boolean;
   /** The dispatcher of a sub-agent, to find where it was and where to hand back. */
-  run: (id: string) => AgentRun | undefined;
+  run: (id: string) => WorkRun | undefined;
 };
 
 export type RunState = {
@@ -70,10 +70,10 @@ export function bursts(segs: readonly RunSeg[]): RunSeg[][] {
   return out;
 }
 
-const cache = new WeakMap<Ctx, WeakMap<AgentRun, Map<number, RunState>>>();
+const cache = new WeakMap<Ctx, WeakMap<WorkRun, Map<number, RunState>>>();
 
 /** Pure: the run's state at t (memoised per context, run object and t). */
-export function stateAt(run: AgentRun, t: number, ctx: Ctx): RunState {
+export function stateAt(run: WorkRun, t: number, ctx: Ctx): RunState {
   let byRun = cache.get(ctx);
   if (!byRun) cache.set(ctx, (byRun = new WeakMap()));
   let m = byRun.get(run);
@@ -85,7 +85,7 @@ export function stateAt(run: AgentRun, t: number, ctx: Ctx): RunState {
   return s;
 }
 
-function compute(run: AgentRun, t: number, ctx: Ctx): RunState {
+function compute(run: WorkRun, t: number, ctx: Ctx): RunState {
   const walkOn = !ctx.reduced;
   const parent = run.parentId ? ctx.run(run.parentId) : undefined;
   const receipt = receiptAt(run, t);
@@ -203,7 +203,7 @@ export const WALK_SLACK_MS = WALK_MAX_MS + 600;
 
 export type WriteConflict = { path: string; start: number; end: number; runs: [string, string] };
 /** Two runs (sub-agents included) writing the same file at overlapping times. Pure; computed on data changes. */
-export function writeConflicts(runs: readonly AgentRun[]): WriteConflict[] {
+export function writeConflicts(runs: readonly WorkRun[]): WriteConflict[] {
   const writes = runs.flatMap((r) => r.segs.filter((g) => g.kind === "write" && g.path).map((g) => ({ r: r.id, g })));
   const out: WriteConflict[] = [];
   for (let i = 0; i < writes.length; i++)

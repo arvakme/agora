@@ -2,7 +2,7 @@
 // server/canvas/transcript.py) as read / write / exec / think / wait / delegate segments. The
 // same log always gives the same lane; ./runs/derive.ts turns it into a top-level run.
 import type { Item } from "../session/agents";
-import { activityOf, buildTurns, type TrajTurn } from "../session/trajectoryModel";
+import { buildTurns, toolActivity, type TrajTurn } from "../session/trajectoryModel";
 
 /** What a worker is doing: reading, writing, running a command, thinking, waiting for the person, or nothing. */
 export type SegKind = "read" | "write" | "exec" | "think" | "wait" | "delegate";
@@ -42,7 +42,7 @@ const KIND: Record<string, SegKind> = {
   questions: "wait",
 };
 
-/** A read tool's file from its one-line input (Claude `file_path`, Pi `path`), relative to the project. */
+/** Fallback for items without `tool.reads` (older snapshots): a read tool's file from its one-line input (Claude `file_path`, Pi `path`), relative to the project. */
 export function readPath(input: string | undefined, root: string | undefined): string | undefined {
   const s = (input ?? "").trim();
   if (!s || /\s/.test(s) || !/[/.]/.test(s) || s.startsWith("{")) return undefined;
@@ -68,10 +68,11 @@ export function buildLane(sessionId: string, items: readonly Item[], opts: { liv
       .filter((r) => r.kind === "tool")
       .map((r) => {
         const it = r.item;
-        const kind = KIND[activityOf(it.tool?.name)] ?? "exec";
+        // Server tool facts (server/canvas/adapters/): activity, reads, waitsUser — the page needs no CLI tool names.
+        const kind: SegKind = it.tool?.waitsUser ? "wait" : (KIND[toolActivity(it)] ?? "exec");
         const dur = r.durationMs ?? (r.running ? now - r.at : MIN_TOOL_MS);
         const file = it.tool?.files?.[0]?.path;
-        const path = kind === "write" ? file : kind === "read" ? readPath(it.tool?.input, opts.root) : file;
+        const path = kind === "write" ? file : kind === "read" ? (it.tool?.reads?.[0] ?? readPath(it.tool?.input, opts.root)) : file;
         const verb = SEG_NAMES[kind];
         const input = (it.tool?.input ?? "").replace(/\s+/g, " ").trim();
         return { sessionId, kind, start: r.at, end: r.at + Math.max(dur, MIN_TOOL_MS), turn: t.n, itemId: it.id, ...(path ? { path } : {}), ...(input && !path ? { input } : {}), label: path ? `${verb} ${base(path)}` : `${verb} · ${it.tool?.name ?? "工具"} ${it.tool?.input ?? ""}`.trim() } as Seg;

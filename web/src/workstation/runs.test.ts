@@ -3,47 +3,52 @@
 import { describe, expect, it } from "vitest";
 import type { Item } from "../session/agents.ts";
 import { pickBubbles, slots } from "./crowd.ts";
-import { fetchRunTree, normaliseRun, resetRunClient } from "./runs/client.ts";
-import { runFromTranscript } from "./runs/derive.ts";
-import { flatten, receiptAt } from "./runs/types.ts";
+import type { RunTree } from "../session/agents.ts";
+import { fromTree, runFromTranscript } from "./runs/derive.ts";
+import { flatten, receiptAt, receiptView } from "./runs/types.ts";
 
-describe("normaliseRun", () => {
-  it("reads the wire shape, nests children, converts seconds and drops junk", () => {
-    const r = normaliseRun({
-      id: "claude:abc",
-      agent: "claude",
-      name: "Claude Code",
-      sessionId: "s1",
-      running: true,
-      segments: [{ kind: "write", start: 1_790_000_000, end: 1_790_000_004, path: "server/a.py" }, { kind: "bogus", start: 1 }],
-      receipts: [],
-      children: [{ id: "smx:T-1", agent: "codex", via: "seedmux", evidence: "seedmux", task: "补测试", segments: [], receipts: [{ at: 1_790_000_001_000, state: "dispatched" }, { at: 1_790_000_009_000, state: "claimed" }] }],
-    })!;
-    expect(r.segs).toEqual([{ kind: "write", start: 1_790_000_000_000, end: 1_790_000_004_000, path: "server/a.py", label: "write" }]);
-    expect(r.children[0]).toMatchObject({ id: "smx:T-1", parentId: "claude:abc", via: "seedmux", spawnAt: 1_790_000_001_000, task: "补测试" });
-    expect(receiptAt(r.children[0], 1_790_000_010_000)).toBe("claimed");
-    expect(flatten([r]).map((f) => [f.run.id, f.depth])).toEqual([
-      ["claude:abc", 0],
-      ["smx:T-1", 1],
+describe("fromTree (the server's run tree → sub-agents)", () => {
+  const T = 1_790_000_000_000;
+  const seg = (kind: "read" | "write" | "exec" | "think" | "wait", s: number, e: number, path?: string) => ({ kind, start: T + s * 1000, end: T + e * 1000, itemId: `i${s}`, turn: 1, label: kind, ...(path ? { path } : {}) });
+  const base = { tier: "T1" as const, depth: 0, hiddenDescendants: 0, childCount: 0, descendants: 0 };
+  const tree: RunTree = {
+    root: "claude:root",
+    depth: null,
+    folded: {},
+    generatedAt: T + 60_000,
+    runs: [
+      { ...base, id: "claude:root", kind: "claude", label: "Claude Code", sessionId: "s1", state: "running", childCount: 2, descendants: 3, timeline: { segments: [], turns: [], moments: [
+        { kind: "dispatch", at: T + 5000, childRunId: "claude:root/a1", toolCallId: "tool-agent-1" },
+        { kind: "handoff", at: T + 20000, childRunId: "claude:root/a1", state: "done" },
+        { kind: "dispatch", at: T + 6000, childRunId: "smx:T-9", taskId: "T-9" },
+      ] } },
+      { ...base, id: "claude:root/a1", kind: "claude", label: "Explore", role: "查回调签名", depth: 1, parent: { runId: "claude:root", via: "native", toolCallId: "tool-agent-1", evidence: "toolUseId" }, state: "done", startedAt: T + 5200, endedAt: T + 19000, lastAt: T + 19000, childCount: 1, descendants: 1, timeline: { segments: [seg("read", 6, 9, "docs/a.md"), seg("write", 10, 15, "server/x.py")], turns: [], moments: [] } },
+      { ...base, id: "claude:root/a1/b1", kind: "claude", label: "deeper", depth: 2, parent: { runId: "claude:root/a1", via: "native", evidence: "parentAgentId" }, state: "done", timeline: { segments: [seg("read", 11, 12, "x.md")], turns: [], moments: [] } },
+      { ...base, id: "smx:T-9", kind: "devin", tier: "T3", label: "worker-3", depth: 1, parent: { runId: "claude:root", via: "seedmux", taskId: "T-9", evidence: "smx-team output" }, state: "done", lastAt: T + 30000,
+        receipts: [{ taskId: "T-8", agent: "devin", state: "done", createdAt: T + 1000, repliedAt: T + 3000, accept: "accepted" }, { taskId: "T-9", agent: "devin", state: "done", createdAt: T + 6000, repliedAt: T + 30000 }],
+        timeline: { segments: [], turns: [], moments: [] } },
+    ],
+  };
+  const { children, dispatches } = fromTree(tree, "s1", { now: T + 60_000 });
+  it("hangs the session's sub-agents under it, one level drawn and deeper ones nested", () => {
+    expect(children.map((c) => [c.id, c.parentId, c.via, !!c.coarse])).toEqual([
+      ["claude:root/a1", "s1", "native", false],
+      ["smx:T-9", "s1", "seedmux", true],
     ]);
-    expect(normaliseRun({ agent: "x" })).toBeNull();
+    expect(children[0].children.map((c) => c.id)).toEqual(["claude:root/a1/b1"]);
+    expect(flatten(children).map((f) => f.depth)).toEqual([0, 1, 0]);
   });
-});
-
-describe("fetchRunTree", () => {
-  it("returns null (and stops asking for a while) when the server has no run trees yet", async () => {
-    resetRunClient();
-    let calls = 0;
-    const f = (async () => ((calls++, new Response("", { status: 404 })))) as unknown as typeof fetch;
-    expect(await fetchRunTree("s1", f)).toBeNull();
-    expect(await fetchRunTree("s1", f)).toBeNull();
-    expect(calls).toBe(1);
+  it("takes dispatch / handoff from the parent's moments and segments from the child's timeline", () => {
+    expect(children[0]).toMatchObject({ spawnAt: T + 5000, doneAt: T + 20000, task: "查回调签名", running: false });
+    expect(children[0].segs.map((s) => [s.kind, s.path])).toEqual([["read", "docs/a.md"], ["write", "server/x.py"]]);
+    expect(dispatches.get("tool-agent-1")).toBe("claude:root/a1");
   });
-  it("picks the session's own run from the list", async () => {
-    resetRunClient();
-    const body = { runs: [{ id: "x", agent: "pi", sessionId: "other" }, { id: "y", agent: "pi", sessionId: "s1", children: [] }] };
-    const f = (async () => new Response(JSON.stringify(body), { status: 200 })) as unknown as typeof fetch;
-    expect((await fetchRunTree("s1", f))?.id).toBe("y");
+  it("names receipts: a native hand-back is 已返回结果, a Seedmux reply 声明完成 (never 验收 unless accepted); every ticket counts", () => {
+    expect(receiptAt(children[0], T + 25000)).toBe("returned");
+    const w = children[1];
+    expect(w.receipts.map((r) => receiptView(w, r))).toEqual(["dispatched", "accepted", "dispatched", "claimed"]);
+    expect(receiptAt(w, T + 7000)).toBe("dispatched");
+    expect(receiptAt(w, T + 40000)).toBe("claimed");
   });
 });
 

@@ -20,7 +20,7 @@ import { agents, type AgentKind, type Item } from "./agents";
 import { AgentAvatar } from "./AgentAvatar";
 import {
   ACTIVITY_NOW,
-  activityOf,
+  toolActivity,
   deriveTimeline,
   fmtCost,
   fmtDuration,
@@ -167,7 +167,7 @@ export function ProcessFold({ sessionId, turn, children }: { sessionId: string; 
   const lastTool = [...process.flatMap((s) => s.records)].reverse().find((r) => r.kind === "tool");
   const elapsed = turn.durationMs ?? (turn.running ? now - turn.startedAt : null);
   const label = turn.running
-    ? `${lastTool ? ACTIVITY_NOW[activityOf(lastTool.item.tool?.name)] : ACTIVITY_NOW.thinking}${elapsed != null ? `，用时 ${fmtDuration(elapsed)}` : ""}`
+    ? `${lastTool ? ACTIVITY_NOW[toolActivity(lastTool.item)] : ACTIVITY_NOW.thinking}${elapsed != null ? `，用时 ${fmtDuration(elapsed)}` : ""}`
     : turn.error
       ? `处理失败：${turn.error}`
       : `${processTitle(turn.activity)}${elapsed != null ? ` · 用时 ${fmtDuration(elapsed)}` : ""}`;

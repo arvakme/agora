@@ -3,7 +3,8 @@
 // tests and by the dev mock (`?mock=runs`), so the sub-agent UI can be seen before the adapter
 // layer serves real run trees. Paths match the sample diagram's code links (web/**, server/**,
 // server/db/**, server/cache/**, server/payments/**).
-import type { AgentRun, Receipt, ReceiptState, RunSeg, SegKind } from "./types";
+import type { RunState } from "../../session/agents";
+import type { WorkRun, Receipt, RunSeg, SegKind } from "./types";
 
 type S = [kind: SegKind, start: number, end: number, extra?: Partial<RunSeg>];
 const base = (p: string) => p.split("/").pop() || p;
@@ -23,12 +24,12 @@ function segs(at: number, list: S[]): RunSeg[] {
     return { kind, start: at + s * 1000, end: at + e * 1000, turn: x.turn ?? 1, ...x, label };
   });
 }
-const rc = (at: number, list: [number, ReceiptState][]): Receipt[] => list.map(([s, state]) => ({ at: at + s * 1000, state }));
+const rc = (at: number, list: [number, RunState | "accepted"][]): Receipt[] => list.map(([s, state]) => (state === "accepted" ? { at: at + s * 1000, state: "done", accepted: true } : { at: at + s * 1000, state }));
 
 /** The prototype's scenario at `at` (ms). `now` decides which runs are still running. */
-export function scenario(at: number, now = at + 46_000): AgentRun[] {
+export function scenario(at: number, now = at + 46_000): WorkRun[] {
   const t = (s: number) => at + s * 1000;
-  const cx: AgentRun = {
+  const cx: WorkRun = {
     id: "smx:T-41",
     agent: "codex",
     name: "Codex",
@@ -45,7 +46,7 @@ export function scenario(at: number, now = at + 46_000): AgentRun[] {
       [19.6, "dispatched"],
       [21, "acknowledged"],
       [21.6, "running"],
-      [33.6, "claimed"],
+      [33.6, "done"],
       [44, "accepted"],
     ]),
     spawnAt: t(19.6),
@@ -54,7 +55,7 @@ export function scenario(at: number, now = at + 46_000): AgentRun[] {
     lastAt: t(44),
     children: [],
   };
-  const w3: AgentRun = {
+  const w3: WorkRun = {
     id: "smx:T-42",
     agent: "worker",
     name: "worker-3",
@@ -77,7 +78,7 @@ export function scenario(at: number, now = at + 46_000): AgentRun[] {
     lastAt: t(38),
     children: [],
   };
-  const pi: AgentRun = {
+  const pi: WorkRun = {
     id: "mock-pi",
     agent: "pi",
     name: "Pi",
@@ -102,7 +103,7 @@ export function scenario(at: number, now = at + 46_000): AgentRun[] {
     lastAt: t(45.5),
     children: [cx, w3],
   };
-  const sub: AgentRun = {
+  const sub: WorkRun = {
     id: "claude:agent-7f3",
     agent: "claude",
     name: "子代理",
@@ -117,7 +118,7 @@ export function scenario(at: number, now = at + 46_000): AgentRun[] {
     receipts: rc(at, [
       [28.8, "dispatched"],
       [28.9, "running"],
-      [32.6, "returned"],
+      [32.6, "done"],
     ]),
     spawnAt: t(28.8),
     doneAt: t(32.6),
@@ -125,7 +126,7 @@ export function scenario(at: number, now = at + 46_000): AgentRun[] {
     lastAt: t(32.6),
     children: [],
   };
-  const cc: AgentRun = {
+  const cc: WorkRun = {
     id: "mock-cc",
     agent: "claude",
     name: "Claude Code",
@@ -156,8 +157,8 @@ export function scenario(at: number, now = at + 46_000): AgentRun[] {
  * A crowd for the caps (state f): `n` top-level runs, each writing somewhere on `nodes` right now,
  * some with sub-agents. Deterministic.
  */
-export function crowd(at: number, nodes: string[], n = 18): AgentRun[] {
-  const out: AgentRun[] = [];
+export function crowd(at: number, nodes: string[], n = 18): WorkRun[] {
+  const out: WorkRun[] = [];
   for (let i = 0; i < n; i++) {
     const node = nodes[i % nodes.length];
     const kind: SegKind = i % 5 === 3 ? "wait" : i % 3 === 0 ? "write" : i % 3 === 1 ? "read" : "exec";

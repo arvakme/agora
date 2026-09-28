@@ -18,12 +18,12 @@ import { focus } from "./focus";
 import { frame } from "./frame";
 import { RunAvatar } from "./RunAvatar";
 import { useRuns } from "./runs/store";
-import { FINAL, RECEIPT_NAMES, receiptAt, type AgentRun, type FlatRun, type RunSeg } from "./runs/types";
+import { FINAL, RECEIPT_NAMES, receiptAt, receiptView, type WorkRun, type FlatRun, type RunSeg } from "./runs/types";
 
 const MINI_COLORS: Record<string, string> = { write: "--accent-fill", read: "--accent-soft", exec: "--series-3", think: "--line-strong", wait: "--caution-dot", delegate: "--accent", gap: "--line-strong" };
 let miniPalette: { theme: string; c: Record<string, string> } | null = null;
 /** The strip: up to three main agents as thin rows, collapsed idle stretches hatched. `prev` + `u` blend a rebuilt axis in. */
-function drawMini(cv: HTMLCanvasElement, runs: AgentRun[], A: Axis, prev: Axis | null, u: number, now: number) {
+function drawMini(cv: HTMLCanvasElement, runs: WorkRun[], A: Axis, prev: Axis | null, u: number, now: number) {
   const w = cv.clientWidth;
   const h = cv.clientHeight;
   if (!w || !h) return;
@@ -76,7 +76,7 @@ const dur = (ms: number) => {
 };
 
 /** What a run is doing at t, in a few words (lane names, the strip's state). */
-export function nowText(run: AgentRun, t: number, placeOf?: (path: string) => string | undefined): { k: string; text: string } {
+export function nowText(run: WorkRun, t: number, placeOf?: (path: string) => string | undefined): { k: string; text: string } {
   const g = run.segs.find((s) => s.start <= t && t < s.end);
   if (run.parentId) {
     const r = receiptAt(run, t);
@@ -177,7 +177,7 @@ export function Timeline({ empty, placeOf, onLocate }: { empty?: boolean; placeO
   // new one after each 4 Hz rebuild, and the running call grows every frame — no DOM to relayout.
   const miniCanvas = useRef<HTMLCanvasElement>(null);
   const sectionEl = useRef<HTMLElement>(null);
-  const miniRuns = useRef<AgentRun[]>([]);
+  const miniRuns = useRef<WorkRun[]>([]);
   useEffect(
     () =>
       frame.add((n) => {
@@ -398,8 +398,9 @@ export function Timeline({ empty, placeOf, onLocate }: { empty?: boolean; placeO
                     r.f.run.receipts
                       .filter((x) => x.at < liveNow)
                       .map((x, i, all) => {
-                        const end = i + 1 < all.length ? all[i + 1].at : FINAL.has(x.state) ? Math.min(liveNow, x.at + 1200) : liveNow;
-                        return <span key={i} className="rcb" data-r={x.state} style={{ ...X(axis, x.at, end), top: SUB - 9, height: 7 }} title={`${RECEIPT_NAMES[x.state]} · ${hhmmss(x.at)}`} />;
+                        const v = receiptView(r.f.run, x);
+                        const end = i + 1 < all.length ? all[i + 1].at : FINAL.has(v) ? Math.min(liveNow, x.at + 1200) : liveNow;
+                        return <span key={i} className="rcb" data-r={v} style={{ ...X(axis, x.at, end), top: SUB - 9, height: 7 }} title={`${RECEIPT_NAMES[v]} · ${hhmmss(x.at)}`} />;
                       })}
                   {!r.sub && fold[r.f.run.id] &&
                     runs.flat
@@ -437,7 +438,7 @@ export function Timeline({ empty, placeOf, onLocate }: { empty?: boolean; placeO
   );
 }
 
-const segTitle = (run: AgentRun, g: RunSeg) => `${run.name} · ${KIND_NAME[g.kind] ?? g.kind}${g.path ? ` ${g.path}` : g.cmd ? ` ${g.cmd}` : g.question ? ` ${g.question}` : ""}\n${hhmmss(g.start)}–${hhmmss(g.end)} · ${dur(g.end - g.start)}${g.turn ? ` · 第 ${g.turn} 轮` : ""}\n点击：跳到这一刻，看具体改了什么`;
+const segTitle = (run: WorkRun, g: RunSeg) => `${run.name} · ${KIND_NAME[g.kind] ?? g.kind}${g.path ? ` ${g.path}` : g.cmd ? ` ${g.cmd}` : g.question ? ` ${g.question}` : ""}\n${hhmmss(g.start)}–${hhmmss(g.end)} · ${dur(g.end - g.start)}${g.turn ? ` · 第 ${g.turn} 轮` : ""}\n点击：跳到这一刻，看具体改了什么`;
 
 function LaneName({ r, t, placeOf, onLocate, folded, kids, onFold }: { r: Row; t: number; placeOf?: (p: string) => string | undefined; onLocate?: (runId: string) => void; folded: boolean; kids: number; onFold: () => void }) {
   const run = r.f.run;

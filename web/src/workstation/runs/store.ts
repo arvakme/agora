@@ -1,17 +1,16 @@
 // The runs the 工位视图 draws: one tree per bound session. Top-level runs come from the transcripts
-// on the page; sub-agents from the adapter layer's run trees when the server serves them (fetched
-// again, at most every few seconds, when a session's transcript changes), or from the dev mock
-// (`?mock=runs`, fixtures.ts). Recomputed on data events only (and once a second while a session
-// runs, since its running turn ends at "now"), never per frame.
+// on the page; sub-agents from the server's run tree (`GET /api/agent/runs`, `fetchRuns` in
+// session/agents.ts, converted by derive.ts `fromTree`). The scripted dev mock (`?mock=runs`,
+// fixtures.ts) replaces all of it only when asked for (tests, demos). Recomputed on data events
+// only (and once a second while something runs, since a running turn ends at "now"), never per frame.
 import { useSyncExternalStore } from "react";
-import { AGENT_NAMES, agents, type AgentKind } from "../../session/agents";
+import { AGENT_NAMES, agents, fetchRuns, type AgentKind } from "../../session/agents";
 import { sessionNames } from "../../multi/writes";
-import { fetchRunTree } from "./client";
-import { runFromTranscript } from "./derive";
+import { fromTree, runFromTranscript } from "./derive";
 import { scenario } from "./fixtures";
-import { flatten, type AgentRun, type FlatRun } from "./types";
+import { flatten, type WorkRun, type FlatRun } from "./types";
 
-export type Runs = { roots: AgentRun[]; flat: FlatRun[]; byId: Map<string, AgentRun>; at: number };
+export type Runs = { roots: WorkRun[]; flat: FlatRun[]; byId: Map<string, WorkRun>; at: number };
 
 const MOCK = typeof location !== "undefined" && new URLSearchParams(location.search).get("mock") === "runs";
 const mockBase = Date.now() + 1500;
@@ -24,9 +23,11 @@ export const setRunsRoot = (r: string) => void (root = r);
 const empty: Runs = { roots: [], flat: [], byId: new Map(), at: 0 };
 let value: Runs = empty;
 const ls = new Set<() => void>();
-const trees = new Map<string, AgentRun>();
-const fetched = new Map<string, { items: unknown; at: number }>();
-const derived = new WeakMap<object, { key: string; run: AgentRun }>();
+/** Each session's sub-agents from the server's run tree, and which of its tool calls dispatched which. */
+const trees = new Map<string, { children: WorkRun[]; dispatches: Map<string, string>; live: boolean }>();
+const fetched = new Map<string, { items: unknown; at: number; inflight?: boolean }>();
+let unsupportedUntil = 0;
+const derived = new WeakMap<object, { key: string; run: WorkRun }>();
 
 /** How a session is called: its agent, or its tab name when two sessions of one agent are around. */
 export function runName(sessionId: string, bound: Record<string, { agent: AgentKind }>, names: Record<string, string>): string {
@@ -44,7 +45,7 @@ function compute(): Runs {
   }
   const st = agents.get();
   const names = sessionNames.get();
-  const roots: AgentRun[] = [];
+  const roots: WorkRun[] = [];
   const sec = Math.floor(now / 1000);
   for (const [sid, b] of Object.entries(st.bindings)) {
     const items = st.items[sid] ?? [];
@@ -59,24 +60,43 @@ function compute(): Runs {
     let run = hit.run;
     if (!run.segs.length) continue;
     const tree = trees.get(sid);
-    if (tree?.children.length) run = { ...run, children: tree.children, receipts: tree.receipts.length ? tree.receipts : run.receipts };
+    if (tree?.children.length) {
+      // the parent's 派 segments name the run they dispatched
+      const segs = tree.dispatches.size ? run.segs.map((g) => (g.itemId && tree.dispatches.has(g.itemId) ? { ...g, kind: "delegate" as const, child: tree.dispatches.get(g.itemId) } : g)) : run.segs;
+      run = { ...run, segs, children: tree.children, running: run.running || tree.live, lastAt: Math.max(run.lastAt, ...tree.children.map((c) => c.lastAt)) };
+    }
     roots.push(run);
-    maybeFetch(sid, items);
+    maybeFetch(sid, items, running || !!tree?.live);
   }
   roots.sort((a, b) => a.segs[0].start - b.segs[0].start);
   const flat = flatten(roots);
   return { roots, flat, byId: new Map(flat.map((f) => [f.run.id, f.run])), at: now };
 }
 
-function maybeFetch(sid: string, items: unknown) {
+/**
+ * The session's run tree from the server (`fetchRuns(sid, {items: true})`): again when its
+ * transcript changes, and every 3 s while it or a sub-agent runs (a sub-agent's log grows while the
+ * parent only waits). A server without run trees (404) is not asked again for a minute.
+ */
+function maybeFetch(sid: string, items: unknown, live: boolean) {
+  const now = Date.now();
+  if (now < unsupportedUntil) return;
   const f = fetched.get(sid);
-  if (f && (f.items === items || Date.now() - f.at < 3000)) return;
-  fetched.set(sid, { items, at: Date.now() });
-  void fetchRunTree(sid).then((tree) => {
-    if (!tree) return;
-    trees.set(sid, tree);
-    refresh();
-  });
+  if (f && (f.inflight || now - f.at < 3000 || (f.items === items && !live))) return;
+  fetched.set(sid, { items, at: now, inflight: true });
+  void fetchRuns(sid, { items: true })
+    .then((tree) => {
+      const t = fromTree(tree, sid, { now: Date.now(), root, name: (k) => AGENT_NAMES[k] ?? k });
+      trees.set(sid, { ...t, live: flatten(t.children).some((x) => x.run.running) });
+      refresh();
+    })
+    .catch((e: Error) => {
+      if (/not found|404|unknown/i.test(String(e.message))) unsupportedUntil = Date.now() + 60_000;
+    })
+    .finally(() => {
+      const g = fetched.get(sid);
+      if (g) g.inflight = false;
+    });
 }
 
 let scheduled = false;
@@ -97,7 +117,7 @@ function start() {
   const offN = sessionNames.subscribe(refresh);
   // Running turns end at "now": refresh once a second while anything runs (or the mock plays).
   timer = window.setInterval(() => {
-    if (MOCK || value.roots.some((r) => r.running)) refresh();
+    if (MOCK || value.flat.some((f) => f.run.running)) refresh();
   }, 1000);
   value = compute();
   stop = () => (offA(), offN(), clearInterval(timer), (timer = 0));
@@ -114,12 +134,7 @@ export const runs = {
       if (!ls.size) stop();
     };
   },
-  /** Tests / dev: replace what the server would serve for a session. */
-  setTree(sessionId: string, tree: AgentRun | null) {
-    if (tree) trees.set(sessionId, tree);
-    else trees.delete(sessionId);
-    refresh();
-  },
+
   mock: MOCK,
 };
 

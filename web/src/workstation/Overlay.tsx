@@ -149,7 +149,7 @@ function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflic
   else if (kind === "think") body = <><span className="v">{par && !g ? (st.receipt === "dispatched" ? "等它接单" : "确认任务") : "思考"}</span>{el}</>;
   else if (kind === "delegate") {
     const c = g?.child ? byId.get(g.child)?.run : undefined;
-    body = <><span className="v">派</span><span>{c ? `${c.name}：${c.task ?? ""}` : g?.label.replace(/^派 /, "")}</span>{c && <span className="el">{c.via === "seedmux" ? "经 Seedmux" : "Task 工具"}</span>}</>;
+    body = <><span className="v">派</span><span>{c ? `${c.name}：${c.task ?? ""}` : g?.label.replace(/^派 /, "")}</span>{c && <span className="el">{c.via === "seedmux" ? "经 Seedmux" : c.via === "task" ? "Task 工具" : "原生子代理"}</span>}</>;
   } else if (kind === "exec") body = <><span className="v">{g?.verifies ? "验收 · " : ""}跑</span><span className="f">{g?.cmd ?? g?.label}</span>{el}</>;
   else body = <><span className="v">{g?.verifies ? "验收 · " : ""}{kind === "write" ? "写" : "读"}</span><span className="f">{g?.path ? base(g.path) : ""}</span>{el}</>;
   const c = conflictAt(conflicts, run.id, t);

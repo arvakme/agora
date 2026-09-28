@@ -9,9 +9,9 @@
 
 | 文件 | 做什么 |
 |---|---|
-| `runs/types.ts` `runs/client.ts` | 统一的「运行」（会话 → 子代理 → 更深）；`GET /api/agent/runs?session=` 的类型化客户端（适配层分支提供，未合并前返回 404，客户端记住一分钟不再问） |
+| `runs/types.ts` `runs/derive.ts` | 界面用的「运行」`WorkRun`（会话 → 子代理 → 更深）；`fromTree` 把 `GET /api/agent/runs`（`session/agents.ts` 的 `fetchRuns`，类型与服务端一致，见 cli-adapters.md §5）换成子代理运行：时间片、`moments` 里的派发 / 交接时刻、`receipts[]`（一个 worker 可有几张票） |
 | `runs/derive.ts` `lanes.ts` | 没有运行树时，从页面上已有的转录推出顶层运行（读 / 写 / 执行 / 思考 / 等你 / 派子代理） |
-| `runs/fixtures.ts` `runs/store.ts` | 原型里那段脚本（一个主 agent、Seedmux worker、只有回执的 worker、Claude Task 子代理）；`?mock=runs` 用它，子代理的界面在适配层合并前就能看、能测 |
+| `runs/fixtures.ts` `runs/store.ts` | `store.ts` 把真实运行树挂到顶层运行下；`fixtures.ts` 是原型里那段脚本（一个主 agent、Seedmux worker、只有回执的 worker、Claude Task 子代理），只在显式带 `?mock=runs` 时用（测试、动效采集、截图），默认流程不用 |
 | `place.ts` | `stateAt(run, t)`：某一刻在哪、在做什么、要不要走、是否淡出（纯函数） |
 | `rig.ts` | 骨骼：弹簧、两段 IK、预先规划的脚步、绕开节点的路线、Hermite 滑动（纯函数 + 弹簧状态） |
 | `geometry.ts` | 节点框、落脚点、图外托盘、文件 → 节点（含子图），只在场景版本变化时重建 |
@@ -21,8 +21,8 @@
 
 ## 1. 数据
 
-- **运行**：顶层是 Agora 会话；子代理是它派出去的（Claude Task / Agent 工具、Codex spawn、经 Seedmux 的 worker），再往下不限层数。适配层给出 `segments`（读、写、执行、思考、等你、派）、`receipts`（已派发 → 已读 → 运行中 → 声明完成 / 已返回结果 → 验收通过，或 无回复退出 / 状态不明）、`spawnAt` / `doneAt`。契约写在 `runs/client.ts` 顶部。
-- 适配层没合并时：顶层运行从转录推（和原来的泳道一样确定：同一份日志得到同一条泳道）；子代理只在 `?mock=runs` 里有。合并后 `runs/store.ts` 在会话转录变化时（最多 3 秒一次）取运行树，把子代理挂到顶层运行下，界面不用改。
+- **运行**：顶层是 Agora 会话；子代理是它派出去的（Claude Task / Agent 工具、Codex spawn、经 Seedmux 的 worker），再往下不限层数。服务端 `/api/agent/runs?items=1` 给出每个 run 的条目（前端按和顶层一样的规则切成读、写、执行、思考、等你、派）、`moments`（父泳道上的派发 / 交接时刻）和 `receipts[]`；回执状态沿用服务端的统一状态（dispatched / acked / running / done / idle / session_changed），界面显示时把 `done` 按来源读作「声明完成」（Seedmux）或「已返回结果」（原生），`accepted` 读作「验收通过」，idle / session_changed 读作「状态不明」（`receiptView`）。
+- 顶层运行从转录推（确定：同一份日志得到同一条泳道）；`runs/store.ts` 在会话有转录时取运行树，会话在跑时每 3 秒再取一次，把子代理挂到顶层运行下，父运行里派出它的那次工具调用改成「派」片段；服务端没有这个接口（404）时一分钟内不再问。
 - **在场**：正在跑，或一分钟内有动静；空闲超过一分钟就淡出、离开画布（`IDLE_LEAVE_MS`），新的工作开始时出现在那段工作第一个节点上，不会从离开前的位置走过来。原来「最后聚焦的会话」永远显示的例外去掉了（它让「Pi App.tsx 10:03」挂了七小时）。
 
 ## 2. 小人

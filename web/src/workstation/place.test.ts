@@ -4,13 +4,13 @@
 import { describe, expect, it } from "vitest";
 import { bursts, FADE_MS, HANDOFF_MS, IDLE_LEAVE_MS, OUTSIDE, stateAt, writeConflicts, conflictAt, type Ctx } from "./place.ts";
 import { scenario } from "./runs/fixtures.ts";
-import type { AgentRun, RunSeg } from "./runs/types.ts";
+import type { WorkRun, RunSeg } from "./runs/types.ts";
 
 const S = 1000;
 const seg = (kind: RunSeg["kind"], start: number, end: number, path?: string): RunSeg => ({ kind, start: start * S, end: end * S, label: kind, ...(path ? { path } : {}) });
-const run = (segs: RunSeg[], x: Partial<AgentRun> = {}): AgentRun => ({ id: "r", agent: "pi", name: "Pi", segs, receipts: [], running: false, lastAt: 0, children: [], ...x });
+const run = (segs: RunSeg[], x: Partial<WorkRun> = {}): WorkRun => ({ id: "r", agent: "pi", name: "Pi", segs, receipts: [], running: false, lastAt: 0, children: [], ...x });
 const NODES: Record<string, { x: number; y: number }> = { api: { x: 0, y: 0 }, db: { x: 400, y: 0 }, [OUTSIDE]: { x: 200, y: 400 } };
-const ctx = (runs: AgentRun[] = [], reduced = false): Ctx => ({
+const ctx = (runs: WorkRun[] = [], reduced = false): Ctx => ({
   locate: (p) => (p.startsWith("server/db/") ? { place: "db" } : p.startsWith("server/") ? { place: "api" } : p.startsWith("orders/") ? { place: "api", portal: { canvasId: "c2", label: "订单模块" } } : null),
   dock: (p) => NODES[p] ?? NODES[OUTSIDE],
   reduced,

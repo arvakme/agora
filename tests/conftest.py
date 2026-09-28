@@ -9,6 +9,8 @@ import pytest
 
 os.environ.setdefault("AGORA_DATABASE_URL", "postgresql://agora:agora@127.0.0.1:5433/agora")
 os.environ.setdefault("AGORA_REDIS_URL", "redis://127.0.0.1:6379/0")
+# Starlette's TestClient sends Host: testserver; the owner app only answers to local names.
+os.environ.setdefault("AGORA_ALLOWED_HOSTS", "testserver")
 
 DSN = os.environ["AGORA_DATABASE_URL"]
 REDIS_URL = os.environ["AGORA_REDIS_URL"]

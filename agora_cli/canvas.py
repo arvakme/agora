@@ -164,10 +164,16 @@ def cmd_canvas(p, a) -> int:
 
 
 def cmd_skill(p, a) -> int:
-    from server.canvas.agents import SKILL_DIR, install_skill
+    from server.canvas.agents import KINDS, SKILL_DIR, install_skill
 
-    agents = ["claude", "pi", "codex"] if a.agent == "all" else [a.agent]
+    agents = list(KINDS) if a.agent == "all" else [a.agent]
     return out({"skill": str(SKILL_DIR), "installed": install_skill(p.root, agents, copy=a.copy)})
+
+
+def _session_kinds() -> tuple[str, ...]:
+    from server.canvas.adapters import session_kinds
+
+    return session_kinds()
 
 
 def add_parsers(sub) -> None:
@@ -214,6 +220,6 @@ def add_parsers(sub) -> None:
     k.add_argument("--project", default=None)
     ksub = k.add_subparsers(dest="skill_action", required=True)
     i = ksub.add_parser("install", help="link skills/agora-canvas into the project (.claude/skills, .agents/skills)")
-    i.add_argument("--agent", choices=["all", "claude", "pi", "codex"], default="all")
+    i.add_argument("--agent", choices=["all", *_session_kinds()], default="all")
     i.add_argument("--copy", action="store_true", help="copy instead of symlink")
     k.set_defaults(fn=cmd_skill)
