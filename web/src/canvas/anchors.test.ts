@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 // scene.ts pulls in Excalidraw's runtime for element builders this test does not use.
 vi.mock("@excalidraw/excalidraw", () => ({ convertToExcalidrawElements: () => [], FONT_FAMILY: {}, ROUNDNESS: {} }));
-import { resolveAnchor } from "./anchors.ts";
+import { hitTest, resolveAnchor } from "./anchors.ts";
 import type { El } from "./scene.ts";
 
 const el = (id: string, type: string, x: number, y: number, width: number, height: number, extra: Record<string, unknown> = {}) =>
@@ -31,5 +31,28 @@ describe("resolveAnchor", () => {
     const st = resolveAnchor(anchor, mapOf({ ...pg, isDeleted: true } as El));
     expect(st.point).toEqual({ x: 304, y: 400 });
     expect(st.status).toBe("lost");
+  });
+});
+
+// An inserted library component: a transparent root carrying the component's name and caption,
+// with the icon's own shapes grouped under it (libraryInsert.ts).
+describe("anchors on a library component", () => {
+  const G = "lib-api-x1";
+  const root = el("api", "rectangle", 100, 100, 80, 80, { groupIds: [G], customData: { agora: { library: "server", name: "Server", group: G, label: "api-label" } } });
+  const part = el("api-h1f9llad", "rectangle", 110, 110, 60, 60, { groupIds: ["g-inner", G] });
+  const caption = el("api-label", "text", 100, 186, 80, 18, { groupIds: [G], text: "API 服务" });
+
+  it("names an anchor on a part of the component by the component's label, not the part's id", () => {
+    const st = resolveAnchor({ ids: ["api-h1f9llad"], rel: { x: 0.5, y: 0.5 }, last: { x: 0, y: 0 } }, mapOf(root, part, caption));
+    expect(st.names).toEqual([{ id: "api-h1f9llad", name: "API 服务", alive: true }]);
+  });
+
+  it("aims at the component, not the shape inside it", () => {
+    expect(hitTest([root, part, caption], 140, 140, 1)?.id).toBe("api");
+  });
+
+  it("leaves shapes in an ordinary group alone", () => {
+    const a = el("a", "rectangle", 0, 0, 50, 50, { groupIds: ["g-user"] });
+    expect(hitTest([a], 10, 10, 1)?.id).toBe("a");
   });
 });

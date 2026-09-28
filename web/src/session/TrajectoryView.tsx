@@ -16,7 +16,8 @@
 //                      record inspector (input / output / timing / usage)
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
 import { IconChevron, IconCopy, IconSearch } from "../app/icons";
-import { agents, type Item } from "./agents";
+import { agents, type AgentKind, type Item } from "./agents";
+import { AgentAvatar } from "./AgentAvatar";
 import {
   ACTIVITY_NOW,
   activityOf,
@@ -198,7 +199,7 @@ export function ProcessFold({ sessionId, turn, children }: { sessionId: string; 
 }
 
 // ——— trajectory view ———
-export function TrajectoryView({ sessionId, turns, focusTurn }: { sessionId: string; turns: TrajTurn[]; focusTurn?: { n: number; key: number } | null }) {
+export function TrajectoryView({ sessionId, turns, focusTurn, agent }: { sessionId: string; turns: TrajTurn[]; focusTurn?: { n: number; key: number } | null; agent?: AgentKind }) {
   const [mode, setMode] = useState<TimelineMode>("sequence");
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
@@ -275,7 +276,7 @@ export function TrajectoryView({ sessionId, turns, focusTurn }: { sessionId: str
               {steps.map((s) => (
                 <StepGroup key={s.n} step={s}>
                   {s.records.map((r) => (
-                    <RecordRow key={r.id} sessionId={sessionId} r={r} selected={selected === r.id} onSelect={() => setSelected(selected === r.id ? null : r.id)} />
+                    <RecordRow key={r.id} sessionId={sessionId} r={r} selected={selected === r.id} onSelect={() => setSelected(selected === r.id ? null : r.id)} agent={agent} />
                   ))}
                 </StepGroup>
               ))}
@@ -318,12 +319,12 @@ function StepGroup({ step, children }: { step: TrajStep; children: React.ReactNo
   );
 }
 
-function RecordRow({ sessionId, r, selected, onSelect }: { sessionId: string; r: TrajRecord; selected: boolean; onSelect: () => void }) {
+function RecordRow({ sessionId, r, selected, onSelect, agent }: { sessionId: string; r: TrajRecord; selected: boolean; onSelect: () => void; agent?: AgentKind }) {
   return (
     <div className="ds-rec" data-selected={selected} data-kind={r.kind} data-error={r.isError}>
       <button className="ds-rec-line" onClick={onSelect} aria-expanded={selected}>
         <span className="ds-rec-i">#{r.index}</span>
-        <span className="ds-rec-kind">{KIND[r.kind]}</span>
+        <span className="ds-rec-kind">{r.kind === "message" && agent && <AgentAvatar kind={agent} size="xs" />}{KIND[r.kind]}</span>
         <span className="ds-rec-text">{r.kind === "tool" ? <span className="ds-mono">{r.text}</span> : r.text || "（空）"}</span>
         <span className="ds-rec-time">{r.running ? "…" : r.durationMs != null ? fmtDuration(r.durationMs) : clock(r.at)}</span>
       </button>

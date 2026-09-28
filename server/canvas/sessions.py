@@ -36,11 +36,13 @@ from server.canvas import agents, schemas
 from server.canvas.model_view import model_view, versions
 from server.canvas.project import ProjectStore
 from server.canvas.runner import ExecOptions, RunRequest, make_backend
+from server.canvas.seedmux import SeedmuxError
 from server.canvas.terminal import TerminalError, Terminals
 from server.canvas.transcript import MARKER, State, Tail, project, split_agora
 
 TICK_S = 0.4
 TYPING_HOLD_S = 4.0
+PANE_BOOT_S = 6.0  # a freshly opened pane gets this long to start its CLI before the first paste
 DELIVERY_CONFIRM_S = 30.0
 BRIDGE_TIMEOUT_S = 25.0
 MAX_ITEMS = 1500
@@ -264,8 +266,15 @@ class AgentHub:
             "held": lv.held,
             "activity": lv.activity,
             "error": lv.last_error,
-            "terminal": {"alive": lv.pane_alive, "attach": self.terms.attach_command(sid), "clients": self.terms.clients(sid) if lv.pane_alive else 0},
+            "terminal": self._terminal(sid, lv),
         }
+
+    def _terminal(self, sid: str, lv: Live) -> dict[str, Any]:
+        out: dict[str, Any] = {"alive": lv.pane_alive, "attach": self.terms.attach_command(sid), "clients": 0, "app": None}
+        if lv.pane_alive:
+            h = self.terms.holder(sid) or {}
+            out.update(app=h.get("app"), paneId=h.get("paneId"), clients=self.terms.clients(sid))
+        return out
 
     def _status(self, sid: str) -> None:
         self.broadcast(self.status(sid))
@@ -408,7 +417,10 @@ class AgentHub:
                 self._kick(sid)
                 continue
             reason = None
-            if lv.state.busy:
+            if lv.pane_since and time.time() - lv.pane_since < PANE_BOOT_S:
+                # A paste into a CLI that is still loading (resume, a Seedmux shell) is dropped.
+                reason = "终端刚打开，等 CLI 启动好再投递"
+            elif lv.state.busy:
                 reason = "agent 正在回复，回复完再投递"
             else:
                 last = await asyncio.to_thread(self.terms.last_input, sid)
@@ -546,14 +558,28 @@ class AgentHub:
         return False
 
     # ——— terminal ———
-    def open_terminal(self, sid: str, *, launch: bool, canvas_id: str | None = None) -> dict[str, Any]:
-        """Blocking (tmux, terminal launch): call from a worker thread after ``ensure_started``."""
+    def open_terminal(self, sid: str, *, launch: bool, canvas_id: str | None = None, app: str | None = None) -> dict[str, Any]:
+        """Blocking (tmux, terminal launch): call from a worker thread after ``ensure_started``.
+
+        ``app``: ``seedmux`` runs the CLI in a new Seedmux pane; otherwise Agora's own tmux pane,
+        with a Kitty / Terminal window attached when ``launch``."""
         b = self.binding(sid)
         lv = self._get(sid)
         if lv.running:
             raise Busy("这个会话正在无头运行一轮，结束后再在终端打开")
         argv = agents.interactive_argv(b["agent"], b.get("nativeId"), b.get("model") or None, b.get("effort") or None)
-        created = self.terms.open(sid, argv, cwd=self.store.root, env={**self.env_for(sid, canvas_id), "PATH": agents.child_env()["PATH"]})
+        env = {**self.env_for(sid, canvas_id), "PATH": agents.child_env()["PATH"]}
+        if app == "seedmux":
+            try:
+                r = self.terms.open_seedmux(sid, argv, env=env)
+            except SeedmuxError as exc:
+                raise TerminalError(str(exc)) from None
+            if r["created"]:
+                lv.pane_since = time.time()
+            lv.pane_alive = True
+            self._status(sid)
+            return {**r, "launched": "seedmux", "attach": self.terms.attach_command(sid), "argv": argv}
+        created = self.terms.open(sid, argv, cwd=self.store.root, env=env)
         if created:
             lv.pane_since = time.time()
         lv.pane_alive = True

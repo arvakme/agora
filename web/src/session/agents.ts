@@ -57,8 +57,12 @@ export type Status = {
   held: string | null;
   activity: string | null;
   error: string | null;
-  terminal: { alive: boolean; attach: string; clients: number };
+  /** Who holds the session's terminal: Agora's own tmux pane (Kitty / Terminal attach to it) or a Seedmux pane. */
+  terminal: { alive: boolean; attach: string; clients: number; app: "tmux" | "seedmux" | null; paneId?: string | null };
 };
+/** Where「在终端打开」opens: Kitty (Agora's tmux pane in a Kitty window) or a new Seedmux pane. */
+export type TerminalApp = "kitty" | "seedmux";
+export type TerminalApps = { kitty: boolean; seedmux: { available: boolean; reason?: string } };
 export type Catalog = Record<AgentKind, { kind: AgentKind; name: string; installed: boolean; default: string; models: string[]; featured: string[]; efforts: string[]; defaultEffort: string }>;
 /** A message Agora sent that has not finished yet (comment hand-offs wait on it). */
 export type Inflight = { sendId: string; sessionId: string; canvasId: string; threadId?: string; threadN?: number; anchor?: string; turnIds: string[] };
@@ -191,11 +195,12 @@ export const agents = {
     if (f) f.turnIds.push(turnId);
   },
 
-  async openTerminal(sessionId: string, canvasId: string, launch = true) {
+  async openTerminal(sessionId: string, canvasId: string, launch = true, app: TerminalApp = "kitty") {
     return (await json(
-      await fetch(`/api/agent/sessions/${sessionId}/terminal`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ launch, canvasId }) }),
-    )) as { attach: string; launched: "kitty" | "terminal" | null; created: boolean };
+      await fetch(`/api/agent/sessions/${sessionId}/terminal`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ launch, canvasId, app }) }),
+    )) as { attach: string; launched: "kitty" | "terminal" | "seedmux" | null; created: boolean; paneId?: string; attached?: boolean };
   },
+  terminalApps: async () => (await json(await fetch("/api/agent/terminals"))) as TerminalApps,
   /** A transcript item in full (tool args / output past the preview). */
   item: async (sessionId: string, itemId: string) => (await json(await fetch(`/api/agent/sessions/${sessionId}/items/${encodeURIComponent(itemId)}`))) as Item,
   closeTerminal: (sessionId: string) => fetch(`/api/agent/sessions/${sessionId}/terminal`, { method: "DELETE" }),

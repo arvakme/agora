@@ -76,12 +76,14 @@ describe("editing and deleting comments", () => {
     expect(st.get().threads).toEqual([]); // no visible message left: the thread disappears
     expect(st.get().activeId).toBeNull();
     undoMsg.run();
+    expect(st.get().activeId).toBe("t1"); // the undo reopens the card the delete closed
     const undo = st.removeThread("t1")!;
     expect(undo.label).toBe("已删除线程 #1");
     expect(st.get().threads).toEqual([]);
     expect(st.snapshot().threads[0]).toMatchObject({ id: "t1", n: 1, deleted: true, messages: [] });
     undo.run();
     expect(st.get().threads[0].messages[0].text).toBe("访客");
+    expect(st.get().activeId).toBe("t1");
     expect(st.create(anchor, "新的").n).toBe(2); // numbers are not reused
   });
 

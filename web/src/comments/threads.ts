@@ -158,6 +158,9 @@ export function createThreadStore(canvasId: string, initial?: ThreadSnapshot, re
     removeMessage(id: string, msgId: string): Undo | null {
       const m = find(id)?.messages.find((x) => x.id === msgId);
       if (!m || !canDelete(m)) return null;
+      // Deleting a thread's last visible message hides the thread, which closes its card; the
+      // undo brings the card back open, as it was.
+      const wasOpen = state.activeId === id;
       setMsg(id, msgId, (x) => tombstone(x, Date.now()));
       remote.remove?.(id, msgId);
       return {
@@ -165,7 +168,7 @@ export function createThreadStore(canvasId: string, initial?: ThreadSnapshot, re
         label: "已删除一条评论",
         run: () => {
           const back: Message = { ...m, updatedAt: Date.now() };
-          setMsg(id, msgId, () => back);
+          commit(all.map((t) => (t.id === id ? { ...t, messages: t.messages.map((x) => (x.id === msgId ? back : x)) } : t)), wasOpen ? id : state.activeId);
           remote.restore?.(id, back);
         },
       };
@@ -175,11 +178,12 @@ export function createThreadStore(canvasId: string, initial?: ThreadSnapshot, re
       const t = find(id);
       if (!t || t.deleted || !isOwner()) return null;
       const now = Date.now();
+      const wasOpen = state.activeId === id;
       commit(all.map((x) => (x.id === id ? { id: t.id, n: t.n, createdAt: t.createdAt, ...(t.createdBy && { createdBy: t.createdBy }), anchor: t.anchor, agent: "idle", resolved: true, deleted: true, updatedAt: now, messages: [] } : x)));
       return {
         canvasId,
         label: `已删除线程 #${t.n}`,
-        run: () => patch(id, () => ({ ...t, agent: "idle", updatedAt: Date.now() })),
+        run: () => commit(all.map((x) => (x.id === id ? { ...t, agent: "idle" as const, updatedAt: Date.now() } : x)), wasOpen ? id : state.activeId),
       };
     },
     /** Take in the file as the server has it now: threads and messages this page doesn't have yet

@@ -12,6 +12,8 @@ import { offerUndo } from "./undo";
 import { GUEST } from "../guest/mode";
 import { SPRING } from "./motion";
 import { useTurn } from "../session/store";
+import { AGENT_NAMES, useAgents } from "../session/agents";
+import { AgentAvatar } from "../session/AgentAvatar";
 import { ui } from "../session/ui";
 import { AnchorTag, type AnchorName } from "./AnchorTag";
 import type { CardPos } from "./CommentLayer";
@@ -131,12 +133,14 @@ function Row({ m, first, onUndo, tools }: { m: Message; first?: boolean; onUndo?
   const reply = native ? (turn?.reply ? { ...turn.reply, text: m.text, tone: m.tone } : undefined) : turn?.reply;
   const meta = turn && !native ? `${(((turn.endedAt ?? Date.now()) - turn.startedAt) / 1000).toFixed(1)}s${turn.costUsd != null ? ` · $${turn.costUsd.toFixed(4)}` : ""}` : ago(m.at);
   const other = m.author === "you" && !!m.by && m.by.id !== identity()?.id;
+  // A native session's reply shows that session's agent (Pi / Claude Code / Codex) by its own mark.
+  const agentKind = useAgents().bindings[m.sessionId ?? ""]?.agent;
   return (
     <div className="trow" data-first={first} data-tone={reply?.tone ?? m.tone}>
-      <Avatar who={m.author} name={other ? m.by!.name : undefined} />
+      {m.author === "agent" && agentKind ? <AgentAvatar kind={agentKind} /> : <Avatar who={m.author} name={other ? m.by!.name : undefined} />}
       <div className="trow-main">
         <div className="trow-meta">
-          <b>{m.author === "agent" ? "Agent" : m.author === "system" ? "系统" : other ? m.by!.name : "你"}</b>
+          <b>{m.author === "agent" ? (agentKind ? AGENT_NAMES[agentKind] : "Agent") : m.author === "system" ? "系统" : other ? m.by!.name : "你"}</b>
           {other && isGuestId(m.by!.id) && !GUEST && <span className="tguest">访客</span>}
           <time>{meta}</time>
           {m.editedAt && <span className="tedited" title={`编辑于 ${new Date(m.editedAt).toLocaleString("zh-CN")}`}>已编辑</span>}

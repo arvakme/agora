@@ -24,6 +24,8 @@ type Props = {
   subtitles?: Record<string, string>;
   /** Pane kind per tab: the tab's mark, and what a group's「+」creates. */
   kinds?: Record<string, "canvas" | "session">;
+  /** A tab's own mark in place of the dot (a session's agent avatar). */
+  marks?: Record<string, ReactNode>;
   focused: string;
   onFocus: (tab: string) => void;
   /** 「+」: canvas groups get a canvas, session groups a session; mixed or empty groups ask. */
@@ -41,7 +43,7 @@ type Props = {
   renderCanvas: (id: string) => ReactNode;
 };
 
-export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, focused, onFocus, onNew, onClose, onDelete, renderEmpty, editing, setEditing, onRename, onSettled, renderCanvas }: Props) {
+export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, marks = {}, focused, onFocus, onNew, onClose, onDelete, renderEmpty, editing, setEditing, onRename, onSettled, renderCanvas }: Props) {
   const [menu, setMenu] = useState<{ tab: string; x: number; y: number } | { group: string; x: number; y: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -183,7 +185,7 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, f
                       setMenu({ tab: t, x: e.clientX - box.left, y: e.clientY - box.top });
                     }}
                   >
-                    <span className="wm-tab-dot" />
+                    {marks[t] ?? <span className="wm-tab-dot" />}
                     {editing === t ? (
                       <TitleInput value={titles[t]} label={kinds[t] === "session" ? "会话名称" : "画布名称"} onDone={(v) => (v !== null && onRename(t, v), setEditing(null))} />
                     ) : (

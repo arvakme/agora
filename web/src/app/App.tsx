@@ -13,6 +13,7 @@ import { SessionPane } from "../session/SessionPane";
 import { sessions, type Session, type Turn } from "../session/store";
 import { agentChoice, canvases, ui } from "../session/ui";
 import { agents, type Binding } from "../session/agents";
+import { SessionMark } from "../session/AgentAvatar";
 import { pointerFollow } from "../pointer/follow";
 import { createThreadStore, threadStores, useThreads, type ThreadSnapshot, type ThreadStore } from "../comments/threads";
 import { AllDocs } from "../workspace/AllDocs";
@@ -484,6 +485,7 @@ export function App({ boot }: { boot: Boot }) {
           titles={Object.fromEntries(docs.map((d) => [d.id, d.title]))}
           subtitles={Object.fromEntries(docs.flatMap((d) => (d.kind === "session" ? [[d.id, titleOf(sessionCanvas(d)) ?? "画布已删除"]] : [])))}
           kinds={Object.fromEntries(docs.map((d) => [d.id, d.kind]))}
+          marks={Object.fromEntries(docs.flatMap((d) => (d.kind === "session" ? [[d.id, <SessionMark key={d.id} sessionId={d.sessionId} />]] : [])))}
           focused={focused}
           onFocus={focus}
           onNew={onNew}

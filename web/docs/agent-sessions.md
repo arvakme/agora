@@ -16,7 +16,7 @@ Agora 里的一个会话，就是用户选定的原生 coding agent 的一个原
 | 对话记录 | 以 CLI 自己的会话日志为准（见 §4），不另存一份；`.agora/sessions/<id>.jsonl` 只记这个会话里的画布修改（每次 `agora canvas apply/anim` 一条 turn，带整批撤销数据） |
 | 删除 | 删除会话同时删绑定文件；撤销删除时用原来的 agent / 模型 / 强度 / 原生 id 重新绑定 |
 
-会话面板只显示这一个 agent（名字就是 Pi / Claude Code / Codex）：「对话 / 轨迹」两种视图（见 §7）、它改画布的卡片（撤销、在画布中高亮）、状态行（处理中 / 排队原因 / 出错）、「在终端打开」。来自终端的轮次带「终端」标记。头部显示这个会话累计的轮数、tokens、耗时和花费。没有 @ 提及、没有派发步骤。
+会话面板只显示这一个 agent（名字就是 Pi / Claude Code / Codex，配各自的官方头像，来源与商标说明见 README「许可与致谢」；头像也用在选择 agent、tab、所有画布列表、进度指针标签、轨迹记录和评论线程里该会话的答复上）：「对话 / 轨迹」两种视图（见 §7）、它改画布的卡片（撤销、在画布中高亮）、状态行（处理中 / 排队原因 / 出错）、「在终端打开」。来自终端的轮次带「终端」标记。头部显示这个会话累计的轮数、tokens、耗时和花费。没有 @ 提及、没有派发步骤。
 
 **画布评论「交给 Agent」**：交给这块画布上**最近活动**的已绑定会话（最近一次收发、改图或绑定的时间）。画布上还没有已绑定会话时，打开（或复用）一个未绑定会话让用户选 agent，选好后自动交出；选「先不交」则在线程里留一条系统消息。Agent 收到的是线程全文 + 锚点名字和 id（`web/src/comments/handoff.ts`）；它的最终答复贴回线程，线程消息链接到会话和它最后一次改图（撤销按钮撤的是那一批；一次评论里改了多批时，前面的批次在会话里逐条撤销）。
 
@@ -78,13 +78,23 @@ agora canvas schema ops|anim          # 精确 JSON Schema
 
 ## 4. 在终端打开与双向同步
 
-**终端**：每个项目一个独立的 tmux 服务器 `tmux -L agora-<项目路径哈希>`，配置用 `.agora/run/tmux.conf`（不读 `~/.tmux.conf`），每个会话一个 tmux 会话 `agora-<会话 id>`，pane 里直接跑 §2 的交互式续接命令（不经 shell）：CLI 退出 = tmux 会话结束 = 不再持有。「在终端打开」创建或复用这个 pane，尝试用 Kitty（`kitty --detach`）打开窗口，没有 Kitty 用 macOS Terminal（`osascript`），并在面板上给出可复制的 `tmux -L … attach -t …`。「关闭终端」结束 pane 里的 CLI；`agora down` 关掉本项目的整个 tmux 服务器。无头一轮进行中不能打开终端（同一原生会话不能两个进程同时写）。
+**终端**：「在终端打开」是一个下拉（按钮 + ▾），选 **Kitty** 或 **Seedmux**，选择记在浏览器 `localStorage`（`agora.terminalApp`，默认 Kitty）。
+
+- **Kitty**：每个项目一个独立的 tmux 服务器 `tmux -L agora-<项目路径哈希>`，配置用 `.agora/run/tmux.conf`（不读 `~/.tmux.conf`），每个会话一个 tmux 会话 `agora-<会话 id>`，pane 里直接跑 §2 的交互式续接命令（不经 shell）：CLI 退出 = tmux 会话结束 = 不再持有。打开时创建或复用这个 pane，用 Kitty（`kitty --detach`）打开窗口，没有 Kitty 用 macOS Terminal（`osascript`），并在面板上给出 attach 命令（复制时带 `env -u TMUX`，在 tmux 或 Seedmux 的 pane 里也能直接运行）。
+- **Seedmux**（`server/canvas/seedmux.py`）：经 Seedmux **官方控制桥**新开一个 pane，CLI 直接跑在里面，不经 Agora 的 tmux。桥是 Seedmux 自带、在应用内文档（`Seedmux.app/Contents/Resources/team/references/operations.md`）里写明的本机 HTTP 接口：配置 `~/Library/Application Support/Seedmux/team-bridge.json`（`port`、`token`，可用 `SEEDMUX_TEAM_BRIDGE_PATH` 覆盖），请求头 `X-Token`；Agora 只调 `GET /panes`（探测可用）和 `POST /spawn {cwd, launch, focus, direction}`，这也是它的 `smx-team` CLI 开 pane 用的那个调用。不走 `smx-team spawn` 的派工流程（不写工单、不发信封）。Seedmux 把 `launch` 敲进新 pane 的登录 shell，Agora 给的是 `cd <项目> && exec env -u <嵌套标记> AGORA_*=… PATH=<Agora bin>:"$PATH" <§2 的交互式命令>`：`exec` 让 pane 就是这个 CLI，CLI 退出时 pane 自动消失；保留 pane 自己的 PATH（实测 Seedmux 不会把这种 pane 识别成 agent pane，岛上没有它的状态，不影响同步）。
+  - 新 pane 由 Seedmux 放在**当前聚焦的标签页**旁边（它的放置规则；桥没有「新标签页」参数），`focus: true`。
+  - 谁持有：`.agora/run/seedmux/<tmux 名>.json` 记 `{paneId, at, socket}`。Seedmux 的每个 pane 是它自己 tmux 服务器（`~/.seedmux/tmux.sock`）上的会话 `smx-<paneId>`；Agora 之后**只**对这一个会话做：看它是否还在跑（`pane_current_command` 不是 shell；刚开的 20 秒内是 shell 也算启动中）、读它客户端的最后按键时间、往里 bracketed paste + Enter、「关闭终端」时 `kill-session` 它。用户已有的 pane 和会话一概不读不写。
+  - 已在 Seedmux 中持有时，再点只提示「到 Seedmux 里切到那个 pane」（桥没有聚焦已有 pane 的接口），不开第二个；此时 Kitty 也不再起第二个 CLI。
+  - 已由 Agora 的 tmux pane 持有时选 Seedmux：新开的 Seedmux pane 只是 `exec env -u TMUX tmux -L … attach` 连到同一个 pane（和 Kitty 的「新窗口」一样），不起第二个 CLI。
+  - 桥不可用（Seedmux 没开、设置 › Agent Team 关了桥）时，下拉里 Seedmux 显示不可用和原因；「复制打开命令」先起 Agora 的 tmux pane，再复制 `env -u TMUX tmux -L … attach -t …`，在 Seedmux 或任意终端里新开 pane 粘贴即可。
+
+「关闭终端」结束持有它的 CLI（Seedmux pane 随之消失）；`agora down` 关掉本项目开过的 Seedmux pane 和整个 tmux 服务器。无头一轮进行中不能打开终端（同一原生会话不能两个进程同时写）。
 
 **终端 → 面板**：服务端每 0.4s 跟随原生会话日志（Claude `~/.claude/projects/*/<id>.jsonl`，Pi `~/.pi/agent/sessions/--<cwd>--/<时间>_<id>.jsonl`，Codex `~/.codex/sessions/YYYY/MM/DD/rollout-*-<id>.jsonl`，按 id glob 定位），把新记录映射成会话条目推到页面（SSE `/api/agent/events`）。终端里敲的话、agent 的回复和工具调用都会出现在面板上。
 
-**面板 → 终端**：Agora 发的消息末尾带一行上下文 `[[agora]] 来自 Agora · 画布「…」…`（面板显示时隐去，也用来标记来源）。pane 持有会话时：
+**面板 → 终端**（Kitty 与 Seedmux 相同，只是目标 pane 不同）：Agora 发的消息末尾带一行上下文 `[[agora]] 来自 Agora · 画布「…」…`（面板显示时隐去，也用来标记来源）。pane 持有会话时：
 
-1. 排队，直到 agent 这一轮答完（日志里看到回合结束）且终端 4 秒内没有按键（tmux `client_activity`）——面板状态行显示「排队中：…」原因。
+1. 排队，直到终端打开满 6 秒（CLI 还在启动时粘贴会丢）、agent 这一轮答完（日志里看到回合结束）且终端 4 秒内没有按键（tmux `client_activity`）——面板状态行显示「排队中：…」原因。
 2. `load-buffer` + `paste-buffer -p`（bracketed paste）+ Enter，和人粘贴回车一样。
 3. 日志里出现这条用户消息即确认送达；它这一轮结束时把回复交给等待者（例如评论线程）。30 秒内日志里没出现 → 报「终端没有确认收到」。
 4. 投递时 pane 已退出 → 这条改走无头续接。
@@ -100,7 +110,8 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 | GET | `/sessions/{id}` | 状态（绑定、运行、排队、终端） |
 | POST | `/sessions/{id}/send` | `{text, canvasId?, context?}` → `{sendId, route: terminal\|headless}` |
 | POST | `/sessions/{id}/interrupt` | 停止当前无头一轮并清空排队 |
-| POST / DELETE | `/sessions/{id}/terminal` | 打开（`{launch}`）/ 关闭终端 |
+| POST / DELETE | `/sessions/{id}/terminal` | 打开（`{launch, app: kitty\|seedmux}`）/ 关闭终端；状态里的 `terminal.app` 是 `tmux` 或 `seedmux`（带 `paneId`） |
+| GET | `/terminals` | 能在哪儿打开：`{kitty, seedmux: {available, reason?}}` |
 | GET | `/sessions/{id}/items/{itemId}` | 一条会话记录的全文（工具输入 / 输出超过预览长度时，页面「展开全文」用） |
 | GET | `/events?executor=1` | SSE：`transcript`、`status`、`delivered`、`done`、`bridge`（给执行页面） |
 | POST | `/bridge/{rid}` | 页面回传 read/apply/anim 结果 |

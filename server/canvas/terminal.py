@@ -8,11 +8,16 @@ shell): the tmux session exists exactly as long as the CLI holds the native sess
 Input into a pane is a bracketed paste (``paste-buffer -p``) followed by Enter, the same
 way a person pasting and pressing Enter would; ``client_activity`` (last keypress of any
 attached client) lets the caller hold a delivery while someone is typing.
+
+The pane can instead live in Seedmux (``seedmux.py``): then the agent CLI runs directly in a
+Seedmux pane Agora asked for, and the same operations address that pane on Seedmux's tmux
+server. Which one holds a session is recorded in ``.agora/run/seedmux/<session>.json``.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shlex
 import shutil
@@ -20,7 +25,8 @@ import subprocess
 import time
 from pathlib import Path
 
-from server.canvas.agents import _NESTED, child_env
+from server.canvas.agents import _NESTED, AGENT_BIN, child_env
+from server.canvas.seedmux import START_GRACE_S, Seedmux
 
 CONF = """\
 # Agora's tmux server for this project (not the user's ~/.tmux.conf).
@@ -41,12 +47,38 @@ class TerminalError(RuntimeError):
 
 
 class Terminals:
-    def __init__(self, root: Path, run_dir: Path, tmux: str | None = None) -> None:
+    def __init__(self, root: Path, run_dir: Path, tmux: str | None = None, seedmux: Seedmux | None = None) -> None:
         self.root = root
         self.run_dir = run_dir
         self.tmux = tmux or shutil.which("tmux") or "tmux"
         self.socket = f"agora-{hashlib.sha1(str(root).encode()).hexdigest()[:10]}"
         self.conf = run_dir / "tmux.conf"
+        self.smx = seedmux or Seedmux.default()
+
+    # ——— Seedmux holder record ———
+    def _smx_file(self, session_id: str) -> Path:
+        return self.run_dir / "seedmux" / f"{self.name(session_id)}.json"
+
+    def seedmux_pane(self, session_id: str) -> str | None:
+        """The Seedmux pane that holds this session, while it still runs (else the record is dropped)."""
+        f = self._smx_file(session_id)
+        try:
+            rec = json.loads(f.read_text())
+        except (OSError, ValueError):
+            return None
+        pane = rec.get("paneId")
+        st = self.smx.state(pane) if isinstance(pane, str) else "gone"
+        if st == "running" or (st == "starting" and time.time() - float(rec.get("at", 0)) < START_GRACE_S):
+            return pane
+        f.unlink(missing_ok=True)
+        return None
+
+    def holder(self, session_id: str) -> dict | None:
+        """``{"app": "seedmux", "paneId"}`` or ``{"app": "tmux"}`` while a pane holds the session."""
+        pane = self.seedmux_pane(session_id)
+        if pane:
+            return {"app": "seedmux", "paneId": pane}
+        return {"app": "tmux"} if self._agora_alive(session_id) else None
 
     # ——— plumbing ———
     def _run(self, *args: str, input: bytes | None = None, check: bool = True) -> subprocess.CompletedProcess:
@@ -75,6 +107,9 @@ class Terminals:
 
     # ——— state ———
     def alive(self, session_id: str) -> bool:
+        return self.seedmux_pane(session_id) is not None or self._agora_alive(session_id)
+
+    def _agora_alive(self, session_id: str) -> bool:
         r = self._run("display-message", "-p", "-t", self.pane(session_id), "#{pane_dead}", check=False)
         return r.returncode == 0 and r.stdout.strip() == b"0"
 
@@ -83,23 +118,31 @@ class Terminals:
         return r.stdout.decode().split() if r.returncode == 0 else []
 
     def clients(self, session_id: str) -> int:
+        if pane := self.seedmux_pane(session_id):
+            return self.smx.clients(pane)
         r = self._run("list-clients", "-t", f"={self.name(session_id)}", "-F", "#{client_activity}", check=False)
         return len(r.stdout.split()) if r.returncode == 0 else 0
 
     def last_input(self, session_id: str) -> float | None:
         """Epoch seconds of the latest keypress from any client attached to this pane."""
+        if pane := self.seedmux_pane(session_id):
+            return self.smx.last_input(pane)
         r = self._run("list-clients", "-t", f"={self.name(session_id)}", "-F", "#{client_activity}", check=False)
         vals = [float(x) for x in r.stdout.decode().split() if x.strip().isdigit()] if r.returncode == 0 else []
         return max(vals) if vals else None
 
     def capture(self, session_id: str, lines: int = 200) -> str:
+        if pane := self.seedmux_pane(session_id):
+            return self.smx.capture(pane, lines)
         r = self._run("capture-pane", "-p", "-J", "-S", f"-{lines}", "-t", self.pane(session_id), check=False)
         return r.stdout.decode("utf-8", "replace")
 
     # ——— actions ———
     def open(self, session_id: str, argv: list[str], *, cwd: Path, env: dict[str, str]) -> bool:
         """Start the pane unless it already runs. Returns True when it was created."""
-        if self.alive(session_id):
+        if self.seedmux_pane(session_id):
+            raise TerminalError("这个会话已在 Seedmux 中打开：到 Seedmux 里切到那个 pane，或先关闭终端")
+        if self._agora_alive(session_id):
             return False
         name = self.name(session_id)
         self._run("kill-session", "-t", f"={name}", check=False)  # a dead leftover
@@ -116,6 +159,12 @@ class Terminals:
         if PASTE_END in data:
             raise TerminalError("text contains a bracketed-paste terminator")
         buf = f"agora-{session_id}"
+        if pane := self.seedmux_pane(session_id):
+            try:
+                self.smx.paste(pane, text, buf, settle_s)
+            except subprocess.CalledProcessError as exc:
+                raise TerminalError((exc.stderr or b"").decode(errors="replace").strip() or "tmux paste failed") from None
+            return
         self._run("load-buffer", "-b", buf, "-", input=data)
         self._run("paste-buffer", "-p", "-d", "-b", buf, "-t", self.pane(session_id))
         time.sleep(settle_s)
@@ -132,6 +181,9 @@ class Terminals:
             self.socket_path().unlink(missing_ok=True)
 
     def kill(self, session_id: str) -> None:
+        if pane := self.seedmux_pane(session_id):
+            self.smx.kill(pane)
+            self._smx_file(session_id).unlink(missing_ok=True)
         self._run("kill-session", "-t", f"={self.name(session_id)}", check=False)
         self._drop_dead_socket()
 
@@ -140,10 +192,57 @@ class Terminals:
         self._run("kill-server", check=False)
         self._drop_dead_socket()
 
+    def shutdown(self) -> None:
+        """``agora down``: the Seedmux panes this project opened, then its own tmux server."""
+        for f in sorted((self.run_dir / "seedmux").glob("*.json")):
+            try:
+                pane = json.loads(f.read_text()).get("paneId")
+            except (OSError, ValueError):
+                pane = None
+            if isinstance(pane, str) and self.smx.state(pane) != "gone":
+                self.smx.kill(pane)
+            f.unlink(missing_ok=True)
+        self.kill_server()
+
+    # ——— Seedmux ———
+    def seedmux_launch(self, argv: list[str], env: dict[str, str]) -> str:
+        """The line Seedmux types into the new pane's shell: become the agent CLI (``exec``).
+
+        The pane keeps its own PATH (Seedmux's agent shims stay in front, so its status hooks
+        work) with Agora's ``bin/`` prepended for ``agora canvas``."""
+        q = shlex.quote
+        unset = " ".join(f"-u {k}" for k in _NESTED)
+        sets = " ".join(f"{k}={q(v)}" for k, v in env.items() if k != "PATH")
+        return f"cd {q(str(self.root))} && exec env {unset} {sets} PATH={q(str(AGENT_BIN))}:\"$PATH\" {' '.join(q(a) for a in argv)}"
+
+    def open_seedmux(self, session_id: str, argv: list[str], *, env: dict[str, str]) -> dict:
+        """Hold the session in a new Seedmux pane, or return the one already holding it.
+
+        When Agora's own tmux pane already holds it, the new Seedmux pane is one more window
+        attached to that pane (like「新窗口」in Kitty) instead of a second CLI process."""
+        if pane := self.seedmux_pane(session_id):
+            return {"paneId": pane, "created": False, "attached": False}
+        if self._agora_alive(session_id):
+            attach = f"exec env -u TMUX {self.attach_command(session_id)}"
+            pane = self.smx.spawn(attach, self.root)
+            return {"paneId": pane, "created": False, "attached": True}
+        pane = self.smx.spawn(self.seedmux_launch(argv, env), self.root)
+        f = self._smx_file(session_id)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps({"paneId": pane, "at": time.time(), "socket": str(self.smx.socket)}))
+        return {"paneId": pane, "created": True, "attached": False}
+
+    def seedmux_status(self) -> dict:
+        return self.smx.check()
+
+    @staticmethod
+    def kitty() -> str | None:
+        return shutil.which("kitty") or ("/Applications/kitty.app/Contents/MacOS/kitty" if Path("/Applications/kitty.app").exists() else None)
+
     def launch(self, session_id: str, title: str) -> str | None:
         """Open a terminal window attached to the pane: Kitty, else macOS Terminal. Returns which."""
         attach = self.attach_command(session_id)
-        kitty = shutil.which("kitty") or ("/Applications/kitty.app/Contents/MacOS/kitty" if Path("/Applications/kitty.app").exists() else None)
+        kitty = self.kitty()
         if kitty:
             try:
                 subprocess.Popen(
