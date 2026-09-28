@@ -1,37 +1,45 @@
-// The one clock the 工位视图 and the progress pointers share: live (now), or a replay position
-// the person dragged the timeline to (optionally playing at a speed). Replay time is always
-// computed from the wall clock — `at + (now - since) * speed` — never accumulated per frame, so
-// a tab that was in the background (no animation frames) shows the right moment when it returns.
+// The one clock the 工位视图 and the timeline share: live (now), or a replay position the person
+// dragged the timeline to (optionally playing at a speed). Replay time is always computed from the
+// wall clock — `advance(at, (now - since) × speed, gaps)` — never accumulated per frame, so a tab
+// that was in the background (no animation frames) shows the right moment when it returns, and
+// playback skips the collapsed idle stretches.
+//
+// React never re-renders per frame from here: drawing reads `clock.time()` inside the one frame
+// loop (./frame.ts); components that show a time use `useTick` (a coarse timer).
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { advance } from "./axis";
 
-export type Replay = { at: number; playing: boolean; speed: number; since: number; until: number };
+export type Replay = { at: number; playing: boolean; speed: number; since: number; until: number; gaps?: readonly { a: number; b: number }[] };
 
 let replay: Replay | null = null;
-let enabled: Record<string, boolean> = readEnabled();
 const ls = new Set<() => void>();
 const emit = () => ls.forEach((l) => l());
 
-function readEnabled(): Record<string, boolean> {
+/** Replay time at wall-clock `now` (clamped to the end of the recording). */
+export const replayTime = (r: Replay, now: number) => (r.playing ? Math.min(r.until, advance(r.at, (now - r.since) * r.speed, r.gaps ?? [])) : r.at);
+
+const WS_KEY = "agora.workstation.v2";
+function readOn(): boolean {
   try {
-    return JSON.parse(localStorage.getItem("agora.workstation") ?? "{}") as Record<string, boolean>;
+    return localStorage.getItem(WS_KEY) !== "off";
   } catch {
-    return {};
+    return true;
   }
 }
-
-/** Replay time at wall-clock `now` (clamped to the end of the recording). */
-export const replayTime = (r: Replay, now: number) => (r.playing ? Math.min(r.until, r.at + (now - r.since) * r.speed) : r.at);
+let on = readOn();
 
 export const clock = {
   get: () => replay,
   subscribe: (l: () => void) => (ls.add(l), () => void ls.delete(l)),
+  /** The time to draw: the replay position, or now. */
+  time: (now = Date.now()) => (replay ? replayTime(replay, now) : now),
   /** Jump to a moment (pauses). */
-  seek(at: number, until: number) {
-    replay = { at, playing: false, speed: replay?.speed ?? 1, since: Date.now(), until };
+  seek(at: number, until: number, gaps?: Replay["gaps"]) {
+    replay = { at, playing: false, speed: replay?.speed ?? 1, since: Date.now(), until, gaps: gaps ?? replay?.gaps };
     emit();
   },
-  play(from: number, until: number, speed = replay?.speed ?? 1) {
-    replay = { at: from, playing: true, speed, since: Date.now(), until };
+  play(from: number, until: number, speed = replay?.speed ?? 1, gaps?: Replay["gaps"]) {
+    replay = { at: from, playing: true, speed, since: Date.now(), until, gaps: gaps ?? replay?.gaps };
     emit();
   },
   pause() {
@@ -51,58 +59,53 @@ export const clock = {
     replay = null;
     emit();
   },
-  /** 工位视图 on / off, per canvas (a per-viewer convenience, kept in this browser). */
-  enabled: (canvasId: string) => !!enabled[canvasId],
-  toggle(canvasId: string) {
-    enabled = { ...enabled, [canvasId]: !enabled[canvasId] };
+  /** 工位视图 on / off (per browser; on by default). Off: a compact presence chip per agent instead of figures. */
+  enabled: (_canvasId?: string) => on,
+  setEnabled(v: boolean) {
+    on = v;
     try {
-      localStorage.setItem("agora.workstation", JSON.stringify(enabled));
+      localStorage.setItem(WS_KEY, v ? "on" : "off");
     } catch {
       /* private mode: this page only */
     }
-    if (!Object.values(enabled).some(Boolean)) replay = null;
+    if (!v) replay = null;
     emit();
+  },
+  toggle(_canvasId?: string) {
+    clock.setEnabled(!on);
   },
 };
 
 export const useReplay = () => useSyncExternalStore(clock.subscribe, clock.get);
-export const useWorkstation = (canvasId: string) => useSyncExternalStore(clock.subscribe, () => clock.enabled(canvasId));
+export const useWorkstation = (_canvasId?: string) => useSyncExternalStore(clock.subscribe, () => on);
 
 const reduced = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+export { reduced as prefersReducedMotion };
 
 /**
- * The current time for drawing, ticking once per animation frame while `animate` and the page is
- * visible (1 s steps with reduced motion). Frames only repaint; the state is computed from the time.
+ * A coarse "now" for React: re-renders every `ms` while `active` and the page is visible (a
+ * background tab gets one update when it comes back). Never per frame.
  */
-export function useNow(animate: boolean): number {
+export function useTick(ms: number, active = true): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!animate) return;
-    let raf = 0;
+    if (!active) return;
     let timer = 0;
-    const slow = reduced();
-    const tick = () => {
+    const start = () => {
+      clearInterval(timer);
       setNow(Date.now());
-      if (!slow && document.visibilityState === "visible") raf = requestAnimationFrame(tick);
+      if (document.visibilityState === "visible") timer = window.setInterval(() => setNow(Date.now()), ms);
     };
-    // Frames stop in a background tab; a coarse timer keeps "now" roughly right there, and the
-    // first visible frame jumps straight to the correct state.
-    timer = window.setInterval(() => setNow(Date.now()), slow ? 1000 : 1000);
-    const onVis = () => {
-      cancelAnimationFrame(raf);
-      if (document.visibilityState === "visible") tick();
-    };
-    document.addEventListener("visibilitychange", onVis);
-    tick();
-    return () => (cancelAnimationFrame(raf), clearInterval(timer), document.removeEventListener("visibilitychange", onVis));
-  }, [animate]);
+    start();
+    document.addEventListener("visibilitychange", start);
+    return () => (clearInterval(timer), document.removeEventListener("visibilitychange", start));
+  }, [ms, active]);
   return now;
 }
 
-/** The time the pointers and workers show: replay position, or null for live. */
-export function useReplayAt(animate: boolean): number | null {
+/** The time the canvas shows, for React consumers (re-rendered at 4 Hz while a replay plays): replay position, or null for live. */
+export function useReplayAt(): number | null {
   const r = useReplay();
-  const now = useNow(animate && !!r?.playing);
+  const now = useTick(250, !!r?.playing);
   return r ? replayTime(r, now) : null;
 }
-export { reduced as prefersReducedMotion };

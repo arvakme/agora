@@ -89,6 +89,9 @@
   --avatar-tile: #eef1f2;
   --avatar-edge: #dfe3e6;
   --avatar-ink: #111111;
+  /* Agora: 工位视图 figures — graphite body, a lighter far side (the only colours of a worker). */
+  --fig: #3a4046;
+  --fig-far: #8c959b;
   --canvas-bg: #ffffff;
 }
 
@@ -148,6 +151,8 @@
     --avatar-tile: #353b41;
     --avatar-edge: #454c53;
     --avatar-ink: #f6f6f6;
+    --fig: #c3c9ce;
+    --fig-far: #6d767d;
     --canvas-bg: #e6ebef; /* invert(93%) hue-rotate(180deg) of this = #202428 */
   }
 }
@@ -205,6 +210,8 @@
   --avatar-tile: #353b41;
   --avatar-edge: #454c53;
   --avatar-ink: #f6f6f6;
+  --fig: #c3c9ce;
+  --fig-far: #6d767d;
   --canvas-bg: #e6ebef; /* invert(93%) hue-rotate(180deg) of this = #202428 */
 }
 

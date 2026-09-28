@@ -24,6 +24,8 @@ const AGENTS = opt("agents", 18);
 const ELEMENTS = opt("elements", 500);
 const SECONDS = opt("seconds", 5);
 const SCENARIOS = (args.includes("--scenarios") ? args[args.indexOf("--scenarios") + 1] : "idle,pan").split(",") as ("idle" | "pan")[];
+/** What "off" means: `ws` = the 工位视图 switched off (old builds), `bare` = no overlay and no timeline at all (&bare). */
+const OFF = args.includes("--off") ? args[args.indexOf("--off") + 1] : "ws";
 const VIEWS = (args.includes("--views") ? args[args.indexOf("--views") + 1] : "on,off").split(",").map((v) => v === "on");
 if (!url) {
   console.error("usage: node scripts/bench-overlay.ts <url> [label]");
@@ -113,6 +115,8 @@ async function measure(page: Page, cdp: CDPSession, scenario: "idle" | "pan") {
     p95: +q(0.95).toFixed(1),
     over20ms: iv.filter((x) => x > 20).length,
     mainMsPerFrame: +(busy / 1000 / traced).toFixed(2),
+    // per 60 Hz display frame (wheel input can make rAF fire more often than the display refreshes)
+    mainMsPer60Hz: +(busy / 1000 / (SECONDS * 60)).toFixed(2),
     tracedFrames: traced,
     wsMsPerFrame: wsN ? +(wsMs / traced).toFixed(3) : null,
   };
@@ -131,7 +135,7 @@ for (const ws of VIEWS) {
     }
   }, ws);
   const page = await ctx.newPage();
-  await page.goto(`${url.replace(/\/$/, "")}/?fresh&bench=${AGENTS}x${ELEMENTS}`);
+  await page.goto(`${url.replace(/\/$/, "")}/?fresh&bench=${AGENTS}x${ELEMENTS}${!ws && OFF === "bare" ? "&bare" : ""}`);
   await page.waitForFunction(() => (window as unknown as { __bench?: { ready: boolean } }).__bench?.ready, undefined, { timeout: 30_000 });
   await page.waitForTimeout(2500); // let the first layout settle
   page.on("crash", () => console.log("crash at", new Date().toISOString()));
@@ -145,9 +149,9 @@ for (const ws of VIEWS) {
 }
 await browser.close();
 const overlay = (s: "idle" | "pan") => {
-  const on = results[`on/${s}`] as { mainMsPerFrame?: number };
-  const off = results[`off/${s}`] as { mainMsPerFrame?: number };
-  return on?.mainMsPerFrame == null || off?.mainMsPerFrame == null ? null : +(on.mainMsPerFrame - off.mainMsPerFrame).toFixed(2);
+  const on = results[`on/${s}`] as { mainMsPer60Hz?: number };
+  const off = results[`off/${s}`] as { mainMsPer60Hz?: number };
+  return on?.mainMsPer60Hz == null || off?.mainMsPer60Hz == null ? null : +(on.mainMsPer60Hz - off.mainMsPer60Hz).toFixed(2);
 };
 const summary = { label, agents: AGENTS, elements: ELEMENTS, seconds: SECONDS, results, overlayMsPerFrame: { idle: overlay("idle"), pan: overlay("pan") } };
 console.log(JSON.stringify(summary.overlayMsPerFrame));

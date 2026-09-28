@@ -17,8 +17,13 @@ import { useHighlight } from "../session/ui";
 import { PointerLayer } from "../pointer/PointerLayer";
 import { childAt, OwnerBreadcrumb, OwnerChildMarkers } from "../nested/NestedLayer";
 import { nav } from "../nested/store";
-import { TimelinePanel, Workers, WorkstationToggle } from "../workstation/Workstation";
+import { WorkstationOverlay } from "../workstation/Overlay";
+import { Timeline } from "../workstation/Timeline";
 import { useWorkstation } from "../workstation/clock";
+import { viewport } from "./viewport";
+import { BENCH_BARE } from "../bench/bench";
+import { figurePositions } from "../workstation/focus";
+import { prefersReducedMotion } from "../workstation/clock";
 import { useChrome } from "./useChrome";
 import type { Box } from "./clearance";
 import { AnimatePresence, motion } from "motion/react";
@@ -27,6 +32,8 @@ import { SPRING } from "../comments/motion";
 export type CanvasDoc = { id: string; title: string; store: ThreadStore };
 export type CanvasViewState = {
   id: string;
+  /** Changes whenever an element does (hashElementsVersion): geometry derived from the scene keys on it. */
+  version: number;
   elements: readonly El[];
   map: Map<string, El>;
   appState: Pick<AppState, "scrollX" | "scrollY" | "zoom" | "width" | "height" | "selectedElementIds">;
@@ -66,7 +73,7 @@ type Props = {
 
 export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelection, onModeDone, initialElements, onScene, readOnly, onEnterChild, top, overlay }: Props) {
   const enter = (child: string) => (onEnterChild ? onEnterChild(child) : nav.go(doc.id, child));
-  const workstation = useWorkstation(doc.id) && !readOnly;
+  const figuresOn = useWorkstation(doc.id);
 
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [view, setView] = useState<CanvasViewState | null>(null);
@@ -118,6 +125,8 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
   const fitted = useRef(false);
   const lastSize = useRef<{ w: number; h: number } | null>(null);
   const onChange = useCallback((elements: readonly El[], appState: AppState) => {
+    // The 工位视图 moves with the view in the same frame (its frame loop reads this, no React).
+    viewport.set(doc.id, { scrollX: appState.scrollX, scrollY: appState.scrollY, zoom: appState.zoom.value, width: appState.width, height: appState.height });
     const first = !pending.current;
     pending.current = { elements, appState };
     if (!first) return;
@@ -146,7 +155,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
       if (key.split("|")[5] !== lastKey.current.split("|")[5]) cb.current.onScene?.(p.elements);
       lastKey.current = key;
       const all = api.getSceneElementsIncludingDeleted();
-      setView({ id: doc.id, elements: all, map: byId(all), appState: a });
+      setView({ id: doc.id, version: Number(key.split("|")[5]), elements: all, map: byId(all), appState: a });
       cb.current.onSelection(sel.length);
     });
   }, [api, doc.id]);
@@ -261,16 +270,44 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
           {!readOnly && <HighlightLayer canvasId={doc.id} view={view} />}
           {readOnly ? overlay?.(view, chrome) : <OwnerChildMarkers view={view} canvasId={doc.id} chrome={chrome} />}
           {!readOnly && <PointerLayer api={api} view={view} chrome={chrome} />}
-          {workstation && <Workers view={view} chrome={chrome} />}
+          {!readOnly && !BENCH_BARE && <WorkstationOverlay view={view} chrome={chrome} figuresOn={figuresOn} />}
         </>
       )}
-      {!readOnly && api && <WorkstationToggle canvasId={doc.id} />}
       </div>
-      {workstation && <TimelinePanel canvasId={doc.id} view={view} />}
+      {!readOnly && !BENCH_BARE && <Timeline onLocate={(runId) => api && locate(api, doc.id, runId)} />}
       </div>
       {api && view && <CommentsDrawer title={doc.title} api={api} store={doc.store} view={view} open={drawerOpen} onClose={() => onDrawer(false)} />}
     </div>
   );
+}
+
+/**
+ * A lane name in the timeline "locates" its agent: this canvas glides (≈420 ms, eased) so the
+ * figure sits in the middle, once. The person's own pan / zoom / click stops the glide at once.
+ */
+function locate(api: ExcalidrawImperativeAPI, canvasId: string, runId: string) {
+  const p = figurePositions.get(canvasId, runId);
+  if (!p) return;
+  const a = api.getAppState();
+  const z = a.zoom.value;
+  const to = { x: a.width / 2 / z - p.x, y: a.height / 2 / z - (p.y - 30) };
+  if (prefersReducedMotion()) return api.updateScene({ appState: { scrollX: to.x, scrollY: to.y } });
+  const from = { x: a.scrollX, y: a.scrollY };
+  const t0 = performance.now();
+  const D = 420;
+  let stop = false;
+  const cancel = () => (stop = true);
+  addEventListener("pointerdown", cancel, { capture: true, once: true });
+  addEventListener("wheel", cancel, { capture: true, once: true });
+  const step = () => {
+    if (stop) return;
+    const u = Math.min(1, (performance.now() - t0) / D);
+    const e = 1 - (1 - u) ** 3;
+    api.updateScene({ appState: { scrollX: from.x + (to.x - from.x) * e, scrollY: from.y + (to.y - from.y) * e } });
+    if (u < 1) requestAnimationFrame(step);
+    else (removeEventListener("pointerdown", cancel, { capture: true }), removeEventListener("wheel", cancel, { capture: true }));
+  };
+  requestAnimationFrame(step);
 }
 
 const canvasBg = () => getComputedStyle(document.documentElement).getPropertyValue("--canvas-bg").trim() || "white";
