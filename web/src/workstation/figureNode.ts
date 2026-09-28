@@ -1,8 +1,15 @@
 // One worker as SVG nodes, created once and then only updated in place (setAttribute) by the frame
 // loop — no markup strings, no React per frame. Drawn in figure space: the root on the ground at
 // (0, 0), up is −y; the overlay places the whole group with one transform.
+//
+// The look is Loom Studio's line figure (docs/workstation.md §小人). Each bone is a capsule: one
+// closed path, paper inside and an ink outline that stays 1.1 screen px at any zoom (a non-scaling
+// stroke), so a bone costs one element. Bones are drawn back to front — far arm, far leg, torso,
+// near leg, near arm, head — so at a knee or an elbow the lower bone's outline lies over the upper
+// one. The far limbs are filled a shade darker. Colours are the --fig-* tokens (light and dark).
 import codex128 from "../app/agents/codex-128.png";
-import type { Joints } from "./rig";
+import { focus } from "./focus";
+import { RIG, type Bone, type Joints, type Pt } from "./rig";
 
 const NS = "http://www.w3.org/2000/svg";
 const el = <K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}, parent?: Element): SVGElementTagNameMap[K] => {
@@ -12,6 +19,37 @@ const el = <K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, 
   return e;
 };
 const f2 = (n: number) => (Math.round(n * 100) / 100).toString();
+
+/** Outlines in screen px (non-scaling strokes): bones, props and the page; the head's is a little bolder. */
+const LINE = 1.1;
+const HEAD_LINE = 1.4;
+/** Loom's drawing numbers below are for its figure; ours is that figure scaled by K (rig.ts RIG), head excepted. */
+const K = RIG.torso / 16.4;
+/** The paper width of each bone inside its outline (Loom's, scaled). */
+const WIDTH = { torso: 9.2, thigh: 4.7, shin: 4.3, foot: 3.2, upper: 4, fore: 3.6 };
+/** A capsule's radius: half its paper width plus the half of the outline that lies inside it (~0.55 px at 100 %). */
+const R = Object.fromEntries(Object.entries(WIDTH).map(([k, w]) => [k, (w * K) / 2 + 0.45])) as { [N in keyof typeof WIDTH]: number };
+/** The standing desk's top above the ground (Loom's; the desk is drawn scaled by K). */
+const DESK = -26.4;
+/** The ! / ? dot sits up and in front of the head (Loom's place for it; the overlay leaves 9 units above the head for it). */
+const MARK_UP = RIG.head + 4.2;
+/** Selecting a figure swaps these three colours for the accent (see `draw`). */
+const INK = "var(--wsf-ink, var(--fig-ink))";
+const PAPER = "var(--wsf-fill, var(--fig-fill))";
+const FAR = "var(--wsf-far, var(--fig-far))";
+const SELECTED = "--wsf-ink: var(--accent); --wsf-fill: var(--fig-sel-fill); --wsf-far: var(--fig-sel-far)";
+const outline = (w = LINE) => ({ stroke: INK, "stroke-width": w, "vector-effect": "non-scaling-stroke" });
+
+/** A bone from a to b with round ends of radius r, as one closed path: two sides and two half circles. */
+function capsule(ax: number, ay: number, bx: number, by: number, r: number): string {
+  const len = Math.hypot(bx - ax, by - ay);
+  const ux = len > 1e-3 ? (bx - ax) / len : 1;
+  const uy = len > 1e-3 ? (by - ay) / len : 0;
+  const nx = -uy * r;
+  const ny = ux * r;
+  const arc = `A${f2(r)} ${f2(r)} 0 0 0 `;
+  return `M${f2(ax + nx)} ${f2(ay + ny)}L${f2(bx + nx)} ${f2(by + ny)}${arc}${f2(bx - nx)} ${f2(by - ny)}L${f2(ax - nx)} ${f2(ay - ny)}${arc}${f2(ax + nx)} ${f2(ay + ny)}Z`;
+}
 
 /** The agent's mark inside a disc of radius r at (0, 0), as SVG (symbols come from <WorkerDefs/>). */
 export function mark(agent: string, r: number, parent: Element) {
@@ -27,69 +65,78 @@ export function mark(agent: string, r: number, parent: Element) {
 export class FigureNode {
   readonly g: SVGGElement;
   private body: SVGGElement;
-  private shadow: SVGEllipseElement;
   private desk: SVGGElement;
-  private deskStand: SVGPathElement;
-  private deskTop: SVGRectElement;
+  private deskPost: SVGPathElement;
+  private deskTop: SVGPathElement;
   private screen: SVGRectElement;
-  private line1: SVGRectElement;
-  private line2: SVGRectElement;
+  private code: SVGPathElement;
   private prompt: SVGPathElement;
-  private cursor: SVGRectElement;
-  private legF: SVGPathElement;
+  private upperF: SVGPathElement;
+  private foreF: SVGPathElement;
+  private thighF: SVGPathElement;
+  private shinF: SVGPathElement;
   private footF: SVGPathElement;
-  private armF: SVGPathElement;
   private torso: SVGPathElement;
-  private legN: SVGPathElement;
+  private thighN: SVGPathElement;
+  private shinN: SVGPathElement;
   private footN: SVGPathElement;
+  private sheet: SVGGElement;
+  private sheetRect: SVGRectElement;
+  private sheetLines: SVGPathElement;
+  private upperN: SVGPathElement;
+  private foreN: SVGPathElement;
   private head: SVGGElement;
-  private prop: SVGGElement;
-  private propRect: SVGRectElement;
-  private propLines: SVGPathElement;
-  private armN: SVGPathElement;
   private badge: SVGGElement | null = null;
   private markG: SVGGElement;
   private markC: SVGCircleElement;
   private markT: SVGTextElement;
+  private rigLines: SVGPathElement;
+  private rigJoints: SVGPathElement;
   private last: Record<string, string> = {};
 
   constructor(readonly id: string, agent: string, o: { parentAgent?: string; label: string }) {
     this.g = el("g", { class: "ws-worker", "data-run": id, role: "button", tabindex: 0, "aria-label": o.label });
     el("rect", { x: -14, y: -64, width: 32, height: 66, fill: "transparent", class: "ws-hit" }, this.g);
-    this.body = el("g", {}, this.g);
-    const b = this.body;
-    this.shadow = el("ellipse", { cy: 0.6, rx: 9.5, ry: 1.8, fill: "var(--line-strong)", opacity: 0.7 }, b);
-    this.desk = el("g", {}, b);
-    this.deskStand = el("path", { stroke: "var(--fg-faint)", "stroke-width": 1.6, "stroke-linecap": "round", fill: "none" }, this.desk);
-    this.deskTop = el("rect", { width: 15, height: 1.8, rx: 0.9, fill: "var(--fg-muted)" }, this.desk);
-    this.screen = el("rect", { width: 11, height: 11.4, rx: 1.6 }, this.desk);
-    this.line1 = el("rect", { width: 5, height: 1.3, rx: 0.6, fill: "#fff", opacity: 0.9 }, this.desk);
-    this.line2 = el("rect", { height: 1.3, rx: 0.6, fill: "#fff", opacity: 0.75 }, this.desk);
+    const b = (this.body = el("g", {}, this.g));
+    el("ellipse", { cy: 0.5, rx: f2(9.5 * K), ry: f2(1.7 * K), fill: "var(--line-strong)" }, b);
+    // the standing desk (write: a purple screen with code; exec: a terminal with a prompt)
+    this.desk = el("g", { display: "none" }, b);
+    this.deskPost = el("path", { fill: "none", "stroke-linecap": "round", ...outline(1.2), stroke: "var(--fig-ink)" }, this.desk);
+    this.deskTop = el("path", { fill: "none", stroke: "var(--fig-ink)", "stroke-width": 1.6, "stroke-linecap": "round" }, this.desk);
+    this.screen = el("rect", { y: f2(DESK - 10.4), width: 11.5, height: 9.2, rx: 1.2, ...outline(), stroke: "var(--fig-ink)" }, this.desk);
+    this.code = el("path", { fill: "none", stroke: "var(--accent-fg)", "stroke-width": 1.1, "stroke-linecap": "round" }, this.desk);
     this.prompt = el("path", { fill: "none", stroke: "var(--accent-on-chrome)", "stroke-width": 1.1, "stroke-linecap": "round", "stroke-linejoin": "round" }, this.desk);
-    this.cursor = el("rect", { width: 3.2, height: 1.1, fill: "var(--accent-on-chrome)" }, this.desk);
-    const limb = (w: number, c: string) => el("path", { fill: "none", stroke: c, "stroke-width": w, "stroke-linecap": "round", "stroke-linejoin": "round" }, b);
-    this.legF = limb(3.6, "var(--fig-far)");
-    this.footF = limb(3.2, "var(--fig-far)");
-    this.armF = limb(3, "var(--fig-far)");
-    this.torso = limb(8.2, "var(--fig)");
-    this.legN = limb(3.8, "var(--fig)");
-    this.footN = limb(3.2, "var(--fig)");
+    const bone = (fill: string) => el("path", { fill, ...outline() }, b);
+    this.upperF = bone(FAR);
+    this.foreF = bone(FAR);
+    this.thighF = bone(FAR);
+    this.shinF = bone(FAR);
+    this.footF = bone(FAR);
+    this.torso = bone(PAPER);
+    this.thighN = bone(PAPER);
+    this.shinN = bone(PAPER);
+    this.footN = bone(PAPER);
+    // the page it reads or hands over, held in front of the body, behind the near hand
+    this.sheet = el("g", { display: "none" }, b);
+    this.sheetRect = el("rect", { rx: 0.6, fill: "var(--fig-fill)", ...outline(1) }, this.sheet);
+    this.sheetLines = el("path", { fill: "none", "stroke-linecap": "round", ...outline(0.9), stroke: "var(--fg-faint)" }, this.sheet);
+    this.upperN = bone(PAPER);
+    this.foreN = bone(PAPER);
     this.head = el("g", {}, b);
-    el("circle", { r: 8.6, fill: "var(--avatar-tile)", stroke: "var(--avatar-edge)", "stroke-width": 0.9 }, this.head);
-    mark(agent, 8.6, this.head);
-    this.prop = el("g", {}, b);
-    this.propRect = el("rect", { rx: 1, fill: "var(--surface)", stroke: "var(--fg-muted)", "stroke-width": 0.8 }, this.prop);
-    this.propLines = el("path", { stroke: "var(--fg-faint)", "stroke-width": 0.8 }, this.prop);
-    this.armN = limb(3.2, "var(--fig)");
+    el("circle", { r: RIG.head, fill: PAPER, ...outline(HEAD_LINE) }, this.head);
+    mark(agent, RIG.head * 0.9, this.head);
     if (o.parentAgent) {
-      // who sent it: the dispatcher's mark on a small badge
+      // who sent it: the dispatcher's mark on a small badge behind the head
       this.badge = el("g", {}, b);
-      el("circle", { r: 4.6, fill: "var(--avatar-tile)", stroke: "var(--bg)", "stroke-width": 1.2 }, this.badge);
-      mark(o.parentAgent, 4.6, this.badge);
+      el("circle", { r: 3.7, fill: "var(--avatar-tile)", stroke: "var(--fig-fill)", "stroke-width": 1 }, this.badge);
+      mark(o.parentAgent, 3.7, this.badge);
     }
-    this.markG = el("g", {}, b);
-    this.markC = el("circle", { r: 5.4 }, this.markG);
-    this.markT = el("text", { y: 2.6, "text-anchor": "middle", "font-size": 7.5, "font-weight": 600, fill: "#fff", "font-family": "var(--font-sans)" }, this.markG);
+    this.markG = el("g", { display: "none" }, b);
+    this.markC = el("circle", { r: 4.7 }, this.markG);
+    this.markT = el("text", { y: 2.5, "text-anchor": "middle", "font-size": 7, "font-weight": 700, fill: "var(--fig-mark-fg)", "font-family": "var(--font-sans)" }, this.markG);
+    // selected: the skeleton over the figure — IK chains and joints (Loom's rig view)
+    this.rigLines = el("path", { display: "none", fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round", opacity: 0.9, ...outline(1), stroke: "var(--accent)" }, b);
+    this.rigJoints = el("path", { display: "none", fill: "var(--fig-fill)", ...outline(1), stroke: "var(--accent)" }, b);
   }
 
   private set(node: Element, key: string, attr: string, v: string) {
@@ -99,79 +146,108 @@ export class FigureNode {
     node.setAttribute(attr, v);
   }
 
-  /** Update every part from solved joints. `t` (ms) drives the small screen and cursor blinks. */
+  /** Update every part from solved joints. `t` (ms) drives the small screen and cursor blinks and the page turns. */
   draw(j: Joints, t: number, still: boolean) {
-    const L = (x: number) => x * j.f;
+    const f = j.f;
+    const L = (x: number) => x * f;
     const S = (n: Element, k: string, a: string, v: number | string) => this.set(n, k, a, typeof v === "number" ? f2(v) : v);
-    const d = (x0: number, y0: number, b: { jx: number; jy: number; ex: number; ey: number }) => `M${f2(x0)} ${f2(y0)}L${f2(b.jx)} ${f2(b.jy)}L${f2(b.ex)} ${f2(b.ey)}`;
-    const foot = (b: { ex: number; ey: number }) => `M${f2(b.ex - L(0.6))} ${f2(b.ey)}h${f2(L(3.6))}`;
+    // Joints snap to 1/20 unit (under 0.1 px at any zoom): a part is rewritten only when it can visibly
+    // move, not on every sub-pixel step of breathing or of a spring settling.
+    const q = (v: number) => Math.round(v * 20) / 20;
+    const bone = (n: SVGPathElement, k: string, ax: number, ay: number, bx: number, by: number, r: number) => S(n, k, "d", capsule(q(ax), q(ay), q(bx), q(by), r));
+    // Selected (a figure or its bubble clicked): the outline in the accent, the paper tinted, the skeleton on top.
+    const sel = focus.get().selected === this.id;
+    S(this.body, "b", "style", sel ? SELECTED : "");
     // Turning: the whole body is mirrored through edge-on (−1 → 1) around its root.
-    S(this.body, "bd0", "transform", j.turn >= 0.999 ? "" : `scale(${f2(j.turn)} 1)`);
+    S(this.body, "b", "transform", j.turn >= 0.999 ? "" : `scale(${f2(j.turn)} 1)`);
     // the avatar mark, the dispatcher's badge and the ! / ? never read mirrored mid-turn
     const un = j.turn < 0 ? " scale(-1 1)" : "";
-    S(this.shadow, "sh", "cx", j.px * 0.3);
     const desk = !j.walking && (j.prop === "laptop" || j.prop === "terminal") && j.propAlpha > 0.01;
     S(this.desk, "dk", "display", desk ? "inline" : "none");
     if (desk) {
       // the standing desk fades and rises in / out (never pops)
       S(this.desk, "dk", "opacity", Math.min(1, j.propAlpha * 1.2));
-      S(this.desk, "dk", "transform", j.propAlpha >= 0.999 ? "" : `translate(0 ${f2((1 - j.propAlpha) * 3)})`);
-      const top = -20.5;
-      S(this.deskStand, "ds", "d", `M${f2(L(16.5))} ${top}V0M${f2(L(12.5))} 0h${f2(L(8))}`);
-      S(this.deskTop, "dt", "x", Math.min(L(9), L(24)));
-      S(this.deskTop, "dt", "y", top - 1.6);
-      const sx = Math.min(L(15), L(26));
+      S(this.desk, "dk", "transform", `${j.propAlpha >= 0.999 ? "" : `translate(0 ${f2((1 - j.propAlpha) * 3)}) `}scale(${f2(K)})`);
+      S(this.deskPost, "dp", "d", `M${f2(L(16.5))} 0V${DESK}M${f2(L(13))} 0H${f2(L(20))}`);
+      S(this.deskTop, "dt", "d", `M${f2(L(7.5))} ${DESK}H${f2(L(26))}`);
+      const sx = Math.min(L(14), L(25.5));
       S(this.screen, "sc", "x", sx);
-      S(this.screen, "sc", "y", top - 13);
       const laptop = j.prop === "laptop";
       S(this.screen, "sc", "fill", laptop ? "var(--accent-fill)" : "var(--chrome-bg)");
-      S(this.line1, "l1", "display", laptop ? "inline" : "none");
-      S(this.line2, "l2", "display", laptop ? "inline" : "none");
+      S(this.code, "cd", "display", laptop ? "inline" : "none");
       S(this.prompt, "pr", "display", laptop ? "none" : "inline");
       if (laptop) {
-        const on = still ? 1 : 0.75 + 0.25 * Math.sin((t / 1000) * 7);
-        S(this.line1, "l1", "x", sx + 2);
-        S(this.line1, "l1", "y", top - 10.5);
-        S(this.line2, "l2", "x", sx + 2);
-        S(this.line2, "l2", "y", top - 7.8);
-        S(this.line2, "l2", "width", 7 * on);
-        S(this.cursor, "cu", "display", "none");
+        // code on the purple screen; its last line grows and shrinks as it types
+        const on = still ? 1 : 0.7 + 0.3 * Math.sin((t / 1000) * 7);
+        const x = f2(sx + 2);
+        S(this.code, "cd", "d", `M${x} ${f2(DESK - 8)}h5.6M${x} ${f2(DESK - 5.6)}h7.4M${x} ${f2(DESK - 3.2)}h${f2(5 * on)}`);
       } else {
-        S(this.prompt, "pr", "d", `M${f2(sx + 2)} ${top - 10.2}l2 1.6-2 1.6`);
-        S(this.cursor, "cu", "display", still || Math.floor(t / 500) % 2 ? "inline" : "none");
-        S(this.cursor, "cu", "x", sx + 5);
-        S(this.cursor, "cu", "y", top - 7.4);
+        // a prompt and a blinking cursor on the terminal
+        const cursor = still || Math.floor(t / 500) % 2 ? `M${f2(sx + 5.2)} ${f2(DESK - 3.6)}h3` : "";
+        S(this.prompt, "pr", "d", `M${f2(sx + 2.2)} ${f2(DESK - 7.8)}l1.9 1.5-1.9 1.5${cursor}`);
       }
     }
-    S(this.legF, "lf", "d", d(j.hipF.x, j.hipF.y, j.legF));
-    S(this.footF, "ff", "d", foot(j.legF));
-    S(this.armF, "af", "d", d(j.shF.x, j.shF.y, j.armF));
-    S(this.torso, "to", "d", `M${f2(j.px)} ${f2(j.py + 1)}L${f2(j.nx)} ${f2(j.ny + 2)}`);
-    S(this.legN, "ln", "d", d(j.hipN.x, j.hipN.y, j.legN));
-    S(this.footN, "fn", "d", foot(j.legN));
-    S(this.head, "hd", "transform", `translate(${f2(j.hx)} ${f2(j.hy)})${un}`);
+    // Bones. An arm is shoulder → elbow → hand. A leg's IK ends at the sole: the drawn shin stops
+    // RIG.ankle above it, where the foot starts — so a planted foot stays put while the body sways.
+    const arm = (sh: Pt, a: Bone, upper: SVGPathElement, fore: SVGPathElement, k: string) => {
+      bone(upper, `${k}u`, sh.x, sh.y, a.jx, a.jy, R.upper);
+      bone(fore, `${k}f`, a.jx, a.jy, a.ex, a.ey, R.fore);
+    };
+    const leg = (hip: Pt, l: Bone, thigh: SVGPathElement, shin: SVGPathElement, foot: SVGPathElement, k: string) => {
+      const ay = l.ey - RIG.ankle;
+      bone(thigh, `${k}t`, hip.x, hip.y, l.jx, l.jy, R.thigh);
+      bone(shin, `${k}s`, l.jx, l.jy, l.ex, ay, R.shin);
+      bone(foot, `${k}f`, l.ex - L(1.1 * K), ay, l.ex + L(RIG.foot - 1.1 * K), ay + 0.5 * K, R.foot);
+    };
+    arm(j.shF, j.armF, this.upperF, this.foreF, "af");
+    leg(j.hipF, j.legF, this.thighF, this.shinF, this.footF, "lf");
+    bone(this.torso, "to", j.px, j.py + 0.6, j.nx, j.ny + 1.6, R.torso);
+    leg(j.hipN, j.legN, this.thighN, this.shinN, this.footN, "ln");
+    arm(j.shN, j.armN, this.upperN, this.foreN, "an");
+    const hx = q(j.hx);
+    const hy = q(j.hy);
+    S(this.head, "hd", "transform", `translate(${f2(hx)} ${f2(hy)})${un}`);
     const hold = (j.prop === "sheet" || j.prop === "carry") && j.propAlpha > 0.01;
-    S(this.prop, "pp", "display", hold ? "inline" : "none");
+    S(this.sheet, "sh", "display", hold ? "inline" : "none");
     if (hold) {
-      S(this.prop, "pp", "opacity", Math.min(1, j.propAlpha * 1.2));
+      const carry = j.prop === "carry";
+      const w = carry ? 5.6 : 6.8;
+      const h = carry ? 7 : 8.8;
+      S(this.sheetRect, "sr", "x", -w / 2);
+      S(this.sheetRect, "sr", "y", -h / 2);
+      S(this.sheetRect, "sr", "width", w);
+      S(this.sheetRect, "sr", "height", h);
+      const x0 = f2(-w / 2 + 1.4);
+      S(this.sheetLines, "sl", "d", `M${x0} ${f2(-h / 2 + 2.2)}h${f2(w - 2.8)}M${x0} ${f2(-h / 2 + 4.2)}h${f2(w - 3.8)}M${x0} ${f2(-h / 2 + 6.2)}h${f2(w - 2.8)}`);
+      // in both hands (reading, handing over), in the near one while walking
+      const mx = j.walking ? j.armN.ex : (j.armN.ex + j.armF.ex) / 2;
+      const my = j.walking ? j.armN.ey : (j.armN.ey + j.armF.ey) / 2;
+      // it fades and grows in; while reading, now and then a page turns (edge-on and back)
       const u = (t % 1800) / 1800;
-      const flip = still ? 1 : Math.cos((u < 0.12 ? u / 0.12 : 0) * Math.PI);
-      const w = j.prop === "carry" ? 6 : 8.5;
-      const h = j.prop === "carry" ? 8 : 11;
-      const sc = 0.6 + 0.4 * j.propAlpha;
-      S(this.prop, "pp", "transform", `translate(${f2(j.armN.ex - (j.prop === "carry" ? 3 : 1) * j.f)} ${f2(j.armN.ey - h + 2)}) rotate(${-8 * j.f}) scale(${f2(flip * j.f * sc)} ${f2(sc)})`);
-      S(this.propRect, "pr0", "x", -w / 2);
-      S(this.propRect, "pr0", "width", w);
-      S(this.propRect, "pr0", "height", h);
-      S(this.propLines, "pl", "d", j.prop === "sheet" ? `M${-w / 2 + 1.8} 2.8h5M${-w / 2 + 1.8} 5h4M${-w / 2 + 1.8} 7.2h5` : "");
+      const page = still || carry || u >= 0.12 ? 1 : Math.abs(Math.cos((u / 0.12) * Math.PI));
+      const sc = (0.6 + 0.4 * j.propAlpha) * K;
+      S(this.sheet, "sh", "opacity", Math.min(1, j.propAlpha * 1.2));
+      S(this.sheet, "sh", "transform", `translate(${f2(q(mx + L(0.8 * K)))} ${f2(q(my + (1.4 - h / 2) * K))}) rotate(${-10 * f}) scale(${f2(page * sc)} ${f2(sc)})`);
     }
-    S(this.armN, "an", "d", d(j.shN.x, j.shN.y, j.armN));
-    if (this.badge) S(this.badge, "bd", "transform", `translate(${f2(j.hx + L(7))} ${f2(j.hy - 6.5)})${un}`);
+    if (this.badge) S(this.badge, "bg", "transform", `translate(${f2(hx - L(RIG.head + 1.2))} ${f2(hy - RIG.head * 0.85)})${un}`);
     S(this.markG, "mk", "display", j.mark ? "inline" : "none");
     if (j.mark) {
-      S(this.markG, "mk", "transform", `translate(${f2(j.hx + L(this.badge ? -8 : 9))} ${f2(j.hy - 12)})${un}`);
+      S(this.markG, "mk", "transform", `translate(${f2(hx + L(RIG.head + 3.4))} ${f2(hy - MARK_UP)})${un}`);
       S(this.markC, "mc", "fill", j.markMuted ? "var(--fg-faint)" : "var(--caution-dot)");
       if (this.markT.textContent !== j.mark) this.markT.textContent = j.mark;
+    }
+    S(this.rigLines, "rl", "display", sel ? "inline" : "none");
+    S(this.rigJoints, "rj", "display", sel ? "inline" : "none");
+    if (sel) {
+      const p = (x: number, y: number) => `${f2(x)} ${f2(y)}`;
+      const aN = { x: j.legN.ex, y: j.legN.ey - RIG.ankle };
+      const aF = { x: j.legF.ex, y: j.legF.ey - RIG.ankle };
+      const chain = (a: Pt, b: Bone, end: Pt) => `M${p(a.x, a.y)}L${p(b.jx, b.jy)}L${p(end.x, end.y)}`;
+      const hand = (b: Bone) => ({ x: b.ex, y: b.ey });
+      const joint = (b: Bone) => ({ x: b.jx, y: b.jy });
+      S(this.rigLines, "rl", "d", chain(j.hipN, j.legN, aN) + chain(j.hipF, j.legF, aF) + chain(j.shN, j.armN, hand(j.armN)) + chain(j.shF, j.armF, hand(j.armF)) + `M${p(j.px, j.py)}L${p(j.nx, j.ny)}L${p(j.hx, j.hy)}`);
+      const pts = [j.hipN, joint(j.legN), aN, j.hipF, joint(j.legF), aF, j.shN, joint(j.armN), hand(j.armN), j.shF, joint(j.armF), hand(j.armF), { x: j.px, y: j.py }, { x: j.nx, y: j.ny }];
+      S(this.rigJoints, "rj", "d", pts.map((q) => `M${p(q.x - 1.05, q.y)}a1.05 1.05 0 1 0 2.1 0a1.05 1.05 0 1 0 -2.1 0`).join(""));
     }
   }
 
