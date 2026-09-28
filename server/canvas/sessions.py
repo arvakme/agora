@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from server.canvas import agents, schemas
+from server.canvas import agents, nested, schemas
 from server.canvas.model_view import model_view, versions
 from server.canvas.project import ProjectStore
 from server.canvas.runner import ExecOptions, RunRequest, make_backend
@@ -105,7 +105,8 @@ def file_read(store: ProjectStore, canvas_id: str) -> dict[str, Any]:
     if got is None:
         raise ValueError(f"canvas {canvas_id} has no file")
     elements = got[0].get("elements") or []
-    return {"canvasId": canvas_id, "name": canvas_names(store).get(canvas_id, canvas_id), "scene": model_view(elements), "versions": versions(elements), "source": "file"}
+    names = canvas_names(store)
+    return {"canvasId": canvas_id, "name": names.get(canvas_id, canvas_id), "scene": nested.annotate(store, canvas_id, model_view(elements), names), "versions": versions(elements), "source": "file"}
 
 
 def save_read(store: ProjectStore, canvas_id: str, vers: dict[str, str]) -> str:
@@ -631,8 +632,16 @@ class AgentHub:
                 got = None
         if not got or got.get("error"):
             got = file_read(self.store, cid)
+        else:
+            got["scene"] = nested.annotate(self.store, cid, got["scene"], canvas_names(self.store))
         base = save_read(self.store, cid, got.pop("versions", {}))
-        return {"canvas": {"id": cid, "name": got.get("name")}, "base": base, "source": got.get("source"), "scene": got["scene"]}
+        scene = got["scene"]
+        out = {"canvas": {"id": cid, "name": got.get("name")}, "base": base, "source": got.get("source"), "scene": scene}
+        # Nesting sits next to the canvas, not inside the node / arrow lists the ops refer to.
+        for k in ("path", "parent"):
+            if k in scene:
+                out["canvas"][k] = scene.pop(k)
+        return out
 
     async def canvas_apply(self, canvas: str | None, session: str | None, base: str, ops: list[Any], note: str | None) -> dict[str, Any]:
         read = load_read(self.store, base)
@@ -653,6 +662,30 @@ class AgentHub:
                 raise ValueError(f"no globs for {el!r} (use --clear to remove its paths)")
             clean[str(el)] = gs
         return await self.bridge("link", {"canvasId": cid, "sessionId": session, "links": clean, "clear": clear})
+
+    async def canvas_child(self, op: str, canvas: str | None, session: str | None, node: str | None, child: str | None, title: str | None) -> dict[str, Any]:
+        """Nested canvases: ``create`` a child canvas for a node (or return the one it has),
+        ``link`` an existing canvas to a node, ``unlink`` it, or ``list`` a canvas's children.
+        Writes go through the page (it owns the workspace and the scenes, and records the change
+        as one undoable step in the session)."""
+        cid = resolve_canvas(self.store, canvas, session)
+        names = canvas_names(self.store)
+        if op == "list":
+            return {"canvas": {"id": cid, "name": names.get(cid, cid)}, "children": nested.list_children(self.store, cid, names)}
+        if op not in ("create", "link", "unlink"):
+            raise ValueError(f"unknown child op {op!r}: create | link | unlink | list")
+        if not node:
+            raise ValueError("--node is required: the id or exact label of the node on the parent canvas")
+        payload: dict[str, Any] = {"op": op, "canvasId": cid, "sessionId": session, "node": node}
+        if op == "link":
+            if not child:
+                raise ValueError("--child is required for link: an existing canvas id or name")
+            payload["child"] = resolve_canvas(self.store, child, None)
+            if nested.descendants(payload["child"], nested.scenes(self.store)) & {cid} or payload["child"] == cid:
+                raise ValueError(f"linking {payload['child']} under {cid} would make a loop")
+        if op == "create" and title:
+            payload["title"] = title.strip()[:80]
+        return await self.bridge("child", payload)
 
     async def canvas_anim(self, canvas: str | None, session: str | None, script: Any) -> dict[str, Any]:
         cid = resolve_canvas(self.store, canvas, session)

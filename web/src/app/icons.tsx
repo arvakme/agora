@@ -23,6 +23,9 @@ import {
   CpuIcon,
   ExternalLinkIcon,
   EyeIcon,
+  ExpandViewIcon,
+  NetworkIcon,
+  SparklesIcon,
   FileIcon,
   FolderIcon,
   GaugeIcon,
@@ -141,6 +144,9 @@ export const IconPause = dither(PauseIcon, "IconPause"); // pause
 export const IconPrev = dither(PreviousWordIcon, "IconPrev"); // previous-word — player step back
 export const IconNext = dither(NextWordIcon, "IconNext"); // next-word — player step forward
 export const IconBack = dither(ArrowLeftIcon, "IconBack"); // arrow-left
+export const IconEnter = dither(ExpandViewIcon, "IconEnter"); // expand-view — 进入子图
+export const IconNested = dither(NetworkIcon, "IconNested"); // network — 子图
+export const IconSparkles = dither(SparklesIcon, "IconSparkles"); // sparkles — the one AI entry of a view (让 AI 展开 / 更新)
 export const IconSun = dither(SunIcon, "IconSun"); // sun — light theme
 export const IconMoon = dither(MoonIcon, "IconMoon"); // moon — dark theme
 

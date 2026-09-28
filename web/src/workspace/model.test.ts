@@ -1,7 +1,7 @@
 // Workspace model rules: naming without gaps, close vs. open, group kinds and placement.
 import { describe, expect, it } from "vitest";
 import { group, groups, moveTab, type Node } from "./layout.ts";
-import { closeTab, groupKind, homeGroup, isNamed, migrateDocs, nextTitle, openIds, openTab, placement, savedWorkspace, sessionTitles, topicOf, UNTITLED_CANVAS, type Doc, type SessionDoc } from "./model.ts";
+import { canvasTree, closeTab, groupKind, homeGroup, replaceTab, isNamed, migrateDocs, nextTitle, openIds, openTab, placement, savedWorkspace, sessionTitles, topicOf, UNTITLED_CANVAS, type Doc, type SessionDoc } from "./model.ts";
 
 const kinds: Record<string, "canvas" | "session"> = { c1: "canvas", c2: "canvas", c3: "canvas", p1: "session", p2: "session" };
 const kindOf = (id: string) => kinds[id];
@@ -126,5 +126,31 @@ describe("savedWorkspace", () => {
     expect(saved.focused).not.toBe("p-x");
     // no drafts: saved as is
     expect(savedWorkspace({ docs, root: g, focused: "c1" }, () => false)).toEqual({ v: 2, docs, root: g, focused: "c1" });
+  });
+});
+
+describe("nested canvases in the workspace", () => {
+  it("replaceTab shows the child where the parent was; the parent is closed, not deleted", () => {
+    const root = group(["a", "b", "c"], "b");
+    const r = replaceTab(root, "b", "b1");
+    expect(r.closed).toBe(true);
+    expect(groups(r.root)[0].tabs).toEqual(["a", "b1", "c"]);
+    expect(groups(r.root)[0].active).toBe("b1");
+    // Already open somewhere: bring it forward, keep the other tab.
+    const again = replaceTab(r.root, "a", "c");
+    expect(again.closed).toBe(false);
+    expect(groups(again.root)[0].tabs).toEqual(["a", "b1", "c"]);
+    expect(groups(again.root)[0].active).toBe("c");
+  });
+  it("canvasTree puts children under their parent and survives loops", () => {
+    const parent: Record<string, string> = { be: "root", orders: "be", x: "y", y: "x" };
+    expect(canvasTree(["orders", "root", "other", "be", "x", "y"], (id) => parent[id])).toEqual([
+      { id: "root", depth: 0 },
+      { id: "be", depth: 1 },
+      { id: "orders", depth: 2 },
+      { id: "other", depth: 0 },
+      { id: "x", depth: 0 },
+      { id: "y", depth: 1 },
+    ]);
   });
 });

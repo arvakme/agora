@@ -17,12 +17,18 @@ import { SessionMark } from "../session/AgentAvatar";
 import { pointerFollow } from "../pointer/follow";
 import { createThreadStore, threadStores, useThreads, type ThreadSnapshot, type ThreadStore } from "../comments/threads";
 import { AllDocs } from "../workspace/AllDocs";
+import { ancestry, descendants } from "../nested/graph";
+import { canvasFromUrl, nav, nested, urlFor } from "../nested/store";
+import { sessionNames } from "../multi/writes";
+import { setWorkstationRoot } from "../workstation/Workstation";
 import { ShareButton } from "../share/SharePanel";
 import { Workspace } from "../workspace/Workspace";
 import { activate, group, groupOf, groups, moveTab, preset, type Node, type Preset } from "../workspace/layout";
 import {
+  canvasTree,
   closeTab,
   homeGroup,
+  replaceTab,
   isOpen,
   migrateDocs,
   nextTitle,
@@ -111,6 +117,17 @@ export function App({ boot }: { boot: Boot }) {
   const scenes = useRef(
     new Map<string, readonly El[]>([...Object.entries(boot.canvases).map(([k, v]) => [k, v.elements] as const), ...(firstRun ? [["c1", buildFixture()] as const] : [])]),
   );
+  // Nesting reads every canvas's scene, open or not (docs/nested-canvas.md).
+  const nestedBooted = useRef(false);
+  if (!nestedBooted.current) {
+    nestedBooted.current = true;
+    setWorkstationRoot(boot.project?.root ?? "");
+    nested.reset(
+      scenes.current,
+      Object.fromEntries(initial.docs.filter((d) => d.kind === "canvas").map((d) => [d.id, d.title])),
+      Object.fromEntries(initial.docs.flatMap((d) => (d.kind === "canvas" && d.reviewedAt ? [[d.id, d.reviewedAt]] : []))),
+    );
+  }
   const persistCanvas = (id: string) =>
     PERSIST && save(`canvas:${id}`, () => ({ elements: (scenes.current.get(id) ?? []).filter((e) => !e.isDeleted), threads: stores.current.get(id)?.snapshot() }));
   const storeFor = (id: string) => {
@@ -142,6 +159,18 @@ export function App({ boot }: { boot: Boot }) {
     ...sessionTitles(docs, (sid) => ({ agent: bindings[sid] && AGENT_NAMES[bindings[sid].agent] })),
   };
   const isDraftDoc = (d: Doc | undefined) => d?.kind === "session" && sessions.isDraft(d.sessionId);
+  // Pointer labels and the 工位视图 name sessions the way the tabs do.
+  useEffect(() => sessionNames.set(Object.fromEntries(docs.flatMap((d) => (d.kind === "session" ? [[d.sessionId, names[d.id] ?? ""]] : [])))));
+  useEffect(() => {
+    nested.setMeta(
+      Object.fromEntries(canvasDocs.map((d) => [d.id, d.title])),
+      Object.fromEntries(canvasDocs.flatMap((d) => (d.reviewedAt ? [[d.id, d.reviewedAt]] : []))),
+    );
+  }, [docs]);
+  // Every canvas's comments count on its parent's marker, so each one has a live thread store.
+  useEffect(() => {
+    for (const d of canvasDocs) storeFor(d.id);
+  }, [docs]);
 
   // The progress pointer follows the session pane focused last.
   useEffect(() => {
@@ -277,6 +306,7 @@ export function App({ boot }: { boot: Boot }) {
     const id = uid("c");
     const title = opts.sample ? nextTitle(titlesOf(docs, "canvas"), SAMPLE_CANVAS, true) : nextTitle(titlesOf(docs, "canvas"), UNTITLED_CANVAS);
     scenes.current.set(id, opts.sample ? buildFixture() : []);
+    nested.setScene(id, scenes.current.get(id)!);
     persistCanvas(id);
     setDocs((ds) => [...ds, { id, kind: "canvas", title }]);
     openDoc(id, { groupId: opts.groupId, kind: "canvas" });
@@ -336,6 +366,7 @@ export function App({ boot }: { boot: Boot }) {
     if (doc.kind === "canvas") {
       setRemoved({ kind: "canvas", doc, index, at, elements: scenes.current.get(id) ?? [], store: stores.current.get(id) });
       scenes.current.delete(id);
+      nested.remove(id);
       stores.current.delete(id);
       threadStores.delete(id);
       if (PERSIST) void discard(`canvas:${id}`);
@@ -361,6 +392,7 @@ export function App({ boot }: { boot: Boot }) {
     });
     if (r.kind === "canvas") {
       scenes.current.set(r.doc.id, r.elements);
+      nested.setScene(r.doc.id, r.elements);
       if (r.store) stores.current.set(r.doc.id, r.store), threadStores.set(r.doc.id, r.store);
       persistCanvas(r.doc.id);
     } else if (r.session) {
@@ -387,6 +419,78 @@ export function App({ boot }: { boot: Boot }) {
     const ids = openIds(root);
     if (ids.length) setRoot(preset(ids, p, focused || ids[0]));
   };
+
+  /**
+   * Nested canvases: show `to` in the tab where `from` is (entering a child, going back up), and
+   * record it in the address bar so the browser's back / forward walk the levels.
+   */
+  const go = (from: string, to: string, push = true) => {
+    if (!docsRef.current.some((d) => d.id === to && d.kind === "canvas")) return;
+    const r = replaceTab(rootRef.current, from, to);
+    if (r.closed) {
+      handles.current.delete(from);
+      canvases.delete(from);
+    }
+    setRoot(r.root);
+    setFocused(to);
+    setLastCanvas(to);
+    setMode("browse");
+    if (push && canvasFromUrl() !== to) history.pushState({ canvas: to }, "", urlFor(to));
+  };
+  const goRef = useRef(go);
+  goRef.current = go;
+  useEffect(() => {
+    nav.go = (from, to) => goRef.current(from, to);
+    nav.createChild = async (title) => {
+      const id = uid("c");
+      const name = nextTitle(titlesOf(docsRef.current, "canvas"), title.trim() || UNTITLED_CANVAS, true);
+      scenes.current.set(id, []);
+      nested.setMeta({ ...nested.get().titles, [id]: name }, nested.get().reviewed);
+      nested.setScene(id, []);
+      persistCanvas(id);
+      docsRef.current = [...docsRef.current, { id, kind: "canvas", title: name }];
+      setDocs((ds) => [...ds, { id, kind: "canvas", title: name }]);
+      return id;
+    };
+    nav.review = (id, at) => setDocs((ds) => ds.map((d) => (d.id === id && d.kind === "canvas" ? { ...d, reviewedAt: at } : d)));
+    // Back / forward: show that level in the tab that holds its tree (or open it).
+    const onPop = (e: PopStateEvent) => {
+      const to = (e.state as { canvas?: string } | null)?.canvas ?? canvasFromUrl();
+      if (!to || !docsRef.current.some((d) => d.id === to && d.kind === "canvas")) return;
+      const st = nested.get();
+      const tree = ancestry(to, st.index)[0];
+      const family = new Set([tree, ...descendants(tree, st.scenes)]);
+      const shownIds = groups(rootRef.current).map((g) => g.active);
+      const from = shownIds.find((id) => family.has(id)) ?? openIds(rootRef.current).find((id) => family.has(id));
+      if (from) goRef.current(from, to, false);
+      else openRef.current(to, { kind: "canvas" });
+    };
+    addEventListener("popstate", onPop);
+    // A link like ?canvas=<id> opens that level on load.
+    const first = canvasFromUrl();
+    if (first && docsRef.current.some((d) => d.id === first && d.kind === "canvas")) {
+      const st = nested.get();
+      const tree = ancestry(first, st.index)[0];
+      const family = new Set([tree, ...descendants(tree, st.scenes)]);
+      const from = openIds(rootRef.current).find((id) => family.has(id));
+      if (from) goRef.current(from, first, false);
+      else openRef.current(first, { kind: "canvas" });
+    }
+    return () => removeEventListener("popstate", onPop);
+  }, []);
+  // The address bar follows the canvas in use (replace, not push: switching tabs is not a level change).
+  useEffect(() => {
+    if (!PERSIST || kindOf(focused) !== "canvas") return;
+    if (canvasFromUrl() !== focused) history.replaceState({ canvas: focused }, "", urlFor(focused));
+  }, [focused]);
+  // A node that opened a child canvas was deleted: the child stays, only the link is gone.
+  const [lost, setLost] = useState<{ child: string; parent: string } | null>(null);
+  useEffect(() => nested.onLost(setLost), []);
+  useEffect(() => {
+    if (!lost) return;
+    const t = setTimeout(() => setLost(null), 9000);
+    return () => clearTimeout(t);
+  }, [lost]);
 
   // UI actions sessions can trigger without importing the shell.
   const openRef = useRef(openDoc);
@@ -464,7 +568,7 @@ export function App({ boot }: { boot: Boot }) {
   const [dockAt, setDockAt] = useState<{ x: number; bottom: number } | null>(null);
   useLayoutEffect(() => {
     // The canvas stage, not the whole pane: with the comments column open the dock stays centred on the drawing.
-    const el = canvasDoc && document.querySelector<HTMLElement>(`[data-pane="${canvasDoc.id}"] .canvas-stage`);
+    const el = canvasDoc && document.querySelector<HTMLElement>(`[data-pane="${canvasDoc.id}"] .canvas-layers`);
     if (!el) return;
     const place = () => {
       const r = el.getBoundingClientRect();
@@ -500,7 +604,17 @@ export function App({ boot }: { boot: Boot }) {
             </button>
             {listOpen && (
               <AllDocs
-                docs={docs.filter((d) => !isDraftDoc(d))}
+                docs={(() => {
+                  const st = nested.get();
+                  const order = canvasTree(canvasDocs.map((d) => d.id), (id) => st.index.get(id)?.canvasId);
+                  const byId = new Map(docs.map((d) => [d.id, d]));
+                  return [...order.map((o) => byId.get(o.id)!), ...docs.filter((d) => d.kind !== "canvas" && !isDraftDoc(d))];
+                })()}
+                depth={(id) => {
+                  const st = nested.get();
+                  return ancestry(id, st.index).length - 1;
+                }}
+                childCount={(id) => descendants(id, nested.get().scenes).size}
                 titles={names}
                 open={open}
                 focused={focused}
@@ -572,7 +686,7 @@ export function App({ boot }: { boot: Boot }) {
                 onSelection={(n) => id === lastCanvas && setSelCount(n)}
                 onModeDone={() => setMode("browse")}
                 initialElements={scenes.current.get(id) ?? []}
-                onScene={(els) => (scenes.current.set(id, els), persistCanvas(id))}
+                onScene={(els) => (scenes.current.set(id, els), nested.setScene(id, els), persistCanvas(id))}
               />
             );
           }}
@@ -612,6 +726,13 @@ export function App({ boot }: { boot: Boot }) {
             <span>已删除「{removed.kind === "session" ? removed.name : removed.doc.title}」</span>
             <button className="btn sm ghost" onClick={undoRemove}>撤销</button>
             <button className="icon-btn sm muted" aria-label="关闭提示" onClick={() => setRemoved(null)}><IconClose size={14} /></button>
+          </motion.div>
+        )}
+        {lost && !removed && (
+          <motion.div className="toast" role="status" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
+            <span>「{titleOf(lost.parent) ?? "画布"}」里打开子图的节点没了：子图「{titleOf(lost.child) ?? lost.child}」仍在所有画布里，只是断开了链接（⌘Z 可恢复）</span>
+            <button className="btn sm ghost" onClick={() => (openDoc(lost.child), setLost(null))}>打开子图</button>
+            <button className="icon-btn sm muted" aria-label="关闭提示" onClick={() => setLost(null)}><IconClose size={14} /></button>
           </motion.div>
         )}
         {evalProgress && <pre className="eval-log">{evalProgress.log.slice(-14).join("\n")}</pre>}

@@ -1,6 +1,9 @@
-// The progress pointer on an architecture diagram: one marker on the element whose code the
-// followed session changed last, the files that fall outside every element, and the editor
-// for an element's code paths. Rules and data flow: docs/progress-pointer.md.
+// Progress pointers on an architecture diagram: one per active agent session, on the node whose
+// code that session changed last (docs/progress-pointer.md, docs/multi-agent.md). Several sessions
+// on one node share its ring and their labels sit side by side. Files outside every node are listed
+// per session; two sessions writing the same file or node close together get a conflict mark.
+// On a canvas with child canvases, a node also stands for the code its child canvases claim
+// (docs/nested-canvas.md), so the overview lights the node the work is happening under.
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -10,19 +13,24 @@ import { IconCode, IconHint, IconTarget } from "../app/icons";
 import type { CanvasViewState } from "../canvas/CanvasView";
 import { bbox, codePathsOf, isShape, labelOf, live, type El } from "../canvas/scene";
 import { footprint, inflate, obstacles, overlaps, placeBeside, type Box } from "../canvas/clearance";
-import { AGENT_NAMES, useAgents } from "../session/agents";
+import { AGENT_NAMES, useAgents, type AgentKind } from "../session/agents";
 import { AgentAvatar } from "../session/AgentAvatar";
-import { buildTurns, filesOf } from "../session/trajectoryModel";
 import { openTrajectory, ui } from "../session/ui";
-import { elementFor, place, type Placed } from "./codeLinks";
+import { effectiveLinks } from "../nested/graph";
+import { useNested } from "../nested/store";
+import { activeSessions, conflicts, sessionPointers, stacks, until, type Conflict } from "../multi/pointers";
+import { useSessionFolds, useSessionNames } from "../multi/writes";
+import { useReplayAt } from "../workstation/clock";
+import { elementFor, type Placed } from "./codeLinks";
 import { useFollowedSession } from "./follow";
-import { linksOf, writeCodePaths } from "./writeLinks";
+import { writeCodePaths } from "./writeLinks";
 import "./pointer.css";
 
 const clock = (at: number) => new Date(at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
 const OP: Record<string, string> = { edit: "改", write: "写", add: "新建", delete: "删" };
 const base = (p: string) => p.split("/").pop() || p;
 const GLIDE = { type: "spring", stiffness: 170, damping: 26 } as const;
+const CHIP_GAP = 6;
 
 const NONE: never[] = [];
 const noSub = () => () => {};
@@ -32,16 +40,59 @@ function goTurn(sessionId: string, turn: number) {
   setTimeout(() => openTrajectory(sessionId, turn), 120);
 }
 
-export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view: CanvasViewState }) {
-  const sid = useFollowedSession();
+/** How a session is called on the canvas: the agent, or the session's name when two of one agent are active. */
+export function useSessionLabel() {
   const ag = useAgents();
-  const binding = sid ? ag.bindings[sid] : undefined;
-  const items = sid ? ag.items[sid] : undefined;
-  const status = sid ? ag.status[sid] : undefined;
-  const links = useMemo(() => linksOf(view.elements), [view.elements]);
-  const turns = useMemo(() => buildTurns(items ?? [], { model: binding?.model, effort: binding?.effort }, !!(status?.running || status?.busy)), [items, binding, status?.running, status?.busy]);
-  const state = useMemo(() => place(filesOf(turns), links), [turns, links]);
-  const [open, setOpen] = useState<"pointer" | "outside" | null>(null);
+  const names = useSessionNames();
+  return (sid: string, among: string[] = []) => {
+    const kind = ag.bindings[sid]?.agent;
+    const agent = kind ? AGENT_NAMES[kind] : "Agent";
+    const twins = among.filter((x) => ag.bindings[x]?.agent === kind).length > 1;
+    return twins ? names[sid] || agent : agent;
+  };
+}
+
+/** Sessions whose element just changed glide there; panning and zooming follow at once. */
+function useGliding(at: Record<string, string>) {
+  const last = useRef<Record<string, string>>({});
+  const [until, setUntil] = useState<Record<string, number>>({});
+  const moved = Object.keys(at).filter((k) => last.current[k] !== undefined && last.current[k] !== at[k]);
+  const key = JSON.stringify(at);
+  useEffect(() => {
+    last.current = { ...at };
+    if (!moved.length) return;
+    const end = Date.now() + 900;
+    setUntil((g) => ({ ...g, ...Object.fromEntries(moved.map((k) => [k, end])) }));
+    const t = setTimeout(() => setUntil((g) => Object.fromEntries(Object.entries(g).filter(([, u]) => u > Date.now()))), 950);
+    return () => clearTimeout(t);
+  }, [key]);
+  return (sid: string) => moved.includes(sid) || (until[sid] ?? 0) > Date.now();
+}
+
+type Open = { kind: "pointer"; sid: string } | { kind: "outside" } | { kind: "conflict"; element: string } | null;
+
+export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view: CanvasViewState }) {
+  const followed = useFollowedSession();
+  const ag = useAgents();
+  const folds = useSessionFolds();
+  const st = useNested();
+  const at = useReplayAt(true);
+  const label = useSessionLabel();
+  const links = useMemo(() => effectiveLinks(view.id, new Map(st.scenes).set(view.id, view.elements)), [view.id, view.elements, st.scenes]);
+  const minute = Math.floor((at ?? Date.now()) / 60_000);
+  const active = useMemo(() => {
+    const info = (id: string) => {
+      const f = folds.find((x) => x.sessionId === id)!;
+      return { lastAt: f.lastAt, running: f.running };
+    };
+    return activeSessions(folds.map((f) => f.sessionId), info, at ?? Date.now(), followed);
+  }, [folds, followed, minute, at == null]);
+  const activeFolds = useMemo(() => folds.filter((f) => active.includes(f.sessionId)), [folds, active]);
+  const pointers = useMemo(() => sessionPointers(activeFolds, links, at).filter((p) => p.state.placed.length), [activeFolds, links, at]);
+  const piles = useMemo(() => stacks(pointers, followed), [pointers, followed]);
+  const clashes = useMemo(() => conflicts(folds, links, { now: Date.now(), at }), [folds, links, at, minute]);
+  const followedState = pointers.find((p) => p.sessionId === followed)?.state ?? pointers[0]?.state;
+  const [open, setOpen] = useState<Open>(null);
   const [outsideOpen, setOutsideOpen] = useState<string | null>(null);
 
   // A click anywhere outside the pointer's own UI closes its popovers.
@@ -56,124 +107,229 @@ export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view
 
   const a = view.appState;
   const z = a.zoom.value;
+  const toScreen = (b: Box): Box => ({ x: (b.x + a.scrollX) * z, y: (b.y + a.scrollY) * z, w: b.w * z, h: b.h * z });
   const screen = (e: El) => {
     const b = bbox(e);
     return { x: (b.x + a.scrollX) * z, y: (b.y + a.scrollY) * z, w: b.width * z, h: b.height * z };
   };
-  const cur = state.current;
-  const el = cur?.element ? view.map.get(cur.element) : undefined;
-  // The ring goes around the node and its caption (an icon's name below it), with room to spare,
-  // so neither its edge nor its tint crosses the node's text.
-  const toScreen = (b: Box): Box => ({ x: (b.x + a.scrollX) * z, y: (b.y + a.scrollY) * z, w: b.w * z, h: b.h * z });
-  const pos = live(el) ? inflate(toScreen(footprint(el, view.map, view.elements)), 6) : null;
-  // The label sits outside the ring on the first side where it covers nothing else.
-  const chipRef = useRef<HTMLDivElement>(null);
-  const [chip, setChip] = useState({ w: 200, h: 28 });
+
+  // Chip widths, measured, so one node's labels can be laid side by side.
+  const chipRefs = useRef(new Map<string, HTMLElement>());
+  const [widths, setWidths] = useState<Record<string, number>>({});
   useLayoutEffect(() => {
-    const r = chipRef.current?.firstElementChild as HTMLElement | null | undefined;
-    if (r && (r.offsetWidth !== chip.w || r.offsetHeight !== chip.h)) setChip({ w: r.offsetWidth, h: r.offsetHeight });
+    const next: Record<string, number> = {};
+    chipRefs.current.forEach((el, sid) => (next[sid] = el.offsetWidth));
+    const changed = Object.keys(next).length !== Object.keys(widths).length || Object.keys(next).some((k) => Math.abs((widths[k] ?? 0) - next[k]) > 0.5);
+    if (changed) setWidths(next);
   });
-  // Comment pins count too: the label must not hide a pin on the node's corner.
+
   const tstore = threadStores.get(view.id);
   const threads = useSyncExternalStore(tstore?.subscribe ?? noSub, () => tstore?.get().threads ?? NONE);
-  const blocks = useMemo(() => {
-    if (!pos) return [];
-    const drawing = obstacles(view.elements, view.map).map(toScreen).filter((b) => !overlaps(b, pos, -8));
-    return [...drawing, ...layoutPins(threads, view).boxes];
-  }, [view.elements, view.map, a.scrollX, a.scrollY, z, pos?.x, pos?.y, pos?.w, pos?.h, threads]);
-  const label = pos ? placeBeside(pos, chip.w, chip.h, blocks, { x: 0, y: 0, w: a.width, h: a.height }, { gap: 6 }) : null;
+  const layout = useMemo(() => {
+    const drawing = obstacles(view.elements, view.map).map(toScreen);
+    const pins = layoutPins(threads, view).boxes;
+    const placed: { element: string; ring: Box; x: number; y: number; side: string; chips: { sid: string; dx: number }[] }[] = [];
+    for (const s of piles) {
+      const el = view.map.get(s.element);
+      if (!live(el)) continue;
+      const ring = inflate(toScreen(footprint(el, view.map, view.elements)), 6);
+      const ws = s.pointers.map((p) => widths[p.sessionId] ?? 200);
+      const w = ws.reduce((n, x) => n + x, 0) + CHIP_GAP * (ws.length - 1);
+      // Labels stay off the drawing, the pins, other rings and the labels placed before them.
+      const blocks = [...drawing.filter((b) => !overlaps(b, ring, -8)), ...pins, ...placed.flatMap((p) => [p.ring, { x: p.x, y: p.y, w: p.chips.reduce((n, c) => Math.max(n, c.dx + (widths[c.sid] ?? 200)), 0), h: 28 }])];
+      const spot = placeBeside(ring, w, 28, blocks, { x: 0, y: 0, w: a.width, h: a.height }, { gap: 6 });
+      let dx = 0;
+      const chips = s.pointers.map((p, i) => {
+        const c = { sid: p.sessionId, dx };
+        dx += ws[i] + CHIP_GAP;
+        return c;
+      });
+      placed.push({ element: s.element, ring, x: spot.x, y: spot.y, side: spot.side, chips });
+    }
+    return placed;
+  }, [piles, view.elements, view.map, a.scrollX, a.scrollY, z, a.width, a.height, threads, widths]);
 
-  // Glide only when the pointer moves to another element; panning and zooming follow at once.
-  const [gliding, setGliding] = useState(false);
-  const lastEl = useRef<string | null>(null);
-  useEffect(() => {
-    if (!cur?.element || cur.element === lastEl.current) return;
-    const first = lastEl.current === null;
-    lastEl.current = cur.element;
-    if (first) return;
-    setGliding(true);
-    const t = setTimeout(() => setGliding(false), 900);
-    return () => clearTimeout(t);
-  }, [cur?.element]);
+  const elOf = Object.fromEntries(pointers.flatMap((p) => (p.state.current?.element ? [[p.sessionId, p.state.current.element]] : [])));
+  const glides = useGliding(elOf);
+  const running = (sid: string) => !!(ag.status[sid]?.running || ag.status[sid]?.busy);
+  const shownIds = pointers.map((p) => p.sessionId);
+  const byNode = new Map<string, Conflict[]>();
+  for (const c of clashes) if (c.element && view.map.has(c.element)) byNode.set(c.element, [...(byNode.get(c.element) ?? []), c]);
+  const outsideCount = pointers.reduce((n, p) => n + p.state.outside.length, 0);
 
-  // The render that lands on a new element already animates (the effect above runs after it).
-  const glide = gliding || (!!cur?.element && lastEl.current !== null && cur.element !== lastEl.current);
-  const recent = cur?.element ? (state.byElement.get(cur.element) ?? []).slice(0, 12) : [];
-  const agentName = binding ? AGENT_NAMES[binding.agent] : "Agent";
-
+  if (!links.length) return <div className="ds ptr-layer"><LinkEditor api={api} view={view} placed={followedState?.placed ?? []} links={links} screen={screen} /></div>;
   return (
     <div className="ds ptr-layer">
-      {links.length > 0 && pos && cur && sid && (
-        <>
-          <motion.span className="ptr-ring" initial={false} animate={{ x: pos.x, y: pos.y, width: pos.w, height: pos.h }} transition={glide ? GLIDE : { duration: 0 }} />
-          <motion.div ref={chipRef} className="ptr ptr-ui" data-side={label!.side} initial={false} animate={{ x: Math.round(label!.x), y: Math.round(label!.y) }} transition={glide ? GLIDE : { duration: 0 }} data-running={turns.at(-1)?.running}>
-            <button className="ptr-chip" onClick={() => setOpen(open === "pointer" ? null : "pointer")} aria-expanded={open === "pointer"} title={`${agentName} 最近在改「${labelOf(el!, view.map)}」的代码`}>
-              <IconTarget size={16} replayKey={state.placed.length} />
-              {binding && <AgentAvatar kind={binding.agent} size={16} />}
-              <b>{agentName}</b>
-              <span className="ptr-file">{base(cur.path)}</span>
-              <time>{clock(cur.at)}</time>
-            </button>
-            <AnimatePresence>
-              {open === "pointer" && (
-                <motion.div className="ptr-pop" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18 }}>
-                  <div className="ptr-pop-head">
-                    <b>{labelOf(el!, view.map) || el!.id}</b>
-                    <span>{codePathsOf(el).join("  ")}</span>
-                  </div>
-                  <ul className="ptr-list">
-                    {recent.map((p) => (
-                      <FileRow key={p.path} p={p} onTurn={() => goTurn(sid, p.turn)} />
-                    ))}
-                  </ul>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </motion.div>
-        </>
+      {layout.map((l) => (
+        <motion.span
+          key={`ring-${l.chips[0].sid}`}
+          className="ptr-ring"
+          data-shared={l.chips.length > 1 || undefined}
+          initial={false}
+          animate={{ x: l.ring.x, y: l.ring.y, width: l.ring.w, height: l.ring.h }}
+          transition={glides(l.chips[0].sid) ? GLIDE : { duration: 0 }}
+        />
+      ))}
+      {layout.flatMap((l) =>
+        l.chips.map(({ sid, dx }) => {
+          const p = pointers.find((x) => x.sessionId === sid)!;
+          const cur = p.state.current!;
+          const el = view.map.get(cur.element!)!;
+          const kind = ag.bindings[sid]?.agent as AgentKind | undefined;
+          const name = label(sid, shownIds);
+          const own = links.find((x) => x.id === cur.element)?.own ?? [];
+          const rolled = !!cur.glob && !own.includes(cur.glob);
+          const isOpen = open?.kind === "pointer" && open.sid === sid;
+          const recent = (p.state.byElement.get(cur.element!) ?? []).slice(0, 12);
+          return (
+            <motion.div
+              key={`chip-${sid}`}
+              className="ptr ptr-ui"
+              data-side={l.side}
+              data-followed={sid === followed || undefined}
+              data-session={sid}
+              initial={false}
+              animate={{ x: Math.round(l.x + dx), y: Math.round(l.y) }}
+              transition={glides(sid) ? GLIDE : { duration: 0 }}
+              data-running={running(sid) && at == null}
+            >
+              <button
+                ref={(n) => {
+                  if (n) chipRefs.current.set(sid, n);
+                  else chipRefs.current.delete(sid);
+                }}
+                className="ptr-chip"
+                onClick={() => setOpen(isOpen ? null : { kind: "pointer", sid })}
+                aria-expanded={isOpen}
+                title={`${name} ${at == null ? "最近" : "在这一刻"}在改「${labelOf(el, view.map)}」${rolled ? "下面子图里" : ""}的代码`}
+              >
+                {sid === followed && <IconTarget size={16} replayKey={p.state.placed.length} />}
+                {kind && <AgentAvatar kind={kind} size={16} />}
+                <b>{name}</b>
+                <span className="ptr-file">{rolled ? "子图 · " : ""}{base(cur.path)}</span>
+                <time>{clock(cur.at)}</time>
+              </button>
+              <AnimatePresence>
+                {isOpen && (
+                  <motion.div className="ptr-pop" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18 }}>
+                    <div className="ptr-pop-head">
+                      <b>{kind && <AgentAvatar kind={kind} size={16} />}{name} · {labelOf(el, view.map) || el.id}</b>
+                      <span>{codePathsOf(el).join("  ") || (rolled ? "代码路径在它的子图里" : "")}</span>
+                    </div>
+                    <ul className="ptr-list">
+                      {recent.map((f) => (
+                        <FileRow key={f.path} p={f} onTurn={() => goTurn(sid, f.turn)} />
+                      ))}
+                    </ul>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          );
+        }),
       )}
-      {links.length > 0 && sid && state.outside.length > 0 && (
-        <div className="ptr-outside ptr-ui">
-          <button className="ptr-pill" onClick={() => setOpen(open === "outside" ? null : "outside")} aria-expanded={open === "outside"}>
-            <IconHint size={14} />
-            在架构图之外
-            <em>{state.outside.length}</em>
-          </button>
-          {open === "outside" && (
-            <div className="ptr-pop ptr-pop-up">
-              <div className="ptr-pop-head">
-                <b>{binding && <AgentAvatar kind={binding.agent} size={16} />}{agentName} 改了这些文件，但它们不属于任何节点</b>
-                <span>给节点关联代码路径后，它们会落到节点上</span>
-              </div>
-              <ul className="ptr-list">
-                {state.outside.map((o) => (
-                  <li key={o.path} data-open={outsideOpen === o.path}>
-                    <button className="ptr-row" onClick={() => setOutsideOpen(outsideOpen === o.path ? null : o.path)}>
-                      <em>{OP[o.op] ?? o.op}</em>
-                      <code>{o.path}</code>
-                      <time>{clock(o.at)}</time>
-                    </button>
-                    {outsideOpen === o.path && (
-                      <div className="ptr-turns">
-                        在
-                        {o.turns.map((n) => (
-                          <button key={n} className="ptr-link" onClick={() => goTurn(sid, n)}>
-                            第 {n} 轮
+      {[...byNode].map(([element, cs]) => {
+        const el = view.map.get(element);
+        if (!live(el)) return null;
+        const r = inflate(toScreen(footprint(el, view.map, view.elements)), 6);
+        const isOpen = open?.kind === "conflict" && open.element === element;
+        return (
+          <div key={`clash-${element}`} className="ptr-clash ptr-ui" style={{ transform: `translate(${Math.round(r.x - 6)}px, ${Math.round(r.y + r.h - 10)}px)` }}>
+            <button className="ptr-clash-btn" onClick={() => setOpen(isOpen ? null : { kind: "conflict", element })} aria-expanded={isOpen} title={cs.map((c) => clashText(c, label)).join("\n")}>
+              <span className="nest-dot" aria-hidden />
+              可能冲突
+            </button>
+            {isOpen && (
+              <div className="ptr-pop">
+                <div className="ptr-pop-head">
+                  <b>「{labelOf(el, view.map) || el.id}」：两个会话短时间内都写了这里</b>
+                  <span>Agora 不会阻止，只提醒：看看两边的改动是否互相覆盖</span>
+                </div>
+                <ul className="ptr-list">
+                  {cs.map((c) => (
+                    <li key={`${c.kind}${c.path}${c.sessions.join()}`} className="ptr-clash-row">
+                      <p>{clashText(c, label)}</p>
+                      <div>
+                        {c.writes.map((w) => (
+                          <button key={w.toolId} className="ptr-link" onClick={() => goTurn(w.sessionId, w.turn)}>
+                            {label(w.sessionId, c.sessions)} · 第 {w.turn} 轮
                           </button>
                         ))}
-                        改过 · 点轮次看轨迹
                       </div>
-                    )}
-                  </li>
-                ))}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {outsideCount > 0 && (
+        <div className="ptr-outside ptr-ui">
+          <button className="ptr-pill" onClick={() => setOpen(open?.kind === "outside" ? null : { kind: "outside" })} aria-expanded={open?.kind === "outside"}>
+            <IconHint size={14} />
+            在架构图之外
+            <em>{outsideCount}</em>
+          </button>
+          {open?.kind === "outside" && (
+            <div className="ptr-pop ptr-pop-up">
+              <div className="ptr-pop-head">
+                <b>这些文件改过，但不属于任何节点</b>
+                <span>按会话分组 · 给节点关联代码路径后，它们会落到节点上</span>
+              </div>
+              <ul className="ptr-list">
+                {pointers
+                  .filter((p) => p.state.outside.length)
+                  .flatMap((p) => {
+                    const kind = ag.bindings[p.sessionId]?.agent as AgentKind | undefined;
+                    return [
+                      <li key={`h-${p.sessionId}`} className="ptr-group">
+                        {kind && <AgentAvatar kind={kind} size={16} />}
+                        {label(p.sessionId, shownIds)}
+                        <em>{p.state.outside.length}</em>
+                      </li>,
+                      ...p.state.outside.map((o) => {
+                        const k = `${p.sessionId}:${o.path}`;
+                        const clash = clashes.find((c) => c.kind === "file" && c.path === o.path && c.sessions.includes(p.sessionId));
+                        return (
+                          <li key={k} data-open={outsideOpen === k}>
+                            <button className="ptr-row" onClick={() => setOutsideOpen(outsideOpen === k ? null : k)} title={clash ? clashText(clash, label) : undefined}>
+                              <em>{OP[o.op] ?? o.op}</em>
+                              <code>{o.path}</code>
+                              {clash ? <span className="nest-dot" aria-label="可能冲突" /> : <span />}
+                              <time>{clock(o.at)}</time>
+                            </button>
+                            {outsideOpen === k && (
+                              <div className="ptr-turns">
+                                在
+                                {o.turns.map((n) => (
+                                  <button key={n} className="ptr-link" onClick={() => goTurn(p.sessionId, n)}>
+                                    第 {n} 轮
+                                  </button>
+                                ))}
+                                改过 · 点轮次看轨迹
+                              </div>
+                            )}
+                          </li>
+                        );
+                      }),
+                    ];
+                  })}
               </ul>
             </div>
           )}
         </div>
       )}
-      <LinkEditor api={api} view={view} placed={state.placed} links={links} screen={screen} />
+      <LinkEditor api={api} view={view} placed={followedState?.placed ?? []} links={links} screen={screen} />
     </div>
   );
+}
+
+/** "Claude Code 与 Codex 在 3 分钟内都改了 server/app.py" */
+export function clashText(c: Conflict, label: (sid: string, among?: string[]) => string) {
+  const [a, b] = c.sessions.map((s) => label(s, c.sessions));
+  const gap = Math.max(1, Math.round((c.writes[1].at - c.writes[0].at) / 60_000));
+  return c.kind === "file" ? `${a} 与 ${b} 在 ${gap} 分钟内都改了 ${c.path}` : `${a} 改了 ${base(c.writes[0].path)}，${b} 在 ${gap} 分钟内改了同一节点的 ${base(c.writes[1].path)}`;
 }
 
 function FileRow({ p, onTurn }: { p: Placed; onTurn: () => void }) {
@@ -192,7 +348,7 @@ function FileRow({ p, onTurn }: { p: Placed; onTurn: () => void }) {
 }
 
 /** Selected box or frame → "代码路径" chip → edit its globs (one per line). */
-function LinkEditor({ api, view, placed, links, screen }: { api: ExcalidrawImperativeAPI; view: CanvasViewState; placed: Placed[]; links: ReturnType<typeof linksOf>; screen: (e: El) => { x: number; y: number; w: number; h: number } }) {
+function LinkEditor({ api, view, placed, links, screen }: { api: ExcalidrawImperativeAPI; view: CanvasViewState; placed: Placed[]; links: { id: string; label: string; globs: string[] }[]; screen: (e: El) => { x: number; y: number; w: number; h: number } }) {
   const ids = Object.keys(view.appState.selectedElementIds ?? {}).map((id) => {
     const e = view.map.get(id);
     return e?.type === "text" && e.containerId ? e.containerId : id;
@@ -215,8 +371,7 @@ function LinkEditor({ api, view, placed, links, screen }: { api: ExcalidrawImper
     ? (() => {
         const others = links.filter((l) => l.id !== target.id);
         const mine = { id: target.id, label: "", globs: draft };
-        const hits = [...new Set(placed.filter((p) => elementFor(p.path, [...others, mine])?.link.id === target.id).map((p) => p.path))];
-        return hits;
+        return [...new Set(placed.filter((p) => elementFor(p.path, [...others, mine])?.link.id === target.id).map((p) => p.path))];
       })()
     : [];
   const save = (globs: string[]) => {

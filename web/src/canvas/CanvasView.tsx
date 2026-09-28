@@ -15,6 +15,10 @@ import { bbox, byId, live, type El } from "./scene";
 import type { ThreadStore } from "../comments/threads";
 import { useHighlight } from "../session/ui";
 import { PointerLayer } from "../pointer/PointerLayer";
+import { childAt, NodeChildMenu, OwnerBreadcrumb, OwnerChildMarkers } from "../nested/NestedLayer";
+import { nav } from "../nested/store";
+import { TimelinePanel, Workers, WorkstationToggle } from "../workstation/Workstation";
+import { useWorkstation } from "../workstation/clock";
 import { AnimatePresence, motion } from "motion/react";
 import { SPRING } from "../comments/motion";
 
@@ -51,9 +55,16 @@ type Props = {
   onScene?: (elements: readonly El[]) => void;
   /** Share guests: look and comment only — no editing, asset library, animations or progress pointer. */
   readOnly?: boolean;
+  /** Step into a node's child canvas (default: the app shell's navigation). */
+  onEnterChild?: (child: string) => void;
+  /** Share guests bring their own breadcrumb and child markers (the owner's come from the workspace). */
+  top?: React.ReactNode;
+  overlay?: (view: CanvasViewState) => React.ReactNode;
 };
 
-export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelection, onModeDone, initialElements, onScene, readOnly }: Props) {
+export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelection, onModeDone, initialElements, onScene, readOnly, onEnterChild, top, overlay }: Props) {
+  const enter = (child: string) => (onEnterChild ? onEnterChild(child) : nav.go(doc.id, child));
+  const workstation = useWorkstation(doc.id) && !readOnly;
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [view, setView] = useState<CanvasViewState | null>(null);
   // Parent callbacks are recreated every render; read the latest through a ref so
@@ -173,12 +184,26 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
       onPointerDownCapture={(e) => {
         // komo-style: interacting with the canvas outside a card closes the open thread
         // and takes back an unsent pin (parked if it has text).
-        if ((e.target as HTMLElement).closest(".tcard, .pin, .drawer, .ptr-ui, .undo-toast")) return;
+        if ((e.target as HTMLElement).closest(".tcard, .pin, .drawer, .ptr-ui, .undo-toast, .nest-mark, .nest-crumbs, .ws-ui")) return;
         doc.store.close();
         dismissDraft(true);
       }}
     >
       <div className="canvas-stage">
+      {readOnly ? top : <OwnerBreadcrumb canvasId={doc.id} />}
+      <div
+        className="canvas-layers"
+        onDoubleClickCapture={(e) => {
+          // Double-click on a node that opens a child canvas enters it (text editing stays on Enter).
+          if (!view || (e.target as HTMLElement).closest(".ptr-ui, .nest-mark, .tcard, .pin")) return;
+          const r = e.currentTarget.getBoundingClientRect();
+          const child = childAt(view, e.clientX - r.left, e.clientY - r.top);
+          if (!child) return;
+          e.stopPropagation();
+          e.preventDefault();
+          enter(child);
+        }}
+      >
       <Excalidraw
         excalidrawAPI={setApi}
         initialData={initialData}
@@ -186,6 +211,13 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
         theme={resolved}
         langCode="zh-CN"
         viewModeEnabled={readOnly}
+        onLinkOpen={(el, ev) => {
+          // A link written as `?canvas=<id>` (or `#canvas=<id>`) opens that canvas in place.
+          const m = /[?#&]canvas=([A-Za-z0-9._-]+)/.exec(el.link ?? "");
+          if (!m) return;
+          ev.preventDefault();
+          enter(m[1]);
+        }}
         UIOptions={{ canvasActions: { loadScene: false, export: false, saveAsImage: false, ...(readOnly && { clearCanvas: false, toggleTheme: false, saveToActiveFile: false }) } }}
       >
         {!readOnly && (
@@ -214,9 +246,15 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
             onCreated={onModeDone}
           />
           {!readOnly && <HighlightLayer canvasId={doc.id} view={view} />}
+          {readOnly ? overlay?.(view) : <OwnerChildMarkers view={view} canvasId={doc.id} />}
           {!readOnly && <PointerLayer api={api} view={view} />}
+          {!readOnly && <NodeChildMenu api={api} view={view} canvasId={doc.id} />}
+          {workstation && <Workers view={view} />}
         </>
       )}
+      {!readOnly && api && <WorkstationToggle canvasId={doc.id} />}
+      </div>
+      {workstation && <TimelinePanel canvasId={doc.id} view={view} />}
       </div>
       {api && view && <CommentsDrawer title={doc.title} api={api} store={doc.store} view={view} open={drawerOpen} onClose={() => onDrawer(false)} />}
     </div>

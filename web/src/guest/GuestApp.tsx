@@ -1,4 +1,4 @@
-// A share guest's page: one canvas, read-only, with comments. Everything goes through the share
+// A share guest's page: one canvas (and the canvases nested below it), read-only, with comments. Everything goes through the share
 // gateway's three guest endpoints (web/docs/sharing.md); there is no workspace, session, agent or
 // progress pointer here, and the owner's email / local paths never reach this page.
 import { MotionConfig, motion } from "motion/react";
@@ -10,6 +10,8 @@ import { SPRING } from "../comments/motion";
 import { IconComment, IconEye, IconList, IconLock, IconPointer, IconUser, IconWorkspace } from "../app/icons";
 import { ThemeButton } from "../app/ThemeButton";
 import type { El } from "../canvas/scene";
+import { Breadcrumb, ChildMarkers } from "../nested/NestedLayer";
+import { canvasFromUrl, urlFor } from "../nested/store";
 import "./guest.css";
 
 type State = {
@@ -17,7 +19,11 @@ type State = {
   canvas: { id: string; title: string; elements: El[] };
   threads: ThreadsFile;
   me: { id: string } | null;
-  share: { expiresAt: number | null };
+  share: { expiresAt: number | null; root?: string };
+  /** From the shared canvas down to this one (nested canvases). */
+  path?: { id: string; title: string }[];
+  /** Every canvas this share reaches: its name and open comments (including those below it). */
+  canvases?: Record<string, { title: string; open: number }>;
 };
 
 const NAME_KEY = "agora.guestName";
@@ -36,8 +42,8 @@ const saveName = (n: string) => {
   }
 };
 
-export async function loadGuest(): Promise<State> {
-  const r = await fetch("/api/guest/state", { credentials: "same-origin" });
+export async function loadGuest(canvas?: string): Promise<State> {
+  const r = await fetch(`/api/guest/state${canvas ? `?canvas=${encodeURIComponent(canvas)}` : ""}`, { credentials: "same-origin" });
   if (r.status === 403) throw new Ended();
   if (!r.ok) throw new Error(`加载失败（${r.status}）`);
   return (await r.json()) as State;
@@ -73,14 +79,20 @@ export function GuestApp({ initial }: { initial: State }) {
 
   useEffect(() => setIdentity({ id: me, name: name || "访客" }), [me, name]);
 
-  const store: ThreadStore = useMemo(() => {
+  // The canvas on screen (the shared one, or one nested below it) and one thread store per canvas.
+  const [cur, setCur] = useState<State>(initial);
+  const stores = useRef(new Map<string, ThreadStore>());
+  const storeFor = (st: State): ThreadStore => {
+    const have = stores.current.get(st.canvas.id);
+    if (have) return have;
+    const canvasId = st.canvas.id;
     const post = async (body: Record<string, unknown>) => {
       const send = async () => {
         const r = await fetch("/api/guest/comments", {
           method: "POST",
           credentials: "same-origin",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ ...body, name: nameRef.current }),
+          body: JSON.stringify({ ...body, canvasId, name: nameRef.current }),
         });
         if (r.status === 403) return setEnded(true);
         if (r.status === 429) return flash("发得太快了，稍等一会儿再试");
@@ -90,7 +102,7 @@ export function GuestApp({ initial }: { initial: State }) {
       waiting.current.push(() => void send());
       setAsking("needed");
     };
-    return createThreadStore(initial.canvas.id, threadsFromFile(initial.threads), {
+    const created = createThreadStore(canvasId, threadsFromFile(st.threads), {
       create: (t: Thread) => void post({ op: "create", threadId: t.id, id: t.messages[0].id, anchor: t.anchor, text: t.messages[0].text }),
       reply: (threadId: string, m: Message) => void post({ op: "reply", threadId, id: m.id, text: m.text }),
       // Only one's own messages; the gateway checks that again (web/docs/sharing.md §3).
@@ -98,7 +110,44 @@ export function GuestApp({ initial }: { initial: State }) {
       remove: (threadId: string, id: string) => void post({ op: "delete", threadId, id }),
       restore: (threadId: string, m: Message) => void post({ op: "restore", threadId, id: m.id, text: m.text, ...(m.editedAt && { editedAt: m.editedAt }) }),
     });
+    stores.current.set(canvasId, created);
+    return created;
+  };
+  const store = storeFor(cur);
+  const curRef = useRef(cur);
+  curRef.current = cur;
+  /** Step into a child canvas or back up (the gateway refuses anything the share does not reach). */
+  const goTo = async (id: string, push = true) => {
+    if (id === curRef.current.canvas.id) return;
+    try {
+      const next = await loadGuest(id);
+      const have = stores.current.get(id);
+      const snap = threadsFromFile(next.threads);
+      if (have && snap) have.merge(snap);
+      setCur(next);
+      setMode("browse");
+      if (push) history.pushState({ canvas: id }, "", urlFor(id));
+    } catch (e) {
+      if (e instanceof Ended) setEnded(true);
+      else flash("打不开这一层");
+    }
+  };
+  const goRef = useRef(goTo);
+  goRef.current = goTo;
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => void goRef.current((e.state as { canvas?: string } | null)?.canvas ?? canvasFromUrl() ?? initial.canvas.id, false);
+    addEventListener("popstate", onPop);
+    const first = canvasFromUrl();
+    if (first && first !== initial.canvas.id) void goRef.current(first, false);
+    else history.replaceState({ canvas: initial.canvas.id }, "", urlFor(initial.canvas.id));
+    return () => removeEventListener("popstate", onPop);
   }, []);
+  // Open-comment counts on the child markers follow new comments.
+  const refresh = useRef(0);
+  const refreshCounts = () => {
+    clearTimeout(refresh.current);
+    refresh.current = window.setTimeout(() => void loadGuest(curRef.current.canvas.id).then((n) => setCur((c) => (c.canvas.id === n.canvas.id ? { ...c, canvases: n.canvases } : c)), () => {}), 300);
+  };
 
   const flash = (msg: string) => {
     setToast(msg);
@@ -109,11 +158,14 @@ export function GuestApp({ initial }: { initial: State }) {
   useEffect(() => {
     const es = new EventSource("/api/guest/events");
     es.onmessage = (e) => {
-      const ev = JSON.parse(e.data) as { t: string; data?: ThreadsFile; elements?: El[] };
+      const ev = JSON.parse(e.data) as { t: string; canvasId?: string; data?: ThreadsFile; elements?: El[] };
+      const here = !ev.canvasId || ev.canvasId === curRef.current.canvas.id;
       if (ev.t === "threads" && ev.data) {
         const snap = threadsFromFile(ev.data);
-        if (snap) store.merge(snap);
-      } else if (ev.t === "canvas" && ev.elements && handle.current) {
+        const target = stores.current.get(ev.canvasId ?? curRef.current.canvas.id);
+        if (snap && target) target.merge(snap);
+        refreshCounts();
+      } else if (ev.t === "canvas" && ev.elements && handle.current && here) {
         handle.current.api.updateScene({ elements: ev.elements as never });
       } else if (ev.t === "ended") {
         es.close();
@@ -121,7 +173,7 @@ export function GuestApp({ initial }: { initial: State }) {
       }
     };
     return () => es.close();
-  }, [store]);
+  }, []);
   useEffect(() => {
     const at = initial.share.expiresAt;
     if (at == null) return;
@@ -165,7 +217,7 @@ export function GuestApp({ initial }: { initial: State }) {
     if (waiting.current.length) {
       // Unsent comments can't be kept without a name: take the server's copy back.
       waiting.current = [];
-      void loadGuest().then((s) => {
+      void loadGuest(curRef.current.canvas.id).then((s) => {
         const snap = threadsFromFile(s.threads);
         store.reset();
         if (snap) store.merge(snap);
@@ -180,7 +232,7 @@ export function GuestApp({ initial }: { initial: State }) {
       <div className="app guest" data-mode={mode}>
         <header className="guest-top">
           <span className="brand"><IconWorkspace size={18} />Agora</span>
-          <span className="guest-title" title={initial.canvas.title}>{initial.canvas.title || "画布"}</span>
+          <span className="guest-title" title={cur.canvas.title}>{cur.canvas.title || "画布"}</span>
           <span className="guest-project">{initial.project.name}</span>
           <span className="guest-gap" />
           <span className="guest-note"><IconEye size={16} />只能查看和评论{expires != null && <> · <Remaining at={expires} /></>}</span>
@@ -189,17 +241,23 @@ export function GuestApp({ initial }: { initial: State }) {
             <IconUser size={16} /><span>{name || "填写名字"}</span>
           </button>
         </header>
-        <div className="guest-canvas" data-pane={initial.canvas.id}>
+        <div className="guest-canvas" data-pane={cur.canvas.id}>
           <CanvasView
-            doc={{ id: initial.canvas.id, title: initial.canvas.title, store }}
+            key={cur.canvas.id}
+            doc={{ id: cur.canvas.id, title: cur.canvas.title, store }}
             mode={mode}
             drawerOpen={drawer}
             onDrawer={setDrawer}
             onReady={(h) => (handle.current = h)}
             onSelection={() => {}}
             onModeDone={() => setMode("browse")}
-            initialElements={initial.canvas.elements}
+            initialElements={cur.canvas.elements}
             readOnly
+            onEnterChild={(id) => void goTo(id)}
+            top={<Breadcrumb path={cur.path ?? []} current={cur.canvas.id} onGo={(id) => void goTo(id)} />}
+            overlay={(view) => (
+              <ChildMarkers view={view} canvasId={cur.canvas.id} info={(k) => (cur.canvases?.[k] ? { title: cur.canvases[k].title || "子图", open: cur.canvases[k].open } : null)} onEnter={(id) => void goTo(id)} />
+            )}
           />
         </div>
         <GuestDock mode={mode} setMode={(m) => (m === "comment" ? startComment() : setMode(m))} drawer={drawer} toggleDrawer={() => setDrawer((d) => !d)} store={store} />
@@ -209,7 +267,7 @@ export function GuestApp({ initial }: { initial: State }) {
           </motion.div>
         )}
         {toast && <div className="toast" role="status"><span>{toast}</span></div>}
-        {asking && <NameDialog initial={name} welcome={asking === "welcome"} title={initial.canvas.title} onOk={confirmName} onSkip={skipName} />}
+        {asking && <NameDialog initial={name} welcome={asking === "welcome"} title={cur.canvas.title} onOk={confirmName} onSkip={skipName} />}
       </div>
     </MotionConfig>
   );
