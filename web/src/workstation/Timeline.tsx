@@ -6,12 +6,15 @@
 // its hover card (the pointer can move into it for its buttons); ✕ goes back to the strip.
 // Structure is rebuilt at most 4 times a second (useTick); the playheads and the strip's canvas
 // move in the one frame loop; only the lanes in view are rendered.
+// Trace (追踪, §11): a lane name traces its agent and pans the canvas to it; while tracing, the lanes
+// and the strip are about that agent and its sub-agents only, its name says 追踪中, Esc lets go.
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconBack, IconClose, IconEnter, IconHistory, IconMessage, IconPause, IconPlay, IconTarget } from "../app/icons";
 import { openTrajectory, ui } from "../session/ui";
 import { buildAxis, hhmmss, ticks, type Axis } from "./axis";
 import { clock, replayTime, useReplay, useTick } from "./clock";
 import { focus, useFocus, type SegRef } from "./focus";
+import { follow, useFollow } from "./follow";
 import { frame } from "./frame";
 import { canvasWhere, OUTSIDE, planFor, stateAt, writeConflicts } from "./place";
 import { RunAvatar } from "./RunAvatar";
@@ -147,6 +150,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
   const runs = useRuns();
   const replay = useReplay();
   const fo = useFocus();
+  const fl = useFollow();
   const [open, setOpen] = useState(false);
   const [fold, setFold] = useState<Record<string, boolean>>({});
   const [tip, setTip] = useState<{ ref: SegRef; x: number; y: number } | null>(null);
@@ -224,20 +228,23 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
   const where = canvasId ? canvasWhere.get(canvasId) : undefined;
   const placeOfPath = (p: string) => (where ? where.label(where.ctx.locate(p)?.place ?? OUTSIDE) : undefined);
 
+  // 追踪: the lanes and the strip are about the traced agent and its sub-agents only.
+  const traced = fo.traced && runs.byId.has(fo.traced) ? fo.traced : null;
   // Rows: top-level runs; their sub-agents under them unless folded; deeper ones fold into the parent.
   const rows = useMemo(() => {
     const out: Row[] = [];
     let y = PX.ruler;
     for (const f of flat) {
+      if (traced && f.run.id !== traced && f.parent?.id !== traced) continue;
       if (f.depth >= 2) continue;
-      if (f.depth === 1 && fold[f.root.id]) continue;
+      if (f.depth === 1 && fold[f.root.id] && f.run.id !== traced) continue;
       if (f.depth === 1 && (f.run.spawnAt == null || f.run.spawnAt > liveNow)) continue;
       const h = f.depth ? PX.sub + PX.rc : PX.lane;
       out.push({ f, y, h, mid: y + (f.depth ? PX.sub / 2 : PX.lane / 2), sub: f.depth > 0 });
       y += h;
     }
     return out;
-  }, [flat, fold, liveNow]);
+  }, [flat, fold, liveNow, traced]);
   const height = rows.length ? rows[rows.length - 1].y + rows[rows.length - 1].h : PX.ruler + PX.lane;
 
   // ── the playheads: the frame loop moves them by transform ──
@@ -412,17 +419,42 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
       if (replay?.playing) clock.pause();
       else play();
     } else if (e.key === "Escape") {
+      e.preventDefault();
+      // Esc lets go of a trace first (as on the canvas), then goes back to live
+      if (focus.get().traced) return void focus.escape();
       hideTip();
       focus.selectSeg(null);
       clock.live();
     }
   };
+  /** 追踪: a lane name traces its agent and pans the canvas to it (the smooth move, once). */
+  const traceAndLocate = (id: string) => {
+    focus.trace(id);
+    onLocate?.(id);
+  };
+  const activate = (go: () => void) => (e: React.KeyboardEvent) => {
+    if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) (e.preventDefault(), go());
+  };
+  /** A lane name's hover menu: 追踪 (or 退出追踪) and 跟随 (in the follow pane). */
+  const laneActs = (id: string) => (
+    <>
+      {traced === id ? (
+        <button onClick={(e) => (e.stopPropagation(), focus.trace(null))} title="退出追踪（Esc）">退出追踪</button>
+      ) : (
+        <button onClick={(e) => (e.stopPropagation(), focus.trace(id))} title="只看它走过的路">追踪</button>
+      )}
+      <button data-on={fl.run === id || undefined} aria-pressed={fl.run === id} onClick={(e) => (e.stopPropagation(), fl.run === id ? follow.stop() : follow.start(id))} title={fl.run === id ? "停止跟随" : "在右侧窗口里跟着它"}>
+        跟随
+      </button>
+    </>
+  );
 
   if (empty || !runs.flat.length) return null;
 
   const tops = runs.flat.filter((f) => f.depth === 0);
-  miniRuns.current = tops.slice(0, 3).map((f) => f.run);
   const kidsOf = (id: string) => runs.flat.filter((x) => x.depth === 1 && x.parent?.id === id);
+  const tf = traced ? runs.flat.find((x) => x.run.id === traced) : undefined;
+  miniRuns.current = tf ? [tf.run, ...kidsOf(tf.run.id).map((x) => x.run)].slice(0, 3) : tops.slice(0, 3).map((f) => f.run);
 
   // ── the default: the 34 px strip ──
   const strip = () => {
@@ -430,7 +462,23 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
     const waiting = tops.filter(waitAt);
     const busy = tops.filter((f) => f.run.running || f.run.segs.some((g) => g.start <= now && now < g.end));
     let state: { k: string; node: ReactNode };
-    if (waiting.length) {
+    if (tf) {
+      // 追踪: the line is about it — what it does at the playhead (the canvas says it is a replay)
+      const w = tf.run.segs.find((g) => g.kind === "wait" && g.start <= t && t < g.end);
+      const n = nowText(tf.run, t, placeOfPath);
+      const on = !!w || tf.run.segs.some((g) => g.start <= t && t < g.end);
+      state = {
+        k: w ? "wait" : n.k,
+        node: (
+          <>
+            <span className="trk">追踪</span>
+            {w ? <i className="dot-c" /> : on && <i className="live" />}
+            <b>{tf.parent ? fullName(tf) : tf.run.name}</b>
+            <span>{w ? `在等你回复${w.question ? ` · ${w.question}` : ""}` : n.text || "空闲"}</span>
+          </>
+        ),
+      };
+    } else if (waiting.length) {
       const q = waitAt(waiting[0])?.question;
       state = { k: "wait", node: <><i className="dot-c" /><b>{waiting[0].run.name}</b><span>在等你回复{q ? ` · ${q}` : ""}</span></> };
     } else if (busy.length === 1) {
@@ -445,14 +493,14 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
           <IconHistory size={14} />
           工位
         </button>
-        <span className="stt" data-k={state.k}>{replay ? <><b className="rp">回放 {hhmmss(t)}</b><span>比实时晚 {dur(now - t)}</span></> : state.node}</span>
+        <span className="stt" data-k={state.k}>{replay && !tf ? <><b className="rp">回放 {hhmmss(t)}</b><span>比实时晚 {dur(now - t)}</span></> : state.node}</span>
         <div className="mini" ref={miniRef} {...scrub(maxis)} title="拖动回看任意时刻" role="slider" aria-label="回放位置" aria-valuemin={maxis.start} aria-valuemax={maxis.end} aria-valuenow={Math.round(t)} aria-valuetext={hhmmss(t)} tabIndex={0} onKeyDown={onKey}>
           <canvas ref={miniCanvas} className="mini-cv" aria-hidden />
           <span className="mph" ref={mph} data-replay={replay ? "" : undefined} />
         </div>
         <span className="ws-cnt" title={tops.map((f) => f.run.name).join("、")}>
           <span className="stack">{tops.slice(0, 3).map((f) => <RunAvatar key={f.run.id} agent={f.run.agent} size={18} />)}</span>
-          {tops.length} 个会话{subs ? ` · ${subs} 个子代理` : ""}
+          <span className="n">{tops.length} 个会话{subs ? ` · ${subs} 个子代理` : ""}</span>
           {waiting.length > 0 && <span className="need"><i className="dot-c" />{waiting.length} 等你</span>}
         </span>
         <button className="icon-btn sm muted" data-open onClick={() => toggle(true)} aria-label="展开时间线" title="展开时间线"><IconEnter size={14} /></button>
@@ -472,17 +520,20 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
 
     const laneName = (r: Row) => {
       const run = r.f.run;
+      const on = traced === run.id;
       if (r.sub) {
         const rc = receiptAt(run, t);
         return (
-          <Keyed key={run.id} k={`${r.y}|${r.h}|${rc}|${run.task}|${run.name}`} node={
-          <button className="lname sub" style={{ top: r.y, height: r.h }} onClick={() => onLocate?.(run.id)} onPointerEnter={() => focus.hover(run.id)} onPointerLeave={() => focus.hover(null)} title={`${run.task ?? ""} · ${run.via === "seedmux" ? "Seedmux worker" : "原生子代理"}`}>
+          <Keyed key={run.id} k={`${r.y}|${r.h}|${rc}|${run.task}|${run.name}|${on}|${fl.run === run.id}`} node={
+          <div className="lname sub" role="button" tabIndex={0} data-trace={on || undefined} style={{ top: r.y, height: r.h }} onClick={() => traceAndLocate(run.id)} onKeyDown={activate(() => traceAndLocate(run.id))} onPointerEnter={() => focus.hover(run.id)} onPointerLeave={() => focus.hover(null)} title={`${run.task ?? ""} · ${run.via === "seedmux" ? "Seedmux worker" : "原生子代理"} · 点一下追踪它`}>
             <RunAvatar agent={run.agent} size={18} parent={r.f.parent?.agent} />
             <span className="t">
               <b>{fullName(r.f)}</b>
+              {on && <span className="trk">追踪中</span>}
               {rc && <span className="now"><span className="rc" data-r={rc}>{RECEIPT_NAMES[rc]}</span></span>}
             </span>
-          </button>} />
+            <span className="lacts">{laneActs(run.id)}</span>
+          </div>} />
         );
       }
       const g = run.segs.find((s) => s.start <= t && t < s.end);
@@ -491,12 +542,13 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
       const place = g?.path ? placeOfPath(g.path) : undefined;
       const nk = kidsOf(run.id).filter((x) => x.run.spawnAt != null && x.run.spawnAt < liveNow).length;
       return (
-        <Keyed key={run.id} k={`${r.y}|${r.h}|${k}|${text}|${place}|${nk}|${!!fold[run.id]}|${run.name}`} node={
-        <div className="lname" role="button" tabIndex={0} style={{ top: r.y, height: r.h }} onClick={() => onLocate?.(run.id)} onPointerEnter={() => focus.hover(run.id)} onPointerLeave={() => focus.hover(null)} title="在画布上找到它">
+        <Keyed key={run.id} k={`${r.y}|${r.h}|${k}|${text}|${place}|${nk}|${!!fold[run.id]}|${run.name}|${on}|${fl.run === run.id}`} node={
+        <div className="lname" role="button" tabIndex={0} data-trace={on || undefined} style={{ top: r.y, height: r.h }} onClick={() => traceAndLocate(run.id)} onKeyDown={activate(() => traceAndLocate(run.id))} onPointerEnter={() => focus.hover(run.id)} onPointerLeave={() => focus.hover(null)} title="追踪它，并在画布上找到它">
           <RunAvatar agent={run.agent} size={22} />
           <span className="t">
             <b>
               {run.name}
+              {on && <span className="trk">追踪中</span>}
               {nk > 0 && (
                 <span className="fold" role="button" aria-expanded={!fold[run.id]} title={`${fold[run.id] ? "展开" : "收起"}子代理`} onClick={(e) => (e.stopPropagation(), setFold((o) => ({ ...o, [run.id]: !o[run.id] })))}>
                   {fold[run.id] ? "▸" : "▾"} {nk}
@@ -505,11 +557,10 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
             </b>
             <span className="now" data-k={k}>{text}{place ? ` · ${place}` : ""}</span>
           </span>
-          {r.f.root.sessionId && (
-            <span className="lacts">
-              <button onClick={(e) => (e.stopPropagation(), ui.openSession(r.f.root.sessionId!))}>打开会话</button>
-            </span>
-          )}
+          <span className="lacts">
+            {r.f.root.sessionId && <button onClick={(e) => (e.stopPropagation(), ui.openSession(r.f.root.sessionId!))}>打开会话</button>}
+            {laneActs(run.id)}
+          </span>
         </div>} />
       );
     };
@@ -684,7 +735,16 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
   })();
 
   return (
-    <section className="ws-tl" ref={sectionEl} data-replay={replay ? "" : undefined} aria-label="工位时间线">
+    <section
+      className="ws-tl"
+      ref={sectionEl}
+      data-replay={replay ? "" : undefined}
+      aria-label="工位时间线"
+      // the page's Esc keeps out of the timeline; here too it lets go of a trace first (a lane name, a button)
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && !e.defaultPrevented && focus.get().traced) (e.preventDefault(), focus.escape());
+      }}
+    >
       {/* the height follows what is inside by a CSS transition: it is sampled once per frame, so it
           moves in even steps (a JS tween timed inside its own rAF batch did not) */}
       <div className="ws-tl-anim" style={{ height: innerH }} onTransitionEnd={(e) => void (e.target === e.currentTarget && (timelineResize.at = performance.now()))}>

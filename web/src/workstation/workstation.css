@@ -17,9 +17,30 @@
 .ws-worker[data-idle] > g { opacity: 0.62; }
 .ws-tether { fill: none; stroke: var(--fg-faint); stroke-width: 1.2; stroke-dasharray: 2 4; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .ws-worker { pointer-events: auto; cursor: pointer; outline: none; }
-.ws-worker[data-dim="1"] > g { opacity: 0.22; }
+.ws-worker > g { transition: opacity 200ms var(--ease-out); }
 .ws-worker:focus-visible .ws-hit { stroke: var(--accent); stroke-width: 1; }
-.ws-layer[data-trace] .ws-rings, .ws-layer[data-trace] .ws-tethers { opacity: 0.3; }
+
+/* 追踪 (docs/workstation.md §11): everyone but the traced agent and its sub-agents dims to 30% and
+ * takes no clicks, with their bubbles, rings, tethers and glances */
+.ws-worker[data-dim="1"] { pointer-events: none; }
+.ws-worker[data-dim="1"] > g { opacity: 0.3; }
+.ws-rings rect[data-dim], .ws-tether[data-dim] { opacity: 0.3; }
+/* the way it went: a thin purple line along the bridges and ladders it walked; a sub-agent's errand a thin dashed one */
+.ws-trace { transition: opacity 200ms var(--ease-out); }
+.ws-trace[data-exit] { opacity: 0; }
+.ws-trace-way { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; opacity: 0.9; }
+.ws-trace-sub { fill: none; stroke: var(--fg-muted); stroke-width: 1.2; stroke-dasharray: 3 4; stroke-linecap: round; vector-effect: non-scaling-stroke; opacity: 0.85; }
+/* a stop's number at its node's top-left corner: filled once reached, hollow and faint for what comes
+ * later in a replay; the sub-diagram it went into there beside it */
+.ws-stop, .ws-errand { position: absolute; left: 0; top: 0; z-index: 2; pointer-events: none; will-change: transform; animation: ws-ring-in 200ms var(--ease-out) backwards; transition: opacity 200ms var(--ease-out); }
+.ws-stop { margin: -8px 0 0 -8px; }
+.ws-stop i { display: grid; place-items: center; box-sizing: border-box; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); box-shadow: inset 0 0 0 1.2px var(--accent); color: var(--accent-ink); font: 600 10.5px/1 var(--font-sans); font-style: normal; font-variant-numeric: tabular-nums; transition: background 200ms var(--ease-out), color 200ms var(--ease-out); }
+.ws-stop[data-done] i { background: var(--accent-fill); box-shadow: 0 0 0 1.5px var(--surface); color: var(--accent-fg); }
+.ws-stop:not([data-done]) > * { opacity: 0.55; }
+/* just inside the node, under its top edge (where figures stand) */
+.ws-stop em { position: absolute; left: 18px; top: 10px; padding: 0 6px; border-radius: var(--r-pill); background: var(--surface); box-shadow: var(--edge); color: var(--accent-ink); font-size: 10.5px; font-style: normal; line-height: 16px; white-space: nowrap; }
+.ws-errand { margin: -8px 0 0 -8px; opacity: 0.9; }
+.ws-stop[data-exit], .ws-errand[data-exit] { opacity: 0; }
 
 /* bubbles, chips and the tray are HTML in screen space; the frame loop sets their transform */
 .ws-bub-pos, .ws-pchip, .ws-tray { position: absolute; left: 0; top: 0; will-change: transform; }
@@ -48,7 +69,7 @@
 .ws-bub[data-sel] { box-shadow: 0 0 0 2px var(--accent), var(--lift-2); }
 .ws-bub[data-sub] { min-height: 24px; padding: 2px 8px 2px 3px; gap: 5px; font-size: var(--text-xs); }
 .ws-bub[data-sub] .f { font-size: 10.5px; }
-.ws-bub[data-dim] { opacity: 0.3; }
+.ws-bub[data-dim] { opacity: 0.3; pointer-events: none; }
 /* collapsed to a chip at its figure (no room for the whole bubble near it): the verb only */
 .ws-bub-chip { display: inline-flex; align-items: center; gap: 3px; font-size: var(--text-xs); }
 .ws-bub:not([data-chip]) .ws-bub-chip { position: absolute; left: 0; top: 0; visibility: hidden; pointer-events: none; }
@@ -116,7 +137,11 @@
 .ws-tl .mini .mini-cv { position: absolute; inset: 0; width: 100%; height: 100%; }
 .ws-tl .mini .mph { position: absolute; left: 0; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--fg); will-change: transform; }
 .ws-tl .mini .mph[data-replay] { background: var(--accent); }
-.ws-cnt { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px 0 5px; border-radius: var(--r-pill); color: var(--fg-muted); font-size: var(--text-xs); white-space: nowrap; }
+/* a fixed width too (like .stt): when 「● 1 等你」 or a count comes or goes, the bar between keeps its
+ * width — the live playhead sits at its right end, so a narrower bar made it jump ~45 px */
+.ws-cnt { flex: none; box-sizing: border-box; width: clamp(150px, 26%, 240px); overflow: hidden; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px 0 5px; border-radius: var(--r-pill); color: var(--fg-muted); font-size: var(--text-xs); white-space: nowrap; }
+.ws-cnt .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ws-cnt .stack, .ws-cnt .need { flex: none; }
 .ws-cnt:hover, .ws-cnt[aria-pressed="true"] { background: var(--raised); color: var(--fg); }
 .ws-cnt .stack .agent-avatar { box-shadow: 0 0 0 1.5px var(--bg), inset 0 0 0 1px var(--avatar-edge); }
 .ws-cnt .need { display: inline-flex; align-items: center; gap: 4px; color: var(--caution); }
@@ -158,9 +183,16 @@
 .ws-tl .lname.sub .t { flex-direction: row; align-items: center; gap: 6px; }
 .ws-tl .lname .now[data-k="wait"] { color: var(--caution); }
 .ws-tl .lname .now[data-k="write"] { color: var(--accent-ink); }
-.ws-tl .lname .lacts { display: none; gap: 2px; }
-.ws-tl .lname:hover .lacts { display: inline-flex; }
+/* the hover menu takes the end of the row (the name shortens; it never covers the name, which is the click target) */
+.ws-tl .lname .lacts { flex: none; display: none; gap: 2px; }
+.ws-tl .lname:hover .lacts, .ws-tl .lname:focus-within .lacts { display: inline-flex; }
 .ws-tl .lname .lacts button { height: 20px; padding: 0 7px; border-radius: var(--r-pill); background: var(--well); color: var(--fg); font-size: var(--text-xs); white-space: nowrap; }
+.ws-tl .lname .lacts button:hover { background: var(--line-strong); }
+.ws-tl .lname .lacts button[data-on] { background: var(--accent-wash); color: var(--accent-ink); }
+.ws-tl .lname:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* 追踪中: on the traced agent's name, and first in the strip's line */
+.ws-tl .trk { flex: none; display: inline-flex; align-items: center; height: 16px; margin-left: 6px; padding: 0 6px; border-radius: var(--r-pill); background: var(--accent-wash); color: var(--accent-ink); font-size: 10.5px; font-weight: var(--weight-medium); vertical-align: 1px; }
+.ws-bar .stt .trk { margin-left: 0; }
 .ws-tl .fold { margin-left: 6px; padding: 0 5px; border-radius: var(--r-pill); background: var(--well); color: var(--fg-muted); font-size: 10.5px; font-weight: 500; cursor: pointer; }
 .ws-tl .fold:hover { background: var(--line-strong); }
 .ws-tl .track { position: relative; cursor: ew-resize; touch-action: none; outline: none; border-radius: var(--r-xs); user-select: none; }
