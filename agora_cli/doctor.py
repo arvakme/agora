@@ -205,8 +205,15 @@ def cmd_doctor_agents(p, a) -> int:
         print(json.dumps(rows, ensure_ascii=False, indent=2))
     else:
         print(drift.table(rows))
-    bad = any(r["installed"] and (r["degraded"] or r["unknown"]) for r in rows)
-    return 1 if bad else 0
+    return doctor_agents_exit(rows)
+
+
+def doctor_agents_exit(rows: list[dict[str, Any]]) -> int:
+    """``agora doctor --agents`` exit code: 1 only when an installed CLI would be degraded (version
+    outside the tested range, or unknown records above the threshold) and the project has not
+    trusted it (``.agora/agents.toml`` ``trust_untested``); 0 otherwise — unknown records below the
+    threshold are only noted in the output (review P2-3)."""
+    return 1 if any(r["installed"] and r["degraded"] and not r["degraded"].get("trusted") for r in rows) else 0
 
 
 def cmd_doctor(p, a) -> int:

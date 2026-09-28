@@ -421,6 +421,9 @@ class CodexAdapter(Adapter):
         "event_msg/context_compacted", "event_msg/agent_reasoning", "event_msg/error", "event_msg/dynamic_tool_call_request",
         "event_msg/dynamic_tool_call_response", "event_msg/view_image_tool_call", "event_msg/image_generation_end",
         "inter_agent_communication_metadata",
+        # 0.144+: a per-turn snapshot of the context (AGENTS.md, environment); turn_context still
+        # carries the model and effort the trajectory shows (review P2-4).
+        "world_state",
     })
     # Known, not handled: the legacy (pre-0.149) event log keeps messages and tool calls only in these,
     # so older Codex sessions show turns without their messages (reported by `agora doctor --agents`).

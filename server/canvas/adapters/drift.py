@@ -294,7 +294,8 @@ def table(rows: list[dict[str, Any]]) -> str:
     out = [fmt(head), fmt(["-" * w for w in widths])] + [fmt(row) for row in lines]
     for r in rows:
         for n in r["notes"]:
-            out.append(f"· {r['name']}：{n}")
+            below = r["unknown"] and not r["degraded"]
+            out.append(f"· {r['name']}：{n}" + ("（低于 5% 阈值：只提示，不影响退出码）" if below and n.startswith("不认识") else ""))
         if r["fix"]:
             out.append(f"  怎么办：{r['fix']}")
         old = {v: d for v, d in r["byVersion"].items() if d["gaps"] or d["unknown"]}

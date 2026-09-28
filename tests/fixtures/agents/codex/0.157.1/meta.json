@@ -27,8 +27,6 @@
     "commands": 1,
     "subagents": 1
   },
-  "expected_unknown": [
-    "world_state"
-  ],
-  "note": "Recorded by scripts/record_agent_fixture.py; paths sanitized (/work/project, /home/user), signatures dropped. The native sessions were deleted after copying. expected_unknown: world_state is Codex's per-turn context snapshot (0.144+), not projected on purpose; left unknown so drift keeps reporting it until someone decides. item/CollabAgentToolCall was new in this recording and is now handled."
+  "expected_unknown": [],
+  "note": "Recorded by scripts/record_agent_fixture.py; paths sanitized (/work/project, /home/user), signatures dropped. The native sessions were deleted after copying. item/CollabAgentToolCall was new in this recording and is now handled; world_state is ignored on purpose (per-turn context snapshot)."
 }
