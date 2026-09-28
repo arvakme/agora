@@ -17,7 +17,7 @@
 // and change colour over 300 ms; everything is placed at sub-pixel positions. Springs reset only on
 // a real jump in time (clock.gen: seek, scrub, back to live).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { IconHistory } from "../app/icons";
+import { IconCheck, IconCode, IconCpu, IconEye, IconHistory, IconMessage, IconPath, IconSend, IconTerminal } from "../app/icons";
 import type { CanvasViewState } from "../canvas/CanvasView";
 import { clipPath } from "../canvas/chrome";
 import type { Box } from "../canvas/clearance";
@@ -25,13 +25,13 @@ import { viewport, type Viewport } from "../canvas/viewport";
 import { useNested } from "../nested/store";
 import { ui } from "../session/ui";
 import { clock, prefersReducedMotion, useReplay } from "./clock";
-import { placeBubbles, type BubbleIn } from "./bubbles";
+import { placeBubbles, protoSpot, type BubbleIn } from "./bubbles";
 import { pickBubbles, slots } from "./crowd";
 import { FigureNode } from "./figureNode";
 import { figurePositions, focus, useFocus } from "./focus";
 import { frame } from "./frame";
 import { buildGeometry, type Geometry } from "./geometry";
-import { conflictAt, OUTSIDE, stateAt, writeConflicts, type Ctx, type RunState, type WriteConflict } from "./place";
+import { canvasWhere, conflictAt, OUTSIDE, stateAt, writeConflicts, type Ctx, type RunState, type WriteConflict } from "./place";
 import { Glide, makeSprings, solve, type Springs } from "./rig";
 import { RunAvatar } from "./RunAvatar";
 import { useRuns, type Runs } from "./runs/store";
@@ -39,8 +39,6 @@ import { RECEIPT_NAMES, type FlatRun } from "./runs/types";
 import "./workstation.css";
 
 const SNAP_MS = 250;
-/** Screen px between figures standing side by side. */
-const SLOT_PX = 56;
 const BUBBLE_EXIT_MS = 120;
 const RING_EXIT_MS = 300;
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -58,7 +56,7 @@ type Snap = {
   t: number;
   figs: Fig[];
   bubbles: string[];
-  rings: { place: string; tone: "write" | "need" }[];
+  rings: { place: string; tone: RingTone }[];
   tethers: { child: string; parent: string }[];
   chips: { place: string; ids: string[] }[];
   states: Map<string, RunState>;
@@ -105,7 +103,7 @@ export function snapshot(runs: Runs, t: number, ctx: Ctx, conflicts: WriteConfli
   const bubbles = pickBubbles(
     figs.map((x) => {
       const st = states.get(x.f.run.id)!;
-      return { id: x.f.run.id, depth: x.f.depth, need: need(x.f), writing: writing(x.f), order: order.get(x.f.run.id)!, idle: st.pose === "idle", working: !!st.seg && st.seg.kind !== "think" };
+      return { id: x.f.run.id, depth: x.f.depth, need: need(x.f), writing: writing(x.f), order: order.get(x.f.run.id)!, idle: st.pose === "idle", working: st.pose !== "idle" };
     }),
   );
   if (selected && drawn.has(selected) && !bubbles.includes(selected)) bubbles.push(selected);
@@ -113,19 +111,33 @@ export function snapshot(runs: Runs, t: number, ctx: Ctx, conflicts: WriteConfli
   return { t, figs, bubbles, rings: ringsOf(present, states, conflicts, t), tethers, chips: [], states, byId, folded, tray: figs.some((x) => x.place === OUTSIDE) };
 }
 
+/** The prototype's node rings: solid purple while someone writes there, warm while someone there
+ * waits on you, dashed purple while someone reads, a quiet grey for other work; a two-agent write
+ * conflict gets a wider warm ring. */
+export type RingTone = "write" | "wait" | "read" | "busy" | "conflict" | "sel" | "hover";
 function ringsOf(list: FlatRun[], states: Map<string, RunState>, conflicts: WriteConflict[], t: number): Snap["rings"] {
-  const by = new Map<string, "write" | "need">();
+  const ks = new Map<string, string[]>();
+  const clash = new Set<string>();
   for (const f of list) {
     const st = states.get(f.run.id)!;
-    if (st.at === OUTSIDE || st.w < 1) continue;
-    if (st.seg?.kind === "wait" || conflictAt(conflicts, f.run.id, t)) by.set(st.at, "need");
-    else if (st.seg?.kind === "write" && by.get(st.at) !== "need") by.set(st.at, "write");
+    if (st.at === OUTSIDE || st.pose === "idle" || st.pose === "walk" || !st.seg) continue;
+    ks.set(st.at, [...(ks.get(st.at) ?? []), st.seg.kind]);
+    if (conflictAt(conflicts, f.run.id, t)) clash.add(st.at);
   }
-  return [...by].map(([place, tone]) => ({ place, tone }));
+  const out: Snap["rings"] = [];
+  for (const [place, k] of ks) {
+    if (clash.has(place)) out.push({ place, tone: "conflict" });
+    else out.push({ place, tone: k.includes("write") ? "write" : k.includes("wait") ? "wait" : k.includes("read") ? "read" : "busy" });
+  }
+  return out;
 }
 
-/** What a worker's bubble says (the prototype's wording). `key` changes when the words do (cross-fade). */
-function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflicts: WriteConflict[], byId: Map<string, FlatRun>, folded: number, quiet = 0): { kind: string; key: string; body: ReactNode } {
+const KIND_ICON: Record<string, typeof IconEye> = { read: IconEye, write: IconCode, exec: IconTerminal, think: IconCpu, wait: IconMessage, idle: IconCheck, walk: IconPath, delegate: IconSend, handoff: IconSend };
+/** The one word a collapsed bubble (a chip at the figure) keeps. */
+const CHIP_VERB: Record<string, string> = { read: "读", write: "写", exec: "跑", think: "想", wait: "等你", idle: "闲", walk: "走", delegate: "派", handoff: "交", unknown: "?", conflict: "写" };
+
+/** What a worker's bubble says (the prototype's wording and verb icons). `key` changes when the words do (cross-fade). */
+function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflicts: WriteConflict[], byId: Map<string, FlatRun>, folded: number, quiet = 0): { kind: string; key: string; body: ReactNode; chip: ReactNode; verb: string } {
   const run = f.run;
   const g = st.seg;
   const par = f.parent;
@@ -133,43 +145,53 @@ function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflic
   const el = g ? <span className="el">{secs(t - g.start)}</span> : null;
   const place = (p: string) => (p === OUTSIDE ? "图外" : (geom.labels.get(p) ?? "节点"));
   let kind: string = st.pose === "walk" ? "walk" : st.pose === "handoff" || st.pose === "unknown" ? st.pose : g ? g.kind : "idle";
+  const Ic = KIND_ICON[kind];
+  const icon = Ic ? <Ic size={14} /> : null;
   let body: ReactNode;
-  if (kind === "walk" && back) body = <><span className="v">走回</span><span>{par!.name}</span><span className="el">交结果</span></>;
-  else if (kind === "walk") body = <><span className="v">走去</span><span>{place(st.at)}</span>{g?.path && <span className="el">要{g.kind === "write" ? "写" : "读"} {base(g.path)}</span>}</>;
-  else if (kind === "handoff") body = <><span className="v">交给 {par?.name}</span><span className="el">{run.via === "seedmux" ? "声明完成 ≠ 验收" : "结果回到父会话"}</span></>;
+  if (kind === "walk" && back) body = <>{icon}<span className="v">走回</span><span>{par!.name}</span><span className="el">交结果</span></>;
+  else if (kind === "walk") body = <>{icon}<span className="v">走去</span><span>{place(st.at)}</span>{g?.path && <span className="el">要{g.kind === "write" ? "写" : "读"} {base(g.path)}</span>}</>;
+  else if (kind === "handoff") body = <>{icon}<span className="v">交给 {par?.name}</span><span className="el">{run.via === "seedmux" ? "声明完成 ≠ 验收" : "结果回到父会话"}</span></>;
   else if (kind === "unknown") body = <span className="el">只有回执，看不到它在做什么</span>;
-  else if (kind === "idle") body = <><span className="v">空闲</span><span className="el">这一轮做完了</span></>;
+  else if (kind === "idle") body = <>{icon}<span className="v">空闲</span><span className="el">这一轮做完了</span></>;
   else if (kind === "wait")
     body = (
       <>
+        {icon}
         <span className="v">等你回复</span>
         {g?.question && <span className="q">{g.question}</span>}
         <button className="reply" onClick={(e) => (e.stopPropagation(), openRun(f))}>去回复</button>
       </>
     );
-  else if (kind === "think") body = <><span className="v">{par && !g ? (st.receipt === "dispatched" ? "等它接单" : "确认任务") : "思考"}</span>{el}</>;
+  else if (kind === "think") body = <>{icon}<span className="v">{par && !g ? (st.receipt === "dispatched" ? "等它接单" : "确认任务") : "思考"}</span>{el}</>;
   else if (kind === "delegate") {
     const c = g?.child ? byId.get(g.child)?.run : undefined;
-    body = <><span className="v">派</span><span>{c ? `${c.name}：${c.task ?? ""}` : g?.label.replace(/^派 /, "")}</span>{c && <span className="el">{c.via === "seedmux" ? "经 Seedmux" : c.via === "task" ? "Task 工具" : "原生子代理"}</span>}</>;
-  } else if (kind === "exec") body = <><span className="v">{g?.verifies ? "验收 · " : ""}跑</span><span className="f">{g?.cmd ?? g?.label}</span>{el}</>;
-  else body = <><span className="v">{g?.verifies ? "验收 · " : ""}{kind === "write" ? "写" : "读"}</span><span className="f">{g?.path ? base(g.path) : ""}</span>{el}</>;
+    body = <>{icon}<span className="v">派</span><span>{c ? `${c.name}：${c.task ?? ""}` : g?.label.replace(/^派 /, "")}</span>{c && <span className="el">{c.via === "seedmux" ? "经 Seedmux" : c.via === "task" ? "Task 工具" : "原生子代理"}</span>}</>;
+  } else if (kind === "exec") body = <>{icon}<span className="v">{g?.verifies ? "验收 · " : ""}跑</span><span className="f">{g?.cmd ?? g?.label}</span>{el}</>;
+  else body = <>{icon}<span className="v">{g?.verifies ? "验收 · " : ""}{kind === "write" ? "写" : "读"}</span><span className="f">{g?.path ?? ""}</span>{el}</>;
   const c = conflictAt(conflicts, run.id, t);
   if (c && g) {
     kind = "conflict";
     const other = byId.get(c.runs.find((x) => x !== run.id)!)?.run;
     body = <>{body}<span className="warn">{other?.name ?? "另一个 agent"} 也在改</span></>;
   }
+  const verb = CHIP_VERB[kind] ?? "…";
   return {
     kind,
     key: `${kind}|${g?.start ?? st.at}|${st.receipt ?? ""}`,
+    verb,
+    chip: <>{icon}<span className="v">{verb}</span></>,
     body: (
       <>
         <RunAvatar agent={run.agent} size={par ? 18 : 20} />
-        {/* 「Codex · Pi 派的 · 写 … · 运行中」 */}
-        {par ? <><b className="who">{run.name}</b><span className="par">· {par.name} 派的 ·</span></> : <b className="who">{run.name}</b>}
+        {/* 「Codex Pi 派的 读 users.py 运行中」 */}
+        {par ? <><b className="who">{run.name}</b><span className="par">{par.name} 派的</span></> : <b className="who">{run.name}</b>}
         {body}
         {st.portal && <span className="portal" title={`在子图「${st.portal.label}」里`}>↘ 子图 · {st.portal.label}</span>}
         {par && st.receipt && <span className="rc" data-r={st.receipt}>{RECEIPT_NAMES[st.receipt]}</span>}
+        {run.children.map((k) => {
+          const acc = k.receipts.find((r) => r.accepted);
+          return acc && t >= acc.at && t < acc.at + 2500 ? <span key={k.id} className="rc" data-r="accepted">{k.name} 验收通过</span> : null;
+        })}
         {folded > 0 && <span className="kbadge" title={`它又派了 ${folded} 个子代理（更深一层不画在图上，见时间线）`}>+{folded}</span>}
         {quiet > 0 && <span className="kbadge" data-quiet title={`${quiet} 个子代理的气泡收起了（这里挤不下；悬停小人或看时间线）`}>+{quiet}</span>}
       </>
@@ -212,6 +234,9 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
   const geom = useMemo(() => buildGeometry(view.id, view.elements, view.map, nst.scenes, (id) => nst.titles[id]), [view.id, view.version, nst.scenes, nst.titles]);
   const ctx = useMemo<Ctx>(() => ({ locate: geom.locate, dock: geom.dock, route: geom.route, reduced, run: (id) => runs.byId.get(id) }), [geom, runs, reduced]);
   const conflicts = useMemo(() => writeConflicts(runs.flat.map((f) => f.run)), [runs]);
+  useEffect(() => {
+    canvasWhere.set(view.id, { ctx, label: (p) => (p === OUTSIDE ? "图外" : (geom.labels.get(p) ?? "节点")) });
+  }, [view.id, ctx, geom]);
   const [snap, setSnap] = useState<Snap>(EMPTY);
   const a = view.appState;
   const clip = useMemo(() => clipPath({ x: 0, y: 0, w: a.width, h: a.height }, chrome), [a.width, a.height, chrome]);
@@ -249,12 +274,15 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
   const tetherLayer = useRef<SVGGElement>(null);
   const nodes = useRef(new Map<string, FigureNode>());
   const springs = useRef(new Map<string, Springs>());
-  const offs = useRef(new Map<string, Glide>());
+  const offs = useRef(new Map<string, { x: Glide; y: Glide }>());
   const tethers = useRef(new Map<string, SVGPathElement>());
-  const heads = useRef(new Map<string, { x: number; y: number }>());
+  /** Each drawn figure's head (world), its radius and whether a ! / ? mark sits over it, and its scale. */
+  const heads = useRef(new Map<string, { x: number; y: number; r: number; mark: boolean; k: number; sc: number; walking: boolean; root: { x: number; y: number } }>());
   const bubbleEls = useRef(new Map<string, HTMLElement>());
   /** Where each bubble should sit relative to its figure's head (decided ≤ 4 Hz)… */
   const bubbleOff = useRef(new Map<string, { dx: number; dy: number }>());
+  /** The last placement of each bubble (tail, stem, chip), to keep it where it is while that stays clear. */
+  const lastPlace = useRef(new Map<string, { tail: "d" | "l" | "r" | null; tailX: number; stem: number; chip: boolean }>());
   /** …and where it is on its way there: a Hermite glide per axis, so a move or a flip starts
    * gently, keeps its speed if retargeted mid-way, and settles at rest. */
   const bubbleCur = useRef(new Map<string, { x: Glide; y: Glide }>());
@@ -270,6 +298,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
   const chipEls = useRef(new Map<string, HTMLElement>());
   const trayEl = useRef<HTMLDivElement>(null);
   const bannerTime = useRef<HTMLElement>(null);
+  /** Something new was rendered (a bubble, a chip): draw on the next frame even when reduced motion only repaints once a second. */
+  const dirty = useRef(true);
   const snapRef = useRef(snap);
   snapRef.current = snap;
   useLayoutEffect(() => {
@@ -369,7 +399,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
       lastGen = clock.gen();
       // Reduced motion: repaint once a second (and when the view or the snapshot changes, or while a cross-fade runs).
       const fading = [...moving.values(), ...bubbleMoving.values()].some((m) => m.out > 0 || now - m.in < FADE_IN);
-      if (still && !fading && Math.floor(t / 1000) === lastSec && s === drawnSnap && vkOf(v) === lastV) return;
+      if (still && !fading && !dirty.current && Math.floor(t / 1000) === lastSec && s === drawnSnap && vkOf(v) === lastV) return;
+      dirty.current = false;
       lastSec = Math.floor(t / 1000);
       drawnSnap = s;
       const vk = vkOf(v);
@@ -382,6 +413,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
       const k = fsc / v.zoom;
       const step = Math.min(dt, 0.05);
       heads.current.clear();
+      const counts = new Map<string, number>();
+      for (const x of s.figs) counts.set(x.place, Math.max(counts.get(x.place) ?? 0, x.slot + 1));
       const alphas = new Map<string, number>();
       for (const x of s.figs) {
         const n = nodes.current.get(x.f.run.id);
@@ -399,14 +432,19 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
         const fresh = sp.t === null;
         const j = solve({ t, wall: now, dt: step, reset, pose: st.pose, since: st.since, dock: g.dock(st.at), walk: st.walk, still, conflict: !!conflict && !!st.seg, bump, unknownReceipt: st.receipt === "unknown", coarse: !!run.coarse, readingWhileWalking: st.seg?.kind === "read" }, sp);
         const sub = x.f.depth > 0 ? 0.8 : 1;
-        // Side by side at a node: the slot offset glides, so an arrival or a departure never jumps.
+        // Side by side at a node: each figure has its own free spot (geometry.spots: along the top
+        // edge, else beside or under the node, clear of text and icons); the offset from the walk's
+        // dock glides, so an arrival or a departure never jumps.
         let off = offs.current.get(run.id);
-        if (!off) offs.current.set(run.id, (off = new Glide()));
-        // along the edge from the dock, far enough apart that heads and props never touch
-        const want = x.slot * SLOT_PX * k;
-        const dx = still || fresh || reset ? off.reset(want, now / 1000) : off.step(now / 1000, want);
+        if (!off) offs.current.set(run.id, (off = { x: new Glide(), y: new Glide() }));
+        const d0 = g.dock(x.place);
+        const spot = g.spots(x.place, k, counts.get(x.place) ?? 1)[x.slot] ?? d0;
+        const ns = now / 1000;
+        const jumpOff = still || fresh || reset;
+        const dx = jumpOff ? off.x.reset(spot.x - d0.x, ns) : off.x.step(ns, spot.x - d0.x);
+        const dy = jumpOff ? off.y.reset(spot.y - d0.y, ns) : off.y.step(ns, spot.y - d0.y);
         let wx = j.root.x + dx;
-        let wy = j.root.y;
+        let wy = j.root.y + dy;
         let alpha = st.fade;
         if (still) {
           const xf = crossfade(moving, run.id, wx, wy, now);
@@ -415,9 +453,9 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
           alpha *= xf.a;
         }
         const kk = k * sub;
-        n.place(wx, wy, kk, alpha, false);
+        n.place(wx, wy, kk, alpha, false, st.pose === "idle");
         n.draw(j, now, still);
-        heads.current.set(run.id, { x: wx + j.hx * kk, y: wy + j.hy * kk });
+        heads.current.set(run.id, { x: wx + j.hx * kk, y: wy + j.hy * kk, r: 8.6 * kk, mark: !!j.mark, k: kk, sc: fsc, walking: j.walking, root: { x: wx, y: wy } });
         alphas.set(run.id, alpha / Math.max(0.001, st.fade));
         positions.set(run.id, { x: wx, y: wy });
       }
@@ -426,7 +464,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
         const a0 = heads.current.get(tt.child);
         const b0 = heads.current.get(tt.parent);
         if (!p || !a0 || !b0) continue;
-        p.setAttribute("d", `M${px(a0.x)} ${px(a0.y)}Q${px((a0.x + b0.x) / 2)} ${px(Math.min(a0.y, b0.y) - 34 * k)} ${px(b0.x)} ${px(b0.y)}`);
+        p.setAttribute("d", `M${px(a0.x)} ${px(a0.y)}Q${px((a0.x + b0.x) / 2)} ${px(Math.min(a0.y, b0.y) - 30 / v.zoom)} ${px(b0.x)} ${px(b0.y)}`);
       }
       // HTML pieces follow in screen coordinates, at sub-pixel positions.
       const drawnB: { id: string; el: HTMLElement; x: number; y: number }[] = [];
@@ -443,8 +481,9 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
         const ns = now / 1000;
         const bx = still || reset ? cur.x.reset(o.dx, ns) : cur.x.step(ns, o.dx);
         const by = still || reset ? cur.y.reset(o.dy, ns) : cur.y.step(ns, o.dy);
-        let sx = (h.x + v.scrollX) * v.zoom + bx;
-        let sy = (h.y + v.scrollY) * v.zoom + by;
+        // anchored to the feet (as in the prototype), not the head: a turn or a nod never shakes it
+        let sx = (h.root.x + v.scrollX) * v.zoom + bx;
+        let sy = (h.root.y + v.scrollY) * v.zoom + by;
         if (still) {
           const xf = crossfade(bubbleMoving, id, sx, sy, now);
           sx = xf.x;
@@ -465,8 +504,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
         const r = sz && !d.el.hasAttribute("data-folded") ? { x: d.x, y: d.y, w: sz.w, h: sz.h } : null;
         const near = (m: number) => !!r && shown.some((p) => p.x < r.x + r.w + m && r.x < p.x + p.w + m && p.y < r.y + r.h + m && r.y < p.y + p.h + m);
         const prev = bubbleVis.current.get(d.id) ?? 0;
-        // touching: gone this frame; about to touch: fading fast; clear: back in 120 ms
-        const vis = !r || near(0) ? 0 : reset || still ? (near(12) ? 0 : 1) : Math.max(0, Math.min(1, prev + (near(12) ? -step / 0.06 : step / 0.12)));
+        // touching: gone this frame; within 2 px: fading fast; clear: back in 120 ms
+        const vis = !r || near(0) ? 0 : reset || still ? (near(2) ? 0 : 1) : Math.max(0, Math.min(1, prev + (near(2) ? -step / 0.06 : step / 0.12)));
         bubbleVis.current.set(d.id, vis);
         if (r && vis > 0 && !d.el.hasAttribute("data-folded")) shown.push(r);
         const a = (still ? (alphas.get(d.id) ?? 1) : 1) * vis;
@@ -498,10 +537,22 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
   useLayoutEffect(() => {
     const v = viewport.get(view.id);
     if (!v) return;
+    // Measure every bubble in full and its chip, in one layout read. A chip keeps its full words
+    // laid out (hidden, out of flow), so nothing has to be toggled to measure either size.
     const sizes = new Map<string, { w: number; h: number }>();
+    const chipSizes = new Map<string, { w: number; h: number }>();
+    const inner = (id: string) => bubbleEls.current.get(id)?.firstElementChild as HTMLElement | null | undefined;
     for (const id of snap.bubbles) {
-      const el = bubbleEls.current.get(id)?.firstElementChild as HTMLElement | null | undefined;
-      if (el) sizes.set(id, { w: el.offsetWidth, h: el.offsetHeight });
+      const el = inner(id);
+      if (!el) continue;
+      const sub = el.hasAttribute("data-sub");
+      const body = el.querySelector<HTMLElement>(".ws-bub-in");
+      const c = el.querySelector<HTMLElement>(".ws-bub-chip");
+      const extra = el.querySelector<HTMLElement>(".ws-acts");
+      // padding 4 + 10 (a sub-agent's 3 + 8), min height 28 (24), as in .ws-bub
+      const bw = (body?.offsetWidth ?? 0) + (extra?.offsetWidth ? extra.offsetWidth + 6 : 0);
+      sizes.set(id, { w: Math.ceil(bw + (sub ? 11 : 14)), h: Math.max(sub ? 24 : 28, (body?.offsetHeight ?? 0) + (sub ? 4 : 6)) });
+      chipSizes.set(id, { w: (c?.offsetWidth ?? 26) + 14, h: 22 });
     }
     frame.flush(); // heads for this snapshot (a new figure has none yet)
     const nodes: Box[] = [];
@@ -510,6 +561,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
       if (r.x > v.width || r.y > v.height || r.x + r.w < 0 || r.y + r.h < 0) continue;
       nodes.push(r);
     }
+    if (snap.tray) nodes.push({ x: (geom.tray.x + v.scrollX) * v.zoom, y: (geom.tray.y + v.scrollY) * v.zoom, w: geom.tray.w * v.zoom, h: geom.tray.h * v.zoom });
     // Priority: whoever needs you, then the main agent, then sub-agents (writers first, as picked).
     const need = (id: string) => {
       const k = snap.states.get(id)?.seg?.kind;
@@ -517,19 +569,45 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
     };
     const rank = (id: string) => (need(id) ? 0 : (snap.byId.get(id)?.depth ?? 1) === 0 ? 1 : 2);
     const list: BubbleIn[] = [];
+    const roots = new Map<string, { x: number; y: number }>();
+    const scr = (x: number, y: number) => ({ x: (x + v.scrollX) * v.zoom, y: (y + v.scrollY) * v.zoom });
+    // The prototype stacks the bubbles of figures standing at one place (not walking), in slot order.
+    const stackAt = new Map<string, string[]>();
+    for (const x of [...snap.figs].sort((a, b) => a.slot - b.slot)) {
+      const h = heads.current.get(x.f.run.id);
+      if (!snap.bubbles.includes(x.f.run.id) || !h || h.walking) continue;
+      stackAt.set(x.place, [...(stackAt.get(x.place) ?? []), x.f.run.id]);
+    }
     for (const id of [...snap.bubbles].sort((a, b) => rank(a) - rank(b))) {
       const h = heads.current.get(id);
       const size = sizes.get(id);
       if (!h || !size) continue;
+      const hs = scr(h.x, h.y);
+      const rs = scr(h.root.x, h.root.y);
+      roots.set(id, rs);
+      const u = h.k * v.zoom; // screen px per figure unit
       const place = snap.figs.find((x) => x.f.run.id === id)?.place;
-      const nb = place ? geom.boxOf(place) : undefined;
+      const group = place ? stackAt.get(place) : undefined;
+      const first = place ? geom.spots(place, h.sc / v.zoom, 1)[0] : undefined;
+      const stack = group && group.length > 1 && group.includes(id) && first ? { i: group.indexOf(id), left: scr(first.x - 16, first.y).x } : undefined;
       list.push({
+        proto: protoSpot(rs, h.sc, { walking: h.walking, stack }),
         id,
-        x: (h.x + v.scrollX) * v.zoom,
-        y: (h.y + v.scrollY) * v.zoom,
+        x: hs.x,
+        y: hs.y,
+        r: h.r * v.zoom,
+        lift: h.mark ? 9 * u : 0,
         ...size,
+        chip: chipSizes.get(id),
         foldable: rank(id) === 2 && id !== fo.selected,
-        below: nb ? (nb.y + nb.h + v.scrollY) * v.zoom : undefined,
+        keep: id === fo.selected,
+        // a walking figure passes by: other bubbles don't dodge it (they would hop as it goes)
+        body: h.walking ? undefined : { x: rs.x - 12 * u, y: rs.y - 50 * u, w: 26 * u, h: 50 * u },
+        prev: (() => {
+          const o = bubbleOff.current.get(id);
+          const pl = lastPlace.current.get(id);
+          return o && pl && !pl.chip ? { x: rs.x + o.dx, y: rs.y + o.dy, tail: pl.tail, tailX: pl.tailX, stem: pl.stem } : undefined;
+        })(),
       });
     }
     const { at, folded } = placeBubbles(list, { width: v.width, height: v.height, nodes, avoid: chrome });
@@ -554,9 +632,15 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
         bubbleVis.current.set(b.id, 0);
       }
       delete wrap.dataset.folded;
-      next.set(b.id, { dx: p.x - b.x, dy: p.y - b.y });
+      lastPlace.current.set(b.id, p);
+      const rt = roots.get(b.id)!;
+      next.set(b.id, { dx: p.x - rt.x, dy: p.y - rt.y });
+      if (p.chip) el.dataset.chip = "";
+      else delete el.dataset.chip;
       if (p.tail) el.dataset.tail = p.tail;
       else delete el.dataset.tail;
+      el.style.setProperty("--tail-x", `${p.tailX.toFixed(1)}px`);
+      el.style.setProperty("--stem", `${p.stem.toFixed(1)}px`);
     }
     // +N on the nearest shown ancestor's bubble
     const counts = new Map<string, number>();
@@ -582,11 +666,14 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
   }, [snap, chrome, foldCounts]);
   // Any other commit can change a bubble's words (its width): settle positions and visibility before
   // the browser can paint it.
-  useLayoutEffect(() => void frame.flush());
+  useLayoutEffect(() => {
+    dirty.current = true;
+    frame.flush();
+  });
 
   const t = snap.t;
   // What each bubble says, remembered so a leaving bubble keeps its words while it fades.
-  const bodies = useRef(new Map<string, { kind: string; key: string; body: ReactNode; sub: boolean }>());
+  const bodies = useRef(new Map<string, { kind: string; key: string; body: ReactNode; chip: ReactNode; verb: string; sub: boolean }>());
   const live = snap.bubbles.flatMap((id) => {
     const f = snap.byId.get(id);
     const st = snap.states.get(id);
@@ -596,7 +683,17 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
     return [{ key: id }];
   });
   const bubbles = useExiting(live, BUBBLE_EXIT_MS);
-  const rings = useExiting(snap.rings.map((r) => ({ ...r, key: r.place })), RING_EXIT_MS);
+  // the lane segment picked or under the pointer rings its node, as in the prototype
+  const segPlace = (r: { run: string; i: number } | null) => {
+    const g = r ? runs.byId.get(r.run)?.segs[r.i] : undefined;
+    return g?.path ? (geom.locate(g.path)?.place ?? OUTSIDE) : null;
+  };
+  const extra: Snap["rings"] = [];
+  const hp = segPlace(fo.segHover);
+  const sp = segPlace(fo.segSel);
+  if (hp) extra.push({ place: hp, tone: "hover" });
+  if (sp) extra.push({ place: sp, tone: "sel" });
+  const rings = useExiting([...snap.rings, ...extra].map((r) => ({ ...r, key: `${r.place}|${r.tone === "sel" || r.tone === "hover" ? r.tone : "busy"}` })), RING_EXIT_MS);
   return (
     <div className="ws-layer" ref={rootEl} style={{ clipPath: clip }}>
       <svg className="ws-svg" aria-hidden={!figuresOn}>
@@ -604,7 +701,9 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
           <g className="ws-rings">
             {rings.map((r) => {
               const b = geom.boxOf(r.place);
-              return b ? <rect key={r.place} x={b.x - 4} y={b.y - 4} width={b.w + 8} height={b.h + 8} rx={12} data-tone={r.tone} data-exit={r.exiting || undefined} vectorEffect="non-scaling-stroke" /> : null;
+              const wide = r.tone === "conflict" || r.tone === "sel" || r.tone === "hover" || r.place === OUTSIDE;
+              const d = wide ? (r.place === OUTSIDE ? 6 : 7) : 4;
+              return b ? <rect key={r.key} x={b.x - d} y={b.y - d} width={b.w + 2 * d} height={b.h + 2 * d} rx={wide ? 14 : 12} data-tone={r.tone} data-exit={r.exiting || undefined} vectorEffect="non-scaling-stroke" /> : null;
             })}
           </g>
           <g ref={tetherLayer} className="ws-tethers" />
@@ -642,6 +741,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
           <div
             key={id}
             className="ws-bub-pos"
+            style={{ visibility: "hidden" }}
             ref={(el) => {
               if (el) bubbleEls.current.set(id, el);
               else bubbleEls.current.delete(id);
@@ -660,6 +760,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn }: Props) {
               onPointerLeave={() => focus.hover(null)}
             >
               <span className="ws-bub-in" key={b.key}>{b.body}</span>
+              <span className="ws-bub-chip" key={`c${b.key}`}>{b.chip}</span>
               {sel && f?.root.sessionId && !exiting && (
                 <span className="ws-acts" data-open>
                   <button onClick={(e) => (e.stopPropagation(), openRun(f))}>打开会话</button>

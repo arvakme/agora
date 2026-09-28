@@ -204,14 +204,21 @@ export const WALK_SLACK_MS = WALK_MAX_MS + 600;
 export type WriteConflict = { path: string; start: number; end: number; runs: [string, string] };
 /** Two runs (sub-agents included) writing the same file at overlapping times. Pure; computed on data changes. */
 export function writeConflicts(runs: readonly WorkRun[]): WriteConflict[] {
-  const writes = runs.flatMap((r) => r.segs.filter((g) => g.kind === "write" && g.path).map((g) => ({ r: r.id, g })));
+  // grouped by file first: only writes to the same path can clash (near-linear with many agents)
+  const byPath = new Map<string, { r: string; g: RunSeg }[]>();
+  for (const r of runs) for (const g of r.segs) if (g.kind === "write" && g.path) byPath.set(g.path, [...(byPath.get(g.path) ?? []), { r: r.id, g }]);
   const out: WriteConflict[] = [];
-  for (let i = 0; i < writes.length; i++)
-    for (let j = i + 1; j < writes.length; j++) {
-      const a = writes[i];
-      const b = writes[j];
-      if (a.r !== b.r && a.g.path === b.g.path && a.g.start < b.g.end && b.g.start < a.g.end) out.push({ path: a.g.path!, start: Math.max(a.g.start, b.g.start), end: Math.min(a.g.end, b.g.end), runs: [a.r, b.r] });
-    }
-  return out;
+  for (const writes of byPath.values())
+    for (let i = 0; i < writes.length; i++)
+      for (let j = i + 1; j < writes.length; j++) {
+        const a = writes[i];
+        const b = writes[j];
+        if (a.r !== b.r && a.g.start < b.g.end && b.g.start < a.g.end) out.push({ path: a.g.path!, start: Math.max(a.g.start, b.g.start), end: Math.min(a.g.end, b.g.end), runs: [a.r, b.r] });
+      }
+  return out.sort((x, y) => x.start - y.start);
 }
 export const conflictAt = (list: readonly WriteConflict[], runId: string, t: number) => list.find((c) => c.start <= t && t < c.end && c.runs.includes(runId)) ?? null;
+
+/** Each canvas's current context and place names, published by its overlay for the timeline
+ * (walk bars, 「在 API 服务」 rows, the detail card) — read at ≤ 4 Hz, never per frame. */
+export const canvasWhere = new Map<string, { ctx: Ctx; label: (place: string) => string }>();

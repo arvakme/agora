@@ -14,7 +14,8 @@ export type BubbleCand = { id: string; depth: number; need: boolean; writing: bo
  */
 export function pickBubbles(cands: readonly (BubbleCand & { working?: boolean })[], max = Infinity, maxSub = 3): string[] {
   const score = (c: BubbleCand) => (c.need ? 0 : 4) + (c.writing ? 0 : 2) + c.depth;
-  const tops = cands.filter((c) => !c.idle && c.depth === 0);
+  // the main agents always speak, idle ones too (「空闲 这一轮做完了」, as in the prototype)
+  const tops = cands.filter((c) => c.depth === 0);
   const subs = cands.filter((c) => c.depth > 0 && !c.idle && (c.need || c.working)).sort((a, b) => score(a) - score(b) || a.order - b.order);
   const needSubs = subs.filter((c) => c.need);
   const busySubs = subs.filter((c) => !c.need).slice(0, Math.max(0, maxSub - needSubs.length));

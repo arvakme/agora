@@ -1,0 +1,299 @@
+{
+  "agora": "http://localhost:5193",
+  "proto": "-",
+  "times": [
+    14,
+    24,
+    30,
+    36
+  ],
+  "at": "2026-09-28T15:48:53.535Z",
+  "view-light": {},
+  "bubbles-light-14": [
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": null,
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(733.65px, 69.88px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": false,
+      "tail": "l",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(826.28px, 107.81px, 0px)"
+    }
+  ],
+  "bubbles-light-24": [
+    {
+      "who": "Codex",
+      "folded": false,
+      "chip": true,
+      "tail": "l",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(810.58px, 122.61px, 0px)"
+    },
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": null,
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(733.65px, 69.88px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": true,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(693.48px, 188.31px, 0px)"
+    },
+    {
+      "who": "worker-3",
+      "folded": false,
+      "chip": false,
+      "tail": "l",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(863.58px, 120.49px, 0px)"
+    }
+  ],
+  "bubbles-light-30": [
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": null,
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(733.65px, 69.88px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": false,
+      "tail": "l",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(877.84px, 107.78px, 0px)"
+    },
+    {
+      "who": "Codex",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(1028.44px, 412.92px, 0px)"
+    },
+    {
+      "who": "worker-3",
+      "folded": false,
+      "chip": true,
+      "tail": "l",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(822.51px, 121.49px, 0px)"
+    },
+    {
+      "who": "子代理",
+      "folded": false,
+      "chip": true,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(954.65px, 242.54px, 0px)"
+    }
+  ],
+  "bubbles-light-36": [
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": null,
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(733.65px, 69.88px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": true,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(674.8px, 205.25px, 0px)"
+    },
+    {
+      "who": "Codex",
+      "folded": false,
+      "chip": true,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(803.06px, 111.13px, 0px)"
+    },
+    {
+      "who": "worker-3",
+      "folded": false,
+      "chip": false,
+      "tail": "l",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(875.27px, 120.49px, 0px)"
+    }
+  ],
+  "view-dark": {},
+  "bubbles-dark-14": [
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": null,
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(733.65px, 69.88px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": false,
+      "tail": "l",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(826.28px, 107.81px, 0px)"
+    }
+  ],
+  "bubbles-dark-24": [
+    {
+      "who": "Codex",
+      "folded": false,
+      "chip": true,
+      "tail": "l",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(810.57px, 122.61px, 0px)"
+    },
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": null,
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(733.65px, 69.51px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": true,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(693.53px, 188.38px, 0px)"
+    },
+    {
+      "who": "worker-3",
+      "folded": false,
+      "chip": false,
+      "tail": "l",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(863.59px, 120.49px, 0px)"
+    }
+  ],
+  "bubbles-dark-30": [
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": null,
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(733.65px, 69.88px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": false,
+      "tail": "l",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(877.84px, 107.78px, 0px)"
+    },
+    {
+      "who": "Codex",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(1028.44px, 412.92px, 0px)"
+    },
+    {
+      "who": "worker-3",
+      "folded": false,
+      "chip": true,
+      "tail": "l",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(822.51px, 121.49px, 0px)"
+    },
+    {
+      "who": "子代理",
+      "folded": false,
+      "chip": true,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(955.15px, 242.86px, 0px)"
+    }
+  ],
+  "bubbles-dark-36": [
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": null,
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(733.65px, 69.88px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": true,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(674.8px, 205.25px, 0px)"
+    },
+    {
+      "who": "Codex",
+      "folded": false,
+      "chip": true,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(803.06px, 111.13px, 0px)"
+    },
+    {
+      "who": "worker-3",
+      "folded": false,
+      "chip": false,
+      "tail": "l",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(875.27px, 120.49px, 0px)"
+    }
+  ]
+}

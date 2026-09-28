@@ -19,7 +19,7 @@ import { PointerLayer } from "../pointer/PointerLayer";
 import { childAt, OwnerBreadcrumb, OwnerChildMarkers } from "../nested/NestedLayer";
 import { nav } from "../nested/store";
 import { WorkstationOverlay } from "../workstation/Overlay";
-import { Timeline } from "../workstation/Timeline";
+import { Timeline, timelineResize } from "../workstation/Timeline";
 import { useWorkstation } from "../workstation/clock";
 import { viewport } from "./viewport";
 import { BENCH_BARE } from "../bench/bench";
@@ -157,7 +157,9 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
       const prev = lastSize.current;
       lastSize.current = { w: a.width, h: a.height };
       if (prev && (prev.w !== a.width || prev.h !== a.height)) {
-        api.updateScene({ appState: { scrollX: a.scrollX + (a.width - prev.w) / 2 / a.zoom.value, scrollY: a.scrollY + (a.height - prev.h) / 2 / a.zoom.value } });
+        // …except a height change from the 工位时间线 growing or shrinking below: keep the top edge.
+        const fromTimeline = performance.now() - timelineResize.at < 500;
+        api.updateScene({ appState: { scrollX: a.scrollX + (a.width - prev.w) / 2 / a.zoom.value, scrollY: a.scrollY + (fromTimeline ? 0 : (a.height - prev.h) / 2 / a.zoom.value) } });
         return;
       }
       const sel = selectedContainers(a.selectedElementIds, byId(p.elements));
@@ -303,7 +305,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onSelecti
         </>
       )}
       </div>
-      {!readOnly && !BENCH_BARE && <Timeline onLocate={(runId) => api && locate(api, doc.id, runId)} />}
+      {!readOnly && !BENCH_BARE && <Timeline canvasId={doc.id} onLocate={(runId) => api && locate(api, doc.id, runId)} />}
       </div>
       {api && view && <CommentsDrawer title={doc.title} api={api} store={doc.store} view={view} open={drawerOpen} onClose={() => onDrawer(false)} focusId={listFocus} onRepin={setRepin} />}
     </div>

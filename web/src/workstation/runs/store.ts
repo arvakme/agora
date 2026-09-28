@@ -12,8 +12,10 @@ import { flatten, type WorkRun, type FlatRun } from "./types";
 
 export type Runs = { roots: WorkRun[]; flat: FlatRun[]; byId: Map<string, WorkRun>; at: number };
 
-const MOCK = typeof location !== "undefined" && new URLSearchParams(location.search).get("mock") === "runs";
-const mockBase = Date.now() + 1500;
+const params = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
+const MOCK = params.get("mock") === "runs";
+// `&mockBase=<epoch ms>` pins the script's start (the fidelity capture lines it up with the prototype's clock).
+const mockBase = Number(params.get("mockBase")) || Date.now() + 1500;
 // The motion capture (scripts/motion-capture.ts) times its windows from here.
 if (MOCK && typeof window !== "undefined") Object.assign(window, { __mockBase: mockBase });
 
