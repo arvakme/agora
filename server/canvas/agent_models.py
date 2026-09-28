@@ -13,10 +13,16 @@ model catalog it keeps (docs: web/docs/agent-sessions.md §2「模型与强度�
   in pi-ai: no reasoning → ``off`` only; a level mapped to ``null`` is unsupported; ``xhigh`` and
   ``max`` need an explicit mapping), in the order of ``pi --help`` ``--thinking``. Default effort:
   ``defaultThinkingLevel`` clamped the way Pi clamps it. Fallback: ``pi --list-models`` (thinking
-  yes/no) with the ``--help`` levels.
+  yes/no) with the ``--help`` levels. Which models are offered is Pi's own scope: the
+  ``enabledModels`` patterns (agent-dir ``settings.json``, replaced by a trusted project
+  ``.pi/settings.json``) resolved against the available models; without them, every available
+  (credentialed) model except non-interactive variants such as OpenRouter ``:batch``.
 - **Codex** — ``~/.codex/models_cache.json``: ``supported_reasoning_levels`` and
   ``default_reasoning_level`` per model; ``config.toml`` ``model_reasoning_effort`` is the default
   where the model supports it. No cache → no effort choices (the CLI default is used).
+
+Every catalog also carries ``names`` (friendly names), ``providers`` (Pi), ``allowed`` (what a
+binding may use; None = unknown, not checked) and ``scope`` (where the list came from).
 
 The parsers are pure functions over the recorded outputs (tests/fixtures/efforts/).
 """
@@ -62,6 +68,7 @@ def claude_catalog_from(init: dict[str, Any] | None, settings: dict[str, Any], h
         entries = [m for m in resp.get("models") or [] if isinstance(m, dict) and m.get("value")]
     efforts: dict[str, list[str]] = {}
     resolved: dict[str, str] = {}
+    names: dict[str, str] = {}
     models: list[str] = []
     for m in entries:
         levels = [str(x) for x in m.get("supportedEffortLevels") or []] if m.get("supportsEffort") else []
@@ -72,6 +79,10 @@ def claude_catalog_from(init: dict[str, Any] | None, settings: dict[str, Any], h
         efforts[value] = levels
         if value != "default":
             models.append(value)
+            if m.get("displayName"):
+                names[value] = str(m["displayName"])
+                if m.get("resolvedModel"):  # a configured full id (claude-opus-5-5) gets its alias's name
+                    names.setdefault(str(m["resolvedModel"]), str(m["displayName"]))
     if not entries:
         models = ["opus", "sonnet", "haiku"]
         efforts = {m: list(help_levels) for m in models}
@@ -89,10 +100,19 @@ def claude_catalog_from(init: dict[str, Any] | None, settings: dict[str, Any], h
         return global_effort if global_effort in efforts.get(model, []) else ""
 
     all_levels = list(dict.fromkeys(x for m in models for x in efforts.get(m, [])))
+    models = list(dict.fromkeys(models))
+    # Featured: the configured model and the CLI's aliases (opus / sonnet / haiku …); pinned
+    # versions (claude-opus-4-6 …) and custom names come after.
+    featured = [m for m in models if m == default or not m.startswith("claude-")]
     return {
         "default": default,
-        "models": list(dict.fromkeys(models)),
-        "featured": list(dict.fromkeys(models)),
+        "models": models,
+        "featured": featured,
+        "names": names,
+        "providers": {},
+        # --model also takes the full ids the aliases resolve to; without initialize nothing is known.
+        "allowed": list(dict.fromkeys([*models, *resolved.values()])) if entries else None,
+        "scope": {"kind": "cli", "source": "claude initialize" if entries else "claude --help"},
         "efforts": all_levels or list(help_levels),
         "modelEfforts": efforts,
         "modelDefaultEffort": {m: default_effort(m) for m in [*models, ""]},
@@ -129,39 +149,246 @@ def pi_clamp(level: str, available: list[str], order: list[str] | tuple[str, ...
     return available[0] if available else "off"
 
 
-def pi_catalog_from(models: list[dict[str, Any]] | None, settings: dict[str, Any], help_levels: list[str], listed: list[tuple[str, bool]] | None = None) -> dict[str, Any]:
-    """Pi models from RPC ``get_available_models`` (or ``--list-models`` rows as a fallback)."""
+# ——— Pi's model scope (``enabledModels``) ———
+# A port of Pi 0.87.1's own rules (dist/core/model-resolver.js ``resolveModelScopeFromModels`` /
+# ``parseModelPattern``, main.js ``buildSessionOptions``, settings-manager.js ``deepMergeSettings``,
+# trust-manager.js). Patterns resolve against the models Pi reports as available — the ones whose
+# provider has usable credentials — so a pattern can never bring in a model Pi could not run.
+
+# Variants that make no sense in an interactive session (OpenRouter's asynchronous batch tier).
+# They are left out of wide lists and globs; a pattern naming one exactly still keeps it.
+NON_INTERACTIVE_SUFFIXES = (":batch",)
+
+
+def interactive(model_id: str) -> bool:
+    return not model_id.lower().endswith(NON_INTERACTIVE_SUFFIXES)
+
+
+def _expand_braces(pattern: str) -> list[str]:
+    m = re.search(r"\{([^{}]*,[^{}]*)\}", pattern)
+    if not m:
+        return [pattern]
+    return [x for part in m.group(1).split(",") for x in _expand_braces(pattern[: m.start()] + part + pattern[m.end() :])]
+
+
+def _glob_regex(pattern: str) -> re.Pattern[str]:
+    """minimatch semantics Pi relies on: ``*`` / ``?`` stay inside one path segment, ``**``
+    crosses segments, ``[...]`` is a class (``!`` negates), ``{a,b}`` expands; case-insensitive."""
+    alts = []
+    for pat in _expand_braces(pattern):
+        out, i = "", 0
+        while i < len(pat):
+            c = pat[i]
+            if pat.startswith("**", i):
+                out += ".*"
+                i += 2
+                if pat.startswith("/", i):  # "**/" also matches no directory at all
+                    out = out[:-2] + "(?:.*/)?"
+                    i += 1
+                continue
+            if c == "*":
+                out += "[^/]*"
+            elif c == "?":
+                out += "[^/]"
+            elif c == "[" and "]" in pat[i + 2 :]:
+                j = pat.index("]", i + 2)
+                body = pat[i + 1 : j]
+                if body.startswith("!"):
+                    body = "^" + body[1:]
+                out += "[" + body.replace("\\", "\\\\") + "]"
+                i = j
+            else:
+                out += re.escape(c)
+            i += 1
+        alts.append(out)
+    return re.compile("^(?:" + "|".join(alts) + ")$", re.IGNORECASE)
+
+
+def _key(m: dict[str, Any]) -> str:
+    return f"{m.get('provider')}/{m.get('id')}"
+
+
+def pi_exact(ref: str, models: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """``findExactModelReferenceMatch``: ``provider/id`` or a bare id that is unambiguous."""
+    ref = ref.strip()
+    if not ref:
+        return None
+    low = ref.lower()
+    canon = [m for m in models if _key(m).lower() == low]
+    if len(canon) == 1:
+        return canon[0]
+    if len(canon) > 1:
+        return None
+    if "/" in ref:
+        prov, mid = (x.strip() for x in ref.split("/", 1))
+        if prov and mid:
+            hits = [m for m in models if str(m.get("provider", "")).lower() == prov.lower() and str(m.get("id", "")).lower() == mid.lower()]
+            if len(hits) == 1:
+                return hits[0]
+            if len(hits) > 1:
+                return None
+    ids = [m for m in models if str(m.get("id", "")).lower() == low]
+    return ids[0] if len(ids) == 1 else None
+
+
+def _is_alias(model_id: str) -> bool:
+    return model_id.endswith("-latest") or not re.search(r"-\d{8}$", model_id)
+
+
+def _try_match(pattern: str, models: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """``tryMatchModel``: exact, else id/name substring preferring aliases over dated ids."""
+    hit = pi_exact(pattern, models)
+    if hit:
+        return hit
+    low = pattern.lower()
+    matches = [m for m in models if low in str(m.get("id", "")).lower() or low in str(m.get("name") or "").lower()]
+    if not matches:
+        return None
+    aliases = [m for m in matches if _is_alias(str(m.get("id", "")))]
+    pool = aliases or matches
+    return sorted(pool, key=lambda m: str(m.get("id", "")), reverse=True)[0]
+
+
+def _parse_pattern(pattern: str, models: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, str | None]:
+    """``parseModelPattern`` (scope mode): a trailing ``:<thinking>`` is a level, other suffixes are dropped."""
+    hit = _try_match(pattern, models)
+    if hit:
+        return hit, None
+    if ":" not in pattern:
+        return None, None
+    prefix, suffix = pattern.rsplit(":", 1)
+    model, level = _parse_pattern(prefix, models)
+    if model and suffix in PI_ORDER:
+        return model, level or suffix
+    return model, level
+
+
+def pi_scope(patterns: list[str], models: list[dict[str, Any]]) -> list[tuple[dict[str, Any], str | None]]:
+    """``resolveModelScopeFromModels``: the scoped models in pattern order, each with the thinking
+    level its pattern pins (``provider/*:high``), duplicates dropped, unmatched patterns ignored."""
+    out: list[tuple[dict[str, Any], str | None]] = []
+    seen: set[str] = set()
+
+    def add(m: dict[str, Any], level: str | None) -> None:
+        if _key(m) not in seen:
+            seen.add(_key(m))
+            out.append((m, level))
+
+    for pattern in patterns:
+        if any(c in pattern for c in "*?["):
+            glob, level = pattern, None
+            if ":" in pattern and pattern.rsplit(":", 1)[1] in PI_ORDER:
+                glob, level = pattern.rsplit(":", 1)
+            exact = pi_exact(glob, models)
+            if exact:
+                add(exact, level)
+                continue
+            rx = _glob_regex(glob)
+            for m in models:
+                if (rx.match(_key(m)) or rx.match(str(m.get("id", "")))) and interactive(str(m.get("id", ""))):
+                    add(m, level)
+            continue
+        model, level = _parse_pattern(pattern, models)
+        if model:
+            add(model, level)
+    return out
+
+
+def _deep_merge(base: dict[str, Any], over: dict[str, Any]) -> dict[str, Any]:
+    """``deepMergeSettings``: objects merge key by key, anything else (arrays too) is replaced."""
+    out = dict(base)
+    for k, v in over.items():
+        if v is None:
+            continue
+        out[k] = _deep_merge(out[k], v) if isinstance(out.get(k), dict) and isinstance(v, dict) else v
+    return out
+
+
+def pi_project_trusted(agent_dir: Path, project: Path, global_settings: dict[str, Any]) -> bool:
+    """Pi's non-interactive trust decision (docs/security.md): the nearest saved decision in
+    ``<agent-dir>/trust.json`` for the project or a parent, else ``defaultProjectTrust: "always"``."""
+    saved = _read_json(agent_dir / "trust.json")
+    d = Path(os.path.realpath(project))
+    while True:
+        v = saved.get(str(d))
+        if v is True or v is False:
+            return v
+        if d.parent == d:
+            break
+        d = d.parent
+    return global_settings.get("defaultProjectTrust") == "always"
+
+
+def pi_settings(agent_dir: Path, project: Path | None) -> tuple[dict[str, Any], str]:
+    """Pi's effective settings for ``project`` and the file ``enabledModels`` came from."""
+    glob_path = agent_dir / "settings.json"
+    settings = _read_json(glob_path)
+    source = str(glob_path) if settings.get("enabledModels") else ""
+    if project is not None:
+        proj_path = project / ".pi" / "settings.json"
+        if proj_path.is_file() and pi_project_trusted(agent_dir, project, settings):
+            proj = _read_json(proj_path)
+            if proj.get("enabledModels") is not None:
+                source = str(proj_path) if proj.get("enabledModels") else ""
+            settings = _deep_merge(settings, proj)
+    return settings, source
+
+
+def pi_catalog_from(
+    models: list[dict[str, Any]] | None,
+    settings: dict[str, Any],
+    help_levels: list[str],
+    listed: list[tuple[str, bool]] | None = None,
+    source: str = "",
+) -> dict[str, Any]:
+    """Pi models from RPC ``get_available_models`` (or ``--list-models`` rows as a fallback).
+
+    With ``enabledModels`` the list is exactly Pi's scope (the models its own model cycling goes
+    through); without it, every available model except non-interactive variants."""
     order = [x for x in help_levels if x in PI_ORDER] or list(PI_ORDER)
-    enabled = [str(m) for m in settings.get("enabledModels") or []]
-    default = f"{settings['defaultProvider']}/{settings['defaultModel']}" if settings.get("defaultProvider") and settings.get("defaultModel") else ""
-    efforts: dict[str, list[str]] = {}
-    ids: list[str] = []
     if models:
-        for m in models:
-            key = f"{m.get('provider')}/{m.get('id')}"
-            efforts[key] = pi_levels(m, order)
-            ids.append(key)
+        available = [m for m in models if m.get("provider") and m.get("id")]
     else:
-        for key, thinking in listed or []:
-            efforts[key] = pi_levels({"reasoning": thinking}, order)  # no level map: xhigh / max are not offered
-            ids.append(key)
-    all_models = list(dict.fromkeys([*enabled, *([default] if default else []), *ids]))
-    efforts[""] = efforts.get(default, order)
+        available = [{"provider": k.split("/", 1)[0], "id": k.split("/", 1)[1], "name": "", "reasoning": t} for k, t in listed or [] if "/" in k]
+    patterns = [str(p) for p in settings.get("enabledModels") or [] if str(p).strip()]
+    saved = f"{settings['defaultProvider']}/{settings['defaultModel']}" if settings.get("defaultProvider") and settings.get("defaultModel") else ""
+    per_model = settings.get("modelThinkingLevels") or {}
     want = str(settings.get("defaultThinkingLevel") or "")
+    pinned: dict[str, str | None] = {}
+    if patterns:
+        scoped = pi_scope(patterns, available)
+        chosen = [m for m, _ in scoped]
+        pinned = {_key(m): lvl for m, lvl in scoped}
+        keys = [_key(m) for m in chosen]
+        # buildSessionOptions: the saved default when it is in scope, else the first scoped model.
+        default = saved if saved in keys else (keys[0] if keys else "")
+        featured = keys
+    else:
+        chosen = [m for m in available if interactive(str(m["id"]))]
+        keys = [_key(m) for m in chosen]
+        default = saved if saved in keys else ""
+        featured = [default] if default else []
+    efforts: dict[str, list[str]] = {_key(m): pi_levels(m, order) for m in chosen}
+    efforts[""] = efforts.get(default, order)
 
     def default_effort(model: str) -> str:
         avail = efforts.get(model)
-        if not want or not avail:
+        level = pinned.get(model) or str(per_model.get(model) or "") or want
+        if not level or not avail:
             return ""
-        return pi_clamp(want, avail, order)
+        return pi_clamp(level, avail, order)
 
     return {
         "default": default,
-        "models": all_models,
-        "featured": enabled or all_models[:6],
+        "models": keys,
+        "featured": featured,
+        "names": {_key(m): str(m.get("name") or "") for m in chosen if m.get("name")},
+        "providers": {_key(m): str(m["provider"]) for m in chosen},
+        "allowed": keys,
+        "scope": {"kind": "enabledModels", "source": source, "patterns": patterns} if patterns else {"kind": "available", "source": "pi rpc get_available_models" if models else "pi --list-models"},
         "efforts": order,
-        "modelEfforts": {k: v for k, v in efforts.items() if k in all_models or k == ""},
-        "modelDefaultEffort": {m: default_effort(m) for m in [*all_models, ""]},
+        "modelEfforts": efforts,
+        "modelDefaultEffort": {m: default_effort(m) for m in [*keys, ""]},
         "defaultEffort": default_effort(default or ""),
         "effortSource": "pi rpc get_available_models" if models else "pi --list-models",
     }
@@ -176,6 +403,8 @@ def codex_catalog_from(cache: dict[str, Any] | list[Any] | None, config: dict[st
     rows = sorted((m for m in rows if isinstance(m, dict)), key=lambda m: m.get("priority") if isinstance(m.get("priority"), (int, float)) else 1e9)
     efforts: dict[str, list[str]] = {}
     model_default: dict[str, str] = {}
+    names: dict[str, str] = {}
+    slugs: list[str] = []
     models: list[str] = []
     for m in rows:
         slug = m.get("slug") if isinstance(m, dict) else None
@@ -183,6 +412,9 @@ def codex_catalog_from(cache: dict[str, Any] | list[Any] | None, config: dict[st
             continue
         levels = [str(x.get("effort") if isinstance(x, dict) else x) for x in m.get("supported_reasoning_levels") or []]
         efforts[slug] = levels
+        slugs.append(str(slug))
+        if m.get("display_name"):
+            names[str(slug)] = str(m["display_name"])
         model_default[slug] = str(m.get("default_reasoning_level") or "")
         if m.get("visibility") != "hide" or slug == default:
             models.append(str(slug))
@@ -201,12 +433,34 @@ def codex_catalog_from(cache: dict[str, Any] | list[Any] | None, config: dict[st
         "default": default,
         "models": models,
         "featured": models[:6],
+        "names": {k: v for k, v in names.items() if k in models},
+        "providers": {},
+        # -m takes hidden slugs too; they are just not offered. No cache → nothing to check against.
+        "allowed": list(dict.fromkeys([*models, *slugs])) if rows else None,
+        "scope": {"kind": "cli", "source": "codex models_cache.json" if rows else "none"},
         "efforts": list(dict.fromkeys(x for m in models for x in efforts.get(m, []))),
         "modelEfforts": {k: v for k, v in efforts.items() if k in models or k == ""},
         "modelDefaultEffort": {m: default_effort(m) for m in [*models, ""]},
         "defaultEffort": default_effort(default),
         "effortSource": "codex models_cache.json" if rows else "none",
     }
+
+
+def model_refusal(entry: dict[str, Any], model: str) -> str | None:
+    """Why ``model`` is outside what this agent may run (None = fine). "" (the CLI default) always is."""
+    allowed = entry.get("allowed")
+    if not model or allowed is None or model in allowed:
+        return None
+    name = entry.get("name") or entry.get("kind") or "Agent"
+    shown = entry.get("models") or []
+    choices = "、".join(shown[:8]) + (f" 等 {len(shown)} 个" if len(shown) > 8 else "") if shown else "（没有可选模型）"
+    scope = entry.get("scope") or {}
+    if scope.get("kind") == "enabledModels":
+        where = scope.get("source") or "Pi 设置"
+        return f"{model} 不在 Pi 的 enabledModels 范围里（{where}）；可选：{choices}"
+    if entry.get("kind") == "pi":
+        return f"Pi 没有可用的模型 {model}（未配置凭据、不存在或不适合交互会话）；可选：{choices}"
+    return f"{name} 的模型列表里没有 {model}；可选：{choices}"
 
 
 def efforts_for(entry: dict[str, Any], model: str) -> list[str] | None:
@@ -285,19 +539,25 @@ def pi_list_models(env: dict[str, str]) -> list[tuple[str, bool]]:
     return rows
 
 
-def claude_catalog(env: dict[str, str]) -> dict[str, Any]:
+def claude_catalog(env: dict[str, str], project: Path | None = None) -> dict[str, Any]:
     settings = _read_json(Path.home() / ".claude" / "settings.json")
     return claude_catalog_from(claude_initialize(env), settings, help_choices(_run(["claude", "--help"], env), "--effort"))
 
 
-def pi_catalog(env: dict[str, str]) -> dict[str, Any]:
-    settings = _read_json(Path.home() / ".pi" / "agent" / "settings.json")
+def pi_agent_dir(env: dict[str, str]) -> Path:
+    """``getAgentDir``: ``PI_CODING_AGENT_DIR`` or ``~/.pi/agent``."""
+    d = env.get("PI_CODING_AGENT_DIR")
+    return Path(os.path.expanduser(d)) if d else Path.home() / ".pi" / "agent"
+
+
+def pi_catalog(env: dict[str, str], project: Path | None = None) -> dict[str, Any]:
+    settings, source = pi_settings(pi_agent_dir(env), project)
     help_levels = help_choices(_run(["pi", "--help"], env), "--thinking")
     models = pi_rpc_models(env)
-    return pi_catalog_from(models, settings, help_levels, None if models else pi_list_models(env))
+    return pi_catalog_from(models, settings, help_levels, None if models else pi_list_models(env), source)
 
 
-def codex_catalog(env: dict[str, str]) -> dict[str, Any]:
+def codex_catalog(env: dict[str, str], project: Path | None = None) -> dict[str, Any]:
     home = Path(env.get("CODEX_HOME") or os.environ.get("CODEX_HOME") or Path.home() / ".codex")
     try:
         config = tomllib.loads((home / "config.toml").read_text())
@@ -307,4 +567,4 @@ def codex_catalog(env: dict[str, str]) -> dict[str, Any]:
     return codex_catalog_from(cache, config)
 
 
-SOURCES: dict[str, Callable[[dict[str, str]], dict[str, Any]]] = {"pi": pi_catalog, "claude": claude_catalog, "codex": codex_catalog}
+SOURCES: dict[str, Callable[[dict[str, str], Path | None], dict[str, Any]]] = {"pi": pi_catalog, "claude": claude_catalog, "codex": codex_catalog}
