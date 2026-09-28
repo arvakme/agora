@@ -26,6 +26,9 @@ import { isEditableTarget, markBackHintSeen, upOnKey } from "../nested/up";
 import { sessionNames } from "../multi/writes";
 import { setRunsRoot } from "../workstation/runs/store";
 import { WorkerDefs } from "../workstation/RunAvatar";
+import { FollowPane } from "../workstation/FollowPane";
+import { focus as figureFocus } from "../workstation/focus";
+import { follow } from "../workstation/follow";
 import { BENCH, installBench } from "../bench/bench";
 import { ShareButton } from "../share/SharePanel";
 import { Workspace } from "../workspace/Workspace";
@@ -667,6 +670,23 @@ export function App({ boot }: { boot: Boot }) {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   });
+  // The 工位视图's keys (docs/workstation.md §10): Esc leaves the trace, then the follow pane, then
+  // the figure's selection; F follows the selected figure. Not while typing or in the timeline.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
+      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable], [data-esc-local], .ws-tl")) return;
+      const selected = figureFocus.get().selected;
+      if (e.key === "Escape") figureFocus.escape();
+      else if (e.key.toLowerCase() === "f" && !e.shiftKey && selected) {
+        e.preventDefault();
+        e.stopPropagation(); // Excalidraw's F is its frame tool
+        follow.start(selected);
+      }
+    };
+    addEventListener("keydown", onKey, true);
+    return () => removeEventListener("keydown", onKey, true);
+  }, []);
 
   // The dock belongs to the canvas it acts on: keep it at that pane's bottom centre, so a
   // session pane below the canvas is never covered.
@@ -826,6 +846,7 @@ export function App({ boot }: { boot: Boot }) {
             ) : null
           }
         />
+        <FollowPane main={canvasDoc.id} />
         {mode === "comment" && (
           <motion.div className="mode-hint" style={dockAt ? { left: dockAt.x, bottom: dockAt.bottom + 50 } : undefined} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
             <IconComment size={14} />在「<b>{canvasDoc.title}</b>」上点一个元素钉评论 · Esc 退出
