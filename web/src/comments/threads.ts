@@ -44,8 +44,11 @@ export type Thread = {
   messages: Message[];
   createdAt: number;
   createdBy?: Person;
-  /** Last change of the thread itself (resolve, delete, restore). */
+  /** Last change of the thread itself (resolve, delete, restore, re-pin). */
   updatedAt?: number;
+  /** Who resolved it and when (shown on the quiet resolved pin). */
+  resolvedAt?: number;
+  resolvedBy?: Person;
   /** Tombstone: the owner deleted the whole thread; its number is not reused. */
   deleted?: boolean;
 };
@@ -137,9 +140,15 @@ export function createThreadStore(canvasId: string, initial?: ThreadSnapshot, re
       remote.create?.(t);
       return t;
     },
+    /** Add a message. A person replying to a resolved thread reopens it. */
     reply(id: string, msg: Omit<Message, "id" | "at">) {
       const m: Message = { ...(msg.author === "you" && me && { by: me }), ...msg, id: uid(), at: Date.now() };
-      patch(id, (t) => ({ ...t, messages: [...t.messages, m] }));
+      patch(id, (t) => {
+        const next = { ...t, messages: [...t.messages, m] };
+        if (!(t.resolved && m.author === "you")) return next;
+        const { resolvedAt: _a, resolvedBy: _b, ...rest } = next;
+        return { ...rest, resolved: false, updatedAt: m.at };
+      });
       if (m.author === "you") remote.reply?.(id, m);
       return m;
     },
@@ -200,7 +209,7 @@ export function createThreadStore(canvasId: string, initial?: ThreadSnapshot, re
           return { ...s, anchor: s.anchor ?? t.anchor, agent: "idle" as const };
         }
         if (t.deleted && stamp(s) <= stamp(t)) return t; // an older copy doesn't bring a deleted thread back
-        const base = stamp(s) > stamp(t) ? { ...t, resolved: s.resolved, deleted: s.deleted, updatedAt: s.updatedAt } : t;
+        const base = stamp(s) > stamp(t) ? { ...t, resolved: s.resolved, deleted: s.deleted, updatedAt: s.updatedAt, anchor: s.anchor ?? t.anchor, resolvedAt: s.resolvedAt, resolvedBy: s.resolvedBy } : t;
         const theirs = new Map(s.messages.map((m) => [m.id, m]));
         let msgChanged = false;
         const messages = t.messages.map((m) => {
@@ -229,11 +238,20 @@ export function createThreadStore(canvasId: string, initial?: ThreadSnapshot, re
     },
     updateMessage: (id: string, msgId: string, f: (m: Message) => Message) => setMsg(id, msgId, f),
     /** Resolving also closes the thread card; reopening leaves it open. */
-    setResolved: (id: string, resolved: boolean) =>
+    setResolved: (id: string, resolved: boolean) => {
+      const now = Date.now();
       commit(
-        all.map((t) => (t.id === id ? { ...t, resolved, updatedAt: Date.now() } : t)),
+        all.map((t) => {
+          if (t.id !== id) return t;
+          if (resolved) return { ...t, resolved, updatedAt: now, resolvedAt: now, ...(me && { resolvedBy: me }) };
+          const { resolvedAt: _a, resolvedBy: _b, ...rest } = t;
+          return { ...rest, resolved, updatedAt: now };
+        }),
         resolved && state.activeId === id ? null : state.activeId,
-      ),
+      );
+    },
+    /** Pin a thread whose element is gone to another element (「重新钉到…」). */
+    reanchor: (id: string, anchor: Anchor) => patch(id, (t) => ({ ...t, anchor, updatedAt: Date.now() })),
     setAgent: (id: string, agent: Thread["agent"]) => patch(id, (t) => ({ ...t, agent })),
     /** Opens a thread (idempotent — never toggles). */
     open: (id: string) => state.activeId !== id && commit(all, id),

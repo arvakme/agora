@@ -72,7 +72,7 @@ export function ShareButton({ canvases, current }: { canvases: { id: string; tit
   }, [open]);
   return (
     <div className="share" ref={box}>
-      <button className="btn quiet" aria-expanded={open} onClick={() => (setOpen((o) => !o), refresh())} title="把一块画布分享给别人看和评论">
+      <button className="btn ghost" aria-expanded={open} onClick={() => (setOpen((o) => !o), refresh())} title="把一块画布分享给别人看和评论">
         <IconShare size={16} /><span className="btn-label">分享</span>{active > 0 && <em className="count">{active}</em>}
       </button>
       <AnimatePresence>

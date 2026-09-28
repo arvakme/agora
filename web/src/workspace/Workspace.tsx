@@ -5,7 +5,7 @@
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { SPRING } from "../comments/motion";
-import { IconClose, IconLayers, IconMessage, IconPencil, IconPlus, IconTrash } from "../app/icons";
+import { IconClose, IconFolder, IconLayers, IconMessage, IconPencil, IconPlus, IconTrash } from "../app/icons";
 import { activate, equalize, groupOf, groups, layout, moveTab, resize, type Node, type Rect, type Sash, type Zone } from "./layout";
 import { groupKind } from "./model";
 
@@ -15,7 +15,7 @@ const GAP = 1, PAD = 0, HEADER = 36, MIN_PANE = 220;
 type Target = { groupId: string; zone: Zone; index?: number; preview: Rect };
 type Drag = { tab: string; x: number; y: number; ox: number; oy: number; active: boolean; target: Target | null };
 
-type NewWhat = "canvas" | "session" | "sample";
+type NewWhat = "canvas" | "session" | "sample" | "open";
 type Props = {
   root: Node;
   setRoot: (n: Node) => void;
@@ -28,8 +28,10 @@ type Props = {
   marks?: Record<string, ReactNode>;
   focused: string;
   onFocus: (tab: string) => void;
-  /** 「+」: canvas groups get a canvas, session groups a session; mixed or empty groups ask. */
-  onNew: (groupId: string, what: NewWhat) => void;
+  /** 「+」: session groups get a session; canvas and mixed groups offer a menu (新建 / 从示例 / 打开已有的). `at` is the menu item's screen rect (for 打开画布). */
+  onNew: (groupId: string, what: NewWhat, at?: DOMRect) => void;
+  /** How many canvases exist (the 「打开画布（N）」 item). */
+  canvasCount?: number;
   /** Close only hides the tab; delete is a separate, confirmed action. */
   onClose: (tab: string) => void;
   onDelete: (tab: string) => void;
@@ -43,8 +45,8 @@ type Props = {
   renderCanvas: (id: string) => ReactNode;
 };
 
-export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, marks = {}, focused, onFocus, onNew, onClose, onDelete, renderEmpty, editing, setEditing, onRename, onSettled, renderCanvas }: Props) {
-  const [menu, setMenu] = useState<{ tab: string; x: number; y: number } | { group: string; x: number; y: number } | null>(null);
+export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, marks = {}, focused, onFocus, onNew, canvasCount = 0, onClose, onDelete, renderEmpty, editing, setEditing, onRename, onSettled, renderCanvas }: Props) {
+  const [menu, setMenu] = useState<{ tab: string; x: number; y: number } | { group: string; x: number; y: number; kind: "canvas" | "mixed" } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -65,15 +67,15 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
   const all = groups(root);
   const focusedGroup = groupOf(root, focused)?.id;
   const kindOf = (t: string) => kinds[t];
-  /** 「+」 or a double-click on the tab bar: same kind as the group, or a small menu when mixed. */
+  /** 「+」 or a double-click on the tab bar: a session group gets a new session; canvas and mixed groups a small menu (the one place to create or open canvases). */
   const plus = (groupId: string, anchor: HTMLElement) => {
     const g = all.find((g) => g.id === groupId)!;
     const kind = groupKind(g.tabs, kindOf);
-    if (kind !== "mixed") return onNew(groupId, kind);
+    if (kind === "session") return onNew(groupId, "session");
     const box = ref.current!.getBoundingClientRect(), b = anchor.getBoundingClientRect();
-    setMenu({ group: groupId, x: Math.min(b.left - box.left, box.width - 180), y: b.bottom - box.top + 4 });
+    setMenu({ group: groupId, kind, x: Math.min(b.left - box.left, box.width - 200), y: b.bottom - box.top + 4 });
   };
-  const plusLabel = (tabs: string[]) => ({ canvas: "新建画布", session: "新建会话", mixed: "新建…" })[groupKind(tabs, kindOf)];
+  const plusLabel = (tabs: string[]) => ({ canvas: "新建或打开画布", session: "新建会话", mixed: "新建…" })[groupKind(tabs, kindOf)];
 
   const targetAt = (x: number, y: number, tab: string): Target | null => {
     const g = all.find((g) => within(rects.get(g.id)!, x, y));
@@ -246,8 +248,10 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
             {"group" in menu ? (
               <>
                 <button role="menuitem" autoFocus onClick={() => (onNew(menu.group, "canvas"), setMenu(null))}><IconPlus size={14} />新建画布</button>
-                <button role="menuitem" onClick={() => (onNew(menu.group, "session"), setMenu(null))}><IconMessage size={14} />新建会话</button>
+                {menu.kind === "mixed" && <button role="menuitem" onClick={() => (onNew(menu.group, "session"), setMenu(null))}><IconMessage size={14} />新建会话</button>}
                 <button role="menuitem" onClick={() => (onNew(menu.group, "sample"), setMenu(null))}><IconLayers size={14} />从示例新建画布</button>
+                <hr />
+                <button role="menuitem" onClick={(e) => (onNew(menu.group, "open", e.currentTarget.getBoundingClientRect()), setMenu(null))}><IconFolder size={14} />打开画布<em className="menu-count">{canvasCount}</em></button>
               </>
             ) : (
               <>

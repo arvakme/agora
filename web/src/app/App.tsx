@@ -5,8 +5,8 @@ import { CanvasView, type CanvasHandle } from "../canvas/CanvasView";
 import { SPRING } from "../comments/motion";
 import { replayEval, runEval, TASKS, type EvalProgress, type EvalRow } from "../eval/eval";
 import { buildFixture } from "../eval/fixture";
-import { IconClose, IconCols, IconComment, IconGrid, IconHint, IconLayers, IconList, IconPlus, IconPointer, IconRows, IconSelect, IconSingle, IconTrash, IconWorkspace } from "./icons";
-import { ThemeButton } from "./ThemeButton";
+import { IconClose, IconComment, IconHint, IconList, IconPlus, IconPointer, IconWorkspace } from "./icons";
+import { ViewMenu } from "./ViewMenu";
 import { ackChange, adoptCanvas, adoptSession, dropCanvas, flushSaves, PERSIST, project, reloadFromDisk, save, slotFile, type LocalChange } from "../persist";
 import { trash, type Restored } from "../workspace/trash";
 import { TrashPanel } from "../workspace/TrashPanel";
@@ -20,7 +20,7 @@ import { SessionMark } from "../session/AgentAvatar";
 import { pointerFollow } from "../pointer/follow";
 import { createThreadStore, threadStores, useThreads, type ThreadSnapshot, type ThreadStore } from "../comments/threads";
 import { AllDocs } from "../workspace/AllDocs";
-import { ancestry, descendants } from "../nested/graph";
+import { ancestry, descendants, openThreads } from "../nested/graph";
 import { canvasFromUrl, nav, nested, urlFor } from "../nested/store";
 import { isEditableTarget, markBackHintSeen, upOnKey } from "../nested/up";
 import { sessionNames } from "../multi/writes";
@@ -97,7 +97,7 @@ export function App({ boot }: { boot: Boot }) {
   const [drawers, setDrawers] = useState<Record<string, boolean>>({});
   const [selCount, setSelCount] = useState(0);
   const [editing, setEditing] = useState<string | null>(null);
-  const [listOpen, setListOpen] = useState<{ confirm?: string } | null>(null);
+  const [listOpen, setListOpen] = useState<{ confirm?: string; at?: { x: number; y: number } } | null>(null);
   const [removed, setRemoved] = useState<Removed | null>(null);
   const [recoveredNote, setRecoveredNote] = useState(boot.recovered);
   const [change, setChange] = useState<LocalChange | null | undefined>(boot.change);
@@ -329,8 +329,8 @@ export function App({ boot }: { boot: Boot }) {
     const s = sessions.create(canvasId, undefined, { draft: true }); // the sync effect adds its doc; saved once an agent is chosen
     openDoc(sessionDocId(s.id), { groupId: opts.groupId, kind: "session", linkedCanvas: canvasId });
   };
-  const onNew = (groupId: string | undefined, what: "canvas" | "session" | "sample") =>
-    what === "session" ? addSession({ groupId }) : addCanvas({ groupId, sample: what === "sample" });
+  const onNew = (groupId: string | undefined, what: "canvas" | "session" | "sample" | "open", at?: DOMRect) =>
+    what === "open" ? setListOpen({ at: at ? { x: at.left, y: at.bottom } : undefined }) : what === "session" ? addSession({ groupId }) : addCanvas({ groupId, sample: what === "sample" });
 
   /** Rename. A session renamed to nothing goes back to its automatic name; keeping the shown name changes nothing. */
   const rename = (id: string, title: string) => {
@@ -659,6 +659,8 @@ export function App({ boot }: { boot: Boot }) {
       if (k === "c") {
         e.preventDefault();
         e.stopPropagation();
+        // With elements selected, C comments that selection; otherwise it toggles comment mode.
+        if (mode !== "comment" && selCount > 0 && canvasDoc) return void handles.current.get(canvasDoc.id)?.commentSelection();
         setMode((m) => (m === "comment" ? "browse" : "comment"));
       } else if (k === "v") setMode("browse");
     };
@@ -702,53 +704,41 @@ export function App({ boot }: { boot: Boot }) {
         <header className="topbar">
           <span className="brand"><IconWorkspace size={18} />Agora</span>
           {boot.project && <span className="project-name" title={boot.project.root}>{boot.project.name}</span>}
-          <div className="all-docs">
-            <button className="btn ghost all-docs-btn" aria-expanded={!!listOpen} onClick={() => setListOpen((o) => (o ? null : {}))} title="所有画布和会话，包括已关闭的">
-              <IconLayers size={16} /><span className="btn-label">所有画布</span><em>{canvasDocs.length}</em>
-            </button>
-            {listOpen && (
-              <AllDocs
-                docs={(() => {
-                  const st = nested.get();
-                  const order = canvasTree(canvasDocs.map((d) => d.id), (id) => st.index.get(id)?.canvasId);
-                  const byId = new Map(docs.map((d) => [d.id, d]));
-                  return [...order.map((o) => byId.get(o.id)!), ...docs.filter((d) => d.kind !== "canvas" && !isDraftDoc(d))];
-                })()}
-                depth={(id) => {
-                  const st = nested.get();
-                  return ancestry(id, st.index).length - 1;
-                }}
-                childCount={(id) => descendants(id, nested.get().scenes).size}
-                titles={names}
-                open={open}
-                focused={focused}
-                confirm={listOpen.confirm}
-                setConfirm={(id) => setListOpen({ confirm: id })}
-                canvasOf={sessionCanvas}
-                commentCount={(id) => storeFor(id).get().threads.length}
-                onOpen={(id) => (openDoc(id), setListOpen(null))}
-                onRemove={(id) => (void remove(id), setListOpen({}))}
-                onTrash={() => (setListOpen(null), setPanelFocus(undefined), setPanel("trash"))}
-                onHistory={() => (setListOpen(null), setPanel("history"))}
-                onNew={(sample) => (addCanvas({ sample }), setListOpen(null))}
-                onDismiss={() => setListOpen(null)}
-              />
-            )}
-          </div>
           <span className="topbar-gap" />
           {PERSIST && <ShareButton canvases={canvasDocs.map((d) => ({ id: d.id, title: d.title }))} current={canvasDoc?.id ?? lastCanvas} />}
-          <div className="iseg" role="group" aria-label="排列">
-            {([["single", IconSingle, "单窗"], ["row", IconCols, "左右并排"], ["col", IconRows, "上下并排"], ["grid", IconGrid, "平铺"]] as const).map(([p, Icon, label]) => (
-              <button key={p} onClick={() => applyPreset(p)} title={label} aria-label={label} disabled={open.size < 2 && p !== "single"}>
-                <Icon size={16} />
-              </button>
-            ))}
-          </div>
-          <ThemeButton />
-          <span className="topbar-sep" />
-          <button className="btn quiet new-session" onClick={() => addSession()} title="新建会话：关联当前画布"><IconPlus size={16} /><span className="btn-label">新建会话</span></button>
-          <button className="btn primary" onClick={() => addCanvas()} title="新建画布"><IconPlus size={16} /><span className="btn-label">新建画布</span></button>
+          <ViewMenu onLayout={applyPreset} layouts={open.size >= 2} />
         </header>
+        {listOpen && (
+          // 所有画布 opens from a canvas tab bar's「+」→「打开画布」(or a delete confirmation), where it was asked for.
+          <div className="all-docs" style={{ position: "fixed", zIndex: 41, left: Math.max(8, Math.min((listOpen.at?.x ?? 12), innerWidth - 352)), top: (listOpen.at?.y ?? 48) - 6 }}>
+            <AllDocs
+              docs={(() => {
+                const st = nested.get();
+                const order = canvasTree(canvasDocs.map((d) => d.id), (id) => st.index.get(id)?.canvasId);
+                const byId = new Map(docs.map((d) => [d.id, d]));
+                return [...order.map((o) => byId.get(o.id)!), ...docs.filter((d) => d.kind !== "canvas" && !isDraftDoc(d))];
+              })()}
+              depth={(id) => {
+                const st = nested.get();
+                return ancestry(id, st.index).length - 1;
+              }}
+              childCount={(id) => descendants(id, nested.get().scenes).size}
+              titles={names}
+              open={open}
+              focused={focused}
+              confirm={listOpen.confirm}
+              setConfirm={(id) => setListOpen((l) => ({ ...l, confirm: id }))}
+              canvasOf={sessionCanvas}
+              commentCount={(id) => openThreads(storeFor(id).get().threads)}
+              onOpen={(id) => (openDoc(id), setListOpen(null))}
+              onRemove={(id) => (void remove(id), setListOpen((l) => ({ at: l?.at })))}
+              onTrash={() => (setListOpen(null), setPanelFocus(undefined), setPanel("trash"))}
+              onHistory={() => (setListOpen(null), setPanel("history"))}
+              onNew={(sample) => (addCanvas({ sample }), setListOpen(null))}
+              onDismiss={() => setListOpen(null)}
+            />
+          </div>
+        )}
         <SaveBanner docTitle={(id) => names[id]} scene={(id) => scenes.current.get(id)} />
         {change && <ChangeBanner change={change} onDismiss={() => (setChange(null), void ackChange())} />}
         {recoveredNote && (
@@ -773,6 +763,7 @@ export function App({ boot }: { boot: Boot }) {
           focused={focused}
           onFocus={focus}
           onNew={onNew}
+          canvasCount={canvasDocs.length}
           onClose={close}
           onDelete={(id) => setListOpen({ confirm: id })}
           editing={editing}
@@ -814,13 +805,15 @@ export function App({ boot }: { boot: Boot }) {
         <Dock
           at={dockAt}
           mode={mode}
-          setMode={(m) => (ui.focusPane(canvasDoc.id), setMode(m))}
-          selCount={selCount}
+          setMode={(m) => {
+            ui.focusPane(canvasDoc.id);
+            // 评论 with elements selected comments that selection (评论选区 folded into comment mode).
+            if (m === "comment" && mode !== "comment" && selCount > 0) return void handle?.commentSelection();
+            setMode(m);
+          }}
           drawerOpen={!!drawers[canvasDoc.id]}
           toggleDrawer={() => setDrawers((d) => ({ ...d, [canvasDoc.id]: !d[canvasDoc.id] }))}
           store={storeFor(canvasDoc.id)}
-          onCommentSelection={() => handle?.commentSelection()}
-          onReset={() => handle?.reset()}
           evalButton={
             EVAL_MODE && handle ? (
               <button
@@ -882,41 +875,37 @@ export function App({ boot }: { boot: Boot }) {
   );
 }
 
-function Dock({ at, mode, setMode, selCount, drawerOpen, toggleDrawer, store, onCommentSelection, onReset, evalButton }: {
+/**
+ * The canvas dock: 浏览 / 评论 and the open-comment count (opens the comment list). Commenting a
+ * selection is part of comment mode (select, then C or 评论); 清空画布 lives in Excalidraw's ☰.
+ */
+function Dock({ at, mode, setMode, drawerOpen, toggleDrawer, store, evalButton }: {
   at: { x: number; bottom: number } | null;
   mode: "browse" | "comment";
   setMode: (m: "browse" | "comment") => void;
-  selCount: number;
   drawerOpen: boolean;
   toggleDrawer: () => void;
   store: ThreadStore;
-  onCommentSelection: () => void;
-  onReset: () => void;
   evalButton: React.ReactNode;
 }) {
   const { threads } = useThreads(store);
   const open = threads.filter((t) => !t.resolved).length;
   return (
     <div className="dock" role="toolbar" aria-label="画布工具" style={at ? { left: at.x, bottom: at.bottom } : undefined}>
-      <div className="dock-tools">
-        {([["browse", IconPointer, "浏览 · V"], ["comment", IconComment, "评论 · C"]] as const).map(([m, Icon, label]) => (
-          <button key={m} className="dock-btn" data-on={mode === m} aria-pressed={mode === m} onClick={() => setMode(m)} aria-label={label} title={label}>
-            {mode === m && <motion.span layoutId="dock-on" className="dock-on" transition={SPRING} />}
-            <Icon size={18} />
+      <div className="seg dock-seg" role="radiogroup" aria-label="模式">
+        {([["browse", IconPointer, "浏览", "V"], ["comment", IconComment, "评论", "C"]] as const).map(([m, Icon, label, key]) => (
+          <button key={m} role="radio" aria-checked={mode === m} data-on={mode === m} onClick={() => setMode(m)} title={`${label} · ${key}${m === "comment" ? "（先选中元素再按，评论这组选区）" : ""}`}>
+            {mode === m && <motion.span layoutId="dock-on" className="seg-bg" transition={SPRING} />}
+            <Icon size={14} />
+            <span>{label}</span>
           </button>
         ))}
-        <button className="dock-btn" disabled={!selCount} onClick={onCommentSelection} aria-label="评论选区" title={selCount ? `评论选中的 ${selCount} 个元素` : "先选中元素"}>
-          <IconSelect size={18} />
-          {selCount > 1 && <em className="dock-badge">{selCount}</em>}
-        </button>
-        <button className="dock-btn" data-on={drawerOpen} aria-pressed={drawerOpen} onClick={toggleDrawer} aria-label={`所有评论 · ${open} 条进行中`} title="所有评论">
-          {drawerOpen && <motion.span layoutId="dock-drawer" className="dock-on" transition={SPRING} />}
-          <IconList size={18} />
-          {open > 0 && <em className="dock-badge">{open}</em>}
-        </button>
-        <span className="dock-sep" />
-        <button className="dock-btn" onClick={onReset} aria-label="清空画布（可撤销）" title="清空画布（⌘Z 可撤销）"><IconTrash size={18} /></button>
       </div>
+      <button className="dock-count" data-on={drawerOpen} aria-pressed={drawerOpen} onClick={toggleDrawer} title="评论列表" aria-label={`评论列表 · ${open} 条进行中`}>
+        <IconList size={14} />
+        评论
+        {open > 0 && <em>{open}</em>}
+      </button>
       {evalButton}
     </div>
   );

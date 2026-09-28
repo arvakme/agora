@@ -199,7 +199,7 @@ export function ProcessFold({ sessionId, turn, children }: { sessionId: string; 
 }
 
 // ——— trajectory view ———
-export function TrajectoryView({ sessionId, turns, focusTurn, agent }: { sessionId: string; turns: TrajTurn[]; focusTurn?: { n: number; key: number } | null; agent?: AgentKind }) {
+export function TrajectoryView({ sessionId, turns, focusTurn, agent, cutoff = null }: { sessionId: string; turns: TrajTurn[]; focusTurn?: { n: number; key: number } | null; agent?: AgentKind; /** Replay: records after this moment are greyed out (they happened later). */ cutoff?: number | null }) {
   const [mode, setMode] = useState<TimelineMode>("sequence");
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
@@ -229,9 +229,17 @@ export function TrajectoryView({ sessionId, turns, focusTurn, agent }: { session
     setTimeout(() => scroll.current?.querySelector(`[data-traj-turn="${focusTurn.n}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" }), 60);
   }, [focusTurn?.key]);
 
+  // Replay: keep the step the canvas shows in view (the last one before the replay moment).
+  const cutKey = cutoff == null ? null : Math.floor(cutoff / 500);
+  useEffect(() => {
+    if (cutoff == null) return;
+    const el = scroll.current;
+    const rows = el ? [...el.querySelectorAll<HTMLElement>(".ds-rec:not([data-future])")] : [];
+    rows.at(-1)?.scrollIntoView({ block: "nearest" });
+  }, [cutKey]);
   const allOpen = collapsed.size === 0;
   return (
-    <div className="ds-traj">
+    <div className="ds-traj" data-replay={cutoff != null || undefined}>
       <div className="ds-traj-bar" role="toolbar" aria-label="轨迹工具栏">
         <span className="ds-traj-count">
           {turns.length} 轮 · {records} 条记录 · {calls} 次调用
@@ -276,7 +284,7 @@ export function TrajectoryView({ sessionId, turns, focusTurn, agent }: { session
               {steps.map((s) => (
                 <StepGroup key={s.n} step={s}>
                   {s.records.map((r) => (
-                    <RecordRow key={r.id} sessionId={sessionId} r={r} selected={selected === r.id} onSelect={() => setSelected(selected === r.id ? null : r.id)} agent={agent} />
+                    <RecordRow key={r.id} sessionId={sessionId} r={r} selected={selected === r.id} onSelect={() => setSelected(selected === r.id ? null : r.id)} agent={agent} future={cutoff != null && r.at > cutoff} />
                   ))}
                 </StepGroup>
               ))}
@@ -319,9 +327,9 @@ function StepGroup({ step, children }: { step: TrajStep; children: React.ReactNo
   );
 }
 
-function RecordRow({ sessionId, r, selected, onSelect, agent }: { sessionId: string; r: TrajRecord; selected: boolean; onSelect: () => void; agent?: AgentKind }) {
+function RecordRow({ sessionId, r, selected, onSelect, agent, future }: { sessionId: string; r: TrajRecord; selected: boolean; onSelect: () => void; agent?: AgentKind; future?: boolean }) {
   return (
-    <div className="ds-rec" data-selected={selected} data-kind={r.kind} data-error={r.isError}>
+    <div className="ds-rec" data-selected={selected} data-kind={r.kind} data-error={r.isError} data-future={future || undefined}>
       <button className="ds-rec-line" onClick={onSelect} aria-expanded={selected}>
         <span className="ds-rec-i">#{r.index}</span>
         <span className="ds-rec-kind">{r.kind === "message" && agent && <AgentAvatar kind={agent} size={16} />}{KIND[r.kind]}</span>
