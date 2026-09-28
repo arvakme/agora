@@ -208,7 +208,8 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 
 /* ——— one canvas ——— */
 .canvas-view { position: absolute; inset: 0; display: flex; background: var(--bg); }
-.canvas-stage { position: relative; flex: 1; min-width: 0; }
+.canvas-stage { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.canvas-layers { position: relative; flex: 1; min-height: 0; }
 /* Excalidraw's own UI on our tokens: its built-in violet becomes our purple, its islands follow the theme. */
 .canvas-view .excalidraw, .canvas-view .excalidraw.theme--dark {
   --ui-font: var(--font-sans);
@@ -443,6 +444,8 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .ad-row[data-current="true"] { background: var(--accent-wash); }
 .ad-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-4); height: var(--row-nav); padding: 0 var(--space-4) 0 10px; font-size: var(--text-md); text-align: left; }
 .ad-row[data-sub="true"] .ad-main { padding-left: 30px; }
+/* A child canvas sits under its parent (nested canvases), one step in per level. */
+.ad-row[data-nested] .ad-main { padding-left: calc(10px + var(--ad-depth, 0) * 18px); }
 .ad-row[data-open="false"] .ad-title { color: var(--fg-muted); }
 .ad-mark { width: 7px; height: 7px; flex: none; border-radius: 1.5px; background: var(--fg-faint); }
 .ad-mark[data-kind="session"] { border-radius: 50%; }

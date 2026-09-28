@@ -8,6 +8,7 @@
 // with the answer below it — and 轨迹 — timeline overview plus turn → step → record ledger
 // (Trajectory.tsx; structure from DeepSeek Harness, MIT). Every tool call opens to its input and
 // output; every turn shows model, effort, tokens, time and cost when the log has them.
+import { ConflictNotice } from "../multi/ConflictNotice";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IconCheck, IconChevron, IconCommentSolid, IconCopy, IconGauge, IconLock, IconMessage, IconPath, IconTarget, IconUndo } from "../app/icons";
@@ -417,6 +418,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           {termMenu && <div className="menu-scrim sp-term-scrim" onPointerDown={() => setTermMenu(false)} />}
         </div>
       </header>
+      <ConflictNotice sessionId={sessionId} />
       {(status?.terminal.alive || termMsg) && (
         <div className="notice sp-attach" data-tone={status?.terminal.alive ? undefined : "caution"}>
           {status?.terminal.alive ? (

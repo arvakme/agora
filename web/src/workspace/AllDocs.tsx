@@ -29,9 +29,12 @@ type Props = {
   onTrash: () => void;
   onHistory?: () => void;
   onDismiss: () => void;
+  /** Nested canvases: how deep a canvas sits (0 = top level) and how many canvases are below it. */
+  depth?: (canvasId: string) => number;
+  childCount?: (canvasId: string) => number;
 };
 
-export function AllDocs({ docs, titles, open, focused, confirm, setConfirm, canvasOf, commentCount, onOpen, onRemove, onNew, onTrash, onHistory, onDismiss }: Props) {
+export function AllDocs({ docs, titles, open, focused, confirm, setConfirm, canvasOf, commentCount, onOpen, onRemove, onNew, onTrash, onHistory, onDismiss, depth = () => 0, childCount = () => 0 }: Props) {
   const inTrash = useTrash();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && (e.stopPropagation(), confirm ? setConfirm(undefined) : onDismiss());
@@ -46,11 +49,11 @@ export function AllDocs({ docs, titles, open, focused, confirm, setConfirm, canv
 
   const row = (d: Doc, sub = false) => {
     const title = titles[d.id] ?? d.title;
-    if (confirm === d.id) return <Confirm key={d.id} doc={d} title={title} comments={d.kind === "canvas" ? commentCount(d.id) : 0} sessions={d.kind === "canvas" ? sessionDocs.filter((s) => canvasOf(s) === d.id).length : 0} onCancel={() => setConfirm(undefined)} onConfirm={() => onRemove(d.id)} />;
+    if (confirm === d.id) return <Confirm key={d.id} doc={d} title={title} comments={d.kind === "canvas" ? commentCount(d.id) : 0} sessions={d.kind === "canvas" ? sessionDocs.filter((s) => canvasOf(s) === d.id).length : 0} kids={d.kind === "canvas" ? childCount(d.id) : 0} onCancel={() => setConfirm(undefined)} onConfirm={() => onRemove(d.id)} />;
     const last = d.kind === "canvas" && canvases.length === 1;
     const state = d.id === focused ? "当前" : open.has(d.id) ? "已打开" : "已关闭";
     return (
-      <li key={d.id} className="ad-row" data-sub={sub} data-open={open.has(d.id)} data-current={d.id === focused}>
+      <li key={d.id} className="ad-row" data-sub={sub} data-open={open.has(d.id)} data-current={d.id === focused} style={d.kind === "canvas" && depth(d.id) ? ({ "--ad-depth": depth(d.id) } as React.CSSProperties) : undefined} data-nested={d.kind === "canvas" && depth(d.id) > 0 ? true : undefined}>
         <button className="ad-main" onClick={() => onOpen(d.id)} title={open.has(d.id) ? "切换到这里" : "重新打开"}>
           {d.kind === "session" ? <SessionMark sessionId={d.sessionId} fallback={d.agent} /> : <span className="ad-mark" data-kind={d.kind} />}
           <span className="ad-title">{title}</span>
@@ -93,7 +96,7 @@ export function AllDocs({ docs, titles, open, focused, confirm, setConfirm, canv
   );
 }
 
-function Confirm({ doc, title, comments, sessions: linked, onCancel, onConfirm }: { doc: Doc; title: string; comments: number; sessions: number; onCancel: () => void; onConfirm: () => void }) {
+function Confirm({ doc, title, comments, sessions: linked, kids, onCancel, onConfirm }: { doc: Doc; title: string; comments: number; sessions: number; kids: number; onCancel: () => void; onConfirm: () => void }) {
   const [shares, setShares] = useState(0);
   useEffect(() => {
     if (doc.kind !== "canvas") return;
@@ -109,7 +112,7 @@ function Confirm({ doc, title, comments, sessions: linked, onCancel, onConfirm }
   // What moves to the trash, what stays, what ends — the plan's wording (web/docs/workspace-model.md §1).
   const what =
     doc.kind === "canvas"
-      ? `画布${comments ? `和 ${comments} 条评论` : ""}移到回收站，30 天内可恢复；关联的 ${linked} 个会话保留${shares ? `；这块画布上的 ${shares} 个分享会立即结束（恢复画布不会恢复分享）` : ""}。`
+      ? `画布${comments ? `和 ${comments} 条评论` : ""}移到回收站，30 天内可恢复；关联的 ${linked} 个会话保留${shares ? `；这块画布上的 ${shares} 个分享会立即结束（恢复画布不会恢复分享）` : ""}。${kids ? `它下面的 ${kids} 张子图不删，只断开链接，留在列表里。` : ""}`
       : `会话${turns ? `（${turns} 次改图）` : ""}移到回收站，30 天内可恢复；${agent} 的原生对话不受影响（${where}）；终端里正在运行的 ${agent} 会被关闭。`;
   return (
     <li className="ad-confirm" role="alertdialog" aria-label={`删除 ${title}`}>

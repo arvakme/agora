@@ -8,7 +8,7 @@ import { animHosts } from "../anim/AnimLayer";
 import { validateScript } from "../anim/script";
 import { staleIds } from "../canvas/context";
 import { toModelView } from "../canvas/modelView";
-import { byId, codePathsOf, libraryMeta, live, nameOf, versionOf, type Scene } from "../canvas/scene";
+import { byId, codePathsOf, labelOf, libraryMeta, live, nameOf, versionOf, type Scene } from "../canvas/scene";
 import { applyPlan } from "../ops/apply";
 import { referencedIds, validatePlan, type Op } from "../ops/ops";
 import { cleanGlobs, resolveElement, writeCodePaths } from "../pointer/writeLinks";
@@ -16,6 +16,9 @@ import { agents, setBridgeHandler } from "./agents";
 import { fetchLibraryItems, sceneIndex, settle } from "./runTurn";
 import { sessions, type Origin, type Turn } from "./store";
 import { ui } from "./ui";
+import { childOf, wouldCycle } from "../nested/graph";
+import { nav, nested } from "../nested/store";
+import { writeChildLink } from "../nested/writeChild";
 
 const all = (api: ExcalidrawImperativeAPI) => api.getSceneElementsIncludingDeleted() as Scene;
 
@@ -158,6 +161,49 @@ export async function linkFromAgent(req: { canvasId: string; sessionId?: string;
   return { status: "linked", linked, turnId: rec?.turnId };
 }
 
+/**
+ * `agora canvas child create | link | unlink`: the canvas a node opens into (nested canvases,
+ * docs/nested-canvas.md). `create` makes a blank canvas (no tab) named after the node, or hands
+ * back the child the node already has; the link is one undoable change recorded in the session.
+ */
+export async function childFromAgent(req: { op: "create" | "link" | "unlink"; canvasId: string; sessionId?: string; node: string; child?: string; title?: string }) {
+  const c = await ui.ensureCanvas(req.canvasId);
+  if (!c) return { status: "error", errors: [`canvas ${req.canvasId} is not in this workspace`] };
+  const scene = all(c.api);
+  const map = byId(scene);
+  const r = resolveElement(req.node, scene);
+  if (!r.id) return { status: "invalid", errors: [r.error!] };
+  const el = map.get(r.id)!;
+  const label = nameOf(el, map);
+  const st = nested.get();
+  const current = childOf(el);
+  const name = (id: string) => nested.get().titles[id] ?? id;
+  if (req.op === "create" && current && st.scenes.has(current))
+    return { status: "exists", canvas: { id: current, name: name(current) }, node: { id: el.id, label }, hint: "this node already opens that canvas: draw into it with --canvas" };
+  let child: string | null = null;
+  if (req.op === "create") {
+    // Named after the node's first label line ("订单服务 · OrderService"), not its whole description.
+    const first = (labelOf(el, map).split("\n").map((l) => l.trim()).find(Boolean) ?? label).slice(0, 60);
+    child = (await nav.createChild(req.title || first)) ?? null;
+    if (!child) return { status: "error", errors: ["could not create the canvas"] };
+  } else if (req.op === "link") {
+    child = req.child ?? null;
+    if (!child || !st.scenes.has(child)) return { status: "invalid", errors: [`no canvas ${req.child}`] };
+    if (wouldCycle(req.canvasId, child, st.scenes)) return { status: "invalid", errors: [`linking ${child} under ${req.canvasId} would make a loop`] };
+  }
+  const batch = writeChildLink(c.api, el.id, child);
+  const title =
+    req.op === "create" ? `展开「${label}」为子图「${name(child!)}」` : req.op === "link" ? `「${label}」打开子图「${name(child!)}」` : `断开「${label}」的子图（子图保留）`;
+  const rec = batch ? recordFor(req.sessionId, req.canvasId, title) : null;
+  if (rec && batch) {
+    const batchId = sessions.saveBatch(batch);
+    end(rec.turnId, "applied", { text: title, changes: [title], batchId });
+    sessions.step(rec.turnId, { kind: "apply", title: "写进节点的 customData.childCanvas", elements: [el.id], status: "done" });
+  }
+  const status = req.op === "create" ? "created" : req.op === "link" ? "linked" : "unlinked";
+  return { status, node: { id: el.id, label }, ...(child ? { canvas: { id: child, name: name(child) } } : { previous: current }), turnId: rec?.turnId };
+}
+
 /** Route bridge requests from the server to the executors above. */
 export function installBridge() {
   setBridgeHandler(async (req) => {
@@ -165,6 +211,7 @@ export function installBridge() {
     if (req.kind === "apply") return applyFromAgent(req as unknown as Parameters<typeof applyFromAgent>[0]);
     if (req.kind === "anim") return animFromAgent(req as unknown as Parameters<typeof animFromAgent>[0]);
     if (req.kind === "link") return linkFromAgent(req as unknown as Parameters<typeof linkFromAgent>[0]);
+    if (req.kind === "child") return childFromAgent(req as unknown as Parameters<typeof childFromAgent>[0]);
     return { status: "error", errors: [`unknown bridge request ${req.kind}`] };
   });
 }

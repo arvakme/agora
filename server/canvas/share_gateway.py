@@ -7,7 +7,8 @@ Whitelist (everything else is 403):
                              counts one opening per new guest, refused once ``maxOpens`` is used up
     GET  /                   the canvas page (built frontend, guest mode, noindex)
     GET  /assets/*           the frontend's static files
-    GET  /api/guest/state    the shared canvas (read-only), its comment threads, who you are
+    GET  /api/guest/state    the shared canvas (read-only), its comment threads, who you are;
+                             ``?canvas=<id>`` a canvas nested below it (web/docs/nested-canvas.md)
     POST /api/guest/comments new thread / reply / edit / delete / restore
                              (``{op: create|reply|edit|delete|restore}``), as ``guest:<id>``;
                              edit, delete and restore only on the guest's own messages
@@ -33,6 +34,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
+from server.canvas import nested
 from server.canvas.events import Events
 from server.canvas.project import ID_RE, NotFound, NotYours, ProjectStore
 from server.canvas.share import RateLimiter, Share, ShareManager, guest_elements, guest_threads
@@ -201,20 +203,39 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
             return JSONResponse({"error": "not found"}, status_code=404)
         return FileResponse(f, headers={"cache-control": "public, max-age=31536000, immutable"})
 
+    def reach(share: Share) -> set[str]:
+        """The shared canvas and every canvas nested below it; nothing else is readable."""
+        return nested.reachable(store, share.canvasId)
+
+    def open_count(cid: str) -> int:
+        th = store.read("threads", cid)
+        return sum(1 for t in (th[0] if th else {}).get("threads") or [] if not t.get("resolved") and not t.get("deleted") and any(not m.get("deleted") for m in t.get("messages") or []))
+
     @app.get("/api/guest/state")
-    def state(request: Request):
+    def state(request: Request, canvas: str | None = None):
         share = share_for(request)
         if share is None:
             return forbidden(request)
-        scene = store.read("canvas", share.canvasId)
-        threads = store.read("threads", share.canvasId)
+        allowed = reach(share)
+        cid = canvas or share.canvasId
+        if cid not in allowed:
+            return forbidden(request)
+        scene = store.read("canvas", cid)
+        threads = store.read("threads", cid)
         guest = guest_of(request)
+        sc = nested.scenes(store)
+        chain = nested.ancestry(cid, nested.parent_index(sc))
+        chain = chain[chain.index(share.canvasId):] if share.canvasId in chain else [cid]
+        title = lambda c: canvas_title(c) or (share.canvasTitle if c == share.canvasId else "")  # noqa: E731
         return {
             "project": {"name": store.config().get("project", {}).get("name") or store.root.name},
-            "canvas": {"id": share.canvasId, "title": canvas_title(share.canvasId) or share.canvasTitle, "elements": guest_elements((scene or ({}, ""))[0].get("elements") or [])},
+            "canvas": {"id": cid, "title": title(cid), "elements": guest_elements((scene or ({}, ""))[0].get("elements") or [], allowed)},
             "threads": guest_threads(threads[0] if threads else None),
             "me": {"id": f"guest:{guest}"} if guest else None,
-            "share": {"expiresAt": share.expiresAt},
+            "share": {"expiresAt": share.expiresAt, "root": share.canvasId},
+            "path": [{"id": c, "title": title(c)} for c in chain],
+            # Open comments per canvas, counting everything below it (the marker on its parent node).
+            "canvases": {c: {"title": title(c), "open": sum(open_count(x) for x in {c} | nested.descendants(c, sc))} for c in sorted(allowed)},
         }
 
     @app.post("/api/guest/comments")
@@ -229,6 +250,9 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
             return JSONResponse({"error": "bad json"}, status_code=400)
         if not isinstance(body, dict):
             return JSONResponse({"error": "bad body"}, status_code=400)
+        cid = body.get("canvasId") or share.canvasId
+        if not isinstance(cid, str) or cid not in reach(share):
+            return forbidden(request)
         now = int(time.time() * 1000)
         actor = f"guest:{guest}"
         kind = body.get("op")
@@ -240,7 +264,7 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
                 by = {"id": actor, "name": clean_text(body.get("name"), MAX_NAME, "name")}
                 msg = {"id": mid, "author": "human", "by": by, "text": clean_text(body.get("text"), MAX_TEXT, "text"), "at": now}
             if kind == "create":
-                scene = store.read("canvas", share.canvasId)
+                scene = store.read("canvas", cid)
                 element_ids = {e.get("id") for e in (scene or ({}, ""))[0].get("elements") or [] if not e.get("isDeleted")}
                 tid = body.get("threadId")
                 if not isinstance(tid, str) or not ID_RE.match(tid) or len(tid) > 32:
@@ -258,7 +282,7 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
                       **({"editedAt": int(_finite(edited, 0, 1e14))} if edited is not None else {})}
             else:
                 raise ValueError("op must be create, reply, edit, delete or restore")
-            data, version, thread = await asyncio.to_thread(store.thread_op, share.canvasId, op)
+            data, version, thread = await asyncio.to_thread(store.thread_op, cid, op)
         except NotFound:
             return JSONResponse({"error": "no such thread or message"}, status_code=404)
         except NotYours:
@@ -267,7 +291,7 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
             return JSONResponse({"error": str(e)}, status_code=400)
         if kind in ("create", "reply"):
             shares.note_comment(share)
-        events.publish({"t": "threads", "canvasId": share.canvasId, "data": data, "version": version})
+        events.publish({"t": "threads", "canvasId": cid, "data": data, "version": version})
         return {"thread": guest_threads({"threads": [thread]})["threads"][0]}
 
     @app.get("/api/guest/events")
@@ -279,7 +303,8 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
             return JSONResponse({"error": "too many viewers"}, status_code=429)
         host = request.headers.get("host", "")
         token = request.cookies.get(SHARE_COOKIE)
-        sub = events.subscribe(lambda ev: ev.get("canvasId") == share.canvasId or ev.get("t") == "shares")
+        allowed = reach(share)
+        sub = events.subscribe(lambda ev: ev.get("canvasId") in allowed or ev.get("t") == "shares")
         streams[share.id] = streams.get(share.id, 0) + 1
 
         async def gen():
@@ -298,10 +323,11 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
                     if ev is None:
                         yield ": keepalive\n\n"
                     elif ev.get("t") == "threads":
-                        yield f"data: {json.dumps({'t': 'threads', 'data': guest_threads(ev['data'])}, ensure_ascii=False)}\n\n"
+                        yield f"data: {json.dumps({'t': 'threads', 'canvasId': ev['canvasId'], 'open': open_count(ev['canvasId']), 'data': guest_threads(ev['data'])}, ensure_ascii=False)}\n\n"
                     elif ev.get("t") == "canvas":
-                        scene = store.read("canvas", share.canvasId)
-                        yield f"data: {json.dumps({'t': 'canvas', 'elements': guest_elements((scene or ({}, ''))[0].get('elements') or [])}, ensure_ascii=False)}\n\n"
+                        allowed = reach(share)  # the owner may have linked or unlinked a child
+                        scene = store.read("canvas", ev["canvasId"])
+                        yield f"data: {json.dumps({'t': 'canvas', 'canvasId': ev['canvasId'], 'elements': guest_elements((scene or ({}, ''))[0].get('elements') or [], allowed)}, ensure_ascii=False)}\n\n"
             finally:
                 events.unsubscribe(sub)
                 streams[share.id] = max(0, streams.get(share.id, 1) - 1)
