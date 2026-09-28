@@ -13,7 +13,7 @@ export type CanvasDoc = { id: string; kind: "canvas"; title: string; reviewedAt?
  * agent / model / effort it was bound to and its native session id. No conversation content.
  * Filled in from this page's session store and bindings when the workspace is saved.
  */
-export type SessionMeta = { canvasId?: string; agent?: "pi" | "claude" | "codex"; model?: string; effort?: string; nativeId?: string | null; createdAt?: number; started?: boolean };
+export type SessionMeta = { canvasId?: string; agent?: string; model?: string; effort?: string; nativeId?: string | null; createdAt?: number; started?: boolean };
 export type SessionDoc = { id: string; kind: "session"; sessionId: string; title: string; topic?: string } & SessionMeta;
 /** Everything that exists in the workspace, open or closed. Open = has a tab in the layout tree. */
 export type Doc = CanvasDoc | SessionDoc;

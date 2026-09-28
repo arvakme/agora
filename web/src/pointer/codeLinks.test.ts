@@ -51,3 +51,17 @@ describe("elementFor / place", () => {
     expect(s.byElement.get("web")?.map((p) => p.path)).toEqual(["web/src/App.tsx"]);
   });
 });
+
+// Review P2-5: a bare dir (`server`) or a trailing "/" is scored as `dir/**`, so a deeper glob wins.
+describe("specificity of bare directories", () => {
+  const links = (a: string): Link[] => [
+    { id: "top", label: "top", globs: [a] },
+    { id: "deep", label: "deep", globs: ["server/canvas/**"] },
+  ];
+  it("server, server/ and server/** all lose to server/canvas/**", () => {
+    for (const g of ["server", "server/", "server/**"]) expect(elementFor("server/canvas/runner.py", links(g))?.link.id).toBe("deep");
+  });
+  it("a real file literal still beats its directory", () => {
+    expect(elementFor("server/canvas/runner.py", [{ id: "dir", label: "", globs: ["server/canvas"] }, { id: "file", label: "", globs: ["server/canvas/runner.py"] }])?.link.id).toBe("file");
+  });
+});

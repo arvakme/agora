@@ -6,13 +6,14 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from server.canvas import agents, nested
+from server.canvas import adapters, agents, nested
 from server.canvas.project import Gone, Locked
 from server.canvas.sessions import AgentHub, Busy, Copied, NoPage, agora_prompt, canvas_names
 from server.canvas.terminal import TerminalError
@@ -88,6 +89,69 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
     async def catalog():
         return await asyncio.to_thread(agents.catalog, store.root)
 
+    @router.get("/adapters")
+    async def adapter_list(catalog: int = 0, versions: int = 1):
+        """``AgentInfo[]`` (web/src/session/agents.ts): every CLI Agora has an adapter for, its tier
+        and capabilities; ``catalog=1`` adds the session agents' model catalogs, ``versions=0`` skips
+        ``--version`` (cached 10 minutes)."""
+
+        def build() -> list[dict]:
+            from server.canvas.adapters import drift
+
+            # Drift is notify-only: ``degraded`` says what the tier would drop to and why; nothing is enforced.
+            return drift.adapter_infos(store.root, with_versions=bool(versions), with_catalog=bool(catalog))
+
+        return await asyncio.to_thread(build)
+
+    @router.get("/runs")
+    async def agent_runs(session: str | None = None, kind: str | None = None, native: str | None = None, depth: str = "all", canvas: str | None = None, items: int = 0, receipts: int = 1):
+        """The run tree of a session (web/docs/cli-adapters.md §7): the session, its native sub-agents
+        and its Seedmux workers (read-only receipts), each with a timeline. ``session=<sid>`` for an
+        Agora session, or ``kind=<cli>&native=<id>`` for any native session Agora can read. ``depth``:
+        levels to expand (default ``all``; each run carries ``descendants`` for folding);
+        ``canvas=<id>`` adds the canvas node each segment's file maps to; ``items=1`` adds each run's
+        transcript items; ``receipts=0`` leaves out Seedmux workers."""
+        from server.canvas.adapters import runs as runs_mod
+        from server.canvas.adapters.base import NativeRef, valid_id
+        from server.canvas.adapters.receipts import worktrees
+        from server.canvas.project import ID_RE
+
+        if canvas is not None and not ID_RE.match(canvas):  # the store's own canvas-id rule
+            return JSONResponse(status_code=400, content={"error": "invalid canvas id"})
+        if session:
+            b = store.read_binding(session)
+            if b is None:
+                return JSONResponse(status_code=404, content={"error": f"no agent binding for session {session}"})
+            k, nid = b["agent"], b.get("nativeId")
+        elif kind and native:
+            k, nid = kind, native
+            if not valid_id(nid):  # never a path: "/", "..", glob characters are refused
+                return JSONResponse(status_code=400, content={"error": "invalid native id"})
+        else:
+            return JSONResponse(status_code=400, content={"error": "give session=<sid>, or kind=<cli>&native=<id>"})
+        if adapters.get(k) is None:
+            return JSONResponse(status_code=400, content={"error": f"no adapter for {k!r}"})
+        if not nid:
+            return JSONResponse(status_code=409, content={"error": "this session has no native session yet (it never ran)"})
+        d = None if depth == "all" or not depth.isdigit() else max(0, int(depth))
+
+        def build() -> dict | JSONResponse:
+            hint = ((store.read_binding(session) or {}).get("log") or {}).get("path") if session else None
+            if not session:
+                # Only this project's sessions (its root or one of its worktrees), never any log on the machine.
+                roots = list(dict.fromkeys([str(store.root), *worktrees(str(store.root))]))
+                mine = {r["nativeId"]: r["path"] for r in adapters.need(k).sessions_for(roots) if r.get("nativeId") == nid}
+                if nid not in mine:
+                    return JSONResponse(status_code=404, content={"error": f"no {k} session {nid} in this project"})
+                look = agents.LogLookup("found", Path(mine[nid]), (Path(mine[nid]),))
+            else:
+                look = agents.locate_log(k, nid, store.root, hint=hint)
+            path = look.path or (look.candidates[0] if look.candidates else None)
+            ref = NativeRef(k, nid, path, str(store.root))
+            return runs_mod.build(ref, root=str(store.root), session_id=session, depth=d, store=store, canvas=canvas, with_items=bool(items), receipts=bool(receipts))
+
+        return await asyncio.to_thread(build)
+
     @router.put("/sessions/{sid}")
     async def bind(sid: str, body: Bind):
         try:
@@ -102,8 +166,8 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
             b = store.bind(sid, agent=body.agent, model=body.model, effort=body.effort, native_id=body.nativeId, at=int(time.time() * 1000), started=body.started)
         except Exception as e:
             return fail(e)
-        # Claude and Pi accept the id up front; Codex assigns its own on the first run.
-        if not b.get("nativeId") and body.agent in ("claude", "pi"):
+        # Claude and Pi accept the id up front (``assigns_id == "agora"``); Codex assigns its own on the first run.
+        if not b.get("nativeId") and adapters.need(body.agent).assigns_id == "agora":
             import uuid
 
             b = store.set_native(sid, str(uuid.uuid4()), reason="bind")

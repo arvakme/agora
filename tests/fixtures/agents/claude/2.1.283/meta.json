@@ -1,0 +1,37 @@
+{
+  "kind": "claude",
+  "cli_version": "2.1.283",
+  "log_format": null,
+  "recorded": "2026-09-28",
+  "model": "haiku",
+  "command": [
+    "claude",
+    "-p",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--model",
+    "haiku",
+    "--permission-mode",
+    "acceptEdits",
+    "--allowedTools",
+    "Agent",
+    "Write",
+    "Bash(ls)",
+    "Bash(ls:*)",
+    "--",
+    "<prompt>"
+  ],
+  "prompt": "Use the Agent tool exactly once: ask a general-purpose sub-agent to create the file hello.txt containing the single word hi in the current directory. When it has finished, run the shell command `ls` yourself with the Bash tool. Then reply with one word: done.",
+  "cwd": "/work/project",
+  "native_id": "14afb308-e493-4a08-8c62-7ad47e61a6f1",
+  "expected": {
+    "files": [
+      "hello.txt"
+    ],
+    "commands": 1,
+    "subagents": 1
+  },
+  "expected_unknown": [],
+  "note": "Recorded by scripts/record_agent_fixture.py; paths sanitized (/work/project, /home/user), signatures dropped. The native sessions were deleted after copying."
+}

@@ -23,7 +23,8 @@ def store(tmp_path: Path, name="p") -> ProjectStore:
 
 def client(root: Path) -> httpx.AsyncClient:
     app = create_project_app(root, canvas_router=APIRouter(), dist=root / "no-dist")
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
+    # A local Host: the owner app refuses other names (DNS rebinding, project_router.LocalHostOnly).
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1")
 
 
 # ——— layout ———

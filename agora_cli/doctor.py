@@ -36,7 +36,7 @@ def _claude_cleanup_set() -> bool:
 
 def diagnose(p, *, fix: bool = False) -> list[dict[str, Any]]:
     """Findings: {level: ok|info|warn|error, what, message, fix?: str, fixed?: bool}."""
-    from server.canvas import agents
+    from server.canvas import adapters, agents
     from server.canvas.backup import Backups
     from server.canvas.local import session_origins
     from server.canvas.trash import Trash
@@ -122,7 +122,7 @@ def diagnose(p, *, fix: bool = False) -> list[dict[str, Any]]:
             if b.get("started", True):
                 say("warn", "native", f"{sid}：{agents.native_problem(b['agent'], b['nativeId'], look)}", session=sid, candidates=[str(c) for c in look.candidates])
             continue
-        if b["agent"] == "claude" and look.path is not None:
+        if getattr(adapters.get(b["agent"]), "prunes_logs_after_days", None) and look.path is not None:
             idle = (now - look.path.stat().st_mtime) / 86400
             if idle >= STALE_DAYS:
                 stale.append((sid, int(idle)))
@@ -186,7 +186,39 @@ def _tmux_alive(socket: str) -> bool:
 MARK = {"ok": "  ok ", "info": "  ·  ", "warn": "注意 ", "error": "问题 "}
 
 
+def cmd_doctor_agents(p, a) -> int:
+    """``agora doctor --agents``: every CLI Agora has an adapter for — installed version against the
+    tested range, log format, record types its adapter does not know (drift), tier. Read-only;
+    ``--record <kind>`` re-records that CLI's fixture in /tmp (a real, cheap model run)."""
+    from server.canvas.adapters import drift
+
+    if a.record:
+        import subprocess as sp
+
+        script = Path(__file__).resolve().parents[1] / "scripts" / "record_agent_fixture.py"
+        if not script.exists():
+            print(f"agora: {script} is missing", file=sys.stderr)
+            return 2
+        return sp.call([sys.executable, str(script), a.record])
+    rows = drift.probe_all(root=p.root if p else None)
+    if a.json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+    else:
+        print(drift.table(rows))
+    return doctor_agents_exit(rows)
+
+
+def doctor_agents_exit(rows: list[dict[str, Any]]) -> int:
+    """``agora doctor --agents`` exit code: 1 only when an installed CLI would be degraded (version
+    outside the tested range, or unknown records above the threshold) and the project has not
+    trusted it (``.agora/agents.toml`` ``trust_untested``); 0 otherwise — unknown records below the
+    threshold are only noted in the output (review P2-3)."""
+    return 1 if any(r["installed"] and r["degraded"] and not r["degraded"].get("trusted") for r in rows) else 0
+
+
 def cmd_doctor(p, a) -> int:
+    if getattr(a, "agents", False) or getattr(a, "record", None):
+        return cmd_doctor_agents(p, a)
     findings = diagnose(p, fix=a.fix)
     if a.json:
         print(json.dumps(findings, ensure_ascii=False, indent=2))
@@ -261,6 +293,8 @@ def add_parsers(sub) -> None:
     s.add_argument("--project", default=None)
     s.add_argument("--fix", action="store_true", help="restore records from the newest backup and bindings from the registry")
     s.add_argument("--json", action="store_true")
+    s.add_argument("--agents", action="store_true", help="the coding-agent CLIs: versions vs. tested range, unknown log records (drift), tiers")
+    s.add_argument("--record", metavar="KIND", default=None, help="with --agents: re-record KIND's fixture in /tmp with its cheapest model (spends a few cents)")
     s.set_defaults(fn=cmd_doctor)
     s = sub.add_parser("backup", help="back up sessions/, trash/, local/ outside the project now")
     s.add_argument("--project", default=None)

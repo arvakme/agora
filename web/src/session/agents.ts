@@ -6,9 +6,116 @@
 import { useSyncExternalStore } from "react";
 import type { Origin } from "../persist";
 
-export type AgentKind = "pi" | "claude" | "codex";
+/**
+ * A CLI Agora has an adapter for (server/canvas/adapters/). Any string: the server's adapter
+ * registry is the list (`GET /api/agent/adapters` → `AgentInfo[]`); the page knows nothing
+ * CLI-specific beyond these fallbacks for before that list has loaded.
+ */
+export type AgentKind = string;
+export type Tier = "T1" | "T2" | "T3" | "T0";
+/** One CLI as the server's adapter registry describes it (server/canvas/adapters/registry.py `info`). */
+export type AgentInfo = {
+  kind: AgentKind;
+  name: string;
+  /** T1 session agent (picker), T2 observed (trajectory, read-only), T3 receipts only, T0 inferred. */
+  tier: Tier;
+  maxTier: Tier;
+  installed: boolean;
+  version?: string;
+  /** Versions the adapter was tested with, e.g. "0.128–<0.158". */
+  tested: string;
+  testedSpec?: string;
+  /** Notify-only for now: the tier drift would take it to, and why (`agora doctor --agents`). */
+  degraded?: { from: Tier; to: Tier; reason: string; trusted?: boolean } | null;
+  drift?: { unknown: Record<string, number>; records: number; versionOk: boolean | null } | null;
+  caps: { headless: boolean; terminal: boolean; catalog: boolean; subagents: boolean; forkHeadless: boolean; cost: boolean; waits: "native" | "inferred" | "none" };
+  icon: { kind: "mark" | "svg" | "bitmap"; src: string };
+  /** Where its native conversations live, for people. */
+  logDir: string;
+  /** Command that deletes a native session by hand ("{id}" = its id); null = remove the log file. */
+  deleteCommand: string | null;
+  seedmuxNames: string[];
+  catalog?: CatalogEntry;
+};
+/** Unified lifecycle of a run (server/canvas/adapters/runs.py `STATES`; Seedmux receipts map onto it). */
+export type RunState = "dispatched" | "acknowledged" | "running" | "waiting" | "idle_no_reply" | "done" | "failed" | "blocked" | "exited" | "session_changed" | "unknown" | "idle";
+/** One lane segment of a run: what it did, when, on which file (and canvas node when `canvas=` was given). */
+export type RunSegment = { kind: "read" | "write" | "exec" | "think" | "wait"; start: number; end: number; itemId: string; turn: number; label: string; path?: string; node?: string; spawn?: NonNullable<Item["tool"]>["spawn"] };
+export type RunMoment = { kind: "dispatch" | "handoff" | "receipt"; at: number; childRunId?: string; toolCallId?: string; taskId?: string; state?: RunState | string };
+/** A Seedmux ticket as the receipts reader sees it (read-only: meta.json core keys, delivery.json, reply.md). */
+export type Receipt = { taskId: string; agent: string; cwd?: string; createdAt?: number; repliedAt?: number; seedmuxState?: string; status?: string; state: RunState; toPane?: string; fromPane?: string; sid?: string; changed?: string[]; accept?: string | null; replyPreview?: string; replyPath?: string };
+/**
+ * A session, one of its native sub-agents, or a worker it dispatched through Seedmux
+ * (`GET /api/agent/runs?session=…`, web/docs/cli-adapters.md §7). `parent.via` says how the link is known.
+ */
+export type AgentRun = {
+  id: string;
+  kind: AgentKind;
+  nativeId?: string;
+  tier: Tier;
+  sessionId?: string;
+  label: string;
+  role?: string;
+  model?: string;
+  depth: number;
+  parent?: { runId: string; via: "native" | "seedmux" | "inferred"; toolCallId?: string; taskId?: string; evidence: string };
+  cwd?: string;
+  worktree?: string;
+  state: RunState;
+  startedAt?: number | null;
+  endedAt?: number | null;
+  lastAt?: number | null;
+  logPath?: string;
+  /** Runs below this one that the server did not expand (`depth=N`; the default `all` expands everything). */
+  hiddenDescendants: number;
+  childCount: number;
+  /** Every run below this one (expanded or not): the page shows one level and folds the rest into this badge. */
+  descendants: number;
+  /** The latest Seedmux ticket of this worker. */
+  receipt?: Receipt;
+  /** Every ticket this worker session served (resume_session reuses one session), oldest first. */
+  receipts?: Receipt[];
+  timeline: { segments: RunSegment[]; turns: { n: number; start: number; end: number }[]; moments: RunMoment[]; timesInferred?: boolean };
+  items?: Item[];
+};
+export type RunTree = { root: string; runs: AgentRun[]; folded: Record<string, number>; depth: number | null; generatedAt: number };
+/** The run tree of a session (no UI consumes it yet: the workstation's child figures build on it). */
+export async function fetchRuns(sessionId: string, opts: { depth?: number | "all"; canvas?: string; items?: boolean; receipts?: boolean } = {}): Promise<RunTree> {
+  const q = new URLSearchParams({ session: sessionId, depth: String(opts.depth ?? "all"), ...(opts.canvas ? { canvas: opts.canvas } : {}), ...(opts.items ? { items: "1" } : {}), ...(opts.receipts === false ? { receipts: "0" } : {}) });
+  const r = await fetch(`/api/agent/runs?${q}`);
+  if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? r.statusText);
+  return (await r.json()) as RunTree;
+}
+
+/** Fallbacks until `/api/agent/adapters` answers (and for older servers). */
 export const AGENT_NAMES: Record<AgentKind, string> = { pi: "Pi", claude: "Claude Code", codex: "Codex" };
 export const AGENT_KINDS: AgentKind[] = ["pi", "claude", "codex"];
+const FALLBACK: Record<string, Pick<AgentInfo, "logDir" | "deleteCommand"> & { forkHeadless: boolean }> = {
+  pi: { logDir: "~/.pi/agent/sessions/", deleteCommand: null, forkHeadless: true },
+  claude: { logDir: "~/.claude/projects/", deleteCommand: null, forkHeadless: true },
+  codex: { logDir: "~/.codex/sessions/", deleteCommand: "codex delete {id}", forkHeadless: false },
+};
+let adapterList: AgentInfo[] | null = null;
+let adaptersP: Promise<AgentInfo[]> | null = null;
+/** The registry's AgentInfo list (fetched once per page; `?versions=0`: no `--version` probes). */
+export function loadAdapters(): Promise<AgentInfo[]> {
+  adaptersP ??= fetch("/api/agent/adapters?versions=0")
+    .then((r) => (r.ok ? (r.json() as Promise<AgentInfo[]>) : []))
+    .then((list) => {
+      adapterList = Array.isArray(list) ? list : [];
+      for (const a of adapterList) AGENT_NAMES[a.kind] = a.name;
+      return adapterList;
+    })
+    .catch(() => (adapterList = []));
+  return adaptersP;
+}
+export const agentInfo = (kind: AgentKind | undefined): AgentInfo | undefined => (kind ? adapterList?.find((a) => a.kind === kind) : undefined);
+export const agentName = (kind: AgentKind | undefined): string => (kind ? (agentInfo(kind)?.name ?? AGENT_NAMES[kind] ?? kind) : "Agent");
+/** The session agents (T1) to offer in the picker, in the registry's order. */
+export const sessionKinds = (): AgentKind[] => (adapterList?.length ? adapterList.filter((a) => a.tier === "T1").map((a) => a.kind) : AGENT_KINDS);
+export const logDirOf = (kind: AgentKind | undefined): string => agentInfo(kind)?.logDir || (kind && FALLBACK[kind]?.logDir) || "CLI 自己的目录";
+export const deleteCommandOf = (kind: AgentKind | undefined): string | null => agentInfo(kind)?.deleteCommand ?? (kind ? FALLBACK[kind]?.deleteCommand : null) ?? null;
+export const forkHeadless = (kind: AgentKind | undefined): boolean => agentInfo(kind)?.caps.forkHeadless ?? (kind ? FALLBACK[kind]?.forkHeadless : undefined) ?? true;
 
 /**
  * `started`: the native session exists (it ran once); from then on it is only ever resumed.
@@ -58,6 +165,18 @@ export type Item = {
     outputLen?: number;
     isError?: boolean;
     files?: { path: string; op: FileOp }[];
+    /**
+     * Tool facts the server derives from the CLI's own vocabulary (server/canvas/adapters/): the
+     * page never needs to know tool names. Older snapshots lack them: `activityOf` / `readPath`
+     * are the fallback.
+     */
+    activity?: string;
+    /** Files this call reads, relative to the project root. */
+    reads?: string[];
+    /** The call waits for the person (a question, an approval gate). */
+    waitsUser?: boolean;
+    /** The call started another agent: a native sub-agent, or a Seedmux ticket (`taskId`, `pane`). */
+    spawn?: { childKind?: string; childId?: string; taskId?: string; pane?: string; role?: string; state?: string; via?: "native" | "seedmux" | "inferred" };
   };
   usage?: Usage;
   model?: string;
@@ -208,6 +327,7 @@ let source: EventSource | null = null;
 /** Subscribe to the project's agent events; this page executes canvas bridge requests. */
 export function connectAgents() {
   if (source) return;
+  void loadAdapters();
   source = new EventSource("/api/agent/events?executor=1");
   source.onmessage = (m) => {
     try {

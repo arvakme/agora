@@ -9,14 +9,14 @@ from pathlib import Path
 
 from server.canvas.transcript import MARKER, State, Tail, project, split_agora
 
-FIX = Path(__file__).parent / "fixtures" / "agents"
+from tests.agent_fixtures import legacy
 
 
 def replay(kind: str, name: str):
     st = State()
     items: dict[str, dict] = {}
     turns: list[dict] = []
-    for line in (FIX / name).read_text().splitlines():
+    for line in legacy(name).read_text().splitlines():
         its, tcs = project(kind, json.loads(line), st)
         for it in its:
             prev = items.get(it["id"], {})

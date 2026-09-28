@@ -1,0 +1,12 @@
+{
+  "kind": "codex",
+  "cli_version": null,
+  "log_format": null,
+  "recorded": "2026-09-27",
+  "files": {
+    "log.jsonl": "rollout (~/.codex/sessions/Y/M/D/rollout-*.jsonl)",
+    "stream.jsonl": "codex exec --json"
+  },
+  "note": "Sanitized before CLI versions were recorded: session_meta has no cli_version. Kept to read older sessions.",
+  "expected_unknown": []
+}

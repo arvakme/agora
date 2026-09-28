@@ -9,12 +9,18 @@ import type { FileTouch } from "../session/trajectoryModel";
 
 export type Link = { id: string; label: string; globs: string[] };
 
-/** A glob as a RegExp: `**` any depth, `*` within one segment, `?` one char, `{a,b}` either. A bare dir `server` or `server/` means `server/**`. */
-export function globToRegExp(glob: string): RegExp {
+/** A glob in its matching form: a bare dir `server` or `server/` means `server/**`. */
+export function normalizeGlob(glob: string): string {
   let g = glob.trim().replace(/\\/g, "/").replace(/^\.\//, "");
   if (g.startsWith("/")) g = g.slice(1);
   if (g.endsWith("/")) g += "**";
   else if (!/[*?[{]/.test(g) && !/\.[^/]*$/.test(g.split("/").pop() ?? "")) g += "/**";
+  return g;
+}
+
+/** A glob as a RegExp: `**` any depth, `*` within one segment, `?` one char, `{a,b}` either. A bare dir `server` or `server/` means `server/**`. */
+export function globToRegExp(glob: string): RegExp {
+  const g = normalizeGlob(glob);
   let re = "";
   for (let i = 0; i < g.length; i++) {
     const c = g[i];
@@ -44,9 +50,13 @@ export function globToRegExp(glob: string): RegExp {
   return new RegExp(`^${re}$`);
 }
 
-/** How specific a glob is: literal characters before the first wildcard, then total length. */
+/**
+ * How specific a glob is: literal characters before the first wildcard × 1000, then total length —
+ * scored on the matching form, so a bare dir `server` counts as `server/**` (it used to outrank
+ * `server/canvas/**`). Only a real file literal (no wildcard at all) gets the +1000 bonus.
+ */
 export const specificity = (glob: string) => {
-  const g = glob.trim();
+  const g = normalizeGlob(glob);
   const w = g.search(/[*?[{]/);
   return (w < 0 ? g.length + 1000 : w) * 1000 + g.length;
 };

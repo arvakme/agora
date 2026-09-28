@@ -380,6 +380,49 @@ SWEEP_S = 5.0
 TRASH_SWEEP_S = 3600.0
 
 
+def allowed_hosts() -> set[str]:
+    """Host names the owner app answers to: loopback names, this machine's name, and ``AGORA_ALLOWED_HOSTS``."""
+    import socket
+
+    names = {"127.0.0.1", "localhost", "::1"}
+    try:
+        h = socket.gethostname().lower()
+        names |= {h, h.split(".")[0], h.split(".")[0] + ".local"}
+    except OSError:
+        pass
+    names |= {x.strip().lower() for x in os.environ.get("AGORA_ALLOWED_HOSTS", "").split(",") if x.strip()}
+    return names
+
+
+def host_name(header: str) -> str:
+    """``Host`` without its port (``[::1]:5173`` → ``::1``)."""
+    h = header.strip().lower()
+    if h.startswith("["):
+        return h[1 : h.find("]")] if "]" in h else h
+    return h.rsplit(":", 1)[0] if h.count(":") == 1 else h
+
+
+class LocalHostOnly:
+    """ASGI middleware: 421 for HTTP and WebSocket requests whose Host is not a local name."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+        self.allowed = allowed_hosts()
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            host = next((v.decode("latin-1") for k, v in scope.get("headers") or [] if k == b"host"), "")
+            if host_name(host) not in self.allowed:
+                if scope["type"] == "websocket":
+                    await send({"type": "websocket.close", "code": 1008})
+                    return
+                body = b'{"error":"host not allowed"}'
+                await send({"type": "http.response.start", "status": 421, "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
+                await send({"type": "http.response.body", "body": body})
+                return
+        await self.app(scope, receive, send)
+
+
 def create_project_app(
     root: Path | str,
     *,
@@ -467,6 +510,9 @@ def create_project_app(
         await hub.close()
 
     app = FastAPI(title=f"agora · {store.info()['name']}", lifespan=lifespan)
+    # The owner app answers only to local names (DNS rebinding: a page on another origin that resolves
+    # its own name to 127.0.0.1 must not reach it). The share gateway is a separate app, unaffected.
+    app.add_middleware(LocalHostOnly)
     app.state.store = store
     app.state.hub = hub
     app.state.shares = shares

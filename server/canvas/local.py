@@ -286,24 +286,27 @@ class Local:
         return change
 
     def _moved(self, cur: dict[str, Any], base: dict[str, Any], old: str, *, migrate: bool, alive) -> dict[str, Any]:
-        from server.canvas import agents
+        from server.canvas import adapters, agents
 
         migrated: list[dict[str, Any]] = []
         failed: list[dict[str, Any]] = []
         for sid, b in sorted(self.store.bindings().items()) if migrate else []:
-            if b.get("agent") != "pi" or not b.get("nativeId") or not old:
+            # Only a CLI whose native id does not survive the move (Pi: looked up in the cwd's folder)
+            # needs its log carried along (``Binding.migrate``).
+            a = adapters.get(b.get("agent"))
+            if a is None or a.survives_move or not b.get("nativeId") or not old:
                 continue
-            look = agents.locate_log("pi", b["nativeId"], self.store.root)
+            look = agents.locate_log(a.kind, b["nativeId"], self.store.root)
             if look.state == "found":
                 continue
-            src = next((p for p in look.candidates if p.parent.name == agents.pi_dir_name(old)), None)
+            src = next((p for p in look.candidates if p.parent.name == a.log_dir_name(old)), None)
             if src is None:
                 continue
             if alive is not None and alive(sid):
                 failed.append({"sessionId": sid, "nativeId": b["nativeId"], "error": "终端里还开着这个会话：关掉终端后重新 `agora up`"})
                 continue
             try:
-                dst = agents.migrate_pi_log(src, self.store.root)
+                dst = a.migrate(src, self.store.root)
             except (OSError, ValueError) as e:
                 # Moving failed: the next message forks the old log instead (a new native id, full history).
                 self.store.set_fork(sid, b["nativeId"], str(src), reason="move-failed")
@@ -311,7 +314,7 @@ class Local:
                 continue
             self.store.set_log(sid, str(dst))
             migrated.append({"sessionId": sid, "nativeId": b["nativeId"], "path": str(dst)})
-            self.registry.append("rebind", projectId=base["projectId"], instanceId=cur["instanceId"], root=base["root"], sessionId=sid, agent="pi", nativeId=b["nativeId"], logPath=str(dst), reason="moved")
+            self.registry.append("rebind", projectId=base["projectId"], instanceId=cur["instanceId"], root=base["root"], sessionId=sid, agent=a.kind, nativeId=b["nativeId"], logPath=str(dst), reason="moved")
         change = {"kind": "moved", "from": old, "at": now_ms(), "migrated": migrated, "failed": failed}
         self._write_instance({**cur, **base, "change": change})
         self.registry.append("root", projectId=base["projectId"], instanceId=cur["instanceId"], root=base["root"], **{"from": old})

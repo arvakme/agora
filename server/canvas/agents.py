@@ -1,4 +1,7 @@
-"""The three native coding agents a session can be bound to: Pi, Claude Code, Codex.
+"""The native coding agents a session can be bound to (tier T1 in the adapter registry,
+server/canvas/adapters/): today Pi, Claude Code, Codex. What is specific to each CLI lives in its
+adapter; this module keeps the public entry points (forwarding to the adapters) and the headless
+runner.
 
 Each is an ``AgentBackend`` (runner.py) for headless turns — the CLI's own print/exec
 mode, run in the **project directory** and resuming the session's native id — plus what
@@ -23,38 +26,35 @@ planning in a neutral empty directory stays ``ClaudeCliBackend`` (``claude-cli``
 from __future__ import annotations
 
 import asyncio
-import glob
 import json
 import os
-import shutil
 import signal
-import subprocess
 import time
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from server.canvas import agent_models
-from server.canvas.runner import (
-    KILL_GRACE_S,
-    STDOUT_LIMIT,
-    RunRequest,
-    Usage,
-    _int,
-    _num,
-    claude_message_usage,
-    claude_result_usage,
-    empty_usage,
-    now_ms,
-)
+from server.canvas.runner import KILL_GRACE_S, STDOUT_LIMIT, RunRequest, now_ms
+
+# Moved to server/canvas/adapters/ and re-exported here: these names stay the public entry points.
+from server.canvas import adapters
+from server.canvas.adapters.claude import ClaudeStream
+from server.canvas.adapters.claude import dir_name as claude_dir_name
+from server.canvas.adapters.codex import CodexStream, codex_home as _codex_home, codex_usage
+from server.canvas.adapters.codex import rollouts_since as codex_rollouts_since
+from server.canvas.adapters.codex import state_rollout as codex_state_rollout
+from server.canvas.adapters.common import LogLookup, StreamMapper, _hinted, add_usage, text_of  # noqa: F401
+from server.canvas.adapters.pi import PiStream, pi_usage
+from server.canvas.adapters.pi import dir_name as pi_dir_name
+from server.canvas.adapters.pi import migrate_log as _migrate_pi_log
+from server.canvas.adapters.pi import sessions_dir as _pi_sessions  # noqa: F401
+
 
 REPO = Path(__file__).resolve().parents[2]
 SKILL_DIR = REPO / "skills" / "agora-canvas"
 AGENT_BIN = REPO / "bin"
 
-KINDS = ("pi", "claude", "codex")
-NAMES = {"pi": "Pi", "claude": "Claude Code", "codex": "Codex"}
 SESSION_TIMEOUT_S = 30 * 60
 
 # Runtime markers of whatever agent or tmux started the Agora server. Inherited, they make a
@@ -86,266 +86,16 @@ def child_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     return env
 
 
-def text_of(content: Any) -> str:
-    """Plain text of a message ``content`` (string, or blocks with ``text``)."""
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, list):
-        return ""
-    return "".join(str(b.get("text", "")) for b in content if isinstance(b, dict) and b.get("type") in ("text", "input_text", "output_text", "Text"))
-
-
-# ——— usage mapping ———
-def pi_usage(u: dict[str, Any] | None, model: str | None) -> Usage:
-    out = empty_usage(model)
-    if isinstance(u, dict):
-        out["inputTokens"] = _int(u.get("input"))
-        out["outputTokens"] = _int(u.get("output"))
-        out["cacheReadTokens"] = _int(u.get("cacheRead"))
-        out["cacheWriteTokens"] = _int(u.get("cacheWrite"))
-        cost = u.get("cost")
-        out["costUsd"] = _num(cost.get("total")) if isinstance(cost, dict) else None
-    return out
-
-
-def codex_usage(u: dict[str, Any] | None, model: str | None) -> Usage:
-    out = empty_usage(model)
-    if isinstance(u, dict):
-        cached = _int(u.get("cached_input_tokens"))
-        inp = _int(u.get("input_tokens"))
-        # Codex counts cached tokens inside input_tokens; report the uncached part like the others.
-        out["inputTokens"] = inp - cached if inp is not None and cached is not None else inp
-        out["outputTokens"] = _int(u.get("output_tokens"))
-        out["cacheReadTokens"] = cached
-        out["cacheWriteTokens"] = _int(u.get("cache_write_input_tokens"))
-    return out
-
-
-def add_usage(total: Usage, part: Usage) -> Usage:
-    out = dict(total)
-    for k in ("inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens"):
-        if part[k] is not None:
-            out[k] = (out[k] or 0) + part[k]
-    if part["costUsd"] is not None:
-        out["costUsd"] = (out["costUsd"] or 0.0) + part["costUsd"]
-    out["model"] = part["model"] or out["model"]
-    return out  # type: ignore[return-value]
-
-
-# ——— stream mappers: one CLI's stdout JSONL → runner events ———
-class StreamMapper:
-    """Stateful: ``feed`` one decoded stdout record, get events; ``final`` sums it up."""
-
-    def __init__(self, model: str | None, session: str | None) -> None:
-        self.model = model
-        self.session = session
-        self.text: str = ""  # last assistant message text
-        self.error: str | None = None
-        self.usage: Usage = empty_usage(model)
-        self.done = False
-
-    def feed(self, d: dict[str, Any], at: int) -> list[dict[str, Any]]:  # pragma: no cover - interface
-        raise NotImplementedError
-
-    def final_usage(self, duration_ms: int) -> Usage:
-        u = dict(self.usage)
-        u["durationMs"] = duration_ms
-        u["model"] = u["model"] or self.model
-        return u  # type: ignore[return-value]
-
-
-class ClaudeStream(StreamMapper):
-    """``claude -p --output-format stream-json --verbose``."""
-
-    def __init__(self, model: str | None, session: str | None) -> None:
-        super().__init__(model, session)
-        self.result: dict[str, Any] | None = None
-
-    def feed(self, d: dict[str, Any], at: int) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        t = d.get("type")
-        if t == "system" and d.get("subtype") == "init":
-            self.model = str(d.get("model") or self.model or "") or None
-            self.session = str(d.get("session_id") or self.session or "") or None
-        elif t == "assistant":
-            msg = d.get("message") or {}
-            texts = []
-            for c in msg.get("content") or []:
-                if c.get("type") == "text" and str(c.get("text", "")).strip():
-                    texts.append(str(c["text"]))
-                    out.append({"t": "text", "at": at, "text": str(c["text"])})
-                elif c.get("type") == "tool_use":
-                    out.append({"t": "tool_use", "at": at, "id": str(c.get("id")), "name": str(c.get("name")), "input": c.get("input")})
-            if texts:
-                self.text = "".join(texts)
-            if isinstance(msg.get("usage"), dict):
-                out.append({"t": "usage", "at": at, "usage": claude_message_usage(msg["usage"], str(msg.get("model") or self.model))})
-        elif t == "user":
-            for c in (d.get("message") or {}).get("content") or []:
-                if isinstance(c, dict) and c.get("type") == "tool_result":
-                    out.append({"t": "tool_result", "at": at, "id": str(c.get("tool_use_id")), "text": text_of(c.get("content")) or str(c.get("content") or ""), "isError": bool(c.get("is_error"))})
-        elif t == "result":
-            self.result = d
-            self.done = True
-            self.session = str(d.get("session_id") or self.session or "") or None
-            if d.get("is_error"):
-                self.error = f"claude: {d.get('subtype', 'error')} {str(d.get('result') or '')[:300]}".strip()
-            elif isinstance(d.get("result"), str) and d["result"].strip():
-                self.text = d["result"]
-        return out
-
-    def final_usage(self, duration_ms: int) -> Usage:
-        if self.result is None:
-            return super().final_usage(duration_ms)
-        return claude_result_usage(self.result, self.model, duration_ms)
-
-
-class PiStream(StreamMapper):
-    """``pi -p --mode json`` (docs/json.md in the Pi package)."""
-
-    def feed(self, d: dict[str, Any], at: int) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        t = d.get("type")
-        if t == "session":
-            self.session = str(d.get("id") or self.session or "") or None
-        elif t == "message_end":
-            m = d.get("message") or {}
-            if m.get("role") != "assistant":
-                return out
-            model = f"{m['provider']}/{m['model']}" if m.get("provider") and m.get("model") else self.model
-            self.model = model
-            text = ""
-            for c in m.get("content") or []:
-                if c.get("type") == "text" and str(c.get("text", "")).strip():
-                    text += str(c["text"])
-                    out.append({"t": "text", "at": at, "text": str(c["text"])})
-                elif c.get("type") == "toolCall":
-                    out.append({"t": "tool_use", "at": at, "id": str(c.get("id")), "name": str(c.get("name")), "input": c.get("arguments")})
-            if text:
-                self.text = text
-            if isinstance(m.get("usage"), dict):
-                u = pi_usage(m["usage"], model)
-                self.usage = add_usage(self.usage, u)
-                out.append({"t": "usage", "at": at, "usage": u})
-            if m.get("stopReason") in ("error", "aborted"):
-                self.error = f"pi: {m.get('stopReason')} {str(m.get('errorMessage') or '')[:300]}".strip()
-            elif m.get("stopReason") == "stop":
-                self.error = None  # a retried turn that ends well clears an earlier failure
-        elif t == "tool_execution_end":
-            res = d.get("result") or {}
-            out.append({"t": "tool_result", "at": at, "id": str(d.get("toolCallId")), "text": text_of(res.get("content")), "isError": bool(d.get("isError"))})
-        elif t == "agent_settled":
-            self.done = True
-        elif t == "auto_retry_end" and d.get("success") is False:
-            self.error = f"pi: {d.get('finalError') or 'retries exhausted'}"
-        return out
-
-
-class CodexStream(StreamMapper):
-    """``codex exec --json``: thread.started / item.* / turn.completed."""
-
-    def feed(self, d: dict[str, Any], at: int) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        t = d.get("type")
-        if t == "thread.started":
-            self.session = str(d.get("thread_id") or self.session or "") or None
-        elif t in ("item.started", "item.completed"):
-            item = d.get("item") or {}
-            kind = item.get("type")
-            iid = str(item.get("id"))
-            if kind == "agent_message" and t == "item.completed":
-                text = str(item.get("text") or "")
-                if text.strip():
-                    self.text = text
-                    out.append({"t": "text", "at": at, "text": text})
-            elif kind == "command_execution":
-                if t == "item.started":
-                    out.append({"t": "tool_use", "at": at, "id": iid, "name": "shell", "input": {"command": item.get("command")}})
-                else:
-                    code = item.get("exit_code")
-                    out.append({"t": "tool_result", "at": at, "id": iid, "text": str(item.get("aggregated_output") or ""), "isError": code not in (0, None)})
-            elif kind in ("mcp_tool_call", "file_change", "web_search") and t == "item.completed":
-                name = str(item.get("tool") or kind)
-                out.append({"t": "tool_use", "at": at, "id": iid, "name": name, "input": item.get("arguments") or item.get("changes") or item.get("query")})
-                out.append({"t": "tool_result", "at": at, "id": iid, "text": str(item.get("status") or ""), "isError": item.get("status") == "failed"})
-        elif t == "turn.completed":
-            u = codex_usage(d.get("usage"), self.model)
-            self.usage = add_usage(self.usage, u)
-            out.append({"t": "usage", "at": at, "usage": u})
-            self.done = True
-        elif t == "turn.failed":
-            self.error = f"codex: {((d.get('error') or {}).get('message') or 'turn failed')[:300]}"
-            self.done = True
-        elif t == "error":
-            self.error = f"codex: {str(d.get('message') or 'error')[:300]}"
-        return out
+# The session agents (tier T1) and their display names, from the adapter registry.
+KINDS = adapters.session_kinds()
+NAMES = {k: adapters.need(k).name for k in KINDS}
 
 
 # ——— session logs (the CLIs' own transcripts) ———
-# Where each CLI keeps a session's log, and which copy is the one it will resume:
-# - Claude Code: ~/.claude/projects/<cwd, every non-alphanumeric → "-">/<id>.jsonl. `--resume <id>`
-#   finds the id in any project directory but prefers the current directory's copy.
-# - Pi: ~/.pi/agent/sessions/--<cwd without the leading "/", "/" "\" ":" → "-">--/<time>_<id>.jsonl.
-#   `--session-id <id>` only looks in the current directory's folder and silently starts a new,
-#   empty session with that id when it is not there.
-# - Codex: ~/.codex/sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl, independent of the cwd.
-# A copy outside the current root is still followed when it is the only one (Claude resumes it
-# globally); several copies are reported instead of picking one.
-@dataclass(frozen=True)
-class LogLookup:
-    """Where a native session's log is: ``found`` (``path`` is the one to follow), ``missing``,
-    ``ambiguous`` (several copies, none clearly the current one) or ``elsewhere`` (Pi: only in
-    another directory's folder, so ``--session-id`` would start a new session)."""
-
-    state: str
-    path: Path | None = None
-    candidates: tuple[Path, ...] = ()
-
-
-def claude_dir_name(root: Path | str) -> str:
-    return "".join(c if c.isalnum() and c.isascii() else "-" for c in str(root))
-
-
-def pi_dir_name(root: Path | str) -> str:
-    s = str(root)
-    s = s[1:] if s[:1] in ("/", "\\") else s
-    return "--" + "".join("-" if c in "/\\:" else c for c in s) + "--"
-
-
-def _pi_sessions(home: Path) -> Path:
-    return Path(os.environ.get("PI_CODING_AGENT_SESSION_DIR") or home / ".pi" / "agent" / "sessions")
-
-
-def _codex_home(home: Path) -> Path:
-    return Path(os.environ.get("CODEX_HOME") or home / ".codex")
-
-
-def codex_state_rollout(native_id: str, home: Path | None = None) -> Path | None:
-    """Codex's own index (``state_5.sqlite``, ``threads.rollout_path``), opened read-only: it still
-    knows a rollout that moved out of the dated ``sessions/`` folders (archive, storage migration)."""
-    import sqlite3
-
-    db = _codex_home(home or Path.home()) / "state_5.sqlite"
-    if not db.exists():
-        return None
-    try:
-        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=1)
-        try:
-            row = con.execute("select rollout_path from threads where id = ?", (native_id,)).fetchone()
-        finally:
-            con.close()
-    except sqlite3.Error:
-        return None
-    p = Path(row[0]) if row and row[0] else None
-    return p if p is not None and p.exists() else None
-
-
-def _hinted(hint: str | Path | None, native_id: str) -> Path | None:
-    """The path the binding last saw the log at, if it is still there and still names this session."""
-    p = Path(hint) if hint else None
-    return p if p is not None and native_id in p.name and p.exists() else None
-
-
+# Where each CLI keeps a session's log, and which copy is the one it will resume, is each
+# adapter's ``Locator`` (server/canvas/adapters/<kind>.py). A copy outside the current root is
+# still followed when it is the only one (Claude resumes it globally); several copies are
+# reported instead of picking one.
 def locate_log(kind: str, native_id: str | None, root: Path | str | None = None, home: Path | None = None, hint: str | Path | None = None) -> LogLookup:
     """Find a native session's log. Claude and Pi: the copy under ``root`` (the project) first — it
     is the one the CLI resumes —, then a unique copy anywhere (Claude resumes it globally). Codex:
@@ -354,95 +104,18 @@ def locate_log(kind: str, native_id: str | None, root: Path | str | None = None,
     resume another one); Pi only under another directory → ``elsewhere``."""
     if not native_id:
         return LogLookup("missing")
-    home = home or Path.home()
-    if kind == "claude":
-        hits = sorted(Path(p) for p in glob.glob(str(home / ".claude" / "projects" / "*" / f"{glob.escape(native_id)}.jsonl")))
-        mine = [p for p in hits if root is not None and p.parent.name == claude_dir_name(root)]
-        if mine:
-            return LogLookup("found", mine[0], tuple(hits))
-        if len(hits) == 1:
-            return LogLookup("found", hits[0], tuple(hits))
-        return LogLookup("ambiguous" if hits else "missing", None, tuple(hits))
-    if kind == "pi":
-        hits = sorted(Path(p) for p in glob.glob(str(_pi_sessions(home) / "*" / f"*_{glob.escape(native_id)}.jsonl")))
-        if root is None:  # no project to prefer: only an unambiguous copy counts
-            return LogLookup("found", hits[0], tuple(hits)) if len(hits) == 1 else LogLookup("ambiguous" if hits else "missing", None, tuple(hits))
-        mine = [p for p in hits if p.parent.name == pi_dir_name(root)]
-        if len(mine) == 1:
-            return LogLookup("found", mine[0], tuple(hits))
-        if mine:
-            return LogLookup("ambiguous", None, tuple(hits))
-        return LogLookup("elsewhere" if hits else "missing", None, tuple(hits))
-    if kind == "codex":
-        base = _codex_home(home) / "sessions"
-        hits = sorted(Path(p) for p in glob.glob(str(base / "*" / "*" / "*" / f"rollout-*-{glob.escape(native_id)}.jsonl")))
-        if hits:
-            return LogLookup("found", hits[-1], tuple(hits))
-        known = _hinted(hint, native_id) or codex_state_rollout(native_id, home)
-        return LogLookup("found", known, (known,)) if known else LogLookup("missing")
-    raise ValueError(f"unknown agent {kind!r}")
+    return adapters.need(kind).locate(native_id, root, home or Path.home(), hint)
 
 
 def migrate_pi_log(src: Path, new_root: Path | str) -> Path:
-    """Move a Pi session log to the folder of the project's new root and point its header at it.
-
-    Pi's ``--session-id`` only looks in the current directory's folder, and its print mode refuses
-    a log whose recorded ``cwd`` no longer exists; moving the file and rewriting the first line's
-    ``cwd`` is what makes it resumable again (measured 2026-09-28, experiment A3). The new file is
-    written next to its destination and swapped in atomically; the old one is kept as
-    ``<name>.agora-moved.bak`` (Pi's lookup ignores that name). Refuses to overwrite an existing
-    log at the destination. Any failure leaves the original in place."""
-    raw = src.read_bytes()
-    first, sep, rest = raw.partition(b"\n")
-    head = json.loads(first)
-    if not isinstance(head, dict) or head.get("type") != "session":
-        raise ValueError(f"{src} does not start with a Pi session header")
-    head["cwd"] = str(new_root)
-    dst_dir = src.parent.parent / pi_dir_name(new_root)
-    dst = dst_dir / src.name
-    if dst.exists():
-        raise ValueError(f"{dst} already exists")
-    dst_dir.mkdir(parents=True, exist_ok=True)
-    tmp = dst_dir / f".{src.name}.agora.tmp"
-    try:
-        with open(tmp, "wb") as fh:
-            fh.write(json.dumps(head, ensure_ascii=False, separators=(",", ":")).encode() + sep + rest)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, dst)
-        os.replace(src, src.with_name(src.name + ".agora-moved.bak"))
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        if dst.exists() and src.exists():
-            dst.unlink()  # roll back: the original is still where it was
-        raise
-    return dst
+    """Move a Pi session log to the folder of the project's new root (adapters/pi.py ``migrate_log``)."""
+    return _migrate_pi_log(src, new_root)
 
 
 def new_native_since(kind: str, root: Path | str, since: float, taken: set[str], home: Path | None = None) -> str | None:
     """A native session started in ``root`` at/after ``since`` that no Agora session owns yet: what an
     interactive fork (or Codex's first interactive run) created. Oldest first."""
-    home = home or Path.home()
-    if kind == "codex":
-        return next((tid for tid, _ in codex_rollouts_since(Path(root), since, home) if tid not in taken), None)
-    if kind == "claude":
-        pattern = str(home / ".claude" / "projects" / claude_dir_name(root) / "*.jsonl")
-    elif kind == "pi":
-        pattern = str(_pi_sessions(home) / pi_dir_name(root) / "*.jsonl")
-    else:
-        raise ValueError(f"unknown agent {kind!r}")
-    found = []
-    for p in glob.glob(pattern):
-        try:
-            if os.path.getctime(p) < since - 2:
-                continue
-        except OSError:
-            continue
-        name = Path(p).stem
-        nid = name.rsplit("_", 1)[-1] if kind == "pi" else name
-        if nid not in taken:
-            found.append((os.path.getctime(p), nid))
-    return sorted(found)[0][1] if found else None
+    return adapters.need(kind).new_since(root, since, taken, home or Path.home())
 
 
 def claude_log(native_id: str, home: Path | None = None, root: Path | str | None = None) -> Path | None:
@@ -491,7 +164,8 @@ def duplicates_note(kind: str, native_id: str, lookup: LogLookup) -> dict[str, A
 def native_problem(kind: str, native_id: str, lookup: LogLookup) -> str:
     name = NAMES.get(kind, kind)
     if lookup.state == "missing":
-        why = "可能被 Claude Code 的 30 天自动清理删掉了，或者这个项目是从别的机器拿来的。" if kind == "claude" else "日志可能被删除或移走了，或者这个项目是从别的机器拿来的。"
+        days = getattr(adapters.get(kind), "prunes_logs_after_days", None)
+        why = f"可能被 {name} 的 {days} 天自动清理删掉了，或者这个项目是从别的机器拿来的。" if days else "日志可能被删除或移走了，或者这个项目是从别的机器拿来的。"
         return f"{name} 的原生会话 {native_id} 在这台机器上找不到了。{why}Agora 不会用同一个 id 新开对话。"
     if lookup.state == "ambiguous":
         return f"{name} 的原生会话 {native_id} 找到了 {len(lookup.candidates)} 份记录，Agora 不确定该跟哪一份，先不续接。"
@@ -509,28 +183,6 @@ def check_native(kind: str, native_id: str | None, started: bool, root: Path | s
     if lookup.state != "found" and started:
         raise NativeMissing(kind, native_id, lookup)
     return lookup
-
-
-def codex_rollouts_since(cwd: Path, since: float, home: Path | None = None) -> list[tuple[str, Path]]:
-    """Interactive Codex rollouts for ``cwd`` created at/after ``since`` → [(thread id, path)], oldest first."""
-    home = home or Path.home()
-    root = Path(os.environ.get("CODEX_HOME") or home / ".codex") / "sessions"
-    out = []
-    for p in glob.glob(str(root / "*" / "*" / "*" / "rollout-*.jsonl")):
-        try:
-            if os.path.getmtime(p) < since - 2:
-                continue
-            with open(p, "rb") as fh:
-                meta = json.loads(fh.readline() or b"{}")
-        except (OSError, json.JSONDecodeError):
-            continue
-        pl = meta.get("payload") or {}
-        if meta.get("type") != "session_meta" or not pl.get("id"):
-            continue
-        if Path(str(pl.get("cwd") or "")).resolve() != cwd.resolve():
-            continue
-        out.append((os.path.getctime(p), str(pl["id"]), Path(p)))
-    return [(i, p) for _, i, p in sorted(out)]
 
 
 # ——— backends ———
@@ -565,11 +217,14 @@ class _CliBackend:
 
     default_bin = ""
 
-    def args(self, req: RunRequest) -> list[str]:  # pragma: no cover - interface
-        raise NotImplementedError
+    def args(self, req: RunRequest) -> list[str]:
+        """The adapter's ``Headless.headless_args``; whether a session's log exists is asked through
+        ``locate_log`` (Claude: create with ``--session-id`` only when it never ran)."""
+        return adapters.need(self.name).headless_args(self.cmd, req, log_exists=lambda sid: locate_log(self.name, sid, req.cwd).path is not None, skill_dir=SKILL_DIR)
 
     def stdin(self, req: RunRequest) -> bytes | None:
-        return req.prompt.encode()
+        own = getattr(adapters.need(self.name), "headless_stdin", None)
+        return own(req) if own is not None else req.prompt.encode()
 
     async def run(self, req: RunRequest) -> AsyncIterator[dict[str, Any]]:
         o = req.options
@@ -676,68 +331,17 @@ class ClaudeCodeBackend(_CliBackend):
     default_bin = "claude"
     Mapper = ClaudeStream
 
-    def args(self, req: RunRequest) -> list[str]:
-        o = req.options
-        args = [*self.cmd, "-p", "--output-format", "stream-json", "--verbose"]
-        if o.fork_from:
-            args += ["--resume", o.fork_from, "--fork-session"]
-        elif o.session:
-            # Only a session that never ran is created with --session-id; any other is resumed,
-            # and a missing log then fails loudly in the CLI ("No conversation found") instead of
-            # starting a new, empty conversation under the same id.
-            exists = claude_log(o.session, root=req.cwd) is not None
-            args += ["--session-id", o.session] if o.new_session and not exists else ["--resume", o.session]
-        if o.model:
-            args += ["--model", o.model]
-        if o.effort:
-            args += ["--effort", o.effort]
-        # The canvas skill runs `agora canvas …` through Bash; allow exactly that.
-        args += ["--allowedTools", "Bash(agora canvas *)", "Bash(agora canvas:*)"]
-        return args
-
 
 class PiBackend(_CliBackend):
     name = "pi"
     default_bin = "pi"
     Mapper = PiStream
 
-    def args(self, req: RunRequest) -> list[str]:
-        o = req.options
-        args = [*self.cmd, "-p", "--mode", "json"]
-        if o.fork_from:
-            args += ["--fork", o.fork_path or o.fork_from]
-        elif o.session:
-            args += ["--session-id", o.session]
-        if o.model:
-            args += ["--model", o.model]
-        if o.effort:
-            args += ["--thinking", o.effort]
-        if SKILL_DIR.is_dir():
-            args += ["--skill", str(SKILL_DIR)]
-        return [*args, "--", req.prompt]
-
-    def stdin(self, req: RunRequest) -> bytes | None:
-        return None  # the prompt is the last argument
-
 
 class CodexBackend(_CliBackend):
     name = "codex"
     default_bin = "codex"
     Mapper = CodexStream
-
-    def args(self, req: RunRequest) -> list[str]:
-        o = req.options
-        if o.fork_from:
-            raise ValueError("Codex 只能在终端里分叉（codex fork）：点「在终端打开」")
-        args = [*self.cmd, "exec"]
-        if o.session:
-            args += ["resume", o.session]
-        args += ["--json", "--skip-git-repo-check"]
-        if o.model:
-            args += ["-m", o.model]
-        if o.effort:
-            args += ["-c", f"model_reasoning_effort={json.dumps(o.effort)}"]
-        return [*args, "-"]
 
 
 BACKEND_CLASSES: dict[str, type[_CliBackend]] = {"claude": ClaudeCodeBackend, "pi": PiBackend, "codex": CodexBackend}
@@ -749,44 +353,16 @@ def interactive_argv(kind: str, native_id: str | None, model: str | None, effort
     session never ran; or forks ``fork["from"]`` into a new native session). Callers check the log
     first (``check_native``); Pi has no resume-only flag, so for Pi that check is the only guard
     against a silent new session."""
+    a = adapters.need(kind)
     if fork:
-        base = {"claude": ["claude", "--resume", fork["from"], "--fork-session"], "pi": ["pi", "--fork", fork.get("path") or fork["from"]], "codex": ["codex", "fork", fork["from"]]}[kind]
-        return [*base, *interactive_argv(kind, None, model, effort)[1:]]
-    if kind == "claude":
-        args = ["claude"]
-        if native_id:
-            args += ["--session-id", native_id] if new and not claude_log(native_id, root=root) else ["--resume", native_id]
-        if model:
-            args += ["--model", model]
-        if effort:
-            args += ["--effort", effort]
-        return args
-    if kind == "pi":
-        args = ["pi"]
-        if native_id:
-            args += ["--session-id", native_id]
-        if model:
-            # --models pins Ctrl+P cycling to the session's model.
-            args += ["--model", model, "--models", model]
-        if effort:
-            args += ["--thinking", effort]
-        if SKILL_DIR.is_dir():
-            args += ["--skill", str(SKILL_DIR)]
-        return args
-    if kind == "codex":
-        args = ["codex", "resume", native_id] if native_id else ["codex"]
-        if model:
-            args += ["-m", model]
-        if effort:
-            args += ["-c", f"model_reasoning_effort={json.dumps(effort)}"]
-        return args
-    raise ValueError(f"unknown agent {kind!r}")
+        return [*a.fork_argv(fork), *interactive_argv(kind, None, model, effort)[1:]]
+    return a.interactive_argv(native_id, model, effort, new=new, has_log=lambda: locate_log(kind, native_id, root).path is not None, skill_dir=SKILL_DIR)
 
 
 # Where each CLI looks for project skills: Claude Code .claude/skills, Codex .agents/skills.
 # Pi gets `--skill <dir>` on every launch instead: it loads a project's .agents/skills only
 # after the person trusts the project (print mode skips untrusted ones silently).
-SKILL_DIRS = {"claude": ".claude/skills", "codex": ".agents/skills"}
+SKILL_DIRS = {k: a.project_skill_dir for k, a in adapters.ADAPTERS.items() if k in KINDS and a.project_skill_dir}
 
 
 # ——— project skill install ———
@@ -798,8 +374,10 @@ def install_skill(root: Path, agents: list[str], copy: bool = False) -> list[dic
     import shutil
 
     done: list[dict[str, str]] = []
-    if "pi" in agents:
-        done.append({"path": str(SKILL_DIR), "state": "pi loads it with --skill on every launch", "for": "pi"})
+    for k in agents:  # a CLI without a project skills folder (Pi) gets `--skill <dir>` on every launch
+        a = adapters.get(k)
+        if a is not None and k in KINDS and a.project_skill_dir is None:
+            done.append({"path": str(SKILL_DIR), "state": f"{k} loads it with --skill on every launch", "for": k})
     rels = sorted({SKILL_DIRS[x] for x in agents if x in SKILL_DIRS})
     for rel in rels:
         target = root / rel / "agora-canvas"
@@ -845,15 +423,15 @@ def catalog(root: Path | None = None, ttl_s: float = 600) -> dict[str, Any]:
     project: Pi's model scope can come from its ``.pi/settings.json``."""
     out = {}
     for kind in KINDS:
-        key = (kind, str(root) if root is not None and kind == "pi" else "")
+        key = (kind, str(root) if root is not None and adapters.need(kind).catalog_per_project else "")
         hit = _catalog_cache.get(key)
         if hit is None or time.time() - hit[0] > ttl_s:
-            hit = (time.time(), agent_models.SOURCES[kind](child_env(), root))
+            hit = (time.time(), adapters.need(kind).catalog(child_env(), root))
             _catalog_cache[key] = hit
         out[kind] = {
             "kind": kind,
             "name": NAMES[kind],
-            "installed": shutil.which({"pi": "pi", "claude": "claude", "codex": "codex"}[kind]) is not None,
+            "installed": adapters.need(kind).installed() is not None,
             **hit[1],
         }
     return out

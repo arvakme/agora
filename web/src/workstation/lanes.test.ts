@@ -68,3 +68,25 @@ describe("readPath", () => {
     expect(readPath("/etc/hosts", "/tmp/proj")).toBe("/etc/hosts");
   });
 });
+
+// Server-side tool facts (server/canvas/adapters/): the page does not need to know the CLI's tool names.
+describe("buildLane with server tool facts", () => {
+  const facts: Item[] = [
+    user("u1", 0),
+    // Codex reads through the shell: name "shell", but the server says read + which file.
+    { id: "c1", kind: "tool", at: 1 * S, endAt: 2 * S, msg: "m1", tool: { name: "shell", input: "sed -n 1,40p server/x.py", activity: "read", reads: ["server/x.py"] } },
+    // A CLI Agora has never heard of: an unknown tool name with a known activity.
+    { id: "g1", kind: "tool", at: 3 * S, endAt: 4 * S, msg: "m2", tool: { name: "frobnicate_file", input: "{}", activity: "edit", files: [{ path: "a.txt", op: "edit" }] } },
+    { id: "w1", kind: "tool", at: 5 * S, endAt: 7 * S, msg: "m3", tool: { name: "approve_gate", input: "{}", activity: "tools", waitsUser: true } },
+    end("x1", 8 * S),
+  ];
+  const lane = buildLane("s1", facts, { root: ROOT });
+  it("uses tool.activity, tool.reads and tool.waitsUser", () => {
+    const tools = lane.segs.filter((s) => s.itemId);
+    expect(tools.map((s) => [s.itemId, s.kind, s.path])).toEqual([
+      ["c1", "read", "server/x.py"],
+      ["g1", "write", "a.txt"],
+      ["w1", "wait", undefined],
+    ]);
+  });
+});
