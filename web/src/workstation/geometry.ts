@@ -13,6 +13,8 @@ export type Geometry = {
   /** Linked nodes (the only places workers go), by element id. */
   boxes: Map<string, Box>;
   labels: Map<string, string>;
+  /** Everything drawn that a bubble should not cover (shapes, images, text; not arrows or lines). */
+  obstacles: Box[];
   tray: Box;
   locate: (path: string) => Located | null;
   /** Where a worker stands at a place (feet, world coordinates). Slot offsets are added by the overlay. */
@@ -80,5 +82,16 @@ export function buildGeometry(canvasId: string, elements: readonly El[], map: Ma
   };
   const all = [...boxes.values()];
   const route = (a: Pt, b: Pt) => routeAround(a, b, all);
-  return { canvasId, boxes, labels, tray, locate, dock, boxOf, childOf, route };
+  const obstacles: Box[] = [...all];
+  for (const e of elements) {
+    if (!live(e) || e.type === "arrow" || e.type === "line" || !(e.width > 0 && e.height > 0)) continue;
+    // an arrow's label is drawn at the arrow's middle (its stored x / y can be stale)
+    const on = e.type === "text" && e.containerId ? map.get(e.containerId) : undefined;
+    const pts = on && live(on) && on.type === "arrow" ? (on as { points?: readonly (readonly [number, number])[] }).points : undefined;
+    if (on && pts?.length) {
+      const [px, py] = pts.length === 2 ? [(pts[0][0] + pts[1][0]) / 2, (pts[0][1] + pts[1][1]) / 2] : pts[Math.floor(pts.length / 2)];
+      obstacles.push({ x: on.x + px - e.width / 2, y: on.y + py - e.height / 2, w: e.width, h: e.height });
+    } else obstacles.push({ x: e.x, y: e.y, w: e.width, h: e.height });
+  }
+  return { canvasId, boxes, labels, obstacles, tray, locate, dock, boxOf, childOf, route };
 }
