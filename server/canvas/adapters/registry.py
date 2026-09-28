@@ -12,10 +12,17 @@ from typing import Any
 from server.canvas.adapters.base import TIERS, Adapter, Binding, Catalog, Headless, Interactive, Locator, Projector, Subagents, Tier, ToolVocab
 from server.canvas.adapters.claude import ClaudeAdapter
 from server.canvas.adapters.codex import CodexAdapter
+from server.canvas.adapters.grok import GrokAdapter
 from server.canvas.adapters.pi import PiAdapter
 
-# Order matters: the first three are the session agents, in the order the picker shows them.
+from server.canvas.adapters.experimental import enabled as _experimental
+
+# Order matters: the session agents (T1) first, in the order the picker shows them; then the
+# observed CLIs (T2), which Seedmux can dispatch as workers. Grok is a v2 feature: registered only
+# with AGORA_EXPERIMENTAL=grok (experimental.py).
 ADAPTERS: dict[str, Adapter] = {a.kind: a for a in (PiAdapter(), ClaudeAdapter(), CodexAdapter())}
+if _experimental("grok"):
+    ADAPTERS["grok"] = GrokAdapter()
 
 
 def register(a: Adapter) -> Adapter:
