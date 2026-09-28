@@ -223,15 +223,21 @@ export async function flushSaves() {
   await project.idle();
 }
 
-/** A canvas went to the trash: no late save may write it back, and its files are gone from `canvases/`. */
-export function dropCanvas(id: string) {
+/**
+ * A canvas went to the trash: no late save may write it back, and its files are gone from `canvases/`.
+ * Returns how to undo that if the server did not move it after all (the versions this page had seen).
+ */
+export function dropCanvas(id: string): () => void {
   clearTimeout(timers.get(`canvas:${id}`));
   timers.delete(`canvas:${id}`);
   pending.delete(`canvas:${id}`);
-  for (const slot of [`canvas:${id}`, `threads:${id}`]) {
+  const slots = [`canvas:${id}`, `threads:${id}`];
+  const had = slots.map((slot) => project.version(slot) ?? null);
+  for (const slot of slots) {
     project.forget(slot);
     project.seen(slot, null);
   }
+  return () => slots.forEach((slot, i) => project.seen(slot, had[i]));
 }
 
 /** A canvas came back from the trash: this page knows its files again (the next save is not a conflict). */

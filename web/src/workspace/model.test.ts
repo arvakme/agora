@@ -1,7 +1,7 @@
 // Workspace model rules: naming without gaps, close vs. open, group kinds and placement.
 import { describe, expect, it } from "vitest";
 import { group, groups, moveTab, type Node } from "./layout.ts";
-import { canvasTree, closeTab, groupKind, homeGroup, replaceTab, isNamed, listGroups, migrateDocs, nextTitle, openIds, openTab, placement, savedWorkspace, sessionTitles, topicOf, UNTITLED_CANVAS, type Doc, type SessionDoc } from "./model.ts";
+import { canvasTree, closeTab, groupKind, homeGroup, replaceTab, isNamed, listGroups, migrateDocs, nextTitle, openIds, openTab, placement, placeRestored, relinkChild, savedWorkspace, sessionTitles, topicOf, UNTITLED_CANVAS, type Doc, type SessionDoc } from "./model.ts";
 
 const kinds: Record<string, "canvas" | "session"> = { c1: "canvas", c2: "canvas", c3: "canvas", p1: "session", p2: "session" };
 const kindOf = (id: string) => kinds[id];
@@ -191,3 +191,31 @@ describe("nested canvases in the workspace", () => {
     ]);
   });
 });
+
+// Review P1-2: restoring a session from the trash. Bringing the session back makes the "every session
+// has a doc" sync add a bare entry first; the manifest's entry (name, topic, identity) must win and go
+// back to its old place.
+describe("placeRestored", () => {
+  const kept: SessionDoc = { id: "p-s-pi", kind: "session", sessionId: "s-pi", title: "我的 Pi", topic: "把画布改成三个节点", agent: "pi", canvasId: "c1", nativeId: "n-1" };
+  it("replaces a bare entry the sync added and puts the kept one where it was", () => {
+    const docs: Doc[] = [{ id: "c1", kind: "canvas", title: "A" }, { id: "c2", kind: "canvas", title: "B" }, { id: "p-s-pi", kind: "session", sessionId: "s-pi", title: "" }];
+    expect(placeRestored(docs, kept, 1)).toEqual([docs[0], kept, docs[1]]);
+  });
+  it("inserts at the old position when nothing is there yet; clamps an index past the end", () => {
+    const docs: Doc[] = [{ id: "c1", kind: "canvas", title: "A" }];
+    expect(placeRestored(docs, kept, 9)).toEqual([docs[0], kept]);
+    expect(placeRestored(docs, kept, 0)[0]).toBe(kept);
+  });
+});
+
+// Review P2-5: a child canvas restored under a new id — its parent node follows.
+describe("relinkChild", () => {
+  const el = (id: string, child?: string) => ({ id, customData: child ? { childCanvas: child, codePaths: ["x/**"] } : undefined, version: 1, versionNonce: 1, updated: 0 });
+  it("rewrites only the links to the old id and bumps their version", () => {
+    const out = relinkChild([el("a", "c7"), el("b", "c8"), el("c")], "c7", "c7-r1", 5)!;
+    expect(out[0]).toMatchObject({ customData: { childCanvas: "c7-r1", codePaths: ["x/**"] }, version: 2, updated: 5 });
+    expect(out[1]).toEqual(el("b", "c8"));
+    expect(relinkChild([el("b", "c8")], "c7", "c7-r1")).toBeNull();
+  });
+});
+

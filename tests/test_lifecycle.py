@@ -380,13 +380,14 @@ def test_review_p2_1_started_is_inferred_for_bindings_written_before_it_existed(
 
 def test_review_p2_4_deleted_agora_dir_and_remounts(store, monkeypatch):
     ident = store._identity()
-    # Same inode on another device (a network share or disk remounted) with the same project id: fine.
-    monkeypatch.setattr(store, "_identity", lambda: (ident[0] + 1, ident[1]))
-    assert store.gone() is None
-    # Another inode: another directory.
-    monkeypatch.setattr(store, "_identity", lambda: (ident[0] + 1, ident[1] + 1))
-    assert "换成了另一个目录" in store.gone()
-    monkeypatch.undo()
+    # (a scoped context: monkeypatch.undo() would also undo the AGORA_STATE_DIR isolation of conftest)
+    with monkeypatch.context() as m:
+        # Same inode on another device (a network share or disk remounted) with the same project id: fine.
+        m.setattr(store, "_identity", lambda: (ident[0] + 1, ident[1]))
+        assert store.gone() is None
+        # Another inode: another directory.
+        m.setattr(store, "_identity", lambda: (ident[0] + 1, ident[1] + 1))
+        assert "换成了另一个目录" in store.gone()
     store._ident = ident  # the simulated remount above moved it
     import shutil
 

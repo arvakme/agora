@@ -232,6 +232,27 @@ export function savedWorkspace(
   return { v: 2, docs: ws.docs.filter((d) => !drafts.includes(d.id)), root, focused };
 }
 
+/**
+ * A restored trash item's entry goes back where it was in the list. A bare entry for the same doc
+ * that got there first (the session store's "every session has a doc" sync runs as soon as the
+ * session is back) is replaced, so the name, topic and identity the manifest kept are not lost.
+ */
+export function placeRestored(docs: Doc[], entry: Doc, docIndex: number | undefined): Doc[] {
+  const rest = docs.filter((d) => d.id !== entry.id);
+  const i = Math.min(docIndex ?? rest.length, rest.length);
+  return [...rest.slice(0, i), entry, ...rest.slice(i)];
+}
+
+/**
+ * Parent nodes whose child link (`customData.childCanvas`) names `from` now name `to` (a canvas
+ * restored under a new id). Returns null when nothing in `els` links to `from`.
+ */
+export function relinkChild<E extends { customData?: Record<string, unknown> | null; version: number; versionNonce: number; updated: number }>(els: readonly E[], from: string, to: string, now = Date.now()): E[] | null {
+  const hit = (e: E) => (e.customData as { childCanvas?: unknown } | null | undefined)?.childCanvas === from;
+  if (!els.some(hit)) return null;
+  return els.map((e) => (hit(e) ? { ...e, customData: { ...e.customData, childCanvas: to }, version: e.version + 1, versionNonce: Math.floor(Math.random() * 2 ** 31), updated: now } : e));
+}
+
 /** Title of a canvas found on disk without an entry in workspace.json (recovery mode). */
 export const RECOVERED_CANVAS = "已恢复画布";
 

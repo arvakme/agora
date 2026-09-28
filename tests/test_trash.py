@@ -142,11 +142,11 @@ def test_a_half_moved_item_can_still_be_restored(store, monkeypatch):
             raise OSError("power cut")
         return real(a, b)
 
-    monkeypatch.setattr("server.canvas.trash.os.rename", crash_on_second)
     t = Trash(store)
-    with pytest.raises(OSError):
-        t.put("canvas", "c2")
-    monkeypatch.undo()
+    with monkeypatch.context() as m:  # not monkeypatch.undo(): that would drop conftest's AGORA_STATE_DIR too
+        m.setattr("server.canvas.trash.os.rename", crash_on_second)
+        with pytest.raises(OSError):
+            t.put("canvas", "c2")
     [m] = t.list()
     t.restore(m["trashId"])
     assert (store.dir / "canvases" / "c2.excalidraw").exists() and (store.dir / "threads" / "c2.json").exists()

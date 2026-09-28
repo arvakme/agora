@@ -259,14 +259,21 @@ def test_doctor_restores_a_binding_from_the_registry_when_there_is_no_backup(sto
     assert (b["agent"], b["model"], b["nativeId"], b["started"]) == ("pi", "deepseek/deepseek-flash", "pi-1", True)
 
 
-def test_history_cli_lists_and_restores_a_version(store, home):
-    store.on_overwrite = FileHistory(Local(store)).keep
-    store.write("canvas", "c1", {"elements": [{"id": "new"}]}, base=None, force=True)
+def test_history_cli_lists_and_restores_a_version_and_keeps_the_one_it_replaces(store, home):
+    """Review P2: the version a restore replaces is kept even inside the 10-minute window (before,
+    a v3 written right after v2 was lost when v1 was restored)."""
+    h = FileHistory(Local(store))
+    store.on_overwrite = h.keep
+    store.write("canvas", "c1", {"elements": [{"id": "v2"}]}, base=None, force=True)  # keeps box1 (v1)
+    store.write("canvas", "c1", {"elements": [{"id": "v3"}]}, base=None, force=True)  # within 10 min: v2 not kept
     listing = agora("history", "canvases/c1.excalidraw", cwd=store.root, home=home)
     at = listing.stdout.split()[0]
+    assert "before a write" in listing.stdout
     r = agora("history", "canvases/c1.excalidraw", "--restore", at, cwd=store.root, home=home)
     assert r.returncode == 0, r.stderr
     assert json.loads((store.dir / "canvases" / "c1.excalidraw").read_text())["elements"][0]["id"] == "box1"
+    kept = [json.loads(h.read("canvases/c1.excalidraw", v["at"]))["elements"][0]["id"] for v in h.versions("canvases/c1.excalidraw")]
+    assert kept[0] == "v3" and "box1" in kept  # the replaced v3 is there, newest
 
 
 def test_a_log_deleted_while_followed_is_reported_missing(store, home, monkeypatch):

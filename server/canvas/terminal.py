@@ -50,7 +50,7 @@ class TerminalError(RuntimeError):
 
 
 class Terminals:
-    def __init__(self, root: Path, run_dir: Path, tmux: str | None = None, seedmux: Seedmux | None = None, socket: str | None = None) -> None:
+    def __init__(self, root: Path, run_dir: Path, tmux: str | None = None, seedmux: Seedmux | None = None, socket: str | None = None, legacy: list[str] | None = None) -> None:
         self.root = root
         self.run_dir = run_dir
         self.tmux = tmux or shutil.which("tmux") or "tmux"
@@ -58,6 +58,9 @@ class Terminals:
         self.socket = socket or f"agora-{hashlib.sha1(str(root).encode()).hexdigest()[:10]}"
         self.conf = run_dir / "tmux.conf"
         self.smx = seedmux or Seedmux.default()
+        # Sockets this copy used under other names (path hashes of older builds): a pane still running
+        # there after an upgrade holds its session too — seen, pasted into and closed where it is.
+        self.legacy = [x for x in legacy or [] if x != self.socket]
         from server.canvas.local import state_dir
 
         self.mirror = state_dir() / "seedmux" / self.socket
@@ -122,13 +125,26 @@ class Terminals:
         return f"={self.name(session_id)}:"
 
     def attach_command(self, session_id: str) -> str:
-        return f"{shlex.quote(self.tmux)} -L {self.socket} attach -t {self.name(session_id)}"
+        return f"{shlex.quote(self.tmux)} -L {self._where(session_id).socket} attach -t {self.name(session_id)}"
+
+    def _where(self, session_id: str) -> "Terminals":
+        """The tmux server holding this session's pane: this copy's own, else a legacy one where it still runs."""
+        if not self.legacy or self._own_alive(session_id):
+            return self
+        for name in self.legacy:
+            other = Terminals(self.root, self.run_dir, self.tmux, self.smx, socket=name)
+            if other._own_alive(session_id):
+                return other
+        return self
 
     # ——— state ———
     def alive(self, session_id: str) -> bool:
         return self.seedmux_pane(session_id) is not None or self._agora_alive(session_id)
 
     def _agora_alive(self, session_id: str) -> bool:
+        return self._where(session_id)._own_alive(session_id)
+
+    def _own_alive(self, session_id: str) -> bool:
         r = self._run("display-message", "-p", "-t", self.pane(session_id), "#{pane_dead}", check=False)
         return r.returncode == 0 and r.stdout.strip() == b"0"
 
@@ -139,21 +155,21 @@ class Terminals:
     def clients(self, session_id: str) -> int:
         if pane := self.seedmux_pane(session_id):
             return self.smx.clients(pane)
-        r = self._run("list-clients", "-t", f"={self.name(session_id)}", "-F", "#{client_activity}", check=False)
+        r = self._where(session_id)._run("list-clients", "-t", f"={self.name(session_id)}", "-F", "#{client_activity}", check=False)
         return len(r.stdout.split()) if r.returncode == 0 else 0
 
     def last_input(self, session_id: str) -> float | None:
         """Epoch seconds of the latest keypress from any client attached to this pane."""
         if pane := self.seedmux_pane(session_id):
             return self.smx.last_input(pane)
-        r = self._run("list-clients", "-t", f"={self.name(session_id)}", "-F", "#{client_activity}", check=False)
+        r = self._where(session_id)._run("list-clients", "-t", f"={self.name(session_id)}", "-F", "#{client_activity}", check=False)
         vals = [float(x) for x in r.stdout.decode().split() if x.strip().isdigit()] if r.returncode == 0 else []
         return max(vals) if vals else None
 
     def capture(self, session_id: str, lines: int = 200) -> str:
         if pane := self.seedmux_pane(session_id):
             return self.smx.capture(pane, lines)
-        r = self._run("capture-pane", "-p", "-J", "-S", f"-{lines}", "-t", self.pane(session_id), check=False)
+        r = self._where(session_id)._run("capture-pane", "-p", "-J", "-S", f"-{lines}", "-t", self.pane(session_id), check=False)
         return r.stdout.decode("utf-8", "replace")
 
     # ——— actions ———
@@ -184,10 +200,11 @@ class Terminals:
             except subprocess.CalledProcessError as exc:
                 raise TerminalError((exc.stderr or b"").decode(errors="replace").strip() or "tmux paste failed") from None
             return
-        self._run("load-buffer", "-b", buf, "-", input=data)
-        self._run("paste-buffer", "-p", "-d", "-b", buf, "-t", self.pane(session_id))
+        w = self._where(session_id)
+        w._run("load-buffer", "-b", buf, "-", input=data)
+        w._run("paste-buffer", "-p", "-d", "-b", buf, "-t", self.pane(session_id))
         time.sleep(settle_s)
-        self._run("send-keys", "-t", self.pane(session_id), "Enter")
+        w._run("send-keys", "-t", self.pane(session_id), "Enter")
 
     def socket_path(self) -> Path:
         """Where tmux puts this server's socket ($TMUX_TMPDIR or /tmp, then tmux-<uid>/<name>)."""
@@ -204,8 +221,12 @@ class Terminals:
             self.smx.kill(pane)
             for f in self._smx_files(session_id):
                 f.unlink(missing_ok=True)
-        self._run("kill-session", "-t", f"={self.name(session_id)}", check=False)
-        self._drop_dead_socket()
+        w = self._where(session_id)
+        w._run("kill-session", "-t", f"={self.name(session_id)}", check=False)
+        w._drop_dead_socket()
+        if w is not self:
+            self._run("kill-session", "-t", f"={self.name(session_id)}", check=False)
+            self._drop_dead_socket()
 
     def kill_server(self) -> None:
         """Stop this project's tmux server and remove its socket file."""

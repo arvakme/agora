@@ -183,7 +183,14 @@ class Local:
         return d if isinstance(d, dict) and d.get("instanceId") else None
 
     def instance_id(self) -> str:
-        return (self.instance() or {}).get("instanceId") or ""
+        return (self.instance() or {}).get("instanceId") or self._peeked
+
+    _peeked = ""
+
+    def peek(self) -> None:
+        """Read-only callers (``agora doctor``): act as the instance ``reconcile`` would settle on,
+        without writing it (backups and history are found by it)."""
+        self._peeked = self.classify().get("instanceId") or ""
 
     def socket(self) -> str:
         iid = self.instance_id()
@@ -203,36 +210,65 @@ class Local:
             return None
         return st.st_dev, st.st_ino
 
+    def classify(self) -> dict[str, Any]:
+        """What ``reconcile`` would find, without writing anything (``agora doctor`` without --fix):
+        ``kind`` same / new / upgraded / fresh / reattached / moved / copied, ``instanceId`` it
+        would use (None: a new one), ``from`` for moved / copied."""
+        root = str(self.store.root)
+        cur = self.instance()
+        if cur is None:
+            reused = self.registry.instance_at(self.project_id(), root)
+            if reused:
+                return {"kind": "reattached", "instanceId": reused}
+            if self.store.bindings():
+                # A project from before instance ids, upgraded in place: its sessions are bound
+                # here, on this machine — it is the same copy, not a fresh clone.
+                return {"kind": "upgraded", "instanceId": None}
+            ws = self.store.read_workspace_quiet()
+            had_sessions = any(d.get("kind") == "session" for d in (ws or {}).get("docs") or [] if isinstance(d, dict))
+            return {"kind": "fresh" if had_sessions else "new", "instanceId": None}
+        iid = cur["instanceId"]
+        if cur.get("root") == root:
+            return {"kind": "same", "instanceId": iid}
+        old = str(cur.get("root") or "")
+        other = _read_json(Path(old) / ".agora" / LOCAL_DIR / "instance.json") if old else None
+        if old and Path(old).is_dir() and isinstance(other, dict) and other.get("instanceId") == iid and other.get("root") == old:
+            return {"kind": "copied", "instanceId": None, "from": old}
+        return {"kind": "moved", "instanceId": iid, "from": old}
+
+    def peek_instance_id(self) -> str:
+        """This copy's instance id as it is or as ``reconcile`` would settle it (read-only)."""
+        return self.instance_id() or self.classify().get("instanceId") or ""
+
     def reconcile(self, *, migrate: bool = True, alive=None) -> dict[str, Any]:
         """Settle which copy this is; see the module docstring. Idempotent. Returns the change
-        (``kind``: same / new / fresh / reattached / moved / copied), also kept in ``instance.json``
-        as ``change`` until the page acknowledges it. ``alive(sid)``: whether a terminal pane still
-        holds a session (a Pi log in use is not moved)."""
+        (``kind``: same / new / upgraded / fresh / reattached / moved / copied), also kept in
+        ``instance.json`` as ``change`` until the page acknowledges it (not for same / new /
+        upgraded). ``alive(sid)``: whether a terminal pane still holds a session (a Pi log in use is
+        not moved)."""
         root = str(self.store.root)
         pid = self.project_id()
         ident = self._ident()
         cur = self.instance()
         base = {"projectId": pid, "root": root, "dev": ident[0] if ident else None, "ino": ident[1] if ident else None}
+        seen = self.classify()
+        kind = seen["kind"]
         if cur is None:
-            reused = self.registry.instance_at(pid, root)
-            iid = reused or str(uuid.uuid4())
-            ws = self.store.read_workspace_quiet()
-            had_sessions = any(d.get("kind") == "session" for d in (ws or {}).get("docs") or [] if isinstance(d, dict))
-            kind = "reattached" if reused else ("fresh" if had_sessions else "new")
+            iid = seen["instanceId"] or str(uuid.uuid4())
             change = {"kind": kind, "at": now_ms()}
-            self._write_instance({**base, "instanceId": iid, "createdAt": now_ms(), **({"change": change} if kind != "new" else {})})
-            self.registry.append("instance", projectId=pid, instanceId=iid, root=root, reused=bool(reused) or None)
+            self._write_instance({**base, "instanceId": iid, "createdAt": now_ms(), **({"change": change} if kind in ("fresh", "reattached") else {})})
+            self.registry.append("instance", projectId=pid, instanceId=iid, root=root, reused=bool(seen["instanceId"]) or None)
+            if kind == "upgraded":  # its sessions go into the registry now, so git clean can be undone later
+                for sid, b in sorted(self.store.bindings().items()):
+                    self.note("bind", sessionId=sid, agent=b.get("agent"), model=b.get("model"), effort=b.get("effort"), nativeId=b.get("nativeId"), started=b.get("started"), reason="upgrade")
             return change
-        iid = cur["instanceId"]
-        if cur.get("root") == root:
+        if kind == "same":
             if ident and (cur.get("dev"), cur.get("ino")) != ident:
                 self._write_instance({**cur, **base})  # same path, a new directory there: follow it
             return {"kind": "same"}
-        old = str(cur.get("root") or "")
-        other = _read_json(Path(old) / ".agora" / LOCAL_DIR / "instance.json") if old else None
-        if old and Path(old).is_dir() and isinstance(other, dict) and other.get("instanceId") == iid and other.get("root") == old:
-            return self._copied(cur, base, old)
-        return self._moved(cur, base, old, migrate=migrate, alive=alive)
+        if kind == "copied":
+            return self._copied(cur, base, seen["from"])
+        return self._moved(cur, base, seen["from"], migrate=migrate, alive=alive)
 
     def _copied(self, cur: dict[str, Any], base: dict[str, Any], old: str) -> dict[str, Any]:
         """``cp -r``: the original is still at ``old`` with the same instance. This copy gets its own
@@ -335,30 +371,41 @@ def session_origins(store, local: Local) -> dict[str, dict[str, Any]]:
     they still get the agent picker."""
     from server.canvas import agents
 
+    from server.canvas.trash import Trash
+
     ws = store.read_workspace_quiet() or {}
     bindings = store.bindings()
+    trashed = {m["id"] for m in Trash(store).list() if m["kind"] == "session"}
     out: dict[str, dict[str, Any]] = {}
-    binds: dict[str, dict[str, Any]] | None = None
+    binds: bool | None = None
+    mine: dict[str, dict[str, Any]] = {}
+    everyone: dict[str, dict[str, Any]] = {}
     for d in ws.get("docs") or []:
         if not isinstance(d, dict) or d.get("kind") != "session":
             continue
         sid = d.get("sessionId")
-        if not isinstance(sid, str) or sid in bindings:
-            continue
+        if not isinstance(sid, str) or sid in bindings or sid in trashed:
+            continue  # bound here, or in the trash (it comes back from there, with its own binding)
         if binds is None:
-            # This copy's own records first (git clean -fdx); another copy's say who else owns it.
-            binds = {**local.registry.binds(local.project_id()), **local.registry.binds(local.project_id(), local.instance_id() or None)}
-        rec = binds.get(sid)
+            binds = True
+            iid = local.instance_id()
+            mine = local.registry.binds(local.project_id(), iid) if iid else {}
+            everyone = local.registry.binds(local.project_id())
+        rec = mine.get(sid)
         listed = {k: d.get(k) for k in ("agent", "model", "effort", "nativeId", "canvasId", "topic") if d.get(k)}
         if rec is None:
-            if listed.get("agent"):
-                out[sid] = {"state": "foreign", **listed}
-            continue
+            rec = everyone.get(sid)
+            if rec is None:
+                if listed.get("agent"):
+                    out[sid] = {"state": "foreign", **listed}
+                continue
+            if rec.get("root") != str(store.root):
+                # Only another copy of the project on this machine has bound it: never restored as
+                # this copy's binding (two copies would resume one native session); it can be forked.
+                src = {**listed, **{k: rec[k] for k in ("agent", "model", "effort", "nativeId", "started", "canvasId", "topic", "root") if rec.get(k) is not None}}
+                out[sid] = {"state": "other-copy", **src}
+                continue
         src = {**listed, **{k: rec[k] for k in ("agent", "model", "effort", "nativeId", "started", "canvasId", "topic", "root") if rec.get(k) is not None}}
-        other = rec.get("root")
-        if other and other != str(store.root) and (Path(other) / ".agora" / "sessions" / f"{sid}.agent.json").exists():
-            out[sid] = {"state": "other-copy", **src}
-            continue
         look = agents.locate_log(src["agent"], src.get("nativeId"), store.root) if src.get("nativeId") else None
         out[sid] = {"state": "recoverable", **src, "log": look.state if look else None}
     for sid, c in local.copies().items():

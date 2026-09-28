@@ -46,6 +46,27 @@ def footer_ids(text: str) -> dict[str, str]:
     return {}
 
 
+_stats: dict[tuple[str, str], tuple[tuple[int, float], dict[str, Any]]] = {}
+
+
+def log_stats(kind: str, path: Path) -> dict[str, Any]:
+    """``scan_log`` without a search, cached per file until its size or mtime changes: 会话历史
+    reopens without reading every log again (only the ones that grew)."""
+    try:
+        st = path.stat()
+    except OSError:
+        return scan_log(kind, path)
+    key, sig = (kind, str(path)), (st.st_size, st.st_mtime)
+    hit = _stats.get(key)
+    if hit is None or hit[0] != sig:
+        hit = (sig, scan_log(kind, path))
+        _stats[key] = hit
+        if len(_stats) > 2000:  # a bounded cache: forget the oldest entries
+            for k in list(_stats)[:500]:
+                _stats.pop(k, None)
+    return hit[1]
+
+
 def scan_log(kind: str, path: Path, *, want: str | None = None) -> dict[str, Any]:
     """What a native log says, read through the same projection the transcript uses: first and last
     activity, number of turns, the first message (without Agora's footer), the model, the first
@@ -188,7 +209,7 @@ def session_history(store, local, trash, *, home: Path | None = None) -> dict[st
             by_native.setdefault(n.get("id"), rows[sid])
     found: list[dict[str, Any]] = []
     for nat in native_sessions(roots, home):
-        stats = scan_log(nat["agent"], nat["path"])
+        stats = log_stats(nat["agent"], nat["path"])
         info = {"logPath": str(nat["path"]), "turns": stats["turns"], "firstMessage": stats["firstMessage"], "lastActiveAt": stats["lastActiveAt"], "model": stats["model"], "logCreatedAt": stats["createdAt"]}
         owner = by_native.get(nat["nativeId"])
         if owner is not None:
@@ -213,12 +234,30 @@ def session_history(store, local, trash, *, home: Path | None = None) -> dict[st
     return {"rows": listed, "found": sorted(found, key=lambda r: ({"footer": 0, "agora": 1}.get(r["source"], 2), -(r.get("lastActiveAt") or 0))), "roots": roots}
 
 
+FULL_TEXT_BUDGET_S = 15.0
+
+
 def full_text(store, paths: dict[str, tuple[str, str]], q: str) -> list[dict[str, Any]]:
     """Search what was said (user and assistant text) in each log / snapshot, case-insensitive.
-    ``paths``: key → (agent, path). A trajectory snapshot is searched as-is (it holds items)."""
+    ``paths``: key → (agent, path), newest-first by the caller. A trajectory snapshot is searched
+    as-is (it holds items). A file whose raw bytes do not contain the words is skipped without
+    parsing; the whole search stops after FULL_TEXT_BUDGET_S (the result says so)."""
+    import time
+
     out = []
     needle = q.casefold()
+    started = time.monotonic()
     for key, (kind, path) in paths.items():
+        if time.monotonic() - started > FULL_TEXT_BUDGET_S:
+            out.append({"key": None, "partial": True})
+            break
+        try:
+            with open(path, "rb") as fh:
+                raw = fh.read(SCAN_MAX).decode("utf-8", "replace").casefold()
+        except OSError:
+            continue
+        if needle not in raw and json.dumps(q, ensure_ascii=True)[1:-1].casefold() not in raw:
+            continue  # not even in the raw bytes (as text or as JSON \\u escapes)
         p = Path(path)
         if p.name.endswith(".jsonl") and p.parent.name == "snapshots":
             hit = None
