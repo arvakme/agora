@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -36,6 +36,7 @@ class Send(BaseModel):
 class Term(BaseModel):
     launch: bool = True
     canvasId: str | None = None
+    app: Literal["kitty", "seedmux"] | None = None
 
 
 class CanvasCall(BaseModel):
@@ -124,9 +125,15 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
     async def open_terminal(sid: str, body: Term):
         hub.ensure_started()
         try:
-            return await asyncio.to_thread(hub.open_terminal, sid, launch=body.launch, canvas_id=body.canvasId)
+            return await asyncio.to_thread(hub.open_terminal, sid, launch=body.launch, canvas_id=body.canvasId, app=body.app)
         except Exception as e:
             return fail(e)
+
+    @router.get("/terminals")
+    async def terminals():
+        """Where「在终端打开」can open: Kitty / macOS Terminal on this machine, and Seedmux's bridge."""
+        smx = await asyncio.to_thread(hub.terms.seedmux_status)
+        return {"kitty": hub.terms.kitty() is not None, "seedmux": smx}
 
     @router.delete("/sessions/{sid}/terminal")
     async def close_terminal(sid: str):

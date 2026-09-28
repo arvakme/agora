@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { IconLayers, IconPlus, IconTrash } from "../app/icons";
 import { SPRING } from "../comments/motion";
 import { sessions } from "../session/store";
+import { SessionMark } from "../session/AgentAvatar";
 import type { CanvasDoc, Doc, SessionDoc } from "./model";
 
 type Props = {
@@ -40,7 +41,7 @@ export function AllDocs({ docs, open, focused, confirm, setConfirm, canvasOf, co
     return (
       <li key={d.id} className="ad-row" data-sub={sub} data-open={open.has(d.id)} data-current={d.id === focused}>
         <button className="ad-main" onClick={() => onOpen(d.id)} title={open.has(d.id) ? "切换到这里" : "重新打开"}>
-          <span className="ad-mark" data-kind={d.kind} />
+          {d.kind === "session" ? <SessionMark sessionId={d.sessionId} /> : <span className="ad-mark" data-kind={d.kind} />}
           <span className="ad-title">{d.title}</span>
           <span className="ad-state">{state}</span>
         </button>

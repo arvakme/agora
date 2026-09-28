@@ -250,7 +250,7 @@ def cmd_status(p: Project, _a) -> int:
 def cmd_down(p: Project, _a) -> int:
     from server.canvas.terminal import Terminals
 
-    Terminals(p.root, p.run).kill_server()  # Agora's own tmux server for this project only
+    Terminals(p.root, p.run).shutdown()  # Seedmux panes this project opened, then Agora's own tmux server
     st = p.state()
     if not st:
         print(f"not running (project {p.root})")

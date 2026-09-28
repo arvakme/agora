@@ -57,6 +57,18 @@ export function labelOf(el: El, map: Map<string, El>): string {
   return boundText(el, map)?.text ?? "";
 }
 
+/** The inserted library component an element belongs to (its transparent root), if any: a
+ * member shares the component's outer group, recorded on the root as `customData.agora.group`. */
+export function componentOf(el: El, map: Map<string, El>): El | undefined {
+  if (libraryMeta(el) || !el.groupIds?.length) return undefined;
+  const groups = new Set(el.groupIds);
+  for (const e of map.values()) {
+    const m = libraryMeta(e);
+    if (m && groups.has(m.group) && e.id !== el.id) return e;
+  }
+  return undefined;
+}
+
 /** Human name for thread replies: the label, falling back to the id. */
 export const nameOf = (el: El, map: Map<string, El>) => labelOf(el, map).replace(/\s+/g, " ") || el.id;
 

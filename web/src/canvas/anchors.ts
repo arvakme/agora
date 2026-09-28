@@ -1,6 +1,6 @@
 // Resolves comment anchors against the live scene: pins follow their element,
 // and fall back to the last seen position once the element is gone.
-import { bbox, isArrow, isShape, live, nameOf, type El } from "./scene";
+import { bbox, componentOf, isArrow, isShape, live, nameOf, type El } from "./scene";
 import type { Anchor } from "../comments/threads";
 
 const lastSeen = new WeakMap<Anchor, { x: number; y: number }>();
@@ -29,16 +29,26 @@ export function resolveAnchor(anchor: Anchor, map: Map<string, El>): AnchorState
     // A deleted element keeps its (deleted) label in the scene; show that rather than the id.
     const text = e?.boundElements?.find((b) => b.type === "text");
     const t = text && map.get(text.id);
-    const name = e && !live(e) && t?.type === "text" ? t.text : e ? nameOf(e, map) : id;
+    // A part of an inserted component (its icon's inner rectangle, say) is named by the component.
+    const owner = e ? componentOf(e, map) : undefined;
+    const name = e && !live(e) && t?.type === "text" ? t.text : owner ? nameOf(owner, map) : e ? nameOf(e, map) : id;
     return { id, name, alive: live(e) };
   });
   const alive = names.filter((n) => n.alive).length;
   return { point, names, status: alive === names.length ? "ok" : alive === 0 ? "lost" : "partial" };
 }
 
-/** Topmost commentable element under a scene point (labels resolve to their container). */
+/** Topmost commentable element under a scene point (labels resolve to their container, parts of an
+ * inserted library component to the component). */
 export function hitTest(elements: readonly El[], x: number, y: number, zoom: number): El | undefined {
   const tol = 8 / zoom;
+  let map: Map<string, El> | undefined;
+  const owner = (e: El) => {
+    if (!e.groupIds?.length) return e;
+    map ??= new Map(elements.map((x) => [x.id, x]));
+    const c = componentOf(e, map);
+    return c && !c.isDeleted ? c : e;
+  };
   let frame: El | undefined;
   for (let i = elements.length - 1; i >= 0; i--) {
     const e = elements[i];
@@ -55,9 +65,9 @@ export function hitTest(elements: readonly El[], x: number, y: number, zoom: num
     if (!inside) continue;
     if (e.type === "text" && e.containerId) {
       const c = elements.find((c) => c.id === e.containerId);
-      if (c && !c.isDeleted) return c;
+      if (c && !c.isDeleted) return owner(c);
     }
-    if (isShape(e)) return e;
+    if (isShape(e)) return owner(e);
     if (e.type === "frame") frame ??= e;
   }
   return frame;

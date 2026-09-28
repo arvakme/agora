@@ -32,7 +32,7 @@ Agora 把这三件事放到同一张图上：图就在仓库里，agent 能读�
 
 ### 3. 一键在终端继续，双向同步
 
-「在终端打开」会在本项目专属的 tmux 服务器里用同一个原生会话 id 起交互式 CLI（`claude --resume`、`pi --session-id`、`codex resume`），再用 Kitty 或 Terminal.app 打开窗口。你在终端里说的话、agent 的回复和工具调用都会出现在面板上；从面板发的消息会等 agent 这一轮结束、终端 4 秒没有按键后粘贴进去。
+「在终端打开」用同一个原生会话 id 起交互式 CLI（`claude --resume`、`pi --session-id`、`codex resume`），下拉里选在哪儿打开（记在浏览器里）：**Kitty**——在本项目专属的 tmux 服务器里起，再用 Kitty（没有就 Terminal.app）打开窗口；**Seedmux**——经 Seedmux 官方控制桥在当前标签页旁新开一个 pane，CLI 直接跑在里面。你在终端里说的话、agent 的回复和工具调用都会出现在面板上；从面板发的消息会等 agent 这一轮结束、终端 4 秒没有按键后粘贴进去。
 
 ![终端已接管：面板显示 tmux attach 命令，对话继续同步](docs/media/terminal.png)
 
@@ -179,7 +179,7 @@ server/ brain/ daemon/ host/ agora_ask/ k8s/
 - **Codex 终端先行时靠认领。** 还没有原生 id 的 Codex 会话在终端里开新会话，Agora 认领打开终端之后同目录下出现的第一个 rollout；同一时间在同一目录另起 Codex 可能认错。
 - **用量不全。** Claude Code 终端里的轮次没有花费（原生日志不记），Codex 不记花费。
 - **指针只看编辑工具的写入。** `sed -i`、`cat > x` 这类 shell 写入不会被识别；读文件、跑测试不移动指针；一个文件只属于最具体的那个节点。
-- **只在 macOS 上实测过。** 终端窗口用 Kitty 或 Terminal.app 打开；都没有时面板给出 `tmux attach` 命令。
+- **只在 macOS 上实测过。** 终端窗口用 Kitty 或 Terminal.app 打开；都没有时面板给出 `tmux attach` 命令。Seedmux 需要它的 Agent Team 控制桥开着（设置 › Agent Team）；关着时下拉里的「复制打开命令」给出可在任意 pane 里运行的命令。Agora 没法让 Seedmux 切到已开的 pane，要自己在 Seedmux 里切过去。
 
 可能的方向（未排期）：多人实时协同编辑、Linux 上的终端窗口、进度指针识别更多写入方式。
 
@@ -201,3 +201,4 @@ CI（`.github/workflows/test.yml`）跑全部 Python 测试（带 Postgres / Red
 - **Dither Icons**（[`@unlocalhosted/dither-icons`](https://dithered.dev)，MIT，© 2026 Unlocalhosted）：界面图标。
 - **dither-extra 图标**（`web/src/app/dither-extra/`）：本项目作者为 Marginalia 按 Dither Icons 的构造规则绘制的 17 个补充图标（`eye-off` 复用 Dither Icons 的眼睛几何），随本项目以 MIT 发布，并附 Dither Icons 的许可原文（[LICENSE-dither-icons.txt](web/src/app/dither-extra/LICENSE-dither-icons.txt)）。
 - **DeepSeek Harness**（github.com/deepseek-ai/deepseek-harness，MIT）：会话「对话 / 轨迹」视图的信息结构，用本项目的技术栈重写，未引入其依赖。
+- **Agent 头像**（`web/src/app/agents/`，随应用打包、不在运行时外链）：Pi 取自 Pi 官方 X 账号 [@pidotdev](https://x.com/pidotdev) 的头像（与 [pi.dev](https://pi.dev) 的 `logo-auto.svg` 同一标志），缩成 160px；Claude Code 取自官方文档站 [code.claude.com/docs](https://code.claude.com/docs) 的矢量标志（橙色星芒），按其站点图标的深色底做成方形 SVG；Codex 取自 OpenAI 签名的 Codex 桌面应用自带图标（`Codex.app/Contents/Resources/icon-codex-light.png`，与 [developers.openai.com/codex](https://developers.openai.com/codex) 下载的应用相同），裁出中间部分缩成 160px。**这些标志是各自所有者（Earendil / Pi、Anthropic、OpenAI）的商标或作品，不在本项目的 MIT 许可范围内，这里仅用于标识对应的产品；本项目与它们没有从属或背书关系。**

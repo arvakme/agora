@@ -112,10 +112,12 @@ p.ds-say { white-space: pre-wrap; }
 .ds-rec { position: relative; }
 .ds-rec[data-selected="true"] { background: var(--selected); }
 .ds-rec[data-selected="true"]::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
-.ds-rec-line { display: grid; grid-template-columns: 40px 34px minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); width: 100%; min-height: 28px; padding: 0 var(--space-5) 0 var(--space-5); text-align: left; transition: background var(--dur-tap) var(--ease-out); }
+.ds-rec-line { display: grid; grid-template-columns: 40px 54px minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); width: 100%; min-height: 28px; padding: 0 var(--space-5) 0 var(--space-5); text-align: left; transition: background var(--dur-tap) var(--ease-out); }
 .ds-rec-line:hover { background: var(--raised); }
 .ds-rec-i { color: var(--fg-subtle); font-size: var(--text-xs); font-variant-numeric: tabular-nums; text-align: right; }
 .ds-rec-kind { justify-self: start; height: 18px; line-height: 18px; padding: 0 5px; border-radius: var(--r-pill); background: var(--well); color: var(--fg-muted); font-size: var(--text-xs); }
+.ds-rec-kind:has(.agent-avatar) { display: inline-flex; align-items: center; gap: var(--space-2); padding-left: 2px; white-space: nowrap; }
+.ds-rec-kind .agent-avatar { width: 14px; height: 14px; }
 .ds-rec[data-kind="tool"] .ds-rec-kind { background: var(--accent-wash); color: var(--accent-ink); }
 .ds-rec[data-error="true"] .ds-rec-kind { background: var(--negative-wash); color: var(--negative); }
 .ds-rec-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); }

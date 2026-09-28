@@ -16,9 +16,25 @@
 .sp-meta select:hover { background: var(--raised); color: var(--fg); }
 .sp-native { flex: none; font-size: var(--text-xs); color: var(--fg-subtle); }
 .sp-term-btn { flex: none; }
+/* 「在 X 中打开」+ ▾: one split control; the menu picks Kitty or Seedmux and remembers it */
+.sp-term { position: relative; flex: none; display: flex; align-items: center; gap: 1px; }
+.sp-term .sp-term-btn { border-top-right-radius: var(--r-xs); border-bottom-right-radius: var(--r-xs); }
+.sp-term-more { width: 26px; padding: 0; border-top-left-radius: var(--r-xs); border-bottom-left-radius: var(--r-xs); }
+.sp-term-more .ag-chevron { transform: rotate(90deg); }
+.sp-term-more .ag-chevron[data-open="true"] { transform: rotate(-90deg); }
+.sp-term-menu { top: calc(100% + var(--space-2)); right: 0; min-width: 200px; transform-origin: top right; z-index: 31; }
+.sp-term-scrim { position: fixed; }
+.sp-term-menu .menu-title { margin: var(--space-2) var(--space-4) var(--space-2); color: var(--fg-subtle); font-size: var(--text-xs); }
+.sp-term-menu hr { margin: var(--space-2) 0; border: 0; border-top: 1px solid var(--line); }
+.sp-term-menu button[data-on="true"] { color: var(--accent); }
+.sp-term-menu button:disabled { opacity: 0.5; cursor: default; }
+.sp-term-menu button:disabled:hover { background: transparent; color: inherit; }
+.menu-check { display: inline-grid; place-items: center; width: 14px; flex: none; --icon: var(--accent); }
+.menu-note { margin-left: auto; font-style: normal; color: var(--fg-faint); font-size: var(--text-xs); }
+.sp-attach-where { flex: none; color: var(--fg-muted); font-size: var(--text-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sp-attach { flex: none; margin: var(--space-4) var(--space-5) 0; }
 .sp-attach code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); color: var(--fg); user-select: all; }
-.sp-attach-msg { flex: none !important; color: var(--fg-subtle); }
+.sp-attach-msg { flex: 0 1 auto !important; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-subtle); }
 
 /* view bar: 对话 / 轨迹 on the left, the session's totals on the right */
 .sp-bar { flex: none; display: flex; align-items: center; gap: var(--space-5); min-height: 44px; padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--line); min-width: 0; }

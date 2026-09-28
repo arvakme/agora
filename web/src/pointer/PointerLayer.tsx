@@ -11,6 +11,7 @@ import type { CanvasViewState } from "../canvas/CanvasView";
 import { bbox, codePathsOf, isShape, labelOf, live, type El } from "../canvas/scene";
 import { footprint, inflate, obstacles, overlaps, placeBeside, type Box } from "../canvas/clearance";
 import { AGENT_NAMES, useAgents } from "../session/agents";
+import { AgentAvatar } from "../session/AgentAvatar";
 import { buildTurns, filesOf } from "../session/trajectoryModel";
 import { openTrajectory, ui } from "../session/ui";
 import { elementFor, place, type Placed } from "./codeLinks";
@@ -108,6 +109,7 @@ export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view
           <motion.div ref={chipRef} className="ptr ptr-ui" data-side={label!.side} initial={false} animate={{ x: Math.round(label!.x), y: Math.round(label!.y) }} transition={glide ? GLIDE : { duration: 0 }} data-running={turns.at(-1)?.running}>
             <button className="ptr-chip" onClick={() => setOpen(open === "pointer" ? null : "pointer")} aria-expanded={open === "pointer"} title={`${agentName} 最近在改「${labelOf(el!, view.map)}」的代码`}>
               <IconTarget size={16} replayKey={state.placed.length} />
+              {binding && <AgentAvatar kind={binding.agent} size="xs" />}
               <b>{agentName}</b>
               <span className="ptr-file">{base(cur.path)}</span>
               <time>{clock(cur.at)}</time>
@@ -140,7 +142,7 @@ export function PointerLayer({ api, view }: { api: ExcalidrawImperativeAPI; view
           {open === "outside" && (
             <div className="ptr-pop ptr-pop-up">
               <div className="ptr-pop-head">
-                <b>{agentName} 改了这些文件，但它们不属于任何节点</b>
+                <b>{binding && <AgentAvatar kind={binding.agent} size="xs" />}{agentName} 改了这些文件，但它们不属于任何节点</b>
                 <span>给节点关联代码路径后，它们会落到节点上</span>
               </div>
               <ul className="ptr-list">
