@@ -12,7 +12,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { IconChevron, IconEnter, IconHint, IconHistory, IconNext, IconPause, IconPlay, IconPrev } from "../app/icons";
 import { openTrajectory, ui } from "../session/ui";
 import { advance, buildAxis, hhmmss, ticks, type Axis } from "./axis";
-import { clock, replayTime, useReplay, useTick } from "./clock";
+import { clock, prefersReducedMotion as reducedMotion, replayTime, useReplay, useTick } from "./clock";
+import { motion } from "motion/react";
 import { focus } from "./focus";
 import { frame } from "./frame";
 import { RunAvatar } from "./RunAvatar";
@@ -79,6 +80,18 @@ export function Timeline({ empty, placeOf, onLocate }: { empty?: boolean; placeO
   };
   const trackRef = useMemo(() => observe(track), []);
   const miniRef = useMemo(() => observe(mini), []);
+  // Expand / collapse animate the height (the full view's height is measured).
+  const [fullH, setFullH] = useState(240);
+  const innerRO = useMemo(() => (typeof ResizeObserver === "undefined" ? null : new ResizeObserver((es) => setFullH(Math.ceil(es[0].contentRect.height)))), []);
+  const innerRef = useMemo(() => {
+    let cur: HTMLDivElement | null = null;
+    return (el: HTMLDivElement | null) => {
+      if (cur) innerRO?.unobserve(cur);
+      cur = el;
+      if (el) innerRO?.observe(el);
+    };
+  }, [innerRO]);
+  useEffect(() => () => innerRO?.disconnect(), [innerRO]);
 
   const flat = runs.flat;
   const intervals = useMemo(() => flat.flatMap((f) => [...f.run.segs.map((s) => [s.start, s.end] as const), ...f.run.receipts.map((r) => [r.at, r.at + 500] as const)]), [flat]);
@@ -107,23 +120,36 @@ export function Timeline({ empty, placeOf, onLocate }: { empty?: boolean; placeO
   const knob = useRef<HTMLSpanElement>(null);
   const mph = useRef<HTMLSpanElement>(null);
   const future = useRef<HTMLSpanElement>(null);
-  const axRef = useRef({ axis, maxis });
-  axRef.current = { axis, maxis };
+  // When an axis is rebuilt with a different shape (a new collapsed gap, a rescale) the playhead
+  // blends from the old mapping to the new one over 250 ms — the same glide the segments make.
+  const shown = useRef({ x: -1, mx: -1 });
+  const axRef = useRef({ axis, maxis, from: null as { x: number; mx: number } | null, at: 0 });
+  if (axRef.current.axis !== axis || axRef.current.maxis !== maxis) axRef.current = { axis, maxis, from: shown.current.x >= 0 ? { ...shown.current } : null, at: performance.now() };
   useEffect(
     () =>
       frame.add((n) => {
         const tt = clock.time(n);
-        const { axis: A, maxis: M } = axRef.current;
-        const x = Math.min(A.width, A.toPx(Math.min(tt, n)));
-        if (ph.current) ph.current.style.transform = `translateX(${x.toFixed(1)}px)`;
+        const { axis: A, maxis: M, from, at: since } = axRef.current;
+        const lin = from ? Math.min(1, (performance.now() - since) / 300) : 1;
+        const u = lin * lin * (3 - 2 * lin);
+        // Between the 4 Hz rebuilds "now" runs past the axis end: extend it at the axis's own
+        // scale, so the playhead moves continuously instead of stepping at each rebuild.
+        const at = (X: Axis, time: number) => Math.min(X.width - 1, time <= X.end ? X.toPx(time) : X.toPx(X.end) + (time - X.end) * X.pps);
+        // from where it was drawn when the axis changed, eased onto the new mapping (no jump, whatever changed)
+        const blend = (X: Axis, x0: number | undefined, time: number) => (u >= 1 || x0 == null ? at(X, time) : x0 + (at(X, time) - x0) * u);
+        const x = blend(A, from?.x, Math.min(tt, n));
+        shown.current.x = x;
+        if (ph.current) ph.current.style.transform = `translate3d(${x.toFixed(2)}px, 0, 0)`;
         if (future.current) {
-          future.current.style.left = `${x.toFixed(1)}px`;
+          future.current.style.left = `${x.toFixed(2)}px`;
         }
         if (knob.current) {
           const txt = clock.get() ? hhmmss(tt) : "现在";
           if (knob.current.textContent !== txt) knob.current.textContent = txt;
         }
-        if (mph.current) mph.current.style.transform = `translateX(${Math.min(M.width, M.toPx(Math.min(tt, n))).toFixed(1)}px)`;
+        const mx = blend(M, from?.mx, Math.min(tt, n));
+        shown.current.mx = mx;
+        if (mph.current) mph.current.style.transform = `translate3d(${mx.toFixed(2)}px, 0, 0)`;
       }),
     [],
   );
@@ -221,11 +247,15 @@ export function Timeline({ empty, placeOf, onLocate }: { empty?: boolean; placeO
     </span>
   );
 
-  const X = (A: Axis, a: number, b: number) => ({ left: A.toPx(a), width: Math.max(2, A.toPx(b) - A.toPx(a) - 1) });
+  // Positions by transform (sub-pixel); widths grow — both glide between the 4 Hz rebuilds (CSS).
+  const tx = (x: number) => `translate3d(${x.toFixed(2)}px, 0, 0)`;
+  const X = (A: Axis, a: number, b: number) => ({ transform: tx(A.toPx(a)), width: Math.max(2, A.toPx(b) - A.toPx(a) - 1) });
   const visible = rows.filter((r) => r.y + r.h >= scroll.top - 200 && r.y <= scroll.top + scroll.h + 200);
 
   return (
     <section className="ws-tl" data-open={open || undefined} data-replay={replay ? "" : undefined} aria-label="工位时间线">
+      <motion.div className="ws-tl-anim" initial={false} animate={{ height: open ? fullH : 34 }} transition={reducedMotion() ? { duration: 0 } : { type: "spring", stiffness: 380, damping: 36 }}>
+      <div ref={innerRef}>
       {!open ? (
         <div className="ws-bar">
           <button className="ttl" onClick={() => setOpen(true)} title="展开时间线">
@@ -242,7 +272,7 @@ export function Timeline({ empty, placeOf, onLocate }: { empty?: boolean; placeO
               </div>
             ))}
             {maxis.pieces.filter((p) => p.kind !== "act").map((p) => (
-              <span key={p.a} className="mg" style={{ left: p.x0, width: p.x1 - p.x0 }} title={`空闲 ${dur(p.b - p.a)}`} />
+              <span key={p.a} className="mg" style={{ transform: tx(p.x0), width: p.x1 - p.x0 }} title={`空闲 ${dur(p.b - p.a)}`} />
             ))}
             <span className="mph" ref={mph} data-replay={replay ? "" : undefined} />
           </div>
@@ -291,11 +321,11 @@ export function Timeline({ empty, placeOf, onLocate }: { empty?: boolean; placeO
             <div className="track" ref={trackRef} style={{ height }} {...scrub(axis)} tabIndex={0} role="slider" aria-label="回放位置" aria-valuemin={axis.start} aria-valuemax={axis.end} aria-valuenow={Math.round(t)} aria-valuetext={hhmmss(t)} onKeyDown={onKey}>
               <div className="ruler">
                 {ticks(axis).map((k) => (
-                  <span key={k.x} className="tick" data-maj={k.major || undefined} style={{ left: k.x }}>{k.label && <span>{k.label}</span>}</span>
+                  <span key={k.t} className="tick" data-maj={k.major || undefined} style={{ transform: tx(k.x) }}>{k.label && <span>{k.label}</span>}</span>
                 ))}
               </div>
               {axis.pieces.filter((p) => p.kind !== "act").map((p) => (
-                <span key={p.a} className="gap" data-kind={p.kind} data-at={replay && axis.gapAt(t) === p ? "" : undefined} style={{ left: p.x0, width: p.x1 - p.x0, top: RULER, height: height - RULER }} title={`${hhmmss(p.a)}–${hhmmss(p.b)} 没有会话在干活（${dur(p.b - p.a)}），已压缩显示`}>
+                <span key={p.a} className="gap" data-kind={p.kind} data-at={replay && axis.gapAt(t) === p ? "" : undefined} style={{ transform: tx(p.x0), width: p.x1 - p.x0, top: RULER, height: height - RULER }} title={`${hhmmss(p.a)}–${hhmmss(p.b)} 没有会话在干活（${dur(p.b - p.a)}），已压缩显示`}>
                   <span className="gl">{p.kind === "tail" ? "空闲中" : "空闲"}<br />{dur(p.b - p.a)}</span>
                 </span>
               ))}
@@ -331,13 +361,13 @@ export function Timeline({ empty, placeOf, onLocate }: { empty?: boolean; placeO
                   const k = r.f.run;
                   return (
                     <span key={`c${k.id}`}>
-                      <span className="conn" style={{ left: axis.toPx(k.spawnAt!), top, height: bottom - top }} title={`${hhmmss(k.spawnAt!)} ${pr.f.run.name} 派出（${k.via === "seedmux" ? "Seedmux" : "Task"}）`} />
-                      {k.doneAt != null && k.doneAt < liveNow && !k.coarse && <span className="conn" data-up="" style={{ left: axis.toPx(k.doneAt), top, height: bottom - top }} title={`${hhmmss(k.doneAt)} 交回给 ${pr.f.run.name}`} />}
+                      <span className="conn" style={{ transform: tx(axis.toPx(k.spawnAt!)), top, height: bottom - top }} title={`${hhmmss(k.spawnAt!)} ${pr.f.run.name} 派出（${k.via === "seedmux" ? "Seedmux" : "Task"}）`} />
+                      {k.doneAt != null && k.doneAt < liveNow && !k.coarse && <span className="conn" data-up="" style={{ transform: tx(axis.toPx(k.doneAt)), top, height: bottom - top }} title={`${hhmmss(k.doneAt)} 交回给 ${pr.f.run.name}`} />}
                     </span>
                   );
                 })}
               {replay && <span className="future" ref={future} style={{ top: RULER }} />}
-              <span className="nowline" style={{ left: axis.toPx(liveNow), top: RULER }} />
+              <span className="nowline" style={{ transform: tx(axis.toPx(liveNow)), top: RULER }} />
               <span className="ph" ref={ph} data-replay={replay ? "" : undefined}>
                 <span className="knob" ref={knob}>{replay ? hhmmss(t) : "现在"}</span>
               </span>
@@ -345,6 +375,8 @@ export function Timeline({ empty, placeOf, onLocate }: { empty?: boolean; placeO
           </div>
         </>
       )}
+      </div>
+      </motion.div>
     </section>
   );
 }

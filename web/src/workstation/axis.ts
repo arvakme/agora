@@ -62,7 +62,7 @@ export function buildAxis(intervals: readonly (readonly [number, number])[], now
   return { start: pieces[0].a, end: now, pieces, pps, width, toPx, fromPx, gapAt: (t) => pieces.find((p) => p.kind !== "act" && t > p.a && t < p.b) ?? null };
 }
 
-export type Tick = { x: number; major: boolean; label: string };
+export type Tick = { t: number; x: number; major: boolean; label: string };
 const STEPS_S = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 21600];
 const pad = (n: number) => String(n).padStart(2, "0");
 export const hhmmss = (t: number) => {
@@ -96,7 +96,7 @@ export function ticks(A: Axis, fmt: (t: number) => string = hhmmss): Tick[] {
         label = text;
         lastR = x + w / 2;
       }
-      out.push({ x, major: isMaj, label });
+      out.push({ t: k, x, major: isMaj, label });
     }
   }
   return out;

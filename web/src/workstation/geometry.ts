@@ -5,7 +5,7 @@ import { footprint, type Box } from "../canvas/clearance";
 import { labelOf, live, type El } from "../canvas/scene";
 import { effectiveLinks, type Scenes } from "../nested/graph";
 import { elementFor } from "../pointer/codeLinks";
-import type { Pt } from "./rig";
+import { routeAround, type Pt } from "./rig";
 import { OUTSIDE, type Located } from "./place";
 
 export type Geometry = {
@@ -21,6 +21,8 @@ export type Geometry = {
   boxOf: (place: string) => Box | undefined;
   /** Child canvas a node opens, if any. */
   childOf: Map<string, string>;
+  /** Waypoints around the nodes between two docks. */
+  route: (a: Pt, b: Pt) => Pt[];
 };
 
 /** Node the tray is drawn beside: below the diagram's bottom-right, never in a screen corner. */
@@ -39,8 +41,8 @@ export function trayBox(elements: readonly El[]): Box {
 }
 
 export function buildGeometry(canvasId: string, elements: readonly El[], map: Map<string, El>, scenes: Scenes, childTitle: (id: string) => string | undefined): Geometry {
-  const all = new Map(scenes).set(canvasId, elements);
-  const links = effectiveLinks(canvasId, all);
+  const everything = new Map(scenes).set(canvasId, elements);
+  const links = effectiveLinks(canvasId, everything);
   const boxes = new Map<string, Box>();
   const labels = new Map<string, string>();
   const childOf = new Map<string, string>();
@@ -63,7 +65,7 @@ export function buildGeometry(canvasId: string, elements: readonly El[], map: Ma
       const link = links.find((l) => l.id === hit.link.id)!;
       // Claimed only through its child canvas: the worker stands here, the bubble says where below.
       if (link.child && !link.own.includes(hit.glob)) {
-        if (!below.has(link.child)) below.set(link.child, effectiveLinks(link.child, all));
+        if (!below.has(link.child)) below.set(link.child, effectiveLinks(link.child, everything));
         const inner = elementFor(path, below.get(link.child)!);
         out.portal = { canvasId: link.child, label: inner?.link.label ?? childTitle(link.child) ?? "子图" };
       }
@@ -76,5 +78,7 @@ export function buildGeometry(canvasId: string, elements: readonly El[], map: Ma
     const b = boxOf(place) ?? tray;
     return place === OUTSIDE ? { x: b.x + 30, y: b.y } : { x: b.x + Math.min(28, b.w / 4), y: b.y };
   };
-  return { canvasId, boxes, labels, tray, locate, dock, boxOf, childOf };
+  const all = [...boxes.values()];
+  const route = (a: Pt, b: Pt) => routeAround(a, b, all);
+  return { canvasId, boxes, labels, tray, locate, dock, boxOf, childOf, route };
 }

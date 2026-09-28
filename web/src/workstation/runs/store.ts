@@ -15,6 +15,8 @@ export type Runs = { roots: AgentRun[]; flat: FlatRun[]; byId: Map<string, Agent
 
 const MOCK = typeof location !== "undefined" && new URLSearchParams(location.search).get("mock") === "runs";
 const mockBase = Date.now() + 1500;
+// The motion capture (scripts/motion-capture.ts) times its windows from here.
+if (MOCK && typeof window !== "undefined") Object.assign(window, { __mockBase: mockBase });
 
 let root = "";
 export const setRunsRoot = (r: string) => void (root = r);

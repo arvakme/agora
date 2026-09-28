@@ -10,7 +10,7 @@
 // output; every turn shows model, effort, tokens, time and cost when the log has them.
 import { ConflictNotice } from "../multi/ConflictNotice";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { IconCheck, IconChevron, IconCode, IconCommentSolid, IconCopy, IconLayers, IconLock, IconMore, IconPath, IconTarget, IconUndo } from "../app/icons";
 import { useReplay, useReplayAt, useTick } from "../workstation/clock";
 import { hhmmss } from "../workstation/axis";
@@ -243,8 +243,9 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   const replayAt = useReplayAt();
   const autoTraj = useRef(false);
   useEffect(() => {
-    if (replay && view === "chat") (autoTraj.current = true), setView("trajectory");
-    if (!replay && autoTraj.current) (autoTraj.current = false), setView("chat");
+    // A transition: the trajectory mounts without holding up the frame the replay starts in.
+    if (replay && view === "chat") (autoTraj.current = true), startTransition(() => setView("trajectory"));
+    if (!replay && autoTraj.current) (autoTraj.current = false), startTransition(() => setView("chat"));
   }, [!!replay]);
   const [focusTurn, setFocusTurn] = useState<{ n: number; key: number } | null>(null);
   const canvasTitle = canvasTitles[session.canvasId];

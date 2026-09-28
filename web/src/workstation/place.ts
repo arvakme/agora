@@ -17,6 +17,8 @@ export const OUTSIDE = "\u0000outside";
 export const IDLE_LEAVE_MS = 60_000;
 export const HANDOFF_MS = 1100;
 export const FADE_MS = 800;
+/** A worker fades in when it appears (never pops in). */
+export const APPEAR_MS = 320;
 
 export type Located = { place: string; portal?: { canvasId: string; label: string } };
 /** A project-relative file → the node it belongs to on this canvas (null = outside the diagram). */
@@ -26,6 +28,8 @@ export type Ctx = {
   locate: Locate;
   /** The dock (feet position, world coordinates) at a place. */
   dock: (place: string) => Pt;
+  /** Waypoints for a walk from a to b around the nodes in the way (none: straight). */
+  route?: (a: Pt, b: Pt) => Pt[];
   reduced: boolean;
   /** The dispatcher of a sub-agent, to find where it was and where to hand back. */
   run: (id: string) => AgentRun | undefined;
@@ -97,6 +101,7 @@ function compute(run: AgentRun, t: number, ctx: Ctx): RunState {
     // A sub-agent starts where its dispatcher was when it sent it.
     at = run.spawnAt != null ? stateAt(parent, run.spawnAt, ctx).at : OUTSIDE;
     if (run.spawnAt == null || t < run.spawnAt) present = false;
+    else fade = Math.min(1, (t - run.spawnAt) / APPEAR_MS);
     for (const g of run.segs) {
       if (g.start > t) break;
       const w = where(ctx, g);
@@ -116,7 +121,7 @@ function compute(run: AgentRun, t: number, ctx: Ctx): RunState {
       }
       const end = run.coarse ? run.doneAt : arrive + HANDOFF_MS;
       if (!run.coarse && t >= arrive && t < end) handoff = true;
-      if (t >= end) fade = Math.max(0, 1 - (t - end) / FADE_MS);
+      if (t >= end) fade = Math.min(fade, Math.max(0, 1 - (t - end) / FADE_MS));
       if (fade <= 0) present = false;
     }
   } else {
@@ -145,8 +150,9 @@ function compute(run: AgentRun, t: number, ctx: Ctx): RunState {
       }
       const lastEnd = Math.max(...b.filter((g) => g.start <= t).map((g) => g.end));
       const idle = t - lastEnd;
+      fade = Math.min(1, (t - b[0].start) / APPEAR_MS);
       if (idle > IDLE_LEAVE_MS) {
-        fade = Math.max(0, 1 - (idle - IDLE_LEAVE_MS) / FADE_MS);
+        fade = Math.min(fade, Math.max(0, 1 - (idle - IDLE_LEAVE_MS) / FADE_MS));
         if (fade <= 0) present = false;
       }
     }
@@ -156,7 +162,7 @@ function compute(run: AgentRun, t: number, ctx: Ctx): RunState {
   let w = 1;
   if (walkOn && moves.length) {
     walk = planFor(moves[moves.length - 1], ctx);
-    w = Math.min(1, Math.max(0, (t - walk.t0) / (walk.t1 - walk.t0)));
+    w = t >= walk.t1 ? 1 : Math.min(0.999, Math.max(0, (t - walk.t0) / (walk.t1 - walk.t0)));
   }
   let pose: Pose = w < 1 ? "walk" : seg ? seg.kind : "idle";
   if (handoff) pose = "handoff";
@@ -179,15 +185,15 @@ function compute(run: AgentRun, t: number, ctx: Ctx): RunState {
 }
 
 const plans = new Map<string, WalkPlan>();
-/** The footstep plan of a move between two docks (memoised; docks move when the diagram does). */
-export function planFor(m: Move, ctx: Pick<Ctx, "dock">): WalkPlan {
+/** The footstep plan of a move between two docks, around the nodes in the way (memoised; docks move when the diagram does). */
+export function planFor(m: Move, ctx: Pick<Ctx, "dock" | "route">): WalkPlan {
   const a = ctx.dock(m.from);
   const b = ctx.dock(m.to);
-  const key = `${m.t}|${a.x},${a.y}|${b.x},${b.y}`;
+  const key = `${m.t}|${a.x},${a.y}|${b.x},${b.y}|${ctx.route ? 1 : 0}`;
   let p = plans.get(key);
   if (!p) {
     if (plans.size > 4000) plans.clear();
-    plans.set(key, (p = planWalk(m, a, b)));
+    plans.set(key, (p = planWalk(m, a, b, ctx.route?.(a, b) ?? [])));
   }
   return p;
 }

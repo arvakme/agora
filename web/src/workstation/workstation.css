@@ -3,7 +3,9 @@
  * No glow, no gradient; loops stop with reduced motion. */
 .ws-layer { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
 .ws-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.ws-rings rect { fill: none; stroke-width: 1.5; }
+.ws-rings rect { fill: none; stroke-width: 1.5; transition: stroke 300ms var(--ease-out), opacity 300ms var(--ease-out); animation: ws-ring-in 300ms var(--ease-out) both; }
+.ws-rings rect[data-exit] { opacity: 0; }
+@keyframes ws-ring-in { from { opacity: 0; } }
 .ws-rings rect[data-tone="write"] { stroke: var(--accent); }
 .ws-rings rect[data-tone="need"] { stroke: var(--caution-dot); }
 .ws-tether { fill: none; stroke: var(--fg-faint); stroke-width: 1.2; stroke-dasharray: 2 4; stroke-linecap: round; vector-effect: non-scaling-stroke; }
@@ -13,12 +15,20 @@
 .ws-layer[data-trace] .ws-rings, .ws-layer[data-trace] .ws-tethers { opacity: 0.3; }
 
 /* bubbles, chips and the tray are HTML in screen space; the frame loop sets their transform */
-.ws-bub, .ws-pchip, .ws-tray { position: absolute; left: 0; top: 0; will-change: transform; }
-.ws-bub { pointer-events: auto; display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 2px 10px 2px 3px; border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--edge), var(--lift-1); color: var(--fg); font-size: var(--text-sm); white-space: nowrap; cursor: pointer; user-select: none; }
+.ws-bub-pos, .ws-pchip, .ws-tray { position: absolute; left: 0; top: 0; will-change: transform; }
+.ws-bub-pos { pointer-events: none; }
+/* enter: fade + a 4px rise (180 ms); leave: fade (120 ms); new words cross-fade in */
+.ws-bub { animation: ws-bub-in 180ms var(--ease-out) both; }
+.ws-bub[data-exit] { animation: ws-bub-out 120ms ease-in both; pointer-events: none !important; }
+.ws-bub-in { display: inline-flex; align-items: center; gap: inherit; animation: ws-fade 160ms var(--ease-out) both; }
+@keyframes ws-bub-in { from { opacity: 0; transform: translateY(4px); } }
+@keyframes ws-bub-out { to { opacity: 0; transform: translateY(2px); } }
+@keyframes ws-fade { from { opacity: 0.25; } }
+.ws-bub { position: relative; pointer-events: auto; display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 2px 10px 2px 3px; border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--edge), var(--lift-1); color: var(--fg); font-size: var(--text-sm); white-space: nowrap; cursor: pointer; user-select: none; }
 .ws-bub .q { max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
 .ws-bub .v { font-weight: var(--weight-strong); }
 .ws-bub .f { font-family: var(--font-mono); font-size: 11px; }
-.ws-bub .el { color: var(--fg-subtle); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.ws-bub .el { display: inline-block; min-width: 3.4em; color: var(--fg-subtle); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
 .ws-bub .who { font-weight: var(--weight-strong); margin-right: -2px; }
 .ws-bub .par { color: var(--fg-subtle); font-size: var(--text-xs); margin-right: 2px; }
 .ws-bub .portal { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border-radius: var(--r-pill); background: var(--well-on-surface); color: var(--fg-muted); font-size: var(--text-xs); }
@@ -45,7 +55,8 @@
 .rc[data-r="claimed"], .rc[data-r="returned"] { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--fg); }
 .rc[data-r="accepted"] { background: var(--positive-wash); color: var(--positive); }
 .rc[data-r="exited"], .rc[data-r="failed"], .rc[data-r="blocked"] { background: var(--negative-wash); color: var(--negative); }
-.rc[data-r="unknown"], .rc[data-r="idle_no_reply"] { background: none; box-shadow: inset 0 0 0 1px var(--fg-faint); color: var(--fg-subtle); }
+/* 声明完成 is never green (it is not 验收); 验收通过 is; 状态不明 is dashed */
+.rc[data-r="unknown"], .rc[data-r="idle_no_reply"] { background: none; box-shadow: none; outline: 1px dashed var(--fg-faint); outline-offset: -1px; color: var(--fg-subtle); }
 .rc[data-r="waiting"] { background: var(--caution-wash); color: var(--caution); }
 .kbadge { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: var(--r-pill); background: var(--surface); box-shadow: var(--edge); color: var(--fg-muted); font-size: 11px; font-weight: var(--weight-strong); }
 
@@ -71,7 +82,8 @@
 .ws-bar { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 6px 0 12px; }
 .ws-bar .ttl { display: inline-flex; align-items: center; gap: 6px; color: var(--fg-muted); white-space: nowrap; font-size: var(--text-xs); }
 .ws-bar .ttl:hover { color: var(--fg); }
-.ws-bar .stt { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+/* a fixed width, so the strip beside it never shifts when the words change */
+.ws-bar .stt { flex: none; width: clamp(150px, 26%, 300px); display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
 .ws-bar .stt b { color: var(--fg); font-weight: var(--weight-medium); }
 .ws-bar .stt b.rp { color: var(--accent-ink); }
 .ws-bar .stt[data-k="wait"] b { color: var(--caution); }
@@ -167,7 +179,7 @@
 .ws-tl .rcb[data-r="claimed"], .ws-tl .rcb[data-r="returned"] { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .ws-tl .rcb[data-r="accepted"] { background: var(--positive-wash); }
 .ws-tl .rcb[data-r="exited"], .ws-tl .rcb[data-r="failed"] { background: var(--negative-wash); }
-.ws-tl .rcb[data-r="unknown"] { background: none; box-shadow: inset 0 0 0 1px var(--fg-faint); }
+.ws-tl .rcb[data-r="unknown"], .ws-tl .rcb[data-r="idle_no_reply"] { background: none; outline: 1px dashed var(--fg-faint); outline-offset: -1px; }
 .ws-tl .kidmark { position: absolute; top: 3px; width: 0; height: 0; margin-left: -4px; border: 4px solid transparent; border-top-color: var(--accent); }
 .ws-tl .conn { position: absolute; width: 0; margin-left: -0.75px; border-left: 1.5px solid var(--accent); pointer-events: none; }
 .ws-tl .conn[data-up] { border-left-color: var(--fg-muted); }
@@ -181,4 +193,14 @@
 .ws-tl .ph .knob { position: absolute; top: -1px; left: 50%; transform: translateX(-50%); height: 16px; padding: 0 7px; border-radius: var(--r-pill); background: var(--fg); color: var(--bg); font-size: 11px; line-height: 16px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ws-tl .ph[data-replay] .knob { background: var(--accent-fill); color: var(--accent-fg); }
 
-@media (prefers-reduced-motion: reduce) { .ws-bub, .ws-pchip { transition: none; } }
+/* timeline: segments move by transform and grow in width (a 250 ms linear glide between the
+ * 4 Hz rebuilds), so a running call grows smoothly and a rescale slides instead of jumping */
+.ws-tl .sg, .ws-tl .mini .ms, .ws-tl .gap, .ws-tl .mini .mg, .ws-tl .rcb, .ws-tl .conn, .ws-tl .tick, .ws-tl .nowline { left: 0; transition: transform 250ms linear, width 250ms linear; will-change: transform; }
+.ws-tl-anim { overflow: hidden; }
+
+/* Reduced motion: no movement, but still cross-fades instead of hard cuts. */
+@media (prefers-reduced-motion: reduce) {
+  .ws-bub, .ws-bub-in, .ws-bub[data-exit] { animation: ws-fade 150ms linear both !important; animation-duration: 150ms !important; }
+  .ws-rings rect { transition-duration: 150ms !important; transition-property: opacity, stroke !important; }
+  .ws-tl .sg, .ws-tl .mini .ms, .ws-tl .gap, .ws-tl .mini .mg, .ws-tl .rcb, .ws-tl .conn, .ws-tl .tick, .ws-tl .nowline { transition: none !important; }
+}
