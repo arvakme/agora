@@ -38,6 +38,7 @@ def diagnose(p, *, fix: bool = False) -> list[dict[str, Any]]:
     """Findings: {level: ok|info|warn|error, what, message, fix?: str, fixed?: bool}."""
     from server.canvas import agents
     from server.canvas.backup import Backups
+    from server.canvas.local import session_origins
     from server.canvas.trash import Trash
 
     out: list[dict[str, Any]] = []
@@ -49,14 +50,26 @@ def diagnose(p, *, fix: bool = False) -> list[dict[str, Any]]:
     if not store.exists():
         say("error", "project", f"{store.dir} 不存在：这里还不是 Agora 项目（`agora init` 或 `agora up`）")
         return out
-    p.reconcile()
-    inst = local.instance() or {}
-    say("ok", "instance", f"实例 {inst.get('instanceId', '?')[:8]} · {store.root}")
-    kind = (local.change() or {}).get("kind")
-    if kind:
-        say("info", "instance", {"moved": f"项目从 {local.change().get('from')} 移过来", "copied": f"这是 {local.change().get('from')} 的副本", "fresh": "新 clone / 换机器 / 本机记录被清掉", "reattached": "本机记录丢过，已按注册表认回"}.get(kind, kind) + "（页面会提示一次）")
+    labels = {"moved": "项目从 {} 移过来", "copied": "这是 {} 的副本", "fresh": "新 clone / 换机器 / 本机记录被清掉", "reattached": "本机记录丢过，按注册表认回", "upgraded": "旧版本的项目，原地升级"}
+    if fix:
+        p.reconcile()
+        kind = (local.change() or {}).get("kind")
+        if kind:
+            say("info", "instance", labels.get(kind, kind).format(local.change().get("from")) + "（页面会提示一次）")
+    else:
+        # Without --fix nothing is written: say what `agora up` / --fix would settle, act as that instance.
+        seen = local.classify()
+        local.peek()
+        if seen["kind"] not in ("same", "new"):
+            say("warn" if seen["kind"] in ("moved", "copied") else "info", "instance", labels.get(seen["kind"], seen["kind"]).format(seen.get("from")) + "：还没对账，`agora up` 或 `agora doctor --fix` 处理", fix="reconcile")
+        else:
+            kind = (local.change() or {}).get("kind")
+            if kind:
+                say("info", "instance", labels.get(kind, kind).format(local.change().get("from")) + "（页面会提示一次）")
+    say("ok", "instance", f"实例 {(local.instance_id() or '（未建）')[:8]} · {store.root}")
 
-    st = p.live()
+    # p.live() writes run/server.json back when it is missing: only with --fix.
+    st = p.live() if fix else next((x for x in (p.state(), p.registered()) if p.answering(x)), None)
     say("ok" if st else "info", "server", f"服务在跑：{st['url']}（pid {st['pid']}）" if st else "服务没在跑（`agora up`）")
 
     ws = store.read_workspace_quiet() or {}
@@ -64,23 +77,26 @@ def diagnose(p, *, fix: bool = False) -> list[dict[str, Any]]:
     backups = Backups(store, local)
     # ——— records and bindings (git clean -fdx, a fresh clone) ———
     listed = [d for d in docs if d.get("kind") == "session" and isinstance(d.get("sessionId"), str)]
-    no_record = [d["sessionId"] for d in listed if not (store.dir / "sessions" / f"{d['sessionId']}.jsonl").exists()]
+    in_trash = {m["id"] for m in Trash(store).list() if m["kind"] == "session"}
+    # Only this copy's own sessions come back from a backup: not one in the trash, not one that is
+    # listed here but belongs to another copy (its native session is that copy's).
+    origins = session_origins(store, local)
+    no_record = [d["sessionId"] for d in listed if not (store.dir / "sessions" / f"{d['sessionId']}.jsonl").exists() and d["sessionId"] not in in_trash and (origins.get(d["sessionId"]) or {}).get("state") not in ("other-copy", "foreign")]
     if no_record:
         have = backups.list()
         if fix and have:
-            got = backups.restore()
-            say("info", "records", f"从备份 {time.strftime('%Y-%m-%d %H:%M', time.localtime(have[0]['at'] / 1000))} 放回了 {len(got)} 个文件（只放回缺的）", fixed=True)
+            got = backups.restore(sessions=set(no_record))
+            say("info", "records", f"从备份 {time.strftime('%Y-%m-%d %H:%M', time.localtime(have[0]['at'] / 1000))} 放回了 {len(got)} 个文件（只放回这几个会话缺的）", fixed=True)
             no_record = [s for s in no_record if not (store.dir / "sessions" / f"{s}.jsonl").exists()]
+            origins = session_origins(store, local)
         if no_record:
             level = "warn" if have else "info"
-            say(level, "records", f"{len(no_record)} 个会话没有改图记录（sessions/<id>.jsonl）" + ("：最新的备份里有，`agora doctor --fix` 放回" if have and not fix else "：没有备份可以放回（改图记录只在本机）"), sessions=no_record, fix="restore-backup" if have else None)
+            say(level, "records", f"{len(no_record)} 个会话没有改图记录（sessions/<id>.jsonl）" + ("：最新的备份里有，`agora doctor --fix` 放回" if have and not fix else "：备份里也没有（改图记录只在本机）"), sessions=no_record, fix="restore-backup" if have else None)
     bindings = store.bindings()
-    registry = {**local.registry.binds(local.project_id()), **local.registry.binds(local.project_id(), local.instance_id() or None)}
-    missing = [d["sessionId"] for d in listed if d["sessionId"] not in bindings]
-    recoverable = [s for s in missing if s in registry]
+    recoverable = [sid for sid, o in origins.items() if o["state"] == "recoverable"]
     if recoverable and fix:
         for sid in recoverable:
-            e = registry[sid]
+            e = origins[sid]
             store.bind(sid, agent=e["agent"], model=e.get("model") or "", effort=e.get("effort") or "", native_id=e.get("nativeId"), at=int(time.time() * 1000), started=e.get("started") if e.get("started") is not None else bool(e.get("nativeId")))
             local.note("import", sessionId=sid, agent=e["agent"], model=e.get("model"), nativeId=e.get("nativeId"), reason="doctor")
         say("info", "bindings", f"从本机注册表恢复了 {len(recoverable)} 个会话的绑定", sessions=recoverable, fixed=True)
@@ -88,7 +104,10 @@ def diagnose(p, *, fix: bool = False) -> list[dict[str, Any]]:
     elif recoverable:
         gone = not (store.dir / "sessions").exists() or not any((store.dir / "sessions").glob("*.agent.json"))
         say("warn", "bindings", ("看起来 .agora/sessions/ 被删了（git clean -x？）。" if gone else "") + f"本机注册表里有 {len(recoverable)} 个会话的绑定，`agora doctor --fix` 恢复", sessions=recoverable, fix="restore-bindings")
-    foreign = [s for s in missing if s not in registry]
+    others = sorted(sid for sid, o in origins.items() if o["state"] == "other-copy")
+    if others:
+        say("info", "bindings", f"{len(others)} 个会话属于本机的另一份副本（{origins[others[0]].get('root')}）：不在这里绑定；要在这里接着用，在页面上「在这里分叉继续」", sessions=others)
+    foreign = sorted(sid for sid, o in origins.items() if o["state"] == "foreign")
     if foreign:
         say("info", "bindings", f"{len(foreign)} 个会话是在别的机器或别的位置建的（本机没有它们的记录）：页面上显示只读卡片", sessions=foreign)
 
@@ -131,6 +150,9 @@ def diagnose(p, *, fix: bool = False) -> list[dict[str, Any]]:
     if not ws and files:
         say("warn", "canvases", "workspace.json 缺失或读不了：打开页面会按磁盘上的画布恢复列表")
 
+    tracked = Trash(store).committed()
+    if tracked:
+        say("warn", "trash", f".agora/trash 里有 {len(tracked)} 项被 git 跟踪（回收站只该在本机）：Agora 不列出也不恢复它们；用 `git rm -r --cached .agora/trash` 移出 git")
     items = Trash(store).list()
     if items:
         soon = [m for m in items if m["daysLeft"] <= 3]
@@ -141,7 +163,7 @@ def diagnose(p, *, fix: bool = False) -> list[dict[str, Any]]:
     if sockets:
         say("warn", "tmux", f"旧名字下还有 tmux 服务器在跑：{', '.join(sockets)}（`agora down` 会关掉）")
     last = backups.list()
-    if fix and backups.due():
+    if fix and backups.due() and local.instance_id():
         made = backups.make(force=True)
         if made:
             say("info", "backup", f"做了一次备份：{made['path']}", fixed=True)
@@ -209,6 +231,12 @@ def cmd_history(p, a) -> int:
         data = h.read(a.file, int(a.restore))
         kind, _, rest = a.file.partition("/")
         target = {"canvases": "canvas", "threads": "threads"}.get(kind)
+        if a.file != "workspace.json" and not target:
+            print(f"agora: not a file Agora keeps versions of: {a.file}", file=sys.stderr)
+            return 2
+        current = p.store.dir / a.file
+        if current.exists():
+            h.keep(a.file, current.read_bytes(), force=True)  # what is replaced now is kept, whatever the 10-minute rule says
         if a.file == "workspace.json":
             p.store.write("workspace", None, json.loads(data), base=None, force=True)
         elif target:
@@ -220,7 +248,7 @@ def cmd_history(p, a) -> int:
         return 0
     if a.file:
         for v in h.versions(a.file):
-            print(f"{v['at']}  {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(v['at'] / 1000))}  {v['size']} bytes")
+            print(f"{v['at']}  {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(v['at'] / 1000))}  {v['size']} bytes  (what the file held before a write at that time)")
     else:
         for f in h.files():
             vs = h.versions(f)

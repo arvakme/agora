@@ -39,6 +39,7 @@
 | 路径变了，旧路径上没有同一个实例 | **移动** | 实例 id 不变；注册表记 `root`；Pi 会话的日志移到新目录并改首行 `cwd`（见 [Agent 会话 §1](agent-sessions.md#1-会话模型)），终端里还开着的不动；Claude、Codex 什么都不用做 |
 | 路径变了，旧路径上还有同一个实例 | **复制**（`cp -r`） | 这一份换新的实例 id；带过来的已绑定会话记进 `copies.json`，在这里只读，直到「在这里分叉继续」（两份项目不会续接同一个原生会话） |
 | 没有 `instance.json` | 新项目、新 clone、另一台机器，或 `git clean -fdx` | 注册表里有「最后在这个路径」的实例就沿用它（`git clean` 之后身份不变），否则新建 |
+| 没有 `instance.json`，但 `sessions/` 里有本机的绑定 | 实例 id 出现之前的旧项目，原地升级 | 就是这一份：新建实例 id，不提示「会话不在这台机器上」，现有绑定记进注册表；它以前用的路径哈希 tmux socket 上还开着的终端照样被看到、投递和关闭 |
 
 结果（移动 / 复制 / 新 clone）存在 `instance.json` 的 `change` 里，`agora up` 打印一段说明，页面顶部提示一次，点「知道了」后清掉（`POST /api/project/local/ack`）。
 
@@ -135,7 +136,8 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
 ```
 
 - 画布：`canvases/<id>.excalidraw`、`threads/<id>.json`。会话：`sessions/<id>.jsonl`、`sessions/<id>.agent.json`、`sessions/snapshots/<id>.jsonl`、`run/usage/<id>.jsonl`；manifest 的 `native` 记着原生日志在哪（Agora 从不删它）。
-- manifest 先写、文件后挪：中途崩溃留下的条目照样能恢复。恢复时目标 id 已被占用（git 带回了同 id 的画布）就换成 `<id>-r1`，绝不覆盖。
+- manifest 先写、文件后挪：中途崩溃留下的条目照样能恢复。恢复时目标 id 已被占用（git 带回了同 id 的画布）就换成 `<id>-r1`，绝不覆盖；页面随后把指向旧 id 的东西改过来：它的会话（manifest 的 `linked`）和父节点上的子画布链接（`customData.childCanvas`）。
+- 只认自己写得出来的 manifest：目录名里的时间、kind、id 与 manifest 一致，每个文件都是这个 kind 的固定文件、名字是 `rel` 把 `/` 换成 `__`；不跟随符号链接，目标必须落在 `.agora/` 里。回收站只在本机：被 git 跟踪的条目（`git add -f`、别人的仓库带来的）不列出、不恢复，`agora doctor` 会提示移出 git。
 - 保留 30 天：服务启动时和之后每小时清扫一次，过期的删掉；每次进、出、彻底删除都记进本机注册表。
 - 目录自带 `*` 的 `.gitignore`；`git clean -fdx` 会清掉它，由仓库外的每日备份兜底。
 
@@ -167,8 +169,8 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
 
 **仓库外的兜底**（`server/canvas/backup.py`，都在 `$AGORA_STATE_DIR` 下，`git clean -fdx`、仓库被删都碰不到）：
 
-- **本地版本历史** `history/<项目 id>/<实例 id>/<文件>/<毫秒时间>`：画布、线程文件、`workspace.json` 被覆盖之前，旧内容先存一份；同一个文件 10 分钟最多存一次，最多 50 份、不超过 30 天。兜住 `git reset --hard`、`git checkout -- .agora`、误覆盖和不常提交的人。`agora history [<文件>]` 列出，`agora history <文件> --restore <毫秒时间>` 写回去（写回的那一刻被替换的版本也会留一份；开着的页面下次保存时会报冲突）。
-- **每日备份** `backups/<项目 id>/<实例 id>/<毫秒时间>.tar.gz`：只在本机的那部分 `.agora/` —— `sessions/`（改图记录、绑定、轨迹快照）、`trash/`、`local/`。服务启动时和之后每小时检查一次，满 24 小时就备份，保留 7 份。`agora backup` 立即备份，`agora restore [--from latest|<毫秒时间>]` 放回缺的文件（`--overwrite` 才覆盖已有的）。
+- **本地版本历史** `history/<项目 id>/<实例 id>/<文件>/<毫秒时间>`：画布、线程文件、`workspace.json` 被覆盖之前，旧内容先存一份。每一份是「那一刻被覆盖之前的内容」，当前内容就是文件本身。同一个文件 10 分钟最多存一次，最多 50 份、不超过 30 天，每份副本总共不超过 200MB（先删最旧的）。已经不存在的文件（删掉的画布）的版本在最后一份之后再留 30 天；以前的实例 30 天没写入就整个删掉（每小时清扫一次）。兜住 `git reset --hard`、`git checkout -- .agora`、误覆盖和不常提交的人。`agora history [<文件>]` 列出，`agora history <文件> --restore <毫秒时间>` 写回去（写回之前，当前内容无论 10 分钟规则如何都会存一份；开着的页面下次保存时会报冲突）。
+- **每日备份** `backups/<项目 id>/<实例 id>/<毫秒时间>.tar.gz`：只在本机的那部分 `.agora/` —— `sessions/`（改图记录、绑定、轨迹快照）、`trash/`、`local/`。服务启动时和之后每小时检查一次，满 24 小时就备份，保留 7 份、总共不超过 500MB（最新的一份总会留下）；这三个目录超过 200MB 时，这一份不带轨迹快照（先去掉最大的）。`agora backup` 立即备份，`agora restore [--from latest|<毫秒时间>]` 放回缺的文件（`--overwrite` 才覆盖已有的）。放回时跳过现在在回收站里的会话，以及备份之后进过回收站、从回收站恢复过或被彻底删除的会话和回收站条目（按注册表的时间）：备份不会让同一个原生会话多出第二个 Agora 会话。
 
 ## 3. 接口（`/api/project`）
 
@@ -212,8 +214,8 @@ path/to/agora/bin/agora init               # 只建 .agora/
 - 只监听 `127.0.0.1`。
 
 ```bash
-agora doctor            # 检查本机数据：这是哪份副本（移动 / 复制 / 新 clone）、清单里的会话有没有绑定和改图记录、原生日志在不在、Claude 会话是否快到 30 天清理、画布文件与清单是否一致、回收站、旧 tmux 服务器、备份
-agora doctor --fix      # 放回能精确放回的：改图记录等从最新备份（只放缺的），会话绑定从本机注册表，agora-canvas skill 链接（也是被忽略的文件）；今天还没备份就备份一次。从不删除任何东西
+agora doctor            # 只读，什么都不写（不对账、不写回 server.json）。检查本机数据：这是哪份副本（移动 / 复制 / 新 clone）、清单里的会话有没有绑定和改图记录、原生日志在不在、Claude 会话是否快到 30 天清理、画布文件与清单是否一致、回收站、旧 tmux 服务器、备份
+agora doctor --fix      # 先对账，再放回能精确放回的：清单里缺记录的那几个会话从最新备份放回（在回收站里的、属于另一份副本或另一台机器的不放），这份副本自己的会话绑定从本机注册表（另一份副本的会话不绑定，提示在页面上分叉），agora-canvas skill 链接（也是被忽略的文件）；今天还没备份就备份一次。从不删除任何东西
 agora backup | restore [--from …] [--overwrite] | history [<文件>] [--restore <时间>]
 ```
 

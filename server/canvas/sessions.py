@@ -215,7 +215,7 @@ class AgentHub:
     def __init__(self, store: ProjectStore, *, terminals: Terminals | None = None, backend_factory=make_backend, local: Local | None = None) -> None:
         self.store = store
         self.local = local or Local(store)
-        self.terms = terminals or Terminals(store.root, store.run_dir, socket=self.local.socket())
+        self.terms = terminals or Terminals(store.root, store.run_dir, socket=self.local.socket(), legacy=self.local.legacy_sockets())
         self.make_backend = backend_factory
         self.live: dict[str, Live] = {}
         # Sessions moved to the trash while this server runs: a headless turn that finishes later

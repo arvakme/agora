@@ -101,7 +101,8 @@ def test_registry_concurrent_appends_keep_whole_lines(tmp_path):
 def test_new_project_gets_an_instance_and_keeps_it(tmp_path):
     s = project(tmp_path / "proj")
     loc = Local(s)
-    assert loc.reconcile() == {"kind": "new", "at": loc.instance()["createdAt"]} or loc.reconcile()["kind"] == "same"
+    first = loc.reconcile()
+    assert first["kind"] == "new" and loc.change() is None  # nothing to tell the page about
     iid = loc.instance_id()
     assert iid and loc.reconcile() == {"kind": "same"} and loc.instance_id() == iid
     assert (s.dir / "local" / ".gitignore").read_text().strip().endswith("*")  # never committed
@@ -152,7 +153,9 @@ def test_move_leaves_a_pi_log_whose_terminal_is_still_open(tmp_path, home):
     assert change["migrated"] == [] and change["failed"][0]["sessionId"] == "s-pi" and old_log.exists()
 
 
-def test_move_that_cannot_move_the_log_falls_back_to_a_fork(tmp_path, home):
+def test_move_leaves_a_pi_log_already_in_the_new_folder_alone(tmp_path, home):
+    """The new root's folder already has a log with this id (Pi was run there by hand): that one is
+    what `--session-id` resumes, so nothing is moved and nothing is marked to fork."""
     s = project(tmp_path / "a")
     Local(s).reconcile()
     s.bind("s-pi", agent="pi", native_id=NID, started=True)
@@ -160,9 +163,9 @@ def test_move_that_cannot_move_the_log_falls_back_to_a_fork(tmp_path, home):
     pi_log(home, tmp_path / "b", extra="")  # something already sits where it would go
     shutil.move(str(s.root), str(tmp_path / "b"))
     moved = ProjectStore(tmp_path / "b")
-    # the new directory already has a log with this id: locate finds it (found), nothing to migrate
-    assert Local(moved).reconcile()["migrated"] == []
-    assert old_log.exists()
+    change = Local(moved).reconcile()
+    assert change["migrated"] == [] and change["failed"] == []
+    assert old_log.exists() and "pendingFork" not in moved.read_binding("s-pi")
 
 
 def test_migrate_pi_log_refuses_an_existing_destination_and_leaves_the_original(tmp_path, home):

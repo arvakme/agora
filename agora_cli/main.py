@@ -187,7 +187,7 @@ class Project:
         """Moved, copied or freshly cloned since last time? Settle it before anything is started."""
         from server.canvas.terminal import Terminals
 
-        probe = Terminals(self.root, self.run, socket=self.local.socket())
+        probe = Terminals(self.root, self.run, socket=self.local.socket(), legacy=self.local.legacy_sockets())
         return self.local.reconcile(alive=probe.alive)
 
     def answering(self, st: dict[str, Any] | None) -> bool:

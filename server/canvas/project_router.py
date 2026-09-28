@@ -404,7 +404,7 @@ def create_project_app(
     local = hub.local if hub is not None else Local(store)
     # Moved, copied or freshly cloned since last time: settle this copy's identity first (a moved
     # project's Pi logs follow it; a copy gets its own id and read-only sessions).
-    probe = Terminals(store.root, store.run_dir, socket=local.socket())
+    probe = Terminals(store.root, store.run_dir, socket=local.socket(), legacy=local.legacy_sockets())
     local.reconcile(alive=probe.alive)
     hub = hub or AgentHub(store, local=local)
     events = Events()
@@ -415,7 +415,8 @@ def create_project_app(
 
     trash = Trash(store)
     # Safety nets outside the project: earlier versions of committed files, daily local backups.
-    store.on_overwrite = FileHistory(local).keep
+    history = FileHistory(local)
+    store.on_overwrite = history.keep
     backups = Backups(store, local)
 
     @asynccontextmanager
@@ -430,6 +431,8 @@ def create_project_app(
                     for m in await asyncio.to_thread(trash.sweep):
                         local.note("purge", kind=m["kind"], itemId=m["id"], trashId=m["trashId"], reason="expired")
                     await asyncio.to_thread(backups.make)  # once a day
+                    existing = {str(f.relative_to(store.dir)) for sub in ("canvases", "threads") for f in (store.dir / sub).glob("*") if f.is_file()} | {"workspace.json"}
+                    await asyncio.to_thread(history.prune, existing)
                 except Exception as e:  # keep serving; the next pass retries
                     print(f"trash sweep / backup failed: {e}", flush=True)
                 await asyncio.sleep(TRASH_SWEEP_S)

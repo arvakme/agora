@@ -37,6 +37,8 @@ import {
   openIds,
   openTab,
   placement,
+  placeRestored,
+  relinkChild,
   SAMPLE_CANVAS,
   savedWorkspace,
   sessionDocId,
@@ -379,12 +381,13 @@ export function App({ boot }: { boot: Boot }) {
     // What the page had, to put back if the server could not move it.
     const keptCanvas = { elements: scenes.current.get(id) ?? [], store: stores.current.get(id) };
     const keptSession = { state: sessions.get(), binding: doc.kind === "session" ? agents.get().bindings[doc.sessionId] : undefined };
+    let undoDrop = () => {};
     if (doc.kind === "canvas") {
       scenes.current.delete(id);
       nested.remove(id);
       stores.current.delete(id);
       threadStores.delete(id);
-      if (PERSIST) dropCanvas(id);
+      if (PERSIST) undoDrop = dropCanvas(id);
       if (lastCanvas === id) setLastCanvas(canvasDocs.find((d) => d.id !== id)!.id);
     } else {
       const st = sessions.get();
@@ -403,7 +406,9 @@ export function App({ boot }: { boot: Boot }) {
       setDocs((ds) => (ds.some((d) => d.id === id) ? ds : [...ds.slice(0, index), doc, ...ds.slice(index)]));
       if (doc.kind === "canvas") {
         scenes.current.set(id, keptCanvas.elements);
+        nested.setScene(id, keptCanvas.elements);
         if (keptCanvas.store) stores.current.set(id, keptCanvas.store), threadStores.set(id, keptCanvas.store);
+        undoDrop(); // the files are still there: the next save carries the version this page had seen
       } else {
         const cur = sessions.get();
         sessions.hydrate({ ...cur, sessions: { ...cur.sessions, ...keptSession.state.sessions }, turns: { ...cur.turns, ...keptSession.state.turns } });
@@ -417,6 +422,11 @@ export function App({ boot }: { boot: Boot }) {
   /** Put a restored trash item back into the workspace: its entry at its old place, its content on the page. */
   const applyRestored = (r: Restored) => {
     const m = r.item;
+    const docId = m.kind === "canvas" ? r.id : sessionDocId(r.id);
+    const entry: Doc = (m.entry as Doc | null) ?? (m.kind === "canvas" ? { id: r.id, kind: "canvas", title: m.title || r.id } : { id: docId, kind: "session", sessionId: r.id, title: "" });
+    // The manifest's entry first, then the content: bringing the session back makes the session
+    // store's sync add a bare entry for it, which must not take the kept one's place.
+    setDocs((ds) => placeRestored(ds, entry, m.place?.docIndex));
     if (m.kind === "canvas" && r.canvas) {
       const { elements, threads } = adoptCanvas(r.id, r.canvas);
       scenes.current.set(r.id, elements);
@@ -433,24 +443,36 @@ export function App({ boot }: { boot: Boot }) {
       }
       if (r.binding) agents.hydrateBindings({ [r.id]: r.binding });
     }
-    const docId = m.kind === "canvas" ? r.id : sessionDocId(r.id);
-    const entry: Doc = (m.entry as Doc | null) ?? (m.kind === "canvas" ? { id: r.id, kind: "canvas", title: m.title || r.id } : { id: docId, kind: "session", sessionId: r.id, title: "" });
-    setDocs((ds) => {
-      if (ds.some((d) => d.id === docId)) return ds;
-      const i = Math.min(m.place?.docIndex ?? ds.length, ds.length);
-      return [...ds.slice(0, i), entry, ...ds.slice(i)];
-    });
+    setDocs((ds) => placeRestored(ds, entry, m.place?.docIndex)); // again, after any bare entry the sync added
+    if (m.kind === "canvas" && r.id !== r.item.originalId) relinkRestoredCanvas(r.item.originalId, r.id, r.item.linked ?? []);
     const place = m.place;
     const hadTab = !!place?.groupId;
     setRoot((root) => (hadTab && groups(root).some((g) => g.id === place!.groupId) ? openTab(root, docId, place!.groupId, place!.index) : hadTab ? openTab(root, docId) : root));
     if (hadTab) setFocused(docId);
     return docId;
   };
+  /**
+   * A canvas came back under a new id (its old one was taken meanwhile): what pointed at it follows —
+   * the sessions it had, and parent nodes whose child link (customData.childCanvas) named the old id.
+   */
+  const relinkRestoredCanvas = (from: string, to: string, linked: string[]) => {
+    for (const sid of linked) if (sessions.get().sessions[sid]?.canvasId === from) sessions.relink(sid, to);
+    for (const [cid, els] of scenes.current) {
+      if (cid === to || cid === from) continue;
+      const next = relinkChild(els as El[], from, to);
+      if (!next) continue;
+      scenes.current.set(cid, next);
+      nested.setScene(cid, next);
+      canvases.get(cid)?.api.updateScene({ elements: next as never });
+      persistCanvas(cid);
+    }
+  };
   const restore = async (trashId: string) => {
     try {
       const r = await trash.restore(trashId);
       applyRestored(r);
       setRemoved(null);
+      setPanel(null); // back in the workspace: the trash panel has done its job
     } catch (e) {
       setRemoved({ title: "", error: `恢复失败：${(e as Error).message}` });
     }

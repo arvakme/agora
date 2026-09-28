@@ -94,7 +94,7 @@ export function HistoryPanel({ docs, titles, canvasTitles, open, currentCanvas, 
       setSearching(true);
       fetch(`/api/project/history/search?q=${encodeURIComponent(q.trim())}`, { signal: ctl.signal })
         .then((r) => r.json())
-        .then((j: { matches: { key: string; snippet: string }[] }) => setHits(new Map(j.matches.map((m) => [m.key, m.snippet]))))
+        .then((j: { matches: { key: string; snippet: string }[] }) => setHits(new Map(j.matches.filter((m) => m.key).map((m) => [m.key, m.snippet]))))
         .catch(() => {})
         .finally(() => setSearching(false));
     }, 300);
@@ -115,6 +115,7 @@ export function HistoryPanel({ docs, titles, canvasTitles, open, currentCanvas, 
     if (r.origin === "foreign") return { text: "来自另一台机器", tone: "caution" };
     if (r.origin === "copy") return { text: "副本 · 只读", tone: "caution" };
     if (r.origin === "recoverable" || r.origin === "other-copy") return { text: r.origin === "other-copy" ? "属于另一份副本" : "绑定可恢复", tone: "caution" };
+    if (r.state === "listed" && !r.agent) return { text: "还没选 agent" }; // a session nobody started: nothing to resume
     const st = r.sessionId ? status[r.sessionId] : undefined;
     if (st?.native?.blocking) return { text: "原生记录缺失", tone: "error" };
     if (st?.terminal.alive) return { text: "在终端里运行" };

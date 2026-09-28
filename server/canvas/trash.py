@@ -68,11 +68,44 @@ class Trash:
         return self.dir / trash_id
 
     def _manifest(self, d: Path) -> dict[str, Any] | None:
+        """The item's manifest, only if it is one this code could have written: its kind, id and
+        time match the directory name, and each file is one of that kind's files under the name
+        ``put`` gives it. Anything else (a hand-edited or planted manifest) is not an item."""
+        mf = d / "manifest.json"
+        if d.is_symlink() or mf.is_symlink():
+            return None
         try:
-            m = json.loads((d / "manifest.json").read_text())
+            m = json.loads(mf.read_text())
         except (OSError, ValueError):
             return None
-        return m if isinstance(m, dict) and m.get("trashId") == d.name else None
+        if not isinstance(m, dict) or m.get("trashId") != d.name or not TRASH_ID.match(d.name):
+            return None
+        at, kind, id = d.name.split("-", 2)
+        if m.get("kind") != kind or m.get("id") != id or str(m.get("at")) != at or not isinstance(m.get("files"), list):
+            return None
+        allowed = _files(kind, id)
+        for f in m["files"]:
+            if not isinstance(f, dict) or f.get("rel") not in allowed or f.get("name") != str(f["rel"]).replace("/", "__"):
+                return None
+        return m
+
+    def committed(self) -> set[str]:
+        """Trash items tracked by git. The trash is local-only (it ignores itself); an item that
+        arrived through git (``git add -f``, someone else's repository) is never listed or restored."""
+        import subprocess
+
+        try:
+            r = subprocess.run(["git", "-C", str(self.store.root), "ls-files", "-z", "--", f"{self.store.dir.name}/{TRASH_DIR}"], capture_output=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            return set()
+        if r.returncode != 0:
+            return set()
+        out = set()
+        for rel in r.stdout.decode(errors="replace").split("\0"):
+            parts = Path(rel).parts
+            if len(parts) >= 3 and TRASH_ID.match(parts[2]):
+                out.add(parts[2])
+        return out
 
     def _public(self, m: dict[str, Any]) -> dict[str, Any]:
         left = m["at"] + self.keep_ms - self._now()
@@ -82,8 +115,9 @@ class Trash:
     def list(self) -> list[dict[str, Any]]:
         """Items, newest first, each with ``expiresAt`` / ``daysLeft``."""
         out = []
+        tracked = self.committed() if self.dir.is_dir() else set()
         for d in self.dir.glob("*") if self.dir.is_dir() else []:
-            if d.is_dir() and (m := self._manifest(d)) is not None:
+            if d.name not in tracked and d.is_dir() and (m := self._manifest(d)) is not None:
                 out.append(self._public(m))
         return sorted(out, key=lambda m: -m["at"])
 
@@ -125,12 +159,16 @@ class Trash:
         git, say) is never overwritten: the item comes back under a free id ``<id>-r<n>``, and the
         manifest's ``entry`` is rewritten to match. Returns the manifest with the final ``id``."""
         d = self._item_dir(trash_id)
+        if trash_id in self.committed():
+            raise TrashError(f"{trash_id} is tracked by git: the trash is local-only, this item is not restored")
         with self.store._locked():
             m = self._manifest(d)
             if m is None:
                 raise KeyError(trash_id)
             kind, orig = m["kind"], m["id"]
-            here = [f for f in m["files"] if (d / f["name"]).exists()]  # a crash may have left some where they were
+            root = self.store.dir.resolve()
+            # Only regular files the item really holds (a crash may have left some where they were).
+            here = [f for f in m["files"] if (d / f["name"]).is_file() and not (d / f["name"]).is_symlink()]
 
             def target(rel: str, id: str) -> Path:
                 return self.store.dir / (rel if id == orig else _files(kind, id)[_files(kind, orig).index(rel)])
@@ -143,6 +181,8 @@ class Trash:
             for f in here:
                 src = d / f["name"]
                 dst = target(f["rel"], new)
+                if not dst.parent.resolve().is_relative_to(root) or dst.is_symlink():
+                    raise TrashError(f"refusing to restore {f['rel']} outside {root}")
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 os.rename(src, dst)
             shutil.rmtree(d)
