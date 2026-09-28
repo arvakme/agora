@@ -209,6 +209,57 @@ def project(rec: dict[str, Any], st: State) -> Out:
     return items, turns
 
 
+def project_child(rec: dict[str, Any], st: State) -> Out:
+    """A sub-agent's own log (``subagents/agent-<id>.jsonl``): every record is a sidechain there."""
+    if rec.get("isSidechain"):
+        rec = {**rec, "isSidechain": False}
+    return project(rec, st)
+
+
+NOTIFY = re.compile(r"<task-notification>(.*?)</task-notification>", re.S)
+
+
+def _tag(body: str, name: str) -> str | None:
+    m = re.search(rf"<{name}>(.*?)</{name}>", body, re.S)
+    return m.group(1).strip() if m else None
+
+
+def spawn_outcomes(parent_log: Path) -> dict[str, dict[str, Any]]:
+    """What the parent log says about each ``Agent`` call, keyed by tool_use id: when it was made,
+    the agent id and state its result reported (``async_launched`` / ``completed``…), and — for
+    background agents — the completion notification (``<task-notification>`` with ``<status>``)."""
+    out: dict[str, dict[str, Any]] = {}
+    for rec in read_jsonl(parent_log):
+        msg = rec.get("message") if isinstance(rec.get("message"), dict) else {}
+        at = _ms(rec.get("timestamp"))
+        content = msg.get("content")
+        if rec.get("type") == "assistant" and isinstance(content, list):
+            for b in content:
+                if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") in ("Agent", "Task"):
+                    inp = b.get("input") if isinstance(b.get("input"), dict) else {}
+                    out.setdefault(str(b.get("id")), {}).update({"at": at, "description": inp.get("description"), "role": inp.get("subagent_type")})
+        elif rec.get("type") == "user":
+            r = rec.get("toolUseResult")
+            if isinstance(r, dict) and r.get("agentId") and isinstance(content, list):
+                for b in content:
+                    if isinstance(b, dict) and b.get("type") == "tool_result":
+                        o = out.setdefault(str(b.get("tool_use_id")), {})
+                        o.update({"agentId": r["agentId"], "status": r.get("status"), "resultAt": at})
+                        if r.get("status") == "completed":
+                            o.update({"doneAt": at, "state": "done"})
+        # Background agents report completion as a <task-notification> (a queue-operation record, later a user turn).
+        if rec.get("type") in ("user", "queue-operation"):
+            text = rec["content"] if isinstance(rec.get("content"), str) else (text_of(content) if content is not None else "")
+            for m in NOTIFY.finditer(text or ""):
+                tuid = _tag(m.group(1), "tool-use-id")
+                if tuid:
+                    status = (_tag(m.group(1), "status") or "").lower()
+                    o = out.setdefault(tuid, {})
+                    if "doneAt" not in o:  # the first notice; the same one comes back as a user turn
+                        o.update({"doneAt": at, "state": {"completed": "done", "failed": "failed", "killed": "failed", "stopped": "failed"}.get(status, status or "done")})
+    return out
+
+
 def dir_name(root: Path | str) -> str:
     return "".join(c if c.isalnum() and c.isascii() else "-" for c in str(root))
 
@@ -304,6 +355,45 @@ class ClaudeAdapter(Adapter):
     # ——— ToolVocab ———
     def classify(self, name: str, args: Any, root: str | None = None) -> dict[str, Any]:
         return classify(name, args, root)
+
+    # ——— Subagents ———
+    def children(self, ref: NativeRef, home: Path | None = None) -> list[NativeRef]:
+        """Native sub-agents: ``<parent log dir>/<parent id>/subagents/agent-<aid>.jsonl`` + ``.meta.json``.
+        The link is the CLI's own: the parent's ``Agent`` tool_use id is the child's ``meta.toolUseId``,
+        and the parent's result reports ``agentId`` = the file name. Nested agents (``spawnDepth`` > 1)
+        name their parent in ``meta.parentAgentId``."""
+        if ref.path is None:
+            return []
+        sub = ref.path.parent / ref.path.stem / "subagents"
+        if not sub.is_dir():
+            return []
+        outcomes = spawn_outcomes(ref.path)
+        by_agent = {o.get("agentId"): (tuid, o) for tuid, o in outcomes.items() if o.get("agentId")}
+        out = []
+        for log in sorted(sub.glob("agent-*.jsonl")):
+            aid = log.stem.removeprefix("agent-")
+            try:
+                meta = json.loads(log.with_name(log.stem + ".meta.json").read_text())
+            except (OSError, ValueError):
+                meta = {}
+            tuid = meta.get("toolUseId") or by_agent.get(aid, (None, {}))[0]
+            o = outcomes.get(tuid or "", {})
+            parent_aid = meta.get("parentAgentId")
+            parent_run = f"claude:{ref.native_id}/{parent_aid}" if parent_aid else ref.run_id
+            ev = f"父日志的 Agent 调用 {tuid} = 子会话 meta.toolUseId" if meta.get("toolUseId") else (f"父日志的 Agent 结果 agentId = {aid}" if tuid else "子会话在父会话的 subagents/ 目录下")
+            out.append(NativeRef(
+                "claude",
+                f"{ref.native_id}/{aid}",
+                log,
+                ref.cwd,
+                ParentLink("native", parent_run, tool_call_id=tuid, evidence=ev),
+                label=str(meta.get("description") or o.get("description") or aid),
+                meta={"agentId": aid, "role": meta.get("agentType") or o.get("role"), "depth": meta.get("spawnDepth") or 1, "model": meta.get("model"), "background": meta.get("requestShape") == "background", "dispatchedAt": o.get("at"), "doneAt": o.get("doneAt"), "state": o.get("state") or ("dispatched" if o.get("status") == "async_launched" else None)},
+            ))
+        return out
+
+    def project_child(self, rec: dict[str, Any], st: State) -> Out:
+        return project_child(rec, st)
 
     # ——— Headless ———
     def headless_args(self, cmd: list[str], req: Any, *, log_exists: Callable[[str], bool] | bool = False, skill_dir: Path | None = None) -> list[str]:

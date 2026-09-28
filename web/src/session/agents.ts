@@ -37,6 +37,51 @@ export type AgentInfo = {
   seedmuxNames: string[];
   catalog?: CatalogEntry;
 };
+/** Unified lifecycle of a run (server/canvas/adapters/runs.py `STATES`; Seedmux receipts map onto it). */
+export type RunState = "dispatched" | "acknowledged" | "running" | "waiting" | "idle_no_reply" | "done" | "failed" | "blocked" | "exited" | "session_changed" | "unknown" | "idle";
+/** One lane segment of a run: what it did, when, on which file (and canvas node when `canvas=` was given). */
+export type RunSegment = { kind: "read" | "write" | "exec" | "think" | "wait"; start: number; end: number; itemId: string; turn: number; label: string; path?: string; node?: string; spawn?: NonNullable<Item["tool"]>["spawn"] };
+export type RunMoment = { kind: "dispatch" | "handoff" | "receipt"; at: number; childRunId?: string; toolCallId?: string; taskId?: string; state?: RunState | string };
+/** A Seedmux ticket as the receipts reader sees it (read-only: meta.json core keys, delivery.json, reply.md). */
+export type Receipt = { taskId: string; agent: string; cwd?: string; createdAt?: number; repliedAt?: number; seedmuxState?: string; status?: string; state: RunState; toPane?: string; fromPane?: string; sid?: string; changed?: string[]; accept?: string | null; replyPreview?: string; replyPath?: string };
+/**
+ * A session, one of its native sub-agents, or a worker it dispatched through Seedmux
+ * (`GET /api/agent/runs?session=…`, web/docs/cli-adapters.md §7). `parent.via` says how the link is known.
+ */
+export type AgentRun = {
+  id: string;
+  kind: AgentKind;
+  nativeId?: string;
+  tier: Tier;
+  sessionId?: string;
+  label: string;
+  role?: string;
+  model?: string;
+  depth: number;
+  parent?: { runId: string; via: "native" | "seedmux" | "inferred"; toolCallId?: string; taskId?: string; evidence: string };
+  cwd?: string;
+  worktree?: string;
+  state: RunState;
+  startedAt?: number | null;
+  endedAt?: number | null;
+  lastAt?: number | null;
+  logPath?: string;
+  /** Runs below this one that are not expanded (only one level is by default). */
+  hiddenDescendants: number;
+  childCount: number;
+  receipt?: Receipt;
+  timeline: { segments: RunSegment[]; turns: { n: number; start: number; end: number }[]; moments: RunMoment[]; timesInferred?: boolean };
+  items?: Item[];
+};
+export type RunTree = { root: string; runs: AgentRun[]; folded: Record<string, number>; depth: number | null; generatedAt: number };
+/** The run tree of a session (no UI consumes it yet: the workstation's child figures build on it). */
+export async function fetchRuns(sessionId: string, opts: { depth?: number | "all"; canvas?: string; items?: boolean } = {}): Promise<RunTree> {
+  const q = new URLSearchParams({ session: sessionId, depth: String(opts.depth ?? 1), ...(opts.canvas ? { canvas: opts.canvas } : {}), ...(opts.items ? { items: "1" } : {}) });
+  const r = await fetch(`/api/agent/runs?${q}`);
+  if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? r.statusText);
+  return (await r.json()) as RunTree;
+}
+
 /** Fallbacks until `/api/agent/adapters` answers (and for older servers). */
 export const AGENT_NAMES: Record<AgentKind, string> = { pi: "Pi", claude: "Claude Code", codex: "Codex" };
 export const AGENT_KINDS: AgentKind[] = ["pi", "claude", "codex"];
