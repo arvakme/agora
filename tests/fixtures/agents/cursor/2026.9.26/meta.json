@@ -1,0 +1,34 @@
+{
+  "kind": "cursor",
+  "cli_version": "2026.9.26",
+  "log_format": null,
+  "recorded": "2026-09-29",
+  "model": "gpt-5.3-codex-low",
+  "command": [
+    "cursor-agent",
+    "-p",
+    "--output-format",
+    "stream-json",
+    "--trust",
+    "--force",
+    "--model",
+    "gpt-5.3-codex-low",
+    "<prompt>"
+  ],
+  "prompt": "Read the file alpha.txt with your file-reading tool. Then read beta.txt by running the shell command `cat beta.txt`. Then create the file gamma.txt containing the two words you read, separated by one space. Do not change any other file. Reply with one word: done.",
+  "cwd": "/work/project",
+  "native_id": "58ae4462-fa83-4dd2-82b7-5a3fdc89be50",
+  "expected": {
+    "files": [
+      "gamma.txt"
+    ],
+    "reads": [
+      "alpha.txt",
+      "beta.txt"
+    ],
+    "commands": 1,
+    "subagents": 0
+  },
+  "expected_unknown": [],
+  "note": "Recorded by scripts/record_agent_fixture.py; paths sanitized (/work/project, /home/user), signatures dropped. The native sessions were deleted after copying."
+}

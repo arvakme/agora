@@ -11,6 +11,10 @@ and argument keys); what they share lives here:
   reads were invisible to the workstation view.
 - ``spawn_in_output``: a Seedmux dispatch printed by ``smx-team spawn/assign``
   (``task=T-xx pane=<UUID>``) in a tool's output.
+- ``patch_files``: the files a ``*** Begin Patch`` text writes (Cursor records Codex-family models'
+  ``ApplyPatch`` with the patch as its input).
+- ``names_ticket``: whether a worker was given a Seedmux ticket (its prompt names it, or it ran
+  ``smx-team ack/reply`` for it) — how a worker whose sid Seedmux never learns is recognised.
 """
 
 from __future__ import annotations
@@ -65,6 +69,15 @@ _VALUE_FLAGS = {
     "nl": {"-b", "-w", "-s", "-v", "-i"},
 }
 _WRAPPERS = {"sudo", "command", "time", "nice", "env", "noglob"}
+_KEYWORDS = {"do", "then", "else", "elif", "if", "while", "until", "!", "{", "("}  # what may precede a command in a shell line
+
+
+def _program(words: list[str]) -> list[str]:
+    """A simple command's words from the program it runs: wrappers (``sudo``, ``env``…), ``VAR=value``
+    assignments, shell keywords (``do``, ``then``…) and ``rtk proxy`` skipped."""
+    while words and (words[0] in _WRAPPERS or words[0] in _KEYWORDS or re.match(r"^[A-Z_][A-Z0-9_]*=", words[0])):
+        words = words[1:]
+    return words[2:] if words[:2] == ["rtk", "proxy"] else words
 
 
 def _simple_commands(command: str) -> list[list[str]]:
@@ -245,6 +258,25 @@ def shell_reads(command: Any, root: str | None = None, cwd: str | None = None) -
     return "commands", seen
 
 
+# ——— patch text (``*** Begin Patch`` … ``*** End Patch``, the Codex-family edit format) ———
+_PATCH_FILE = re.compile(r"^\*\*\* (Add|Update|Delete) File: (.+?)\s*$|^\*\*\* Move to: (.+?)\s*$", re.M)
+PATCH_OP = {"Add": "add", "Update": "edit", "Delete": "delete"}
+
+
+def patch_files(patch: Any, root: str | None = None) -> list[dict[str, str]]:
+    """The files a patch text writes (``*** Add File:`` / ``Update File:`` / ``Delete File:``; a
+    ``*** Move to:`` target counts as edited), relative to ``root``."""
+    if not isinstance(patch, str):
+        return []
+    out: list[dict[str, str]] = []
+    for m in _PATCH_FILE.finditer(patch):
+        op, path = (PATCH_OP[m.group(1)], m.group(2)) if m.group(1) else ("edit", m.group(3))
+        f = {"path": rel_path(path, root), "op": op}
+        if f not in out:
+            out.append(f)
+    return out
+
+
 SPAWN = re.compile(r"\btask=(T-[0-9a-zA-Z]+)\s+pane=([0-9A-Fa-f-]{36})")
 
 
@@ -268,14 +300,34 @@ def is_dispatch(command: Any) -> bool:
     if not isinstance(command, str) or "smx-team" not in command:
         return False
     for words in _simple_commands(command.strip()):
-        words, _, _ = _redirects(words)
-        while words and (words[0] in _WRAPPERS or re.match(r"^[A-Z_][A-Z0-9_]*=", words[0])):
-            words = words[1:]
-        if words[:2] == ["rtk", "proxy"]:
-            words = words[2:]
+        words = _program(_redirects(words)[0])
         if not words or os.path.basename(words[0]) not in ("smx-team", "smx-team.py"):
             continue
         sub = next((w for w in words[1:] if not w.startswith("-")), None)
         if sub in ("spawn", "assign"):
+            return True
+    return False
+
+
+# ——— a worker's ticket (Seedmux never learns the sid of a CLI without hooks: Devin, Cursor) ———
+def prompt_names_ticket(text: Any, task_id: str) -> bool:
+    """Whether a prompt names the ticket as a whole word (Seedmux's worker envelope: ``任务 T-xx``,
+    ``task=T-xx``, ``tasks/T-xx/prompt.md``)."""
+    return isinstance(text, str) and re.search(rf"(?<![\w-]){re.escape(task_id)}(?![\w-])", text) is not None
+
+
+def replies_to_ticket(command: Any, task_id: str) -> bool:
+    """Whether a shell command runs ``smx-team ack|reply <T-xx>`` — what only the ticket's worker does
+    (a dispatcher runs ``spawn`` / ``verify``; printing the id is not replying to it)."""
+    if isinstance(command, list):
+        command = command[-1] if command else ""
+    if not isinstance(command, str) or task_id not in command:
+        return False
+    for words in _simple_commands(command.strip()):
+        words = _program(_redirects(words)[0])
+        if not words or os.path.basename(words[0]) not in ("smx-team", "smx-team.py"):
+            continue
+        args = [w for w in words[1:] if not w.startswith("-")]
+        if args[:1] in (["ack"], ["reply"]) and task_id in args[1:]:
             return True
     return False

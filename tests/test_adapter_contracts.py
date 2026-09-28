@@ -4,7 +4,7 @@ must still be understood by its adapter (web/docs/cli-adapters.md §6).
 Per fixture: the adapter finds the session in a temporary HOME; the log projects into at least one
 user → … → end turn; every record type is one the adapter knows, except those the fixture's
 ``meta.json`` lists in ``expected_unknown`` (that is how a new CLI version's drift is written down);
-and whatever ``meta.json`` ``expected`` promises (written files, a shell command, sub-agents) holds.
+and whatever ``meta.json`` ``expected`` promises (files written and read, a shell command, sub-agents) holds.
 A new CLI version is covered by adding its folder — no test code changes.
 """
 
@@ -23,22 +23,11 @@ from tests.agent_fixtures import all_fixtures, meta
 
 from server.canvas.adapters import registry
 
-# Every recorded fixture, including v2 adapters behind a flag: the test turns the flag on (review P2-10).
-KNOWN = {c().kind for c in registry.BUILTIN} | set(registry.EXPERIMENTAL)
+KNOWN = {c().kind for c in registry.BUILTIN}
 FIXTURES = [(k, v) for k, v in all_fixtures() if k in KNOWN]
 IDS = [f"{k}-{v.name}" for k, v in FIXTURES]
 # Tools that run a shell command, per CLI (a fixture's meta.json may name its own: command_tools).
-SHELL_TOOLS = {"claude": ["Bash"], "codex": ["shell"], "pi": ["bash"], "grok": ["run_terminal_command"]}
-
-
-@pytest.fixture()
-def flags(monkeypatch):
-    """Enable the experimental adapters for this test, and restore the registry afterwards."""
-    monkeypatch.setenv("AGORA_EXPERIMENTAL", ",".join(registry.EXPERIMENTAL))
-    registry.refresh()
-    yield
-    monkeypatch.delenv("AGORA_EXPERIMENTAL")
-    registry.refresh()
+SHELL_TOOLS = {"claude": ["Bash"], "codex": ["shell"], "pi": ["bash"], "grok": ["run_terminal_command"], "cursor": ["Shell", "Bash", "run_terminal_cmd"], "devin": ["exec"]}
 
 
 def log_of(folder: Path) -> Path | None:
@@ -79,19 +68,25 @@ def home(tmp_path, monkeypatch):
     h = tmp_path / "home"
     h.mkdir()
     monkeypatch.setenv("HOME", str(h))
-    for v in ("CODEX_HOME", "PI_CODING_AGENT_SESSION_DIR", "GROK_HOME"):
+    for v in ("CODEX_HOME", "PI_CODING_AGENT_SESSION_DIR", "GROK_HOME", "CURSOR_DATA_DIR"):
         monkeypatch.delenv(v, raising=False)
     return h
+
+
+def records(kind: str, log: Path) -> list[dict]:
+    """The log's records as the run timeline reads them (a database-backed log has its own reader)."""
+    reader = getattr(adapters.need(kind), "read_records", None)
+    if reader is not None:
+        return reader(log)
+    return [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
 
 
 def replay(kind: str, log: Path, root: str) -> tuple[list[dict], list[dict], State]:
     st = State(root=root)
     items: dict[str, dict] = {}
     turns: list[dict] = []
-    for line in log.read_text().splitlines():
-        if not line.strip():
-            continue
-        its, tcs = project(kind, json.loads(line), st)
+    for rec in records(kind, log):
+        its, tcs = project(kind, rec, st)
         for it in its:
             prev = items.get(it["id"], {})
             items[it["id"]] = {**prev, **it, "tool": {**prev.get("tool", {}), **it.get("tool", {})}} if it["kind"] == "tool" else {**prev, **it}
@@ -100,7 +95,7 @@ def replay(kind: str, log: Path, root: str) -> tuple[list[dict], list[dict], Sta
 
 
 @pytest.mark.parametrize("kind,folder", FIXTURES, ids=IDS)
-def test_fixture_contract(kind, folder, home, flags):
+def test_fixture_contract(kind, folder, home):
     check_contract(kind, folder, home)
 
 
@@ -139,6 +134,9 @@ def check_contract(kind, folder, home):
     written = {s.get("path") for r in tree["runs"] for s in r["timeline"]["segments"] if s["kind"] == "write"}
     for path in exp.get("files", []):
         assert path in written, (path, written)
+    read = {p for t in tools for p in t.get("reads") or []}
+    for path in exp.get("reads", []):
+        assert path in read, (path, read)
     if exp.get("commands"):
         shell = exp.get("command_tools") or SHELL_TOOLS[kind]
         ran = [t for t in tools if t.get("name") in shell and t.get("activity") in ("commands", "read", "search")]
@@ -155,7 +153,7 @@ def check_contract(kind, folder, home):
         assert all(k.parent is not None and k.parent.via == "native" for k in kids)
 
 
-def test_every_adapter_has_a_fixture(flags):
+def test_every_adapter_has_a_fixture():
     have = {k for k, _ in FIXTURES}
     assert set(adapters.ADAPTERS) == KNOWN
     for k, a in adapters.ADAPTERS.items():
@@ -163,7 +161,7 @@ def test_every_adapter_has_a_fixture(flags):
             assert k in have, f"{k} has no recorded fixture under tests/fixtures/agents/{k}/"
 
 
-def test_the_shell_command_check_can_fail(home, flags, tmp_path):
+def test_the_shell_command_check_can_fail(home, tmp_path):
     """Review P2-10: the command check used to default to every tool name, so it could never fail."""
     import shutil
 
@@ -172,6 +170,17 @@ def test_the_shell_command_check_can_fail(home, flags, tmp_path):
     shutil.copytree(src, f)
     m = json.loads((f / "meta.json").read_text())
     m["expected"]["command_tools"] = ["NoSuchTool"]
+    (f / "meta.json").write_text(json.dumps(m))
+    with pytest.raises(AssertionError):
+        check_contract("claude", f, home)
+
+
+def test_the_reads_check_can_fail(home, tmp_path):
+    src = next(v for k, v in FIXTURES if k == "claude" and v.name != "unversioned")
+    f = tmp_path / "claude-no-read"
+    shutil.copytree(src, f)
+    m = json.loads((f / "meta.json").read_text())
+    m["expected"]["reads"] = ["never-read.txt"]
     (f / "meta.json").write_text(json.dumps(m))
     with pytest.raises(AssertionError):
         check_contract("claude", f, home)

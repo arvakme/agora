@@ -32,12 +32,14 @@ from typing import Any
 
 from server.canvas.adapters.base import NativeRef, ParentLink, valid_id
 from server.canvas.adapters.registry import by_seedmux_name
+from server.canvas.adapters.tools import SPAWN
 
 META_KEYS = ("task", "from_pane", "to_pane", "agent", "model", "effort", "cwd", "created_at", "status", "verify", "replied_at", "resume_session")
 DELIVERY_KEYS = ("state", "sid", "native", "ack_at", "sent_at", "created_at", "deadline", "exit_event_at", "observed_at", "reply")
 ACK_GRACE_S = 60
 PANES_TTL_S = 15
 WINDOW_PAD_MS = 5 * 60 * 1000  # "active" = from its first record to 5 minutes after its last
+WORKER_TTL_S = 30  # how long a worker session found by its ticket (Devin, Cursor) is remembered
 
 
 def tasks_dir() -> Path:
@@ -274,8 +276,9 @@ def _replied(rc: dict[str, Any]) -> bool:
 
 
 def worker_ref(t: dict[str, Any], rc: dict[str, Any], parent: ParentLink, scan: Scan) -> NativeRef:
-    """The worker as a run: its native session when its sid is known and its log is in this project;
-    else a receipts-only run ``smx:T-xx``.
+    """The worker as a run: its native session when its sid is known and its log is in this project,
+    or — for a CLI whose sid Seedmux never learns — when its adapter finds the session that was given
+    this ticket (``worker_for_ticket``); else a receipts-only run ``smx:T-xx``.
 
     Where the sid comes from (review P1-1): ``delivery.json``; failing that, the pane's *current* sid
     from ``/panes`` — but only when this ticket is the latest one that pane received (from any
@@ -298,14 +301,30 @@ def worker_ref(t: dict[str, Any], rc: dict[str, Any], parent: ParentLink, scan: 
                 ev = parent.evidence + f"；worker 会话 {sid[:8]} 来自 {how}"
                 return NativeRef(a.kind, sid, look.path, cwd, ParentLink(parent.via, parent.parent_run, parent.tool_call_id, parent.task_id, ev), label=label, meta=meta)
             note = f"；{how} 给的会话 {sid[:8]} 不在这个项目里（{cwd or '日志没写 cwd'}），没有接上"
-    finder = getattr(a, "worker_for_ticket", None) if a is not None else None
-    if finder is not None:
-        got = finder(rc)
+    # A CLI without hooks (Devin, Cursor): Seedmux never learns its sid. Its own store has the session
+    # in the ticket's cwd that was given this ticket (the adapter checks the ticket id, not just the time).
+    if a is not None and hasattr(a, "worker_for_ticket"):
+        got = _worker_for_ticket(a, rc)
         if got is not None:
-            nid, path, how2 = got
-            return NativeRef(a.kind, nid, path, rc.get("cwd"), ParentLink(parent.via if how2 == "seedmux" else "inferred", parent.parent_run, parent.tool_call_id, parent.task_id, parent.evidence + f"；worker 会话按 cwd 与时间窗找到（{how2}）"), label=label, meta=meta)
+            nid, path, why = got
+            ev = parent.evidence + f"；worker 会话 {nid[:12]} 在 {a.name} 的记录里按 cwd 与时间找到{why}"
+            return NativeRef(a.kind, nid, path, a.log_cwd(path) or rc.get("cwd"), ParentLink(parent.via, parent.parent_run, parent.tool_call_id, parent.task_id, ev), label=label, meta=meta)
     link = ParentLink(parent.via, parent.parent_run, parent.tool_call_id, parent.task_id, parent.evidence + note)
     return NativeRef(a.kind if a is not None else (rc["agent"] or "seedmux"), rc["taskId"], None, rc.get("cwd"), link, label=label, meta={**meta, "receiptsOnly": True})
+
+
+_workers: dict[tuple[str, str, str], tuple[float, tuple[str, Path, str] | None]] = {}
+
+
+def _worker_for_ticket(a: Any, rc: dict[str, Any]) -> tuple[str, Path, str] | None:
+    """``a.worker_for_ticket(rc)``, remembered for ``WORKER_TTL_S`` (the page polls the run tree)."""
+    key = (a.kind, str(rc.get("taskId")), str(rc.get("cwd")))
+    hit = _workers.get(key)
+    if hit is None or time.time() - hit[0] > WORKER_TTL_S:
+        if len(_workers) > 1024:
+            _workers.clear()
+        hit = _workers[key] = (time.time(), a.worker_for_ticket(rc))
+    return hit[1]
 
 
 def _interval(run: dict[str, Any], rc: dict[str, Any], now_ms: int) -> tuple[int, int]:
@@ -340,13 +359,16 @@ def attach(runs: dict[str, dict[str, Any]], *, root: str | None, store: Any, dep
     now_ms = int(time.time() * 1000)
 
     def dispatches() -> dict[str, tuple[str, str]]:
-        """1. dispatches in the runs' own logs (``smx-team spawn/assign`` output: task=T-xx pane=…)"""
+        """1. dispatches in the runs' own logs (``smx-team spawn/assign`` output: task=T-xx pane=…). One
+        call can start several workers (a loop over agents): every task line of that call's output."""
         found: dict[str, tuple[str, str]] = {}
         for r in list(runs.values()):
             for it in r.get("_items") or []:
-                sp = (it.get("tool") or {}).get("spawn") or {}
-                if sp.get("taskId"):
-                    found.setdefault(sp["taskId"], (r["id"], it["id"]))
+                tool = it.get("tool") or {}
+                sp = tool.get("spawn") or {}
+                if sp.get("taskId"):  # set only when the call itself ran smx-team spawn/assign (tools.spawn_in_output)
+                    for tid in dict.fromkeys([sp["taskId"], *(m.group(1) for m in SPAWN.finditer(str(tool.get("output") or "")))]):
+                        found.setdefault(tid, (r["id"], it["id"]))
         return found
 
     agora_panes = _agora_panes(store) if store is not None else {}

@@ -25,8 +25,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from server.canvas.adapters.base import Adapter, Projector, Tier, lower_tier
-from server.canvas.adapters.registry import ADAPTERS, cached_version, implemented_tier, info
+from server.canvas.adapters.base import Adapter, Projector, lower_tier
+from server.canvas.adapters.registry import ADAPTERS, cached_version, implemented_tier
 
 UNKNOWN_RATIO = 0.05  # unknown records above this share of a log → would degrade
 SAMPLE_LOGS = 12  # newest logs per CLI scanned by the probe
@@ -62,14 +62,17 @@ def reset_runtime() -> None:
 
 
 # ——— scanning logs ———
-def scan(a: Adapter, path: Path, limit: int = SAMPLE_BYTES) -> dict[str, Any]:
-    """Record types in one log: how many records, which are unknown to the adapter, which are known gaps."""
-    records, unknown, gaps = 0, Counter(), Counter()
+def _records(a: Adapter, path: Path, limit: int) -> list[dict[str, Any]]:
+    """The first ``limit`` bytes of a log as records (a log that is not a JSONL file has its own reader)."""
+    reader = getattr(a, "read_records", None)
+    if reader is not None:
+        return reader(path, limit)
     try:
         with open(path, "rb") as fh:
             raw = fh.read(limit)
     except OSError:
-        return {"records": 0, "unknown": {}, "gaps": {}}
+        return []
+    out = []
     for line in raw.split(b"\n"):
         if not line.strip():
             continue
@@ -77,8 +80,15 @@ def scan(a: Adapter, path: Path, limit: int = SAMPLE_BYTES) -> dict[str, Any]:
             rec = json.loads(line)
         except ValueError:
             continue
-        if not isinstance(rec, dict):
-            continue
+        if isinstance(rec, dict):
+            out.append(rec)
+    return out
+
+
+def scan(a: Adapter, path: Path, limit: int = SAMPLE_BYTES) -> dict[str, Any]:
+    """Record types in one log: how many records, which are unknown to the adapter, which are known gaps."""
+    records, unknown, gaps = 0, Counter(), Counter()
+    for rec in _records(a, path, limit):
         records += 1
         t = a.record_type(rec)
         if t is None:
@@ -92,7 +102,11 @@ def scan(a: Adapter, path: Path, limit: int = SAMPLE_BYTES) -> dict[str, Any]:
 
 def sample_logs(a: Adapter, home: Path, n: int = SAMPLE_LOGS) -> list[tuple[Path, str | None]]:
     """(log, CLI version that wrote it if known): the newest ``n`` logs, and for Codex also the newest
-    rollout of every CLI version its index knows (old sessions stay readable, or say why not)."""
+    rollout of every CLI version its index knows (old sessions stay readable, or say why not). An
+    adapter whose logs are not files lists its own (``sample_paths``: Devin's sessions)."""
+    own_paths = getattr(a, "sample_paths", None)
+    if own_paths is not None:
+        return own_paths(home, n)
     pattern = {
         "claude": str(home / ".claude" / "projects" / "*" / "*.jsonl"),
         "pi": str(Path(os.environ.get("PI_CODING_AGENT_SESSION_DIR") or home / ".pi" / "agent" / "sessions") / "*" / "*.jsonl"),
@@ -300,7 +314,7 @@ def table(rows: list[dict[str, Any]]) -> str:
             out.append(f"  怎么办：{r['fix']}")
         old = {v: d for v, d in r["byVersion"].items() if d["gaps"] or d["unknown"]}
         if old:
-            out.append(f"  按版本：" + "；".join(f"{v} " + "、".join(f"{t}×{n}" for t, n in {**d["unknown"], **d["gaps"]}.items()) for v, d in list(old.items())[:8]))
+            out.append("  按版本：" + "；".join(f"{v} " + "、".join(f"{t}×{n}" for t, n in {**d["unknown"], **d["gaps"]}.items()) for v, d in list(old.items())[:8]))
     return "\n".join(out)
 
 

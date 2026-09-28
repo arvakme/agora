@@ -139,21 +139,32 @@ def node_for(path: str, links: list[tuple[str, list[str]]]) -> str | None:
 # Timelines are cached until their log changes; the cache holds each run's items, so it is bounded
 # by the size of the logs behind it (review P2-6), least recently used first out.
 CACHE_BYTES = 64 * 1024 * 1024
-_cache: "OrderedDict[tuple[str, str, bool], tuple[tuple[int, float], dict[str, Any], int]]" = OrderedDict()
+_cache: "OrderedDict[tuple[str, str, bool], tuple[tuple[Any, ...], dict[str, Any], int]]" = OrderedDict()
 _cache_bytes = 0
 
 
+def log_stat(a: Any, path: Path | None) -> tuple[Any, ...] | None:
+    """(size, mtime, …) of a run's log: the file's, or what its adapter says for a log that is not a
+    file of its own (Devin's rows in one database). None when there is no such log."""
+    if path is None:
+        return None
+    own = getattr(a, "log_stat", None)
+    if own is not None:
+        return own(path)
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return (st.st_size, st.st_mtime) if path.is_file() else None
+
+
 def timeline(kind: str, path: Path | None, root: str | None, *, child: bool = False) -> dict[str, Any]:
-    """Project a run's log into lane segments and turn spans (cached until the file changes)."""
+    """Project a run's log into lane segments and turn spans (cached until the log changes)."""
     empty = {"segments": [], "turns": [], "busy": False, "startedAt": None, "endedAt": None, "lastAt": None, "items": []}
     a = ADAPTERS.get(kind)
     if a is None or path is None or not hasattr(a, "project"):
         return empty
-    try:
-        st_ = path.stat() if path.is_file() else None
-        sig = (st_.st_size, st_.st_mtime) if st_ else (0, time.time())
-    except OSError:
-        return empty
+    sig = log_stat(a, path) or (0, time.time())
     key = (str(path), str(root), child)
     hit = _cache.get(key)
     if hit and hit[0] == sig:
@@ -229,7 +240,7 @@ def timeline(kind: str, path: Path | None, root: str | None, *, child: bool = Fa
     return out
 
 
-def _remember(key: tuple[str, str, bool], sig: tuple[int, float], out: dict[str, Any], size: int) -> None:
+def _remember(key: tuple[str, str, bool], sig: tuple[Any, ...], out: dict[str, Any], size: int) -> None:
     global _cache_bytes
     old = _cache.pop(key, None)
     if old is not None:
@@ -243,12 +254,8 @@ def _remember(key: tuple[str, str, bool], sig: tuple[int, float], out: dict[str,
         _cache_bytes -= n
 
 
-def _state(ref_state: str | None, tl: dict[str, Any], path: Path | None) -> str:
-    fresh = False
-    try:
-        fresh = path is not None and time.time() - path.stat().st_mtime < RUNNING_S
-    except OSError:
-        pass
+def _state(ref_state: str | None, tl: dict[str, Any], mtime: float | None) -> str:
+    fresh = mtime is not None and time.time() - mtime < RUNNING_S
     if ref_state in ("done", "failed", "blocked", "exited"):
         return ref_state
     if tl.get("segments") and tl["segments"][-1]["kind"] == "wait" and tl.get("busy"):
@@ -283,7 +290,8 @@ def run_of(ref: NativeRef, root: str | None, *, depth: int, links: list | None =
                 if n:
                     s["node"] = n
     a = ADAPTERS.get(ref.kind)
-    state = _state(ref.meta.get("state"), tl, ref.path)
+    stat = log_stat(a, ref.path) if a is not None else None
+    state = _state(ref.meta.get("state"), tl, stat[1] if stat else None)
     run = {
         "id": ref.run_id,
         "kind": ref.kind,
