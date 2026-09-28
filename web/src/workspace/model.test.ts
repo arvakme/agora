@@ -1,7 +1,7 @@
 // Workspace model rules: naming without gaps, close vs. open, group kinds and placement.
 import { describe, expect, it } from "vitest";
 import { group, groups, moveTab, type Node } from "./layout.ts";
-import { closeTab, groupKind, homeGroup, migrateDocs, nextTitle, openIds, openTab, placement, UNTITLED_CANVAS } from "./model.ts";
+import { closeTab, groupKind, homeGroup, isNamed, migrateDocs, nextTitle, openIds, openTab, placement, savedWorkspace, sessionTitles, topicOf, UNTITLED_CANVAS, type Doc, type SessionDoc } from "./model.ts";
 
 const kinds: Record<string, "canvas" | "session"> = { c1: "canvas", c2: "canvas", c3: "canvas", p1: "session", p2: "session" };
 const kindOf = (id: string) => kinds[id];
@@ -73,12 +73,58 @@ describe("group kind and placement", () => {
 });
 
 describe("migrateDocs", () => {
-  it("names untitled v1 session docs 会话 1, 2… and keeps canvases", () => {
+  it("turns untitled and numbered 会话 N session names into automatic names, keeping everything else", () => {
     const docs = migrateDocs([
       { id: "c1", kind: "canvas", title: "架构图 1" },
       { id: "p1", kind: "session", sessionId: "s-a" },
-      { id: "p3", kind: "session", sessionId: "s-b" },
+      { id: "p2", kind: "session", sessionId: "s-b", title: "会话 5" },
+      { id: "p3", kind: "session", sessionId: "s-c", title: "缓存讨论" },
     ]);
-    expect(docs.map((d) => d.title)).toEqual(["架构图 1", "会话 1", "会话 2"]);
+    expect(docs.map((d) => d.title)).toEqual(["架构图 1", "", "", "缓存讨论"]);
+    expect(docs.map((d) => d.id)).toEqual(["c1", "p1", "p2", "p3"]); // nothing dropped
+  });
+});
+
+describe("session names", () => {
+  const s = (id: string, extra: Partial<SessionDoc> = {}): SessionDoc => ({ id: `p-${id}`, kind: "session", sessionId: id, title: "", ...extra });
+  const agentOf: Record<string, string> = { a: "Claude Code", b: "Claude Code", c: "Pi", d: "Claude Code" };
+  it("uses the agent name and topic, 新会话 for a draft, and the person's own name when given", () => {
+    const docs: Doc[] = [{ id: "c1", kind: "canvas", title: "架构图" }, s("a", { topic: "加 Kafka" }), s("c"), s("x"), s("d", { title: "缓存讨论" })];
+    expect(sessionTitles(docs, (id) => ({ agent: agentOf[id] }))).toEqual({ "p-a": "Claude Code · 加 Kafka", "p-c": "Pi", "p-x": "新会话", "p-d": "缓存讨论" });
+  });
+  it("adds a suffix only to names that collide, never a global number", () => {
+    const docs: Doc[] = [s("a", { topic: "加 Kafka" }), s("b", { topic: "加 Kafka" }), s("x"), s("y"), s("c")];
+    expect(Object.values(sessionTitles(docs, (id) => ({ agent: agentOf[id] })))).toEqual(["Claude Code · 加 Kafka", "Claude Code · 加 Kafka 2", "新会话", "新会话 2", "Pi"]);
+    expect(isNamed(s("a", { title: "会话 3" }))).toBe(false);
+  });
+});
+
+describe("topicOf", () => {
+  it("takes the first line, without polite openers, Agora's notes or trailing punctuation", () => {
+    expect(topicOf("帮我加 Kafka。")).toBe("加 Kafka");
+    expect(topicOf("请把 Redis 换成集群\n细节：……")).toBe("把 Redis 换成集群");
+    expect(topicOf("加一个消息队列\n\n（引用的画布元素：Redis（redis））")).toBe("加一个消息队列");
+    expect(topicOf("讨论一下\n[[agora]] 来自 Agora · 画布「x」")).toBe("讨论一下");
+    expect(topicOf("## Can you draw the auth flow?")).toBe("draw the auth flow");
+    expect(topicOf("")).toBe("");
+  });
+  it("cuts at 18 columns, a CJK character counting 2", () => {
+    expect(topicOf("把网关、鉴权和限流拆成三个独立服务")).toBe("把网关、鉴权和限流…");
+  });
+  it("uses the first comment of a hand-off", () => {
+    expect(topicOf("画布评论 #3（锚点：Redis（redis））：\n- 小马：这里要加缓存吗？\n\n请按这条评论处理画布")).toBe("这里要加缓存吗");
+  });
+});
+
+describe("savedWorkspace", () => {
+  it("leaves draft sessions and their tabs out of what is saved, and nothing else", () => {
+    const g = group(["c1", "p-a", "p-x"], "p-x");
+    const docs: Doc[] = [{ id: "c1", kind: "canvas", title: "架构图" }, { id: "p-a", kind: "session", sessionId: "a", title: "" }, { id: "p-x", kind: "session", sessionId: "x", title: "" }];
+    const saved = savedWorkspace({ docs, root: g, focused: "p-x" }, (sid) => sid === "x");
+    expect(saved.docs.map((d) => d.id)).toEqual(["c1", "p-a"]);
+    expect(openIds(saved.root)).toEqual(["c1", "p-a"]);
+    expect(saved.focused).not.toBe("p-x");
+    // no drafts: saved as is
+    expect(savedWorkspace({ docs, root: g, focused: "c1" }, () => false)).toEqual({ v: 2, docs, root: g, focused: "c1" });
   });
 });

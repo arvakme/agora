@@ -74,6 +74,10 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
     @router.put("/sessions/{sid}")
     async def bind(sid: str, body: Bind):
         try:
+            # A new binding's effort must be one the chosen model really takes (the CLI's own
+            # catalog, agent_models.py); an existing binding is only ever confirmed or refused (409).
+            if store.read_binding(sid) is None:
+                await asyncio.to_thread(agents.check_effort, body.agent, body.model, body.effort)
             b = store.bind(sid, agent=body.agent, model=body.model, effort=body.effort, native_id=body.nativeId, at=int(time.time() * 1000))
         except Exception as e:
             return fail(e)

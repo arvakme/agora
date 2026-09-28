@@ -137,7 +137,7 @@ function Row({ m, first, onUndo, tools }: { m: Message; first?: boolean; onUndo?
   const agentKind = useAgents().bindings[m.sessionId ?? ""]?.agent;
   return (
     <div className="trow" data-first={first} data-tone={reply?.tone ?? m.tone}>
-      {m.author === "agent" && agentKind ? <AgentAvatar kind={agentKind} /> : <Avatar who={m.author} name={other ? m.by!.name : undefined} />}
+      {m.author === "agent" && agentKind ? <AgentAvatar kind={agentKind} size={26} /> : <Avatar who={m.author} name={other ? m.by!.name : undefined} />}
       <div className="trow-main">
         <div className="trow-meta">
           <b>{m.author === "agent" ? (agentKind ? AGENT_NAMES[agentKind] : "Agent") : m.author === "system" ? "系统" : other ? m.by!.name : "你"}</b>

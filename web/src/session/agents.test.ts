@@ -1,7 +1,7 @@
 // The page's agent-session store: transcript upserts, status/binding, which session a
 // canvas comment goes to, and a send resolving when the server reports it done.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { agents, handleEvent, type Binding } from "./agents.ts";
+import { agents, effortChoices, handleEvent, type Binding } from "./agents.ts";
 import { commentMessage } from "../comments/handoff.ts";
 
 const binding = (agent: Binding["agent"], createdAt: number): Binding => ({ agent, model: "m", effort: "", nativeId: "n", createdAt });
@@ -59,5 +59,31 @@ describe("comment hand-off message", () => {
       [{ id: "redis", name: "Redis" }],
     );
     expect(msg.split("\n")).toEqual(["画布评论 #3（锚点：Redis（redis））：", "- Ann：换成集群", "- Agent：好", "", "请按这条评论处理画布，完成后用一两句话答复（会贴回评论线程）。"]);
+  });
+});
+
+describe("effort choices", () => {
+  const entry = {
+    kind: "codex" as const,
+    name: "Codex",
+    installed: true,
+    default: "",
+    models: ["gpt-6-astra", "gpt-5.5"],
+    featured: ["gpt-6-astra", "gpt-5.5"],
+    efforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+    defaultEffort: "xhigh",
+    modelEfforts: { "gpt-6-astra": ["low", "medium", "high", "xhigh", "max", "ultra"], "gpt-5.5": ["low", "medium", "high", "xhigh"], haiku: [] },
+    modelDefaultEffort: { "gpt-6-astra": "xhigh", "gpt-5.5": "", haiku: "" },
+  };
+  it("offers exactly what the model takes and starts on its default", () => {
+    expect(effortChoices(entry, "gpt-6-astra")).toEqual({ levels: ["low", "medium", "high", "xhigh", "max", "ultra"], initial: "xhigh", cliDefault: false });
+    const old = effortChoices(entry, "gpt-5.5");
+    expect(old.levels).not.toContain("max");
+    expect(old).toMatchObject({ initial: "", cliDefault: true });
+    expect(effortChoices(entry, "haiku").levels).toEqual([]);
+  });
+  it("falls back to the agent's vocabulary for a model the catalog does not list", () => {
+    expect(effortChoices(entry, "custom").levels).toEqual(entry.efforts);
+    expect(effortChoices(undefined, "x")).toEqual({ levels: [], initial: "", cliDefault: true });
   });
 });

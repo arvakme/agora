@@ -31,6 +31,13 @@ SCENE = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _no_cli_catalog(monkeypatch):
+    """Binding checks the effort against the real CLIs' catalogs (test_agent_models.py covers
+    that with recorded outputs); here it must not spawn claude / pi."""
+    monkeypatch.setattr(agents, "check_effort", lambda *a: None)
+
+
 @pytest.fixture
 def store(tmp_path):
     s = ProjectStore(tmp_path / "proj")
