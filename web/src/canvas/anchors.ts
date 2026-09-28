@@ -16,7 +16,12 @@ export function resolveAnchor(anchor: Anchor, map: Map<string, El>): AnchorState
   let point = lastSeen.get(anchor) ?? anchor.last;
   if (primary) {
     const b = bbox(primary);
-    point = { x: b.x + anchor.rel.x * b.width, y: b.y + anchor.rel.y * b.height };
+    // Boxes: the pin's tip sits on the top-right corner, so the teardrop (it grows up and to
+    // the right of its tip) stays outside the box and never covers the centred label.
+    // Arrows keep the anchored point along their path.
+    point = isArrow(primary)
+      ? { x: b.x + anchor.rel.x * b.width, y: b.y + anchor.rel.y * b.height }
+      : { x: b.x + b.width, y: b.y };
     lastSeen.set(anchor, point);
   }
   const names = anchor.ids.map((id) => {
