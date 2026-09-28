@@ -29,6 +29,7 @@ from __future__ import annotations
 import os
 import re
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -135,7 +136,11 @@ def node_for(path: str, links: list[tuple[str, list[str]]]) -> str | None:
 
 
 # ——— one run's timeline ———
-_cache: dict[tuple[str, str, bool], tuple[tuple[int, float], dict[str, Any]]] = {}
+# Timelines are cached until their log changes; the cache holds each run's items, so it is bounded
+# by the size of the logs behind it (review P2-6), least recently used first out.
+CACHE_BYTES = 64 * 1024 * 1024
+_cache: "OrderedDict[tuple[str, str, bool], tuple[tuple[int, float], dict[str, Any], int]]" = OrderedDict()
+_cache_bytes = 0
 
 
 def timeline(kind: str, path: Path | None, root: str | None, *, child: bool = False) -> dict[str, Any]:
@@ -152,6 +157,7 @@ def timeline(kind: str, path: Path | None, root: str | None, *, child: bool = Fa
     key = (str(path), str(root), child)
     hit = _cache.get(key)
     if hit and hit[0] == sig:
+        _cache.move_to_end(key)
         return hit[1]
     project = getattr(a, "project_child", None) if child else None
     project = project or a.project
@@ -219,11 +225,22 @@ def timeline(kind: str, path: Path | None, root: str | None, *, child: bool = Fa
         "items": all_items,
         **({"timesInferred": True} if getattr(a, "times_inferred", False) else {}),
     }
-    _cache[key] = (sig, out)
-    if len(_cache) > 500:
-        for k in list(_cache)[:100]:
-            _cache.pop(k, None)
+    _remember(key, sig, out, int(sig[0]))
     return out
+
+
+def _remember(key: tuple[str, str, bool], sig: tuple[int, float], out: dict[str, Any], size: int) -> None:
+    global _cache_bytes
+    old = _cache.pop(key, None)
+    if old is not None:
+        _cache_bytes -= old[2]
+    if size > CACHE_BYTES:
+        return  # a log bigger than the whole budget is projected every time, never kept
+    _cache[key] = (sig, out, size)
+    _cache_bytes += size
+    while _cache_bytes > CACHE_BYTES and _cache:
+        _, (_, _, n) = _cache.popitem(last=False)
+        _cache_bytes -= n
 
 
 def _state(ref_state: str | None, tl: dict[str, Any], path: Path | None) -> str:

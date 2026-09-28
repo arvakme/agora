@@ -178,3 +178,38 @@ def test_claude_nested_agents_hang_under_their_parent_whatever_the_file_names(ho
     r = by_id(runs.build(NativeRef("claude", P, parent, ROOT), root=ROOT, depth=None))
     assert r[f"claude:{P}/000"]["parent"]["runId"] == f"claude:{P}/zzz" and r[f"claude:{P}/000"]["depth"] == 2
     assert r[f"claude:{P}/zzz"]["depth"] == 1 and r[f"claude:{P}/zzz"]["descendants"] == 1
+
+
+def test_codex_children_are_read_once_per_change(home, monkeypatch):
+    """Review P2-6: a parent rollout is not re-read on every request."""
+    from server.canvas.adapters import codex as cx
+
+    parent = codex_tree(home)
+    calls = []
+    real = cx.read_jsonl
+    monkeypatch.setattr(cx, "read_jsonl", lambda p, *a, **k: (calls.append(p), real(p, *a, **k))[1])
+    a = cx.CodexAdapter()
+    ref = NativeRef("codex", "cx-p", parent, ROOT)
+    first = a.children(ref, home)
+    assert a.children(ref, home) == first and len(calls) == 1
+    with open(parent, "a") as fh:
+        fh.write("{}\n")
+    a.children(ref, home)
+    assert len(calls) == 2
+
+
+def test_timeline_cache_is_bounded_by_bytes(home, monkeypatch):
+    """Review P2-6: the cache keeps items, so it is bounded by the logs' size (LRU)."""
+    parent = claude_tree(home)
+    size = parent.stat().st_size
+    monkeypatch.setattr(runs, "CACHE_BYTES", size * 2 + 1)
+    monkeypatch.setattr(runs, "_cache", runs.OrderedDict())
+    monkeypatch.setattr(runs, "_cache_bytes", 0)
+    copies = []
+    for i in range(4):
+        c = parent.with_name(f"copy-{i}.jsonl")
+        c.write_bytes(parent.read_bytes())
+        copies.append(c)
+        runs.timeline("claude", c, ROOT)
+    assert len(runs._cache) == 2 and runs._cache_bytes <= runs.CACHE_BYTES
+    assert [k[0] for k in runs._cache] == [str(copies[2]), str(copies[3])]
