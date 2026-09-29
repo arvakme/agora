@@ -14,4 +14,7 @@
 .ws-talk-sub button:hover { background: var(--accent-fill-hover); }
 .ws-talk-sub button:disabled { background: var(--surface); box-shadow: var(--box); color: var(--fg-subtle); }
 .ws-talk-err { color: var(--negative); }
+.ws-talk-note { margin: 0; padding: 4px 8px; font-size: var(--text-sm); line-height: 1.45; color: var(--fg); }
+.ws-talk-note[data-state="queued"] { color: var(--fg-muted); }
+.ws-talk-note[data-state="delivered"] { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .ws-talk { animation-duration: 150ms; } }

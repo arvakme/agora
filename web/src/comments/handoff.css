@@ -1,0 +1,4 @@
+/* "交给 Agent": the small line naming who gets the comment when several sessions could take it, and the
+   换一个会话 button a failed hand-off leaves in the thread. */
+.tagent .tagent-to { margin-left: var(--space-2); font-size: var(--text-xs); font-weight: 400; opacity: 0.85; white-space: nowrap; }
+.tswitch { margin-top: var(--space-2); }

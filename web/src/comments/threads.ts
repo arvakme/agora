@@ -23,6 +23,8 @@ export type Message = {
   /** Agent replies from a native session: the session that answered (text is the agent's own reply;
    * turnId, if any, is its last canvas change there — for undo). */
   sessionId?: string;
+  /** A system message that offers a next step: `switch-session` = 换一个会话 (a hand-off failed; the button opens the chooser and sends again). */
+  action?: "switch-session";
   /** Who wrote a human ("you") message. Several people can take part in one thread. */
   by?: Person;
   /** Set when the author changed the text after posting (shown as 已编辑). */

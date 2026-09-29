@@ -10,7 +10,9 @@ import { byId } from "../canvas/scene";
 import { runTurn, undoTurn, type AgentOutcome } from "../session/runTurn";
 import { sessions } from "../session/store";
 import { agents } from "../session/agents";
-import { ui } from "../session/ui";
+import { pickSession } from "../session/pickSession";
+import { openSessions, ui } from "../session/ui";
+import { pointerFollow } from "../pointer/follow";
 import type { ThreadStore } from "../comments/threads";
 import { commentMessage } from "../comments/handoff";
 
@@ -43,16 +45,27 @@ export function undoAgent(api: ExcalidrawImperativeAPI, threads: ThreadStore, th
   return msg?.turnId ? undoTurn(api, msg.turnId) : { ok: false, stale: [] };
 }
 
-export async function handToSession(api: ExcalidrawImperativeAPI, threads: ThreadStore, threadId: string): Promise<void> {
+/** The session a comment on this canvas would go to right now, and how many could take it (the button names the agent when several could). */
+export function handTarget(canvasId: string, skip?: string[]) {
+  const st = agents.get();
+  return pickSession({ ids: sessions.onCanvas(canvasId).map((s) => s.id), bindings: st.bindings, status: st.status, activeAt: st.activeAt, open: openSessions.get(), focused: pointerFollow.get(), skip });
+}
+
+/**
+ * `choose`: skip the automatic pick and open the chooser (a send just failed and the person said 换一个会话).
+ * The comment goes to the session the person is looking at, else the most recent one that can still take a
+ * message (session/pickSession.ts); none → the chooser. A failed send leaves an action in the thread that
+ * opens the chooser and sends again.
+ */
+export async function handToSession(api: ExcalidrawImperativeAPI, threads: ThreadStore, threadId: string, opts: { choose?: boolean } = {}): Promise<void> {
   const thread = threads.thread(threadId)!;
   const canvasId = threads.canvasId;
   const anchors = resolveAnchor(thread.anchor, byId(api.getSceneElementsIncludingDeleted())).names.map((n) => ({ id: n.id, name: n.name }));
   threads.setAgent(threadId, "running");
   try {
-    // The canvas's most recently active agent session; none yet → the person picks an agent first.
-    const sid = agents.forCanvas(sessions.onCanvas(canvasId).map((s) => s.id)) ?? (await ui.chooseAgent(canvasId));
+    const sid = (opts.choose ? undefined : handTarget(canvasId).sid) ?? (await ui.chooseAgent(canvasId));
     if (!sid) {
-      threads.reply(threadId, { author: "system", text: "没有选定 agent，评论没有交出去。", tone: "warn" });
+      threads.reply(threadId, { author: "system", text: "没有选定 agent，评论没有交出去。", tone: "warn", action: "switch-session" });
       return;
     }
     const anchor = anchors.length > 1 ? `${anchors[0].name} 等 ${anchors.length} 个` : anchors[0]?.name ?? "";
@@ -60,7 +73,7 @@ export async function handToSession(api: ExcalidrawImperativeAPI, threads: Threa
     try {
       r = await agents.send(sid, commentMessage(thread, anchors), { canvasId, context: `这条消息来自画布评论 #${thread.n}。`, thread: { threadId, threadN: thread.n, anchor } });
     } catch (e) {
-      threads.reply(threadId, { author: "system", text: `没有交出去：${(e as Error).message}`, tone: "error" });
+      threads.reply(threadId, { author: "system", text: `没有交出去：${(e as Error).message}`, tone: "error", sessionId: sid, action: "switch-session" });
       return;
     }
     const d = await r.done;

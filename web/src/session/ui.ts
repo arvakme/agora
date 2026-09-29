@@ -28,6 +28,17 @@ export const ui = {
   openHistory: () => {},
 };
 
+/** Sessions with an open tab (their pane is mounted): "the one the person is looking at" starts from these. */
+let openNow: ReadonlySet<string> = new Set();
+const openLs = new Set<() => void>();
+const setOpen = (next: Set<string>) => ((openNow = next), openLs.forEach((l) => l()));
+export const openSessions = {
+  mount: (id: string) => !openNow.has(id) && setOpen(new Set([...openNow, id])),
+  unmount: (id: string) => openNow.has(id) && setOpen(new Set([...openNow].filter((x) => x !== id))),
+  get: () => openNow,
+  subscribe: (l: () => void) => (openLs.add(l), () => void openLs.delete(l)),
+};
+
 /** Text to put in a session's composer when it opens (a summary to carry into a fresh native session). */
 export const draftText = new Map<string, string>();
 
