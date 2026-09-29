@@ -28,7 +28,7 @@ import { RequestCards } from "./RequestCards";
 import { modeLabel, waitLabel } from "./requestModel";
 import { canvasChoices, topOf } from "./canvasChoices";
 import { useNested } from "../nested/store";
-import { AGENT_NAMES, agents, effortChoices, forkHeadless, loadAdapters, sessionKinds, useAgents, type AgentKind, type Catalog, type TerminalApps } from "./agents";
+import { agents, effortChoices, forkHeadless, loadAdapters, sessionKinds, useAgentName, useAgents, type AgentKind, type Catalog, type TerminalApps } from "./agents";
 import { AgentAvatar } from "./AgentAvatar";
 import { Picker } from "./Picker";
 import { kindShown, recommendAgent } from "./recommend";
@@ -76,10 +76,11 @@ async function freshSession(canvasId: string, agent: AgentKind, model = "", effo
  * - foreign: made on another machine → read-only card; 在这里开新会话 (same canvas and agent).
  */
 function OriginCard({ sessionId, origin, canvasTitles }: { sessionId: string; origin: import("../persist").Origin; canvasTitles: Record<string, string> }) {
+  const nameOf = useAgentName();
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const agent = (origin.agent ?? "claude") as AgentKind;
-  const name = AGENT_NAMES[agent];
+  const name = nameOf(agent);
   const canvasId = origin.canvasId ?? sessions.get().sessions[sessionId]?.canvasId ?? "";
   const canvas = canvasTitles[canvasId];
   const act = async (f: () => Promise<unknown>) => {
@@ -163,6 +164,7 @@ function CanvasChoice({ canvasId, canvasTitles, onPick }: { canvasId: string; ca
 
 /** Pick the session's agent, model and effort. Once started this never changes. */
 function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: string }) {
+  const nameOf = useAgentName();
   const [cat, setCat] = useState<Catalog | null>(null);
   // the model list: loading, failed (the session then starts on the CLI's defaults) or ready — session/chooserModel.ts
   const [catState, setCatState] = useState<CatalogState>("loading");
@@ -240,7 +242,7 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
                 <AgentAvatar kind={k} size={32} />
                 <span className="sp-card-t">
                   <div className="sp-card-h">
-                    <b>{AGENT_NAMES[k] ?? k}</b>
+                    <b>{nameOf(k)}</b>
                     {k === rec && <i className="rec-tag">推荐</i>}
                   </div>
                   <span>{AGENT_BLURB[k] ?? ""}{def ? `${AGENT_BLURB[k] ? " · " : ""}${e?.names?.[def] ?? def}` : ""}</span>
@@ -272,7 +274,7 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
         {scopeNote && <p className="sp-choose-note" title={scopeNote.title}>{scopeNote.text}</p>}
         {err && <p className="sp-warn">{err}</p>}
         <div className="sp-choose-go">
-          <button className="btn primary" disabled={busy || !view.canStart} onClick={() => void start()}>用 {AGENT_NAMES[kind]} 开始</button>
+          <button className="btn primary" disabled={busy || !view.canStart} onClick={() => void start()}>用 {nameOf(kind)} 开始</button>
           {waiting && <button className="btn ghost" onClick={() => agentChoice.resolve(sessionId, undefined)}>先不交</button>}
         </div>
         <p className="sp-choose-later">也可以直接在右边画，之后再开会话。</p>
@@ -285,6 +287,7 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
 const AGENT_BLURB: Record<string, string> = { pi: "快，适合边画边聊", claude: "擅长大改动，能派子代理", codex: "适合按清单写代码和测试", grok: "xAI 出品，读写代码，能派子代理", cursor: "多种模型可选，读写代码，能派子代理", devin: "Cognition 出品，读写代码，工具默认不用批准" };
 
 function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTitles: Record<string, string> }) {
+  const nameOf = useAgentName();
   const { sessions: all, turns: canvasTurns } = useSessions();
   const ag = useAgents();
   const session = all[sessionId];
@@ -404,9 +407,9 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   const line = status?.held
     ? `排队中：${status.held}`
     : status?.running
-      ? `${AGENT_NAMES[binding.agent]} 正在处理${status.activity ? ` · ${status.activity}` : ""}`
+      ? `${nameOf(binding.agent)} 正在处理${status.activity ? ` · ${status.activity}` : ""}`
       : status?.busy
-        ? `${AGENT_NAMES[binding.agent]} 正在回复${status.terminal.alive ? "（终端）" : ""}`
+        ? `${nameOf(binding.agent)} 正在回复${status.terminal.alive ? "（终端）" : ""}`
         : inflight
           ? "已发送，等待开始…"
           : status?.error
@@ -509,9 +512,9 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
             <div className="sp-hello">
               <p>怎么用「{canvasTitle ?? "画布"}」：</p>
               <ol>
-                <li>在这里告诉 {AGENT_NAMES[binding.agent]} 你要做什么；</li>
+                <li>在这里告诉 {nameOf(binding.agent)} 你要做什么；</li>
                 <li>它干活时，左边图上的小人会带你看它在改哪里；点小人可以直接对它说话；</li>
-                <li>在图上留评论，点「交给 {AGENT_NAMES[binding.agent]}」让它处理。</li>
+                <li>在图上留评论，点「交给 {nameOf(binding.agent)}」让它处理。</li>
               </ol>
             </div>
           )}
@@ -543,7 +546,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
       {fork && !copyOf && (
         <div className="notice sp-lost-note" role="status">
           <b>分叉</b>
-          <span>{!forkHeadless(binding.agent) ? `${AGENT_NAMES[binding.agent] ?? binding.agent} 只能在终端里分叉：点「在终端打开」，在终端里接着说；新的原生会话会自动接到这里。` : `下一条消息会从原来的会话（${fork.from.slice(0, 8)}）分出一个新的原生会话继续，之前的对话都在。`}</span>
+          <span>{!forkHeadless(binding.agent) ? `${nameOf(binding.agent)} 只能在终端里分叉：点「在终端打开」，在终端里接着说；新的原生会话会自动接到这里。` : `下一条消息会从原来的会话（${fork.from.slice(0, 8)}）分出一个新的原生会话继续，之前的对话都在。`}</span>
         </div>
       )}
       {copyOf ? (
@@ -559,7 +562,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           initial={takeDraft(sessionId)}
           canvasId={session.canvasId}
           canvasTitle={canvasTitle}
-          agentName={AGENT_NAMES[binding.agent]}
+          agentName={nameOf(binding.agent)}
           onSend={send}
           working={working}
           onStop={status?.running ? () => void agents.interrupt(sessionId) : undefined}
@@ -572,6 +575,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
 
 /** Brought along by `cp -r`: the original copy still resumes this native session. Fork it here, or leave it to the original. */
 function CopyCard({ sessionId, copy, agent }: { sessionId: string; copy: NonNullable<import("./agents").Status["copy"]>; agent: AgentKind }) {
+  const nameOf = useAgentName();
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fork = async () => {
@@ -588,7 +592,7 @@ function CopyCard({ sessionId, copy, agent }: { sessionId: string; copy: NonNull
   return (
     <div className="sp-lost" role="status" data-state="copy">
       <p className="sp-lost-title"><b data-tone="caution">来自 {copy.from} 的副本</b> · 只读</p>
-      <p>原来那份项目还在用这个 {AGENT_NAMES[agent]} 会话。两份项目不能续接同一个原生会话：在这里分叉一份继续（新的原生会话，之前的对话都在），或者留给原来那份。</p>
+      <p>原来那份项目还在用这个 {nameOf(agent)} 会话。两份项目不能续接同一个原生会话：在这里分叉一份继续（新的原生会话，之前的对话都在），或者留给原来那份。</p>
       {err && <p className="sp-warn">{err}</p>}
       <div className="sp-lost-go">
         <button className="btn primary sm" disabled={busy} onClick={() => void fork()}>在这里分叉继续</button>
@@ -604,6 +608,7 @@ function CopyCard({ sessionId, copy, agent }: { sessionId: string; copy: NonNull
  * into a silently new conversation under the same id.
  */
 function NativeMissing({ sessionId, canvasId, problem, agent, model, effort, snapshot }: { sessionId: string; canvasId: string; problem: NonNullable<import("./agents").Status["native"]>; agent: AgentKind; model: string; effort: string; snapshot: boolean }) {
+  const nameOf = useAgentName();
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const act = async (f: () => Promise<unknown>) => {
@@ -639,7 +644,7 @@ function NativeMissing({ sessionId, canvasId, problem, agent, model, effort, sna
       )}
       <p className="sp-lost-hint">
         {snapshot ? "上面是 Agora 保存的轨迹快照，只读。" : "Agora 这边没有这个会话的轨迹快照。"}
-        {lost ? `要接着讨论，可以带着摘要在这里开一个新的 ${AGENT_NAMES[agent]} 原生会话（同一个 Agora 会话、同样的模型；发送前可以改摘要），或者另开一个会话。` : `要接着讨论，另开一个 ${AGENT_NAMES[agent]} 会话（同一块画布、同样的模型）；这个会话保持原样。`}
+        {lost ? `要接着讨论，可以带着摘要在这里开一个新的 ${nameOf(agent)} 原生会话（同一个 Agora 会话、同样的模型；发送前可以改摘要），或者另开一个会话。` : `要接着讨论，另开一个 ${nameOf(agent)} 会话（同一块画布、同样的模型）；这个会话保持原样。`}
       </p>
       {err && <p className="sp-warn">{err}</p>}
       <div className="sp-lost-go">

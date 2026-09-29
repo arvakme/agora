@@ -10,7 +10,7 @@ import { obstacles, type Box } from "../canvas/clearance";
 import { NodeBar } from "../canvas/NodeBar";
 import type { NodePop } from "../canvas/nodeBarLayout";
 import { notOwn } from "../canvas/chrome";
-import { AGENT_NAMES, useAgents } from "../session/agents";
+import { useAgentName, useAgents } from "../session/agents";
 import { effectiveLinks } from "../nested/graph";
 import { useNested } from "../nested/store";
 import type { Conflict } from "../multi/pointers";
@@ -27,9 +27,10 @@ const noSub = () => () => {};
 export function useSessionLabel() {
   const ag = useAgents();
   const names = useSessionNames();
+  const nameOf = useAgentName();
   return (sid: string, among: string[] = []) => {
     const kind = ag.bindings[sid]?.agent;
-    const agent = kind ? AGENT_NAMES[kind] : "Agent";
+    const agent = nameOf(kind);
     const twins = among.filter((x) => ag.bindings[x]?.agent === kind).length > 1;
     return twins ? names[sid] || agent : agent;
   };
