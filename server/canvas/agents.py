@@ -45,6 +45,7 @@ from server.canvas.adapters.claude import dir_name as claude_dir_name
 from server.canvas.adapters.codex import CodexStream, codex_home as _codex_home, codex_usage
 from server.canvas.adapters.codex import rollouts_since as codex_rollouts_since
 from server.canvas.adapters.codex import state_rollout as codex_state_rollout
+from server.canvas import proctree
 from server.canvas.adapters.common import LogLookup, StreamMapper, _hinted, add_usage, text_of  # noqa: F401
 from server.canvas.adapters.cursor import CursorStream
 from server.canvas.adapters.devin import DevinStream
@@ -202,22 +203,18 @@ def check_native(kind: str, native_id: str | None, started: bool, root: Path | s
 
 
 # ——— backends ———
-async def stop_group(proc: asyncio.subprocess.Process) -> None:
-    """Stop a turn that is still running (timeout, "停止", client gone): SIGTERM to its whole
-    process group (agent CLIs spawn MCP servers and shells), SIGKILL after a grace. A turn
-    that ended on its own is left alone, including anything it deliberately left running."""
+async def stop_group(proc: asyncio.subprocess.Process, watch: proctree.Watch | None = None) -> None:
+    """Stop a turn that is still running (timeout, "停止", client gone): its CLI and everything that turn started —
+    the process group (agent CLIs spawn MCP servers and shells) and the descendants that left it (a shell in its own
+    group, what ignores SIGTERM): SIGTERM, then SIGKILL after a grace, also when the CLI exits first (proctree.py).
+    A turn that ended on its own is left alone, including anything it deliberately left running."""
     if proc.returncode is not None:
         return
-    for sig in (signal.SIGTERM, signal.SIGKILL):
-        try:
-            os.killpg(proc.pid, sig)
-        except (ProcessLookupError, PermissionError):
-            return
-        try:
-            await asyncio.wait_for(asyncio.shield(proc.wait()), KILL_GRACE_S)
-            return
-        except BaseException:
-            pass
+    await asyncio.to_thread(proctree.stop, proc.pid, watch.seen if watch else None, KILL_GRACE_S)
+    try:
+        await asyncio.wait_for(asyncio.shield(proc.wait()), 1.0)
+    except BaseException:
+        pass
 
 
 class _CliBackend:
@@ -286,6 +283,8 @@ class _CliBackend:
             return
 
         yield {"t": "spawned", "at": now_ms(), "pid": proc.pid, "argv": [*cmd_args]}
+        watch = proctree.Watch(proc.pid)  # what this turn starts, remembered for the stop (gone from the CLI once it exits)
+        watcher = asyncio.create_task(watch.run())
 
         err_chunks: list[bytes] = []
 
@@ -358,10 +357,11 @@ class _CliBackend:
             timed_out = True
         finally:
             stderr_task.cancel()
+            watcher.cancel()
             if writer is not None:
                 writer.cancel()
             close_stdin()
-            await stop_group(proc)
+            await stop_group(proc, watch)
 
         err = b"".join(err_chunks).decode("utf-8", "replace").strip()
         if timed_out:
