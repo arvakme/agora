@@ -39,6 +39,19 @@ export function runName(sessionId: string, bound: Record<string, { agent: AgentK
   return twins && names[sessionId] ? names[sessionId] : agent;
 }
 
+/** When this page first had each call of a session (item id → wall clock): a live call arrives a moment after it began (WorkRun `seen`). */
+const seenAt = new Map<string, number>();
+function stampSeen(sid: string, run: WorkRun): WorkRun {
+  const now = Date.now();
+  return { ...run, segs: run.segs.map((g) => {
+    if (!g.itemId) return g;
+    const k = `${sid}|${g.itemId}`;
+    let at = seenAt.get(k);
+    if (at === undefined) seenAt.set(k, (at = now));
+    return { ...g, seen: at };
+  }) };
+}
+
 function compute(): Runs {
   const now = Date.now();
   if (MOCK) {
@@ -56,7 +69,7 @@ function compute(): Runs {
     const key = `${running}|${running ? sec : 0}|${name}|${root}`;
     let hit = derived.get(items);
     if (!hit || hit.key !== key) {
-      hit = { key, run: runFromTranscript({ sessionId: sid, agent: b.agent, name, items, running, now: (sec + 2) * 1000, root }) };
+      hit = { key, run: stampSeen(sid, runFromTranscript({ sessionId: sid, agent: b.agent, name, items, running, now: (sec + 2) * 1000, root })) };
       derived.set(items, hit);
     }
     let run = hit.run;

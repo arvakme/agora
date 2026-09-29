@@ -17,7 +17,7 @@ const run = (segs: RunSeg[]): WorkRun => ({ id: "r", agent: "pi", name: "Pi", se
 const MAIN_DOCK: Record<string, { x: number; y: number }> = { api: { x: 0, y: 0 }, db: { x: 900, y: 0 } };
 const SUB_DOCK: Record<string, { x: number; y: number }> = { app: { x: 0, y: 0 }, users: { x: 200, y: 0 } };
 const SYNC = !process.env.NO_DOOR_SYNC;
-const PI = run([seg("think", 0, 2), seg("read", 2, 5, "server/db/m.py"), seg("write", 5, 14, "server/users.py"), seg("think", 14, 15), seg("read", 15, 20, "server/db/x.py")]);
+const PI = run([seg("read", 0, 5, "server/db/m.py"), seg("write", 5, 14, "server/users.py"), seg("think", 14, 15), seg("read", 15, 20, "server/db/x.py")]);
 const main: Ctx = {
   locate: (p) => (p === "server/users.py" ? { place: "api", portal: { canvasId: "c-api", label: "用户模块" } } : p.startsWith("server/db/") ? { place: "db" } : null),
   dock: (p) => MAIN_DOCK[p],

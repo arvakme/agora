@@ -24,6 +24,9 @@ export type RunSeg = {
   turn?: number;
   /** The transcript item behind it (tool calls). */
   itemId?: string;
+  /** When this page first had the call (wall clock, ms). A live call reaches the page a moment after it began (the log, the server, the stream): a move for
+   * it starts then, not at `start`, which is already past — otherwise its cut or its first steps would be over before they could be drawn (./place.ts `startOf`). */
+  seen?: number;
   /** Project-relative file read or written. */
   path?: string;
   /** The call reported no real length (a Codex command with the same start and end): `end` is a padded minimum, so it is not a short read. */

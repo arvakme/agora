@@ -18,11 +18,16 @@ const ctx = (runs: WorkRun[] = [], reduced = false): Ctx => ({
 });
 
 describe("stateAt: a session's worker", () => {
-  const r = run([seg("think", 0, 2), seg("read", 2, 4, "server/app.py"), seg("write", 6, 9, "server/db/models.py"), seg("wait", 9, 12), seg("write", 20, 22, "docs/notes.md")]);
+  const r = run([seg("read", 0, 4, "server/app.py"), seg("write", 6, 9, "server/db/models.py"), seg("wait", 9, 12), seg("write", 20, 22, "docs/notes.md")]);
   const c = ctx([r]);
-  it("is absent before any work, and appears where its first work lands", () => {
+  it("is absent before any work, and appears where its first work lands when that work starts at once", () => {
     expect(stateAt(r, -1, c).present).toBe(false);
-    expect(stateAt(r, 1 * S, c)).toMatchObject({ present: true, at: "api", pose: "think" });
+    expect(stateAt(r, 1 * S, c)).toMatchObject({ present: true, at: "api", pose: "read" });
+  });
+  it("a stretch that begins with a thought (no place yet) starts at the tray and walks to its first file as that call starts — never using a call that has not started", () => {
+    const t = run([seg("think", 0, 2), seg("write", 2, 8, "server/app.py")]);
+    expect(stateAt(t, 1 * S, ctx([t]))).toMatchObject({ present: true, at: OUTSIDE, pose: "think" });
+    expect(stateAt(t, 2.3 * S, ctx([t]))).toMatchObject({ at: "api", from: OUTSIDE, pose: "walk" });
   });
   it("walks to the node of the next file as that call starts, then works there", () => {
     const s = stateAt(r, 6.2 * S, c);
@@ -37,7 +42,7 @@ describe("stateAt: a session's worker", () => {
     expect(stateAt(r, 23 * S, c).at).toBe(OUTSIDE);
   });
   it("a file outside the project (absolute path) does not move it: that work is done where it stands, like thinking", () => {
-    const abs = run([seg("think", 0, 1), seg("write", 2, 4, "server/db/models.py"), seg("write", 5, 7, "/private/tmp/x/scratchpad/a.py"), seg("read", 8, 12, "C:\\Users\\me\\t.txt"), seg("write", 13, 15, "docs/notes.md")]);
+    const abs = run([seg("write", 0, 4, "server/db/models.py"), seg("write", 5, 7, "/private/tmp/x/scratchpad/a.py"), seg("read", 8, 12, "C:\\Users\\me\\t.txt"), seg("write", 13, 15, "docs/notes.md")]);
     const c2 = ctx([abs]);
     const at = stateAt(abs, 6 * S, c2);
     expect(at).toMatchObject({ at: "db", pose: "write", w: 1, trip: null });
@@ -47,7 +52,7 @@ describe("stateAt: a session's worker", () => {
     expect(stateAt(run([seg("write", 0, 2, "/tmp/only.txt")]), 1 * S, c2)).toMatchObject({ present: true, at: OUTSIDE }); // nowhere yet: it starts at the tray as with a thought
   });
   it("a command that runs on a file (a test, a script) takes it to that file's node, and it stands there while the command runs", () => {
-    const e = run([seg("think", 0, 1), seg("read", 2, 4, "server/app.py"), seg("exec", 6, 12, "server/db/test_models.py")]);
+    const e = run([seg("read", 0, 4, "server/app.py"), seg("exec", 6, 12, "server/db/test_models.py")]);
     const c3 = ctx([e]);
     expect(stateAt(e, 6.2 * S, c3)).toMatchObject({ at: "db", from: "api", pose: "walk" });
     expect(stateAt(e, stateAt(e, 6.2 * S, c3).trip!.t1 + 1, c3)).toMatchObject({ at: "db", pose: "exec", w: 1 });
