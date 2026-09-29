@@ -10,10 +10,14 @@
 // Gestures (./gestures.ts) arrive with the joints: a landing's scale and lift, the head's look (on its
 // own spring here: the head turns first), the save flash and a command's verdict on the screen.
 import codex128 from "../app/agents/codex-128.png";
+import grok128 from "../app/agents/grok-128.png";
 import { focus } from "./focus";
 import { PEEK_DOWN, PEEK_UP } from "./hatch";
+import { headMark } from "./headMark";
 import { RIG, Spring, type Bone, type Joints, type Pt } from "./rig";
 
+/** The bundled raster marks (the same files as app/agents/marks.tsx). */
+const IMAGES = { codex: codex128, grok: grok128 } as const;
 const NS = "http://www.w3.org/2000/svg";
 const el = <K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}, parent?: Element): SVGElementTagNameMap[K] => {
   const e = document.createElementNS(NS, tag);
@@ -54,14 +58,14 @@ function capsule(ax: number, ay: number, bx: number, by: number, r: number): str
   return `M${f2(ax + nx)} ${f2(ay + ny)}L${f2(bx + nx)} ${f2(by + ny)}${arc}${f2(bx - nx)} ${f2(by - ny)}L${f2(ax - nx)} ${f2(ay - ny)}${arc}${f2(ax + nx)} ${f2(ay + ny)}Z`;
 }
 
-/** The agent's mark inside a disc of radius r at (0, 0), as SVG (symbols come from <WorkerDefs/>). */
+/** The agent's mark inside a disc of radius r at (0, 0), as SVG (symbols come from <WorkerDefs/>; what to draw: ./headMark.ts). */
 export function mark(agent: string, r: number, parent: Element) {
-  if (agent === "pi") el("use", { href: "#ws-m-pi", x: -r * 0.5, y: -r * 0.5, width: r, height: r }, parent);
-  else if (agent === "claude") el("use", { href: "#ws-m-claude", x: -r * 0.7, y: -r * 0.7, width: r * 1.4, height: r * 1.4 }, parent);
-  else if (agent === "codex") el("image", { href: codex128, x: -r * 0.72, y: -r * 0.72, width: r * 1.44, height: r * 1.44 }, parent);
+  const m = headMark(agent, r);
+  if (m.kind === "symbol") el("use", { href: `#${m.id}`, x: m.x, y: m.y, width: m.w, height: m.h }, parent);
+  else if (m.kind === "image") el("image", { href: IMAGES[m.image], x: m.x, y: m.y, width: m.w, height: m.h }, parent);
   else {
-    const t = el("text", { x: 0, y: r * 0.36, "text-anchor": "middle", "font-size": r, "font-weight": 600, fill: "var(--fg-muted)", "font-family": "var(--font-sans)" }, parent);
-    t.textContent = agent === "worker" ? "W" : (agent[0] ?? "?").toUpperCase();
+    const t = el("text", { x: 0, y: m.y, "text-anchor": "middle", "font-size": m.size, "font-weight": 600, fill: "var(--fg-muted)", "font-family": "var(--font-sans)" }, parent);
+    t.textContent = m.text;
   }
 }
 
