@@ -9,6 +9,7 @@
     agora canvas list|read|search|apply|anim|schema   the agora-canvas skill's commands
     agora skill install [--agent all|claude|pi|codex]  link the skill into the project
     agora share create [--canvas C] [--for 1d] | list | revoke <id>|--all   share a canvas (web/docs/sharing.md)
+    agora replay import-pr <N>… [--repo owner/name]   PR replays from GitHub or the squash commit (web/docs/pr-replay.md)
     agora doctor [--fix] | backup | restore [--from …] | history [<file>]   local safety nets (agora_cli/doctor.py)
 
 P defaults to the current directory. The live server is recorded in P/.agora/run/server.json
@@ -499,9 +500,12 @@ def main(argv: list[str] | None = None) -> int:
     from agora_cli.doctor import add_parsers as add_doctor
 
     add_doctor(sub)
+    from agora_cli.replay import add_parser as add_replay
+
+    add_replay(sub)
     a = ap.parse_args(argv)
     try:
-        project = Project(str(find_root(a.project))) if a.cmd in ("canvas", "skill", "share", "doctor", "backup", "restore", "history") else Project(a.project)
+        project = Project(str(find_root(a.project))) if a.cmd in ("canvas", "skill", "share", "replay", "doctor", "backup", "restore", "history") else Project(a.project)
         return a.fn(project, a)
     except RuntimeError as e:
         print(f"agora: {e}", file=sys.stderr)
