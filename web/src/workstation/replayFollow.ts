@@ -61,3 +61,21 @@ export function followView(o: FollowIn): { view: Fit; move: boolean } {
   const calm = s.x >= ix0 && s.x <= ix1 && s.y >= iy0 && s.y <= iy1;
   return { view, move: !(inside && calm && Math.abs(c.zoom - z) < 0.08) };
 }
+
+/**
+ * What of the diagram to frame with a figure that stands outside it (at the tray, off the edge of the drawing): the piece of it nearest to the figure, so the
+ * shot shows where the work will land and not one lonely node or bare canvas — `reach` world units either way from the nearest point of the drawing's bounds.
+ * null when the figure is inside the drawing or there is no drawing. Pure.
+ */
+export function trayShotBox(figure: { x: number; y: number }, bounds: Box | null, reach = 360): Box | null {
+  if (!bounds || bounds.w <= 0 || bounds.h <= 0) return null;
+  const inside = figure.x >= bounds.x && figure.x <= bounds.x + bounds.w && figure.y >= bounds.y && figure.y <= bounds.y + bounds.h;
+  if (inside) return null;
+  const qx = Math.max(bounds.x, Math.min(bounds.x + bounds.w, figure.x));
+  const qy = Math.max(bounds.y, Math.min(bounds.y + bounds.h, figure.y));
+  const x0 = Math.max(bounds.x, qx - reach);
+  const x1 = Math.min(bounds.x + bounds.w, qx + reach);
+  const y0 = Math.max(bounds.y, qy - reach);
+  const y1 = Math.min(bounds.y + bounds.h, qy + reach);
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}

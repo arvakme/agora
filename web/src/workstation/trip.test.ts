@@ -210,7 +210,8 @@ describe("planTrip / tripAt (剖面 trips)", () => {
         const [hn, hf] = s.hands!;
         for (const [i, l] of [fn, ff, hn, hf].entries()) {
           if (lifted(l)) continue;
-          const held = p.ladders.some((d) => Math.abs(d.x - l.x) < 1e-6 && (d.rungs.some((y) => Math.abs(y - l.y) < 1e-6) || (i < 2 && Math.abs(d.bottom - l.y) < 1e-6)));
+          // a hand going down a ladder holds a little ahead of the rails (rig.ts DOWN_AHEAD, in figure units), clear of the shoulder that comes in to them
+          const held = p.ladders.some((d) => Math.abs(d.x - l.x) < (i < 2 ? 1e-6 : 2.5 * K + 1e-6) && (d.rungs.some((y) => Math.abs(y - l.y) < 1e-6) || (i < 2 && Math.abs(d.bottom - l.y) < 1e-6)));
           expect(held, `${name}: +${t - p.t0} ms, limb ${i} at ${l.x},${l.y}`).toBe(true);
         }
         expect(lifted(hn) && lifted(fn), `${name}: +${t - p.t0} ms, the near hand and foot both off`).toBe(false);

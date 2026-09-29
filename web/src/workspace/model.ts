@@ -140,6 +140,17 @@ export function placeDoc(
 }
 
 /**
+ * A canvas opened for something other than the person (an agent reads or edits a canvas that has no tab): its tab joins its home group but becomes the
+ * active tab nowhere, and never splits the pane beside the one in use — what the person is looking at stays what it is. `openIds` shows it; `groupOf(...).active` never does.
+ */
+export function placeQuiet(root: Node, id: string, ctx: Omit<Parameters<typeof placeDoc>[3], "keepVisible">): Node {
+  const before = groups(root).map((g) => [g.id, g.active] as const);
+  let next = placeDoc(root, id, "canvas", ctx);
+  for (const [gid, active] of before) if (active && active !== id && groups(next).some((g) => g.id === gid && g.tabs.includes(active))) next = activate(next, gid, active);
+  return next;
+}
+
+/**
  * The first screen of a page load: without a `?canvas=` link every canvas tab shows the top of its
  * tree (the overall architecture), not the child level it was left on. A link (also a reload inside
  * a child) keeps the saved layout as is.

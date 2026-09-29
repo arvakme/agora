@@ -5,10 +5,12 @@
 // so it runs under vitest in node.
 import { footprint, type Box } from "../canvas/clearance";
 import type { El } from "../canvas/scene";
-import { effectiveLinks, labelOf, type Scenes } from "../nested/graph";
+import { childOf as childOfNode, effectiveLinks, labelOf, type Scenes } from "../nested/graph";
 import { elementFor } from "../pointer/codeLinks";
 import type { Pt } from "./rig";
 import { OUTSIDE, type Located, type Spot } from "./place";
+import { parseNodePath } from "./runs/nodePath";
+import { anyTouched, touchedNodes } from "./runs/touched";
 import { dockSpots, inside, REF_K, trayBox } from "./docks";
 import { route as routeOn, walkMap, type Connector, type Route } from "./route";
 export { dockSpots, FIG_BOX, REF_K, SLOT, trayBox } from "./docks";
@@ -35,6 +37,7 @@ export type Geometry = {
 };
 
 const live = (e: El | undefined): e is El => !!e && !e.isDeleted;
+const NODE_TYPE = new Set(["rectangle", "ellipse", "diamond", "frame", "image", "embeddable"]);
 
 export function buildGeometry(canvasId: string, elements: readonly El[], map: Map<string, El>, scenes: Scenes, childTitle: (id: string) => string | undefined): Geometry {
   const everything = new Map(scenes).set(canvasId, elements);
@@ -49,10 +52,50 @@ export function buildGeometry(canvasId: string, elements: readonly El[], map: Ma
     labels.set(l.id, labelOf(el, map).replace(/\s+/g, " ").trim() || l.label);
     if (l.child) childOf.set(l.id, l.child);
   }
+  // Nodes an agent's canvas changes touched are places too (no file claims them: runs/touch.ts), and so are the nodes that open the way down to
+  // touched nodes below (the worker stands on them and goes in).
+  const doorTo = (canvas: string, seen: Set<string>): boolean => {
+    if (seen.has(canvas)) return false;
+    seen.add(canvas);
+    if (anyTouched(canvas)) return true;
+    return (everything.get(canvas) ?? []).some((e) => live(e) && childOfNode(e) && everything.has(childOfNode(e)!) && doorTo(childOfNode(e)!, seen));
+  };
+  const touched = touchedNodes(canvasId);
+  for (const e of elements) {
+    if (!live(e) || boxes.has(e.id) || !NODE_TYPE.has(e.type)) continue;
+    const child = childOfNode(e);
+    if (touched.has(e.id) || (child && everything.has(child) && doorTo(child, new Set([canvasId])))) {
+      boxes.set(e.id, footprint(e, map, elements));
+      labels.set(e.id, labelOf(e, map).replace(/\s+/g, " ").trim());
+      if (child) childOf.set(e.id, child);
+    }
+  }
   const cache = new Map<string, Located | null>();
   const below = new Map<string, ReturnType<typeof effectiveLinks>>();
   const locate = (path: string): Located | null => {
     if (cache.has(path)) return cache.get(path)!;
+    const np = parseNodePath(path);
+    if (np) {
+      let nout: Located | null = null;
+      if (np.canvas === canvasId) nout = boxes.has(np.id) ? { place: np.id } : null;
+      else {
+        // on a canvas below this one: the node here that opens the way is where the worker stands, and the door leads to the canvas under it
+        const way = (from: string, seen: Set<string>): { node: string; child: string } | null => {
+          if (seen.has(from)) return null;
+          seen.add(from);
+          for (const e of everything.get(from) ?? []) {
+            const ch = live(e) ? childOfNode(e) : null;
+            if (!ch || !everything.has(ch)) continue;
+            if (ch === np.canvas || way(ch, seen)) return { node: e.id, child: ch };
+          }
+          return null;
+        };
+        const w = way(canvasId, new Set());
+        if (w && boxes.has(w.node)) nout = { place: w.node, portal: { canvasId: w.child, label: childTitle(w.child) ?? "子图" } };
+      }
+      cache.set(path, nout);
+      return nout;
+    }
     const hit = elementFor(path, links);
     let out: Located | null = null;
     if (hit && boxes.has(hit.link.id)) {

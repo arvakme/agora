@@ -16,7 +16,8 @@ import { isWorking, newSpell, pickFollow, spellStep, type Pick, type Spell } fro
 import { canvasWhere } from "./place";
 import { beforePlay, plays } from "./replayMode";
 import { quiet } from "./replayQuiet";
-import { createCamera } from "./replayView";
+import { ctxFor, createCamera } from "./replayView";
+import { figureMoving, LOOKAHEAD_MS } from "./director";
 import { runs } from "./runs/store";
 import type { WorkRun } from "./runs/types";
 
@@ -59,19 +60,27 @@ let spell: { run: string | null; s: Spell } = { run: null, s: newSpell() };
 /** Once per tick: the camera has a turn to follow — from the person's message to the end of the turn, whatever the agent does meanwhile. */
 function updateSpell() {
   const r = runOf();
-  if (spell.run !== (r?.id ?? null)) spell = { run: r?.id ?? null, s: newSpell() };
-  if (!r) return;
+  if (spell.run !== (r?.id ?? null)) ((spell = { run: r?.id ?? null, s: newSpell() }), (wasFollowing = moving = false));
+  if (!r) return void (moving = false);
   const now = Date.now();
   let last: number | null = null;
   for (const g of r.segs) if (g.start <= now) last = Math.max(last ?? 0, g.start);
   spell.s = spellStep(spell.s, { working: isWorking(r, now), lastWorkStart: last, openedAt: OPENED_AT, now, chosen: state.why === "chosen" });
+  // the turn is over but the figure is still on its way (the drawn figure is LOOKAHEAD_MS behind, and a long walk takes many seconds): the camera stays with it,
+  // and the way home waits until it stands (HOME_AFTER_MS counts from then)
+  const ctx = ctxFor(camera.shown() ?? currentCanvas() ?? "");
+  const held = wasFollowing && !spell.s.followed && !!ctx && figureMoving(r, ctx, now, LOOKAHEAD_MS);
+  wasFollowing = spell.s.followed || held;
+  moving = held;
 }
+let wasFollowing = false;
+let moving = false;
 
 const camera = createCamera(() => null, runOf, () => (state.run ? NOW : null), {
   setManual: (on) => set({ paused: on }),
   live: {
     current: currentCanvas,
-    working: () => spell.s.followed,
+    working: () => spell.s.followed || moving,
     away: (on) => quiet.hold("live", on),
   },
 });

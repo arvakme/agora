@@ -50,8 +50,10 @@ export function nextPaused(paused: boolean, ev: PauseEvent): boolean {
 
 /** After the turn has ended (the run is not at work) this long, the camera goes back to the view it started from. */
 export const HOME_AFTER_MS = 3000;
-/** A different canvas (into a sub-diagram, or back out) is only gone to after the agent has been wanted there this long without a break. */
-export const ENTER_MS = 3000;
+/** A different canvas (into a sub-diagram, or back out) is only gone to after the agent has been wanted there this long without a break — unless it is behind the door already (`behind`: nobody is left on the shown canvas to look at). */
+export const ENTER_MS = 1000;
+/** A canvas change with no pointer, key or wheel input this recent is not the person's doing (the app opened it, e.g. for an agent's read). */
+export const INPUT_RECENT_MS = 5000;
 /** After the camera switched canvas, it is not taken for the person's doing that the canvas is still mounting for this long. */
 export const MOUNT_GRACE_MS = 6000;
 
@@ -59,6 +61,8 @@ export const MOUNT_GRACE_MS = 6000;
 export function isWorking(run: { running: boolean; segs: readonly { start: number; end: number }[] }, now: number): boolean {
   return run.running || run.segs.some((s) => s.start <= now && now < s.end);
 }
+/** An empty canvas shows its own guide and the figures' layer gives way — unless an agent is at work: then its figure is drawn (at the tray) and the camera is with it. */
+export const hideEmptyLayer = (empty: boolean, anyRunning: boolean): boolean => empty && !anyRunning;
 // ── whether the camera has a turn to follow ──
 /** A run first seen this long after the page opened is a new turn (its session had nothing on the page before); sooner, it may be one that was going already. */
 export const SPELL_FIRST_SIGHT_MS = 8000;
@@ -95,17 +99,22 @@ export type CanvasIn = {
   manual: boolean;
   /** The view is away from what the person had (another canvas, or moved on it). */
   displaced: boolean;
+  /** The figure has gone in through the door of a node on the shown canvas, into `want`: it is out of sight there. */
+  behind: boolean;
+  /** The person pressed, keyed or scrolled lately (`INPUT_RECENT_MS`). */
+  input: boolean;
 };
-export type CanvasAct = { type: "none" } | { type: "go"; to: string } | { type: "home" } | { type: "user-moved"; to: string };
+export type CanvasAct = { type: "none" } | { type: "go"; to: string } | { type: "home" } | { type: "user-moved"; to: string } | { type: "canvas-moved"; to: string };
 
 /** One tick: mutates `m`, returns what the camera does about the canvas. */
 export function canvasStep(m: CanvasMachine, i: CanvasIn): CanvasAct {
   if (i.busy) return { type: "none" };
-  // the person went to another canvas themself (not a canvas that is still mounting after the camera's own switch)
+  // another canvas is in front (not one that is still mounting after the camera's own switch): the person's doing if they pressed, keyed or scrolled lately;
+  // otherwise the app did it (an agent reading a sub-canvas opens it): the camera goes on, on that canvas, and is not paused
   if (i.cur && i.cur !== i.shown && i.now - m.lastGoAt > MOUNT_GRACE_MS) {
     if (++m.mismatch >= 2) {
       m.mismatch = 0;
-      return { type: "user-moved", to: i.cur };
+      return { type: i.input ? "user-moved" : "canvas-moved", to: i.cur };
     }
     return { type: "none" };
   }
@@ -132,7 +141,7 @@ export function canvasStep(m: CanvasMachine, i: CanvasIn): CanvasAct {
     return { type: "none" };
   }
   if (m.want?.canvas !== i.want) m.want = { canvas: i.want, since: i.now };
-  if (i.now - m.want.since >= ENTER_MS) {
+  if (i.now - m.want.since >= (i.behind ? 0 : ENTER_MS)) {
     m.want = null;
     m.lastGoAt = i.now;
     return { type: "go", to: i.want };

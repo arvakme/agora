@@ -3,7 +3,7 @@
 // over CUT_DISTANCE, is cut across (one fades out where it was as it fades in where it goes). Pure: scanned frame by frame here.
 import { describe, expect, it } from "vitest";
 import { CUT_DISTANCE, CUT_MS, OUTSIDE, stateAt, type Ctx } from "./place.ts";
-import { directorFrame, figureAt, LOOKAHEAD_MS, type FigureFrame } from "./director.ts";
+import { directorFrame, figureAt, figureMoving, LOOKAHEAD_MS, type FigureFrame } from "./director.ts";
 import type { RunSeg, WorkRun } from "./runs/types.ts";
 
 const S = 1000;
@@ -516,5 +516,22 @@ describe("FX1 · P4: 「继续」 after a far pan carries on from the view: no c
     for (let t = 10000; t < 16000; t += FRAME) s = cameraStep(s, goal(), { dt: FRAME, now: t, pane }).state; // arrived
     const out = cameraStep(s, { view: viewAt({ x: 3000, y: 0 }, 1, pane), move: true }, { dt: FRAME, now: 20000, pane });
     expect(out.cut).toBe(true);
+  });
+});
+
+describe("FX2a · #4: the figure is 'moving' while it walks or is cut across, and not once it stands", () => {
+  const r = run([seg("read", 0, 2, "server/app.py"), seg("read", 3, 6, "far/queue.py")]); // api → far: a long walk (the trip is over long after the call began)
+  const c = ctx([r]);
+  it("standing at a place: not; on the way: yes, until it arrives; a long time after: not", () => {
+    expect(figureMoving(r, c, 1 * S + LOOKAHEAD_MS)).toBe(false);
+    expect(figureMoving(r, c, 4 * S + LOOKAHEAD_MS)).toBe(true);
+    expect(figureMoving(r, c, 5.5 * S + LOOKAHEAD_MS)).toBe(true);
+    expect(figureMoving(r, c, 300 * S)).toBe(false);
+  });
+  it("a call marked `cut` counts while the figure fades across, and is over after CUT_MS", () => {
+    const cutRun = run([seg("read", 0, 2, "server/app.py"), { ...seg("read", 3, 6, "far/queue.py"), cut: true }]);
+    const cc = ctx([cutRun]);
+    expect(figureMoving(cutRun, cc, 3 * S + 100 + LOOKAHEAD_MS)).toBe(true);
+    expect(figureMoving(cutRun, cc, 3 * S + CUT_MS + 300 + LOOKAHEAD_MS)).toBe(false);
   });
 });

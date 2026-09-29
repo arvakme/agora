@@ -7,18 +7,18 @@
 // reduced motion, or where the browser has no view transitions, it is a cut. Imperative, no React: it outlives the canvases it switches.
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { El } from "../canvas/scene";
-import { canvasStep, nextPaused, newCanvasMachine, type PauseEvent } from "./liveCamera";
+import { canvasStep, INPUT_RECENT_MS, nextPaused, newCanvasMachine, type PauseEvent } from "./liveCamera";
 import { cameraResume, cameraStart, cameraStep, inShot, switchView, ZOOM_MAX, ZOOM_MIN, type CameraGoal, type CameraState } from "./director";
 import { firstView, viewport, type Viewport } from "../canvas/viewport";
 import { nav, nested } from "../nested/store";
 import { canvases } from "../session/ui";
 import { clock, prefersReducedMotion } from "./clock";
 import { buildGeometry } from "./geometry";
-import { stateAt, type Ctx } from "./place";
+import { OUTSIDE, stateAt, type Ctx } from "./place";
 import { cameraCanvas } from "./replayCamera";
 import { occupiedOf, excalidrawEl } from "./replayDom";
 import { fitView, type Box, type Fit } from "./replayFit";
-import { followView } from "./replayFollow";
+import { followView, trayShotBox } from "./replayFollow";
 import { figurePositions } from "./focus";
 import { replacingPush } from "./replayHistory";
 import { scenePlaces } from "./scenePlaces";
@@ -38,8 +38,8 @@ const ctxs = new Map<string, { scenes: unknown; reduced: boolean; ctx: Ctx; boxO
 /** A canvas's own picture for the figure's state on it (as its overlay builds it), from the scene store: any canvas, open or not. */
 export function ctxFor(id: string): Ctx | null {
   const st = nested.get();
-  const els = st.scenes.get(id);
-  if (!els) return null;
+  // a canvas with nothing in the store yet (an empty one the agent is about to draw on) still has its tray: the figure stands there, and is followed there
+  const els = st.scenes.get(id) ?? [];
   const reduced = prefersReducedMotion();
   const hit = ctxs.get(id);
   if (hit && hit.scenes === st.scenes && hit.reduced === reduced) return hit.ctx;
@@ -160,7 +160,13 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     const dock = ctx.dock(st.at);
     const figure = figurePositions.get(id, r.id) ?? dock;
     const node = boxOfFor(id, st.at) ?? null;
-    return followView({ pane: { w: appState.width, h: appState.height }, occupied: occ, margin: MARGIN, figure, node: node && inShot(figure, node) ? node : null, room: ROOM, zoom: ZOOM, current, dead: DEAD });
+    // at the tray (outside the drawing) the piece of the drawing nearest to it is framed with the figure: the shot keeps the diagram's context
+    const els = st.at === OUTSIDE ? api.getSceneElements().filter((e) => !e.isDeleted) : [];
+    const x0 = Math.min(...els.map((e) => e.x));
+    const y0 = Math.min(...els.map((e) => e.y));
+    const drawing: Box | null = els.length ? { x: x0, y: y0, w: Math.max(...els.map((e) => e.x + e.width)) - x0, h: Math.max(...els.map((e) => e.y + e.height)) - y0 } : null;
+    const shot = st.at === OUTSIDE ? trayShotBox(figure, drawing) : node && inShot(figure, node) ? node : null;
+    return followView({ pane: { w: appState.width, h: appState.height }, occupied: occ, margin: MARGIN, figure, node: shot, room: ROOM, zoom: ZOOM, current, dead: DEAD });
   }
   /** The view a canvas gets when it is shown (./director.ts `switchView`): the one it was entered with (leaving), else the figure close up; a play's whole diagram; live, never the whole diagram. */
   const viewFor = (id: string, restore: boolean) => (api: ExcalidrawImperativeAPI) => {
@@ -208,7 +214,10 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
   // the person's own pan or zoom of the canvas takes the camera from us until they hand it back. Live: only a real drag (not a click that
   // selects), a wheel, the zoom buttons, opening the comment dock or typing into the canvas's text editor; Esc alone is not.
   let press: { x: number; y: number } | null = null;
+  /** When the person last pressed, keyed or scrolled (wall ms): a canvas change without it is the app's (./liveCamera.ts `INPUT_RECENT_MS`). */
+  let inputAt = -Infinity;
   const takeOver = (e: Event) => {
+    if (e.type === "pointerdown" || e.type === "wheel") inputAt = Date.now();
     const el = e.target as HTMLElement | null;
     if (live && e.type === "pointerdown" && el?.closest?.(".dock")) return pause("comment");
     if (live && e.type === "pointermove") {
@@ -227,6 +236,7 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
   };
   // live: typing into an element of the canvas (its text editor) pauses it as well
   const onKey = (e: KeyboardEvent) => {
+    inputAt = Date.now();
     const el = e.target as HTMLElement | null;
     const typing = !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
     if (e.key !== "Escape" && typing && el?.closest?.(".excalidraw")) pause("edit");
@@ -264,13 +274,25 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
       return;
     }
     const t = clock.time();
-    const want = cameraCanvas(home, (c) => {
+    const doorOf = (c: string) => {
       const ctx = ctxFor(c);
       if (!ctx) return { behind: false, into: null };
       const st = stateAt(r, t, ctx);
       return { behind: !st.present && st.portalPhase === "behind", into: st.portal?.canvasId ?? null };
-    });
-    const act = canvasStep(machine, { now: Date.now(), working: live!.working(), want, shown: shown!, home, cur, busy, manual, displaced: shown !== home || !!homeView });
+    };
+    const want = cameraCanvas(home, doorOf);
+    // the figure went in at a door of the canvas shown, and is out of sight on it: nothing to wait for
+    const door = doorOf(shown!);
+    const behind = want !== shown && door.behind && door.into === want;
+    const act = canvasStep(machine, { now: Date.now(), working: live!.working(), want, shown: shown!, home, cur, busy, manual, displaced: shown !== home || !!homeView, behind, input: Date.now() - inputAt < INPUT_RECENT_MS });
+    if (act.type === "canvas-moved") {
+      // the app put another canvas in front (an agent reading a sub-canvas opens it): not the person's doing — go on, on that one
+      home = shown = act.to;
+      homeView = null;
+      cam = null;
+      setAway(false);
+      return;
+    }
     if (act.type === "user-moved") {
       // the person went to another canvas themself (breadcrumb, a node's child, back): that is theirs; they are on their own view now
       home = shown = act.to;

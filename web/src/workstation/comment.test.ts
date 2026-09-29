@@ -167,8 +167,11 @@ describe("a comment's turn, from the transcript", () => {
   it("a short read from the comment is a glance; without the canvas's anchors the turn has no place of its own", () => {
     const c3 = { n: 3, anchor: ["redis"] };
     const seg = (kind: RunSeg["kind"], s: number, e: number, path?: string): RunSeg => ({ kind, start: s * S, end: e * S, label: kind, comment: c3, ...(path ? { path } : {}) });
-    const r: WorkRun = { id: "r", agent: "pi", name: "Pi", segs: [seg("think", 0, 3), seg("read", 3, 4.5, "server/app.py"), seg("think", 4.5, 7)], receipts: [], running: false, lastAt: 0, children: [] };
-    expect(stateAt(r, 3.5 * S, ctx([r]))).toMatchObject({ at: "redis", pose: "read", glance: { place: "api" }, moves: [] });
+    const r: WorkRun = { id: "r", agent: "pi", name: "Pi", segs: [seg("think", 0, 9), seg("read", 9, 10.5, "server/app.py"), seg("think", 10.5, 13)], receipts: [], running: false, lastAt: 0, children: [] };
+    // (the turn does not appear at the pin: it walks there from the tray first, which takes its time)
+    expect(stateAt(r, 0.5 * S, ctx([r]))).toMatchObject({ at: "redis", from: OUTSIDE });
+    expect(stateAt(r, 0.5 * S, ctx([r])).w).toBeLessThan(1);
+    expect(stateAt(r, 9.5 * S, ctx([r]))).toMatchObject({ at: "redis", pose: "read", glance: { place: "api" } });
     expect(stateAt(run, 11 * S, ctx([run], { anchor: undefined }))).toMatchObject({ at: OUTSIDE, pose: "think" });
   });
 

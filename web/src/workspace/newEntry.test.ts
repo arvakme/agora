@@ -1,7 +1,7 @@
 // Entry points for a fresh start: the「+」menu, where a new session lands, and which level a tab shows on first screen.
 import { describe, expect, it } from "vitest";
 import { group, groupOf, groups, moveTab } from "./layout.ts";
-import { firstScreen, openIds, placeDoc, plusMenu } from "./model.ts";
+import { firstScreen, openIds, placeDoc, placeQuiet, plusMenu } from "./model.ts";
 
 const kinds: Record<string, "canvas" | "session"> = { top: "canvas", sub: "canvas", other: "canvas", p1: "session", p2: "session" };
 const kindOf = (id: string) => kinds[id];
@@ -61,5 +61,27 @@ describe("firstScreen", () => {
     const r = firstScreen({ root: group(["top", "sub"], "sub"), focused: "sub", urlCanvas: null, topOf, kindOf });
     expect(openIds(r.root)).toEqual(["top"]);
     expect(r.focused).toBe("top");
+  });
+});
+
+describe("FX2a · #2b: a canvas opened for an agent's read does not take the pane from the person", () => {
+  const ctx = { kindOf: (t: string) => (t === "child" ? ("canvas" as const) : kindOf(t)), recentCanvas: "top", focused: "top" };
+  it("its tab is added, and the tab the person is looking at stays the active one; nothing is split", () => {
+    const root = group(["top", "c2"], "top");
+    const next = placeQuiet(root, "child", ctx);
+    expect(openIds(next)).toContain("child");
+    expect(groups(next)).toHaveLength(1);
+    expect(groups(next)[0].active).toBe("top");
+  });
+  it("a session next to it: also untouched", () => {
+    const base = group(["top", "p1"], "top");
+    const split = moveTab(base, "p1", base.id, "right");
+    const next = placeQuiet(split, "child", ctx);
+    expect(groups(next).map((g) => g.active)).toEqual(groups(split).map((g) => g.active));
+    expect(groups(next)).toHaveLength(2);
+  });
+  it("the ordinary open still takes the pane (the person asked for it)", () => {
+    const root = group(["top"], "top");
+    expect(groups(placeDoc(root, "child", "canvas", ctx))[0].active).toBe("child");
   });
 });

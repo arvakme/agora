@@ -24,6 +24,7 @@
 import { REF_K } from "./docks";
 import { DOOR_MS, planTrip, SUB_SCALE, tripAt, type Foot, type Move, type Pose, type Pt, type Trip } from "./rig";
 import type { Leg, Route } from "./route";
+import { isNodePath } from "./runs/nodePath";
 import { receiptAt, type WorkRun, type ReceiptState, type RunSeg } from "./runs/types";
 
 export const OUTSIDE = "\u0000outside";
@@ -171,7 +172,8 @@ function where(ctx: Ctx, s: RunSeg): Here | null {
   else return null;
   if (l) return ctx.door && l.portal ? { ...l, behind: true } : l;
   if (ctx.door?.entrance) return { place: ctx.door.entrance, behind: true };
-  return s.path ? { place: OUTSIDE } : null;
+  // a file no node has is at the tray; a node the page does not have (any more) is nowhere: the worker stays where it is
+  return s.path && !isNodePath(s.path) ? { place: OUTSIDE } : null;
 }
 
 /** Whether segs[i], at `place`, is a glance: one read of a real, short length (under GLANCE_MS) and nothing else right after it at that
@@ -419,7 +421,8 @@ function compute(run: WorkRun, t: number, ctx: Ctx): RunState {
       const prev = bi > 0 ? [...bs[bi - 1]].reverse().map((g) => where(ctx, g)).find(Boolean) : null;
       // (a child canvas is not where the work is until the worker comes in by the entrance: there the start is behind it)
       const home: Here = ctx.door?.entrance ? { place: ctx.door.entrance, behind: true } : { place: OUTSIDE };
-      const head = where(ctx, b[0]);
+      // (a comment's turn that starts without a file works at the pin, but it does not appear there: it comes from where it stood — the tray — and walks to it)
+      const head = b[0].comment && !b[0].path ? null : where(ctx, b[0]);
       walk = follow(ctx, run, b, t, head ?? prev ?? home, false, !head);
       const lastEnd = Math.max(...b.filter((g) => g.start <= t).map((g) => g.end));
       const idle = t - lastEnd;

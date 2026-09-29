@@ -23,7 +23,10 @@ import { useWorkstation } from "../workstation/clock";
 import { firstView, viewport } from "./viewport";
 import { BENCH_BARE } from "../bench/bench";
 import { useChrome } from "./useChrome";
-import { EMPTY_HINT, sampleRequests } from "../session/firstDraw";
+import { busyHint, EMPTY_HINT, sampleRequests } from "../session/firstDraw";
+import { useLiveFollow } from "../workstation/replayLive";
+import { isWorking } from "../workstation/liveCamera";
+import { useRuns } from "../workstation/runs/store";
 import type { Box } from "./clearance";
 import { KEEPS_CARD_OPEN } from "./pressOutside";
 import { AnimatePresence, motion } from "motion/react";
@@ -305,11 +308,16 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onGone, o
 /** A blank canvas (docs/workbench-focus.md state e): one sentence pointing at the one main button in the session's chooser
  * (session/firstDraw.ts), and a quiet way to look at the example — which opens as another canvas, this one stays empty. */
 function EmptyCanvas() {
+  // an agent already at work (its figure is at the tray, outside the picture): say so, not «ask an agent»
+  const follow = useLiveFollow();
+  const runs = useRuns();
+  const run = follow.run ? runs.byId.get(follow.run) : undefined;
+  const busy = run && isWorking(run, Date.now()) ? follow.name : null;
   return (
     <div className="empty-cv" aria-label="空白画布">
       <div className="empty-cv-box">
         <span className="dither-field" aria-hidden />
-        <p>{EMPTY_HINT}</p>
+        <p>{busy ? busyHint(busy) : EMPTY_HINT}</p>
         <button className="btn ghost sm" onClick={() => sampleRequests.request()}>看一个示例</button>
       </div>
     </div>

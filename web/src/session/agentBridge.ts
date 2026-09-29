@@ -19,13 +19,14 @@ import { ui } from "./ui";
 import { childOf, wouldCycle } from "../nested/graph";
 import { nav, nested } from "../nested/store";
 import { writeChildLink } from "../nested/writeChild";
+import { touches, touchNodesOf, type TouchEl } from "../workstation/runs/touch";
 
 const all = (api: ExcalidrawImperativeAPI) => api.getSceneElementsIncludingDeleted() as Scene;
 
 export type ApplyResult = { status: "applied" | "invalid" | "stale" | "empty" | "error"; summary?: string[]; errors?: string[]; stale?: string[]; turnId?: string; batchId?: string; note?: string };
 
 /** Which session records this change, and how it is labelled (a comment hand-off in flight or the agent itself). */
-function recordFor(sessionId: string | undefined, canvasId: string, title: string): { turnId: string } | null {
+function recordFor(sessionId: string | undefined, canvasId: string, title: string): { turnId: string; sid: string } | null {
   const st = sessions.get();
   const sid = sessionId && st.sessions[sessionId] ? sessionId : agents.forCanvas(sessions.onCanvas(canvasId).map((s) => s.id));
   if (!sid || !st.sessions[sid]) return null;
@@ -33,7 +34,15 @@ function recordFor(sessionId: string | undefined, canvasId: string, title: strin
   const origin: Origin = f?.threadId ? { kind: "comment", threadId: f.threadId, threadN: f.threadN ?? 0, anchor: f.anchor ?? "" } : { kind: "agent" };
   const turn = sessions.startTurn(sid, { canvasId, origin, request: title, refs: [] });
   agents.noteTurn(sid, turn.id);
-  return { turnId: turn.id };
+  return { turnId: turn.id, sid };
+}
+
+/** Tell the 工位视图 the page changed these elements of a canvas for a session, now (`until`: when a change that plays over time is over). */
+function announce(sid: string | undefined, canvas: string, ids: Iterable<string>, map: Map<string, Scene[number]>, say: string, until?: number) {
+  if (!sid) return;
+  const nodes = touchNodesOf(ids, map as unknown as Map<string, TouchEl>);
+  const at = Date.now();
+  if (nodes.length) touches.record({ session: sid, canvas, at, until: until ?? at, nodes, say });
 }
 
 const end = (T: string | undefined, status: Turn["status"], reply: Turn["reply"]) =>
@@ -86,6 +95,8 @@ export async function applyFromAgent(req: { canvasId: string; sessionId?: string
 
   const apply = step({ kind: "apply", title: "应用到画布（1 次可撤销修改）" });
   const result = applyPlan(now, plan, library);
+  // the 工位视图 is told before the picture changes: the figure goes to the nodes this drew (./workstation/runs/touch.ts)
+  announce(rec?.sid, req.canvasId, result.batch.after.keys(), byId(result.scene as Scene), note?.slice(0, 24) || "改图");
   api.updateScene({ elements: result.scene, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
   await settle();
   const settled = byId(all(api));
@@ -126,6 +137,7 @@ export async function animFromAgent(req: { canvasId: string; sessionId?: string;
   host(script);
   const added = c.api.getSceneElements().filter((e) => !before.has(e.id));
   const region = added.filter((e) => e.type !== "text").map((e) => e.id);
+  announce(rec?.sid, req.canvasId, region, byId(c.api.getSceneElements() as Scene), `动画「${title}」`.slice(0, 24));
   if (added.length) c.api.scrollToContent(added, { fitToContent: true, animate: true });
   if (T) sessions.endStep(T, mount, { detail: `区域「${script.title}」· ${script.nodes.length} 个元素 · ${script.steps.length} 步 · 播放器在区域下方`, elements: region });
   end(T, "applied", { text: `已生成动画「${script.title}」：${script.nodes.length} 个元素、${script.steps.length} 步，用区域下方的播放器播放。`, changes: [`新建动画区域「${script.title}」`] });
@@ -195,6 +207,7 @@ export async function childFromAgent(req: { op: "create" | "link" | "unlink"; ca
   const title =
     req.op === "create" ? `展开「${label}」为子图「${name(child!)}」` : req.op === "link" ? `「${label}」打开子图「${name(child!)}」` : `断开「${label}」的子图（子图保留）`;
   const rec = batch ? recordFor(req.sessionId, req.canvasId, title) : null;
+  if (rec && batch) announce(rec.sid, req.canvasId, [el.id], byId(all(c.api)), req.op === "unlink" ? "改图" : "展开成子图");
   if (rec && batch) {
     const batchId = sessions.saveBatch(batch);
     end(rec.turnId, "applied", { text: title, changes: [title], batchId });
