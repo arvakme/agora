@@ -248,9 +248,22 @@ v1 = 上面 §1–§7（步骤 0–6 与 8：适配层、工具事实、漂移�
 ## Grok 作为 T1 会话 agent（2026-09-29，grok 1.0.41 实测）
 
 实测记录：round-04 `evidence/T1-grok/spike.md`。结论：
-- **无头**：`grok --prompt-json '[{"type":"text","text":"…"}]' --output-format streaming-json --always-approve [-s <uuid> | -r <uuid>] [-m <模型>] [--effort <档>]`。提示词走 JSON 内容块（普通参数以「-」开头会被当成开关）；Agora 自己给新会话 uuid（`-s`，`assigns_id = "agora"`），续接用 `-r`。stdout 是一行一个 ACP 更新的 NDJSON（`text` / `thought` / `tool_call` / `tool_call_update` / `usage` / `end`），`end.stopReason` 是一轮的结束；`GrokStream` 把它映射成 Agora 的事件。权限用 `--always-approve`（用户定「默认不加边界」），会话头部照实显示。
+- **无头**：`grok --prompt-json '[{"type":"text","text":"…"}]' --output-format streaming-json --always-approve [-s <uuid> | -r <uuid>] [-m <模型>] [--effort <档>]`。提示词走 JSON 内容块（普通参数以「-」开头会被当成开关）；Agora 自己给新会话 uuid（`-s`，`assigns_id = "agora"`），续接用 `-r`。stdout 是一行一个 ACP 更新的 NDJSON（`text` / `thought` / `tool_call` / `tool_call_update` / `usage` / `end`），`end.stopReason` 是一轮的结束；`GrokStream` 把它映射成 Agora 的事件。权限用 `--always-approve`（用户定「默认不加边界」）。Grok 自己不报权限模式，所以每一轮的流一开头由 `GrokStream` 发一次 `mode: always-approve`（`GrokAdapter.asked_mode` 同值），会话头部据此显示——这是 **Agora 启动它时给的参数**，不是从 CLI 输出里读到的实际模式。
 - **中断**：无终端时 SIGINT 被忽略，只能 SIGTERM；被杀的一轮**没有 `end` 事件，Grok 的日志里也没有结束标记**——面板里那一轮会一直显示「运行中」，它开的子命令（例如 `sleep`）也可能成为孤儿进程。终态**不确定**，未修。
 - **交互**：`grok [-s|-r <id>] [-m] [--effort] --always-approve`；tmux 粘贴（bracketed）+ 回车能送达；进程一直打开 `~/.grok/sessions/<编码目录>/<id>/events.jsonl`，据此认会话（`claims_by_open_file`）。首次信任对话框未在未信任目录实测。
 - **模型目录**：`~/.grok/models_cache.json`（每个模型的 `reasoning_efforts`）+ `config.toml` 的 `[models]`，不调 CLI。
 - **派发**：`agora dispatch --new grok` 需要 `dispatch.py` 的 `ADAPTER` / `PERMISSION` 表里有 grok（否则 KeyError），`native_protocol.py` 的 `AdapterKind` 也加了 `"grok"`。
 - 项目级技能目录按 Codex 的 `.agents/skills`，Grok 是否读它没有确认；`agora` CLI 在 PATH 上，不依赖技能。
+
+## 权限模式在会话头部显示的是什么
+
+头部的「模式」是适配器报出的 `mode` 事件，和适配器的 `asked_mode`（Agora 要的）比较，不一致时头部提示。各家的来源不同，**只有 Claude 是 CLI 自己报的实际模式**：
+
+| 适配器 | `mode` 从哪来 | 是实测的吗 |
+|---|---|---|
+| Claude | 日志里 CLI 自己的 `permissionMode` | 是（CLI 报的） |
+| Grok | 每一轮的流开头，Agora 发一次 `always-approve` | 否：只是回显启动参数 |
+| Cursor | 常量 `run-everything`（`--force`）；CLI 自己的 init 事件永远报 `default`，不能用 | 否：只是回显启动参数 |
+| Devin | `devin_run.py` 把命令行的 `--permission-mode` 原样回显（`dangerous`） | 否：只是回显启动参数 |
+
+所以 Grok、Cursor、Devin 的头部显示的是「Agora 请求了什么」，不是「CLI 实际用了什么」，头部也不会因为 CLI 没照做而变色。CLI 输出里能读到实际模式时再改成读实际值；现在读不到。

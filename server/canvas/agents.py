@@ -210,7 +210,7 @@ async def stop_group(proc: asyncio.subprocess.Process, watch: proctree.Watch | N
     A turn that ended on its own is left alone, including anything it deliberately left running."""
     if proc.returncode is not None:
         return
-    await asyncio.to_thread(proctree.stop, proc.pid, watch.seen if watch else None, KILL_GRACE_S)
+    await asyncio.to_thread(proctree.stop, proc.pid, watch.seen if watch else None, KILL_GRACE_S, watch.root_start if watch else None)
     try:
         await asyncio.wait_for(asyncio.shield(proc.wait()), 1.0)
     except BaseException:

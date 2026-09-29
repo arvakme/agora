@@ -82,6 +82,9 @@ def classify(name: str, kind: str | None, args: Any, root: str | None) -> dict[s
     return tool_facts("questions" if waits else act, files=fs, reads=reads, waits_user=waits, spawn={"childKind": "grok", "via": "native"} if name == "spawn_subagent" else None, on=on)
 
 
+ASKED_MODE = "always-approve"  # the ``--always-approve`` both run paths pass
+
+
 class GrokStream(StreamMapper):
     """``grok --output-format streaming-json``: one ACP-style update per line (``text`` / ``thought`` deltas,
     ``tool_call`` / ``tool_call_update``, ``usage``, and ``end`` with the turn's totals). Text deltas are joined
@@ -91,6 +94,7 @@ class GrokStream(StreamMapper):
         super().__init__(model, session)
         self._buf = ""
         self._buf_at = 0
+        self._said_mode = False
 
     def _flush(self, out: list[dict[str, Any]]) -> None:
         if self._buf.strip():
@@ -100,6 +104,9 @@ class GrokStream(StreamMapper):
 
     def feed(self, d: dict[str, Any], at: int) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
+        if not self._said_mode:  # Grok reports no mode of its own; say once, first, how Agora starts it (--always-approve)
+            self._said_mode = True
+            out.append({"t": "mode", "at": at, "mode": ASKED_MODE, "model": self.model})
         t = d.get("type")
         if t == "text":
             if not self._buf:
@@ -289,6 +296,7 @@ class GrokAdapter(Adapter):
     has_cost = True
     waits = "inferred"
     claims_by_open_file = True  # the pane's grok process keeps sessions/<cwd>/<id>/events.jsonl open
+    asked_mode = ASKED_MODE  # what the session header compares the reported mode with
     project_skill_dir = ".agents/skills"
 
     assigns_id = "agora"  # -s <uuid> starts a new session under exactly that id

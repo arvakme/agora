@@ -788,20 +788,23 @@ class ShareManager:
             path.write_text(json.dumps({"tunnelId": tid, "name": self.tunnel_name, "pid": self.proc.pid, "gatewayPort": self.gateway_port}) + "\n")
 
     # ——— end ———
+    # Lifecycle changes hold ``ops`` (they call cf, which can take seconds to minutes); ``lock`` — the one guests need —
+    # is taken only around the changes to the records themselves.
     def revoke(self, id: str) -> dict[str, Any]:
-        with self.ops, self.lock:
+        with self.ops:
             share = self.get(id)
             if share is None:
                 raise KeyError(id)
             if share.endedAt is None:
                 self._end(share, "revoked")
-            return share.public(self.now_ms())
+            with self.lock:
+                return share.public(self.now_ms())
 
     def end_for_canvas(self, canvas_id: str, reason: str = "canvas-deleted") -> list[str]:
         """End every live share of one canvas (it was deleted). Returns the ids ended now."""
         ended = []
-        with self.ops, self.lock:
-            for s in self.shares:
+        with self.ops:
+            for s in list(self.shares):
                 if s.canvasId == canvas_id and s.endedAt is None:
                     self._end(s, reason)
                     ended.append(s.id)
@@ -810,9 +813,9 @@ class ShareManager:
     def sweep(self) -> list[str]:
         """End expired shares; retry unfinished cleanup. Returns ids ended now."""
         ended = []
-        with self.ops, self.lock:
+        with self.ops:
             now = self.now_ms()
-            for s in self.shares:
+            for s in list(self.shares):
                 if s.endedAt is None and not s.active(now):
                     self._end(s, "expired")
                     ended.append(s.id)
@@ -821,24 +824,25 @@ class ShareManager:
                     ended.append(s.id)
                 elif s.endedAt is not None and s.cleanup:
                     self._cleanup(s)
-                    self._save()
             if self.tunnel_dirty and not self.active():
                 self._teardown_if_idle()
         return ended
 
     def _end(self, share: Share, reason: str) -> None:
-        share.endedAt = self.now_ms()
-        share.endReason = reason
-        share.cleanup = ["dns"] if share.dnsRecordId else []
-        self._save()  # the token is dead from here on, whatever happens with Cloudflare below
+        with self.lock:
+            share.endedAt = self.now_ms()
+            share.endReason = reason
+            share.cleanup = ["dns"] if share.dnsRecordId else []
+            self._save()  # the token is dead from here on, whatever happens with Cloudflare below
         self._cleanup(share)
-        self._save()
 
     def _cleanup(self, share: Share) -> None:
         if "dns" in share.cleanup and share.dnsRecordId:
             try:
-                self.providers()[0].delete(share.dnsRecordId)
-                share.cleanup.remove("dns")
+                self.providers()[0].delete(share.dnsRecordId)  # cf: no record lock held
+                with self.lock:
+                    share.cleanup.remove("dns")
+                    self._save()
             except Exception:
                 pass  # retried by the next sweep
         if not self.active():
@@ -870,7 +874,7 @@ class ShareManager:
     # ——— process lifecycle ———
     def resume(self) -> None:
         """Server start: end what expired while it was down, reconnect the tunnel for the rest."""
-        with self.ops, self.lock:
+        with self.ops:
             self.sweep()
             if self.active() and self.gateway_port is not None:
                 try:
@@ -881,7 +885,7 @@ class ShareManager:
     def shutdown(self) -> None:
         """Server stop: stop the connector. Named shares stay recorded and resume on the next ``up``;
         a quick share cannot (its address dies with the process), so it ends here."""
-        with self.ops, self.lock:
+        with self.ops:
             for s in [s for s in self.shares if s.quick and s.endedAt is None]:
                 self._end(s, "revoked")
             if self.proc is not None:
