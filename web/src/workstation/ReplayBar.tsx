@@ -16,6 +16,7 @@ export function ReplayBar() {
         PR #{n} 回放 · 按 git 提交生成（不是 agent 的真实操作）
       </span>
       {st.barNote ? <b className="k">{st.barNote}</b> : st.spec && <span className="ttl" title={st.spec.title}>{st.spec.title}</span>}
+      {st.manual && <button className="btn sm primary" onClick={() => replays.resumeFollow()}>跟随小人</button>}
       <button className="icon-btn sm" onClick={() => replays.step(-1)} aria-label="上一个 PR" title="上一个 PR"><IconBack size={14} /></button>
       <button className="icon-btn sm" onClick={() => replays.step(1)} aria-label="下一个 PR" title="下一个 PR"><span style={{ display: "inline-flex", transform: "scaleX(-1)" }}><IconBack size={14} /></span></button>
       <button className="icon-btn sm" onClick={() => replays.exit()} aria-label="退出回放（Esc）" title="退出回放（Esc）"><IconClose size={14} /></button>

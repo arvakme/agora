@@ -27,10 +27,12 @@ export type ReplayState = {
   error: string | null;
   /** The summary, said by the bar when the badge over the node has no clear place. */
   barNote: string | null;
+  /** The person has taken the camera (panned or zoomed): it does not follow until 「跟随小人」. Only for this replay. */
+  manual: boolean;
 };
 
 const params = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
-let state: ReplayState = { items: null, id: null, spec: null, series: [], loading: false, error: null, barNote: null };
+let state: ReplayState = { items: null, id: null, spec: null, series: [], loading: false, error: null, barNote: null, manual: false };
 const ls = new Set<() => void>();
 const set = (p: Partial<ReplayState>) => {
   const was = !!state.id;
@@ -49,7 +51,7 @@ let started = "";
 
 const mainCanvas = () => (main ??= [...canvasWhere.keys()].find((k) => !k.startsWith("follow:")) ?? null);
 /** The camera: the main view follows the figure into sub-diagrams (./replayView.ts). */
-const camera = createCamera(() => (state.id ? mainCanvas() : null), () => (state.id ? run() : null));
+const camera = createCamera(() => (state.id ? mainCanvas() : null), () => (state.id ? run() : null), { setManual: (on) => state.manual !== on && set({ manual: on }) });
 const byMerged = (items: readonly ReplayItem[]) => [...items].sort((a, b) => (a.mergedAt < b.mergedAt ? -1 : a.mergedAt > b.mergedAt ? 1 : a.number - b.number));
 
 /** What the run needs to know of the diagram: main canvas `id`'s places, docks and walking times (null until its overlay has published them). */
@@ -144,6 +146,7 @@ export const replays = {
   run,
   active: () => !!state.id,
   load: () => void loadList(),
+  resumeFollow: () => camera.resume(),
   setBarNote: (note: string | null) => void (state.barNote !== note && set({ barNote: note })),
   /** Play one PR. */
   open: (id: string, canvasId?: string) => void open(id, canvasId, []),
@@ -191,6 +194,13 @@ if (typeof window !== "undefined") {
     }
   }, 400);
   window.setInterval(() => camera.tick(), 200);
+  let lastFrame = 0;
+  const loop = (n: number) => {
+    if (state.id) camera.frame(lastFrame ? n - lastFrame : 16);
+    lastFrame = n;
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
   // Esc leaves (before the app's own Esc: trace, follow, selection)
   addEventListener(
     "keydown",
