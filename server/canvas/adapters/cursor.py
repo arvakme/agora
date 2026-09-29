@@ -1,4 +1,18 @@
-"""Cursor (``cursor-agent``) — T2, observed only (user decision 2026-09-28: never a session agent).
+"""Cursor (``cursor-agent``) — T1 (was T2, observed only; the user decided on 2026-09-29 to make it a session agent).
+
+- Headless: ``cursor-agent -p --output-format stream-json --force --trust [--resume <chat id>] [--model <id>]``,
+  the prompt on stdin; NDJSON on stdout (``system/init`` with the chat id, ``assistant``, ``tool_call`` started /
+  completed, ``result``), one turn per process. The chat id is Cursor's own (``assigns_id = "cli"``: taken from
+  the init event). No permission asking in print mode — a shell call is ``rejected`` without ``--force`` — so
+  ``--force`` (Run Everything; the user's 「默认不加边界」), and the session header says so. There is no separate
+  effort: it is part of the model id. SIGINT / SIGTERM end the process at once (130 / 143) and leave no
+  ``turn_ended`` in the transcript (measured, tests/fixtures: spike.md).
+- Interactive: ``cursor-agent [--resume <id>] --force --trust [--model]`` in Agora's tmux; the process keeps
+  ``~/.cursor/chats/<hash>/<chat id>/store.db`` open (``native_from_open_files``; the file is never read).
+- Catalog: ``cursor-agent --list-models`` (``<id> - <name>``, no effort levels).
+- Environment: through an HTTP(S) proxy the CLI's stream reconnects and answers off-topic (measured); the
+  proxy variables are the person's to set for it.
+
 
 - Log: ``$CURSOR_DATA_DIR`` (``~/.cursor``) ``/projects/<slug>/agent-transcripts/<chat id>/<chat id>.jsonl``,
   slug = the workspace path with every run of non-alphanumerics turned into one ``-`` (the CLI's own
@@ -23,15 +37,17 @@ import glob
 import json
 import os
 import re
+import subprocess
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from server.canvas.adapters.base import Adapter, NativeRef, ParentLink, VersionRange, tool_facts, valid_id
-from server.canvas.adapters.common import MAX_TEXT, LogLookup, Out, State, _clip, _end, _full, _start, _summary, read_jsonl, rel_path, user_item
+from server.canvas.adapters.common import MAX_TEXT, LogLookup, Out, State, StreamMapper, _clip, _end, _full, _start, _summary, add_usage, read_jsonl, rel_path, user_item
 from server.canvas.adapters.shell_files import shell_tool
 from server.canvas.adapters.tools import activity_of, patch_files
+from server.canvas.runner import _int, empty_usage
 
 STEP_MS = 20_000  # inferred time between two records of a turn, at most
 TICKET_PAD_S = 120  # a worker's transcript is written to after its ticket was created (minus this)
@@ -150,6 +166,9 @@ def project(rec: dict[str, Any], st: State) -> Out:
             return items, turns
         at = rec.get("_at") or user_time(_text(rec)) or at
         x["at"] = at
+        # A new prompt while a turn is open: the CLI drops the ``turn_ended`` of earlier turns when a chat is resumed in
+        # its terminal (measured), so the earlier turn ended when this one began.
+        _end(st, turns, None, items, at - 1)  # a tick before the new prompt, so the two never share a time
         items.append(user_item(f"u{n}", body, at))
         _start(st, turns, f"u{n}", at)
     elif rec.get("role") == "assistant":
@@ -165,7 +184,7 @@ def project(rec: dict[str, Any], st: State) -> Out:
             elif b.get("type") == "tool_use":
                 name, inp = str(b.get("name") or "tool"), b.get("input")
                 i = uses.index(k)
-                items.append({"id": f"t{n}.{k}", "kind": "tool", "at": int(at + i * span), "endAt": int(at + (i + 1) * span), "tool": {"name": name, "input": _summary(inp), "args": _full(inp), **classify(name, inp, st.root)}})
+                items.append({"id": f"t{n}.{k}", "kind": "tool", "at": int(at + i * span), "endAt": int(at + (i + 1) * span), "durationInferred": True, "tool": {"name": name, "input": _summary(inp), "args": _full(inp), **classify(name, inp, st.root)}})
     return items, turns
 
 
@@ -194,12 +213,129 @@ def infer_times(recs: list[dict[str, Any]], born: int | None, mtime: int) -> lis
     return out
 
 
+# ——— headless stream (``cursor-agent -p --output-format stream-json``) ———
+TOOL_NAMES = {"readToolCall": "Read", "shellToolCall": "Shell", "editToolCall": "Edit", "writeToolCall": "Write", "deleteToolCall": "Delete", "globToolCall": "Glob", "grepToolCall": "Grep", "lsToolCall": "LS", "taskToolCall": "Task"}
+RUN_EVERYTHING = "run-everything"  # what ``--force`` is called in the CLI; the init event reports "default" whatever the flags
+
+
+def _tool_name(key: str) -> str:
+    base = key[: -len("ToolCall")] if key.endswith("ToolCall") and len(key) > len("ToolCall") else key
+    return TOOL_NAMES.get(key) or base[:1].upper() + base[1:]
+
+
+def _tool_text(result: Any) -> tuple[str, bool]:
+    """(text, is_error) of one completed tool call's ``result``: ``success`` / ``rejected`` / ``error`` / ``failure``."""
+    if not isinstance(result, dict):
+        return "", False
+    ok = result.get("success")
+    if isinstance(ok, dict):
+        for k in ("content", "stdout", "output", "text"):
+            if isinstance(ok.get(k), str) and ok[k]:
+                return ok[k], False
+        return _full(ok), False
+    rej = result.get("rejected")
+    if isinstance(rej, dict):
+        return f"rejected: {rej.get('reason') or 'the CLI did not run it (no --force?)'}", True
+    for k in ("error", "failure"):
+        if result.get(k) is not None:
+            v = result[k]
+            return str(v.get("message") or v.get("error") or _full(v)) if isinstance(v, dict) else str(v), True
+    return _full(result), False
+
+
+class CursorStream(StreamMapper):
+    """``cursor-agent -p --output-format stream-json``: init (the chat id), assistant messages, tool calls
+    started / completed, and ``result`` (the turn's end and usage). Thinking deltas and the reconnect
+    notices (``connection`` / ``retry``) are not shown."""
+
+    def feed(self, d: dict[str, Any], at: int) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        t, sub = d.get("type"), d.get("subtype")
+        if t == "system" and sub == "init":
+            self.session = str(d.get("session_id") or self.session or "") or None
+            if self.session:
+                out.append({"t": "session", "at": at, "session": self.session})
+            out.append({"t": "mode", "at": at, "mode": RUN_EVERYTHING, "model": str(d.get("model") or self.model or "") or None})
+        elif t == "assistant":
+            msg = d.get("message") if isinstance(d.get("message"), dict) else {}
+            text = "".join(str(c.get("text") or "") for c in msg.get("content") or [] if isinstance(c, dict) and c.get("type") == "text")
+            if text.strip():
+                self.text = text
+                out.append({"t": "text", "at": at, "text": text})
+        elif t == "tool_call":
+            tc = d.get("tool_call") if isinstance(d.get("tool_call"), dict) else {}
+            key = next(iter(tc), "")
+            body = tc.get(key) if isinstance(tc.get(key), dict) else {}
+            cid = str(d.get("call_id") or body.get("toolCallId") or key)
+            if sub == "started":
+                args = body.get("args") if isinstance(body.get("args"), dict) else {}
+                out.append({"t": "tool_use", "at": at, "id": cid, "name": _tool_name(key), "input": {k: v for k, v in args.items() if k in ("command", "path", "globPattern", "pattern", "targetDirectory", "workingDirectory", "prompt", "description")} or args})
+            elif sub == "completed":
+                text, bad = _tool_text(body.get("result"))
+                out.append({"t": "tool_result", "at": at, "id": cid, "text": text, "isError": bad})
+        elif t == "result":
+            u = d.get("usage") if isinstance(d.get("usage"), dict) else {}
+            usage = empty_usage(self.model)
+            usage["inputTokens"] = _int(u.get("inputTokens"))
+            usage["outputTokens"] = _int(u.get("outputTokens"))
+            usage["cacheReadTokens"] = _int(u.get("cacheReadTokens"))
+            usage["cacheWriteTokens"] = _int(u.get("cacheWriteTokens"))
+            self.usage = add_usage(self.usage, usage)
+            out.append({"t": "usage", "at": at, "usage": usage})
+            if d.get("is_error") or (sub not in (None, "success")):
+                self.error = f"cursor: {str(d.get('result') or sub or 'error')[:300]}"
+            self.done = True
+        elif t == "error":
+            self.error = f"cursor: {str(d.get('message') or d.get('error') or 'error')[:300]}"
+        return out
+
+
+def list_models(text: str) -> tuple[list[str], dict[str, str], str]:
+    """``cursor-agent --list-models``: ``<id> - <name>`` lines (a ``(default)`` / ``(current)`` tag after the name).
+    Returns (ids, names, default id)."""
+    ids: list[str] = []
+    names: dict[str, str] = {}
+    default = ""
+    for line in text.splitlines():
+        m = re.match(r"^\s*([A-Za-z0-9][A-Za-z0-9._\-\[\]=,]*)\s+-\s+(.+?)\s*$", line)
+        if not m:
+            continue
+        mid, label = m.group(1), m.group(2).replace("\u200b", "").strip()
+        tag = re.search(r"\(((?:default|current)(?:\s*,\s*(?:default|current))*)\)\s*$", label)  # "(default)", "(current)", "(current, default)"
+        if tag:
+            label = label[: tag.start()].strip()
+            if "default" in tag.group(1) and not default:
+                default = mid
+        ids.append(mid)
+        names[mid] = label
+    return ids, names, default
+
+
+def cursor_catalog(ids: list[str], names: dict[str, str], default: str, source: str) -> dict[str, Any]:
+    """Models only: the effort (``-high``, ``-xhigh`` …) is part of a Cursor model id, so there are no levels to pick."""
+    first = default if default in ids else (ids[0] if ids else "")
+    return {
+        "default": first,
+        "models": ids,
+        "featured": ids[:6],
+        "names": names,
+        "providers": {},
+        "allowed": ids if ids else None,
+        "scope": {"kind": "cli", "source": source},
+        "efforts": [],
+        "modelEfforts": {m: [] for m in [*ids, ""]},
+        "modelDefaultEffort": {m: "" for m in [*ids, ""]},
+        "defaultEffort": "",
+        "effortSource": "none",
+    }
+
+
 class CursorAdapter(Adapter):
     kind = "cursor"
     name = "Cursor"
     binaries = ("cursor-agent",)
     tested = VersionRange(">=2026.09.26,<2026.11")
-    max_tier = "T2"
+    max_tier = "T1"
     icon = "cursor"
     log_hint = "~/.cursor/projects/<工作区>/agent-transcripts/<id>/<id>.jsonl"
     log_dir = "~/.cursor/projects/"
@@ -207,6 +343,12 @@ class CursorAdapter(Adapter):
     has_cost = False
     waits = "inferred"
     times_inferred = True
+    assigns_id = "cli"  # the chat id is Cursor's own (init event / a new transcript folder)
+    can_fork_headless = False
+    survives_move = False  # a chat id belongs to its workspace: resumed elsewhere, the CLI starts an empty chat
+    asked_mode = RUN_EVERYTHING  # ``--force``: what the session header compares the CLI's reported mode with
+    project_skill_dir = ".cursor/skills"  # it also reads .claude/skills and .agents/skills
+    claims_by_open_file = True
 
     handled_types = frozenset({"user", "assistant", "turn_ended"})
     ignored_types = frozenset()
@@ -256,6 +398,28 @@ class CursorAdapter(Adapter):
             return recs
         born = getattr(st, "st_birthtime", None)
         return infer_times(recs, int(born * 1000) if born else None, int(st.st_mtime * 1000))
+
+    def new_since(self, root: Path | str, since: float, taken: set[str], home: Path | None = None) -> str | None:
+        """A chat started in ``root`` at/after ``since`` (its transcript folder was created then) that no Agora session owns yet."""
+        fresh = []
+        for r in self.sessions_for([str(root)], home):
+            try:
+                st = r["path"].stat()
+            except OSError:
+                continue
+            born = getattr(st, "st_birthtime", st.st_mtime)
+            if born >= since and r["nativeId"] not in taken:
+                fresh.append((born, r["nativeId"]))
+        return min(fresh)[1] if fresh else None
+
+    def native_from_open_files(self, paths: list[str], home: Path | None = None) -> str | None:
+        """The chat whose ``store.db`` (``~/.cursor/chats/<hash>/<chat id>/store.db``, kept open by the running CLI) the process has open."""
+        base = data_dir(home) / "chats"
+        for raw in paths:
+            p = Path(os.path.realpath(raw))
+            if p.name.startswith("store.db") and p.parent.parent.parent == base and valid_id(p.parent.name):
+                return p.parent.name
+        return None
 
     # ——— Projector ———
     def project(self, rec: dict[str, Any], st: State) -> Out:
@@ -311,6 +475,43 @@ class CursorAdapter(Adapter):
                 label=str(call.get("label") or f.stem), meta={"role": call.get("role"), "model": call.get("model"), "dispatchedAt": call.get("at"), "doneAt": done_at, "state": state, "depth": 1},
             ))
         return out
+
+    # ——— Headless ———
+    def headless_args(self, cmd: list[str], req: Any, *, log_exists: Callable[[str], bool] | bool = False, skill_dir: Path | None = None) -> list[str]:
+        o = req.options
+        if o.fork_from:
+            raise ValueError("Cursor 没有分叉会话的命令")
+        args = [*cmd, "-p", "--output-format", "stream-json", "--force", "--trust"]
+        if o.session:
+            args += ["--resume", o.session]
+        if o.model:
+            args += ["--model", o.model]
+        return args  # the prompt goes on stdin
+
+    # ——— Interactive ———
+    def fork_argv(self, fork: dict[str, Any]) -> list[str]:
+        raise ValueError("Cursor 没有分叉会话的命令")
+
+    def interactive_argv(self, native_id: str | None, model: str | None, effort: str | None, *, new: bool = False, has_log: Callable[[], bool] | bool = False, skill_dir: Path | None = None) -> list[str]:
+        args = ["cursor-agent", "--force", "--trust"]
+        if native_id and not new:
+            args += ["--resume", native_id]
+        if model:
+            args += ["--model", model]
+        return args
+
+    # ——— Catalog ———
+    def catalog(self, env: dict[str, str], root: Path | None) -> dict[str, Any]:
+        exe = self.installed()
+        text = ""
+        if exe:
+            try:
+                r = subprocess.run([exe, "--list-models"], capture_output=True, text=True, timeout=25, env=env)
+                text = r.stdout if r.returncode == 0 else ""
+            except (OSError, subprocess.SubprocessError):
+                text = ""
+        ids, names, default = list_models(text)
+        return cursor_catalog(ids, names, default, "cursor-agent --list-models" if ids else "none")
 
     # ——— fixtures (tests/test_adapter_contracts.py) ———
     def fixture_place(self, folder: Path, home: Path, cwd: str, nid: str) -> Path:

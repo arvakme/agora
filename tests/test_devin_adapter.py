@@ -46,9 +46,10 @@ def worker_session(home, sid="brisk-otter", cwd=CWD, ticket="T-aaa111", t0=T0) -
     return s
 
 
-def test_devin_is_observed_only():
+def test_devin_still_has_every_observed_capability_as_a_session_agent():
+    """T1 since 2026-09-29 (tests/test_devin_t1.py): the observation side — Locator, Projector, ToolVocab — is unchanged."""
     a = devin()
-    assert adapters.implemented_tier(a) == "T2" and a.max_tier == "T2" and "devin" not in adapters.session_kinds()
+    assert adapters.implemented_tier(a) == "T1" and "devin" in adapters.session_kinds()
 
 
 def test_a_session_is_its_distinct_messages_in_time_order(home):

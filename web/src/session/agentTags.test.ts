@@ -56,6 +56,14 @@ describe("splitTags: at work and waiting stay, the latest idle two, the rest 「
   it("the tag being looked at stays visible", () => expect(splitTags(all, 3, "i5").shown.map((t) => t.runId)).toContain("i5"));
 });
 
+describe("a session whose run has no name yet still gets a tag (a fresh Grok session crashed the top bar)", () => {
+  it("the tag falls back to the agent's kind, and the label never throws", () => {
+    const tags = agentTags([run("a", { name: undefined as unknown as string, agent: "grok" })], NOW);
+    expect(tags[0].name).toBe("grok");
+    expect(tagLabel(undefined as unknown as string, false)).toBe("");
+  });
+});
+
 describe("tagLabel: at most 12 characters, the full name in the tooltip", () => {
   it("the agent's name as is", () => expect(tagLabel("Claude Code · 看看沙箱云电脑在手机端的适配实现", false)).toBe("Claude Code"));
   it("several of one agent: what it is about, cut to 12 with …", () => expect(tagLabel("Claude Code · 看看沙箱云电脑在手机端的适配实现", true)).toBe("看看沙箱云电脑在手机端的…"));

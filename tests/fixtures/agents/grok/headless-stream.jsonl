@@ -1,0 +1,33 @@
+{"type": "thought", "data": "正在读取 README.md，准备用一句话总结其内容。"}
+{"type": "text", "data": "我"}
+{"type": "text", "data": "先"}
+{"type": "text", "data": "读"}
+{"type": "text", "data": "仓库"}
+{"type": "text", "data": "里"}
+{"type": "text", "data": "的"}
+{"type": "text", "data": " README"}
+{"type": "text", "data": "，"}
+{"type": "text", "data": "再用"}
+{"type": "text", "data": "一"}
+{"type": "text", "data": "句话"}
+{"type": "text", "data": "概括"}
+{"type": "text", "data": "。"}
+{"type": "usage", "usage": {"input_tokens": 21833, "output_tokens": 325, "cache_read_input_tokens": 2944, "cache_creation_input_tokens": 0, "reasoning_tokens": 239}, "signature": "x"}
+{"type": "tool_call", "toolCallId": "call-9589eb2f-8d3b-4170-9468-43588179b125-0", "title": "read_file", "kind": "read", "status": "pending", "toolName": "read_file", "rawInput": {"target_file": "/work/proj/README.md"}, "content": [], "locations": []}
+{"type": "tool_call_update", "toolCallId": "call-9589eb2f-8d3b-4170-9468-43588179b125-0", "status": null, "content": [], "rawOutput": null, "locations": [{"path": "/work/proj/README.md"}]}
+{"type": "tool_call_update", "toolCallId": "call-9589eb2f-8d3b-4170-9468-43588179b125-0", "status": "completed", "content": [{"type": "content", "content": {"type": "text", "text": "1→# Demo\n\nA tiny project that counts words in a text file.\n"}}], "rawOutput": {"type": "ReadFile", "FileContent": {"content": "1→# Demo\n\nA tiny project that counts words in a text file.\n", "content_concise": "1→# Demo\n\nA tiny project that counts words in a text file.\n", "absolute_path": "/work/proj/README.md", "offset": null, "raw_output": "# Demo\n\nA tiny project that counts words in a text file.\n", "total_lines": 4}}, "locations": []}
+{"type": "text", "data": "这"}
+{"type": "text", "data": "是"}
+{"type": "text", "data": "一个"}
+{"type": "text", "data": "用来"}
+{"type": "text", "data": "统计"}
+{"type": "text", "data": "文本"}
+{"type": "text", "data": "文件"}
+{"type": "text", "data": "字"}
+{"type": "text", "data": "数"}
+{"type": "text", "data": "的"}
+{"type": "text", "data": "小"}
+{"type": "text", "data": "项目"}
+{"type": "text", "data": "。"}
+{"type": "usage", "usage": {"input_tokens": 20521, "output_tokens": 29, "cache_read_input_tokens": 4608, "cache_creation_input_tokens": 0, "reasoning_tokens": 16}, "signature": "x"}
+{"type": "end", "stopReason": "end_turn", "sessionId": "ccd40060-d2f2-42c2-8dda-173b0dbb2e15", "requestId": "c31dff10-32a3-4783-9950-77b92139f9d1", "usage": {"input_tokens": 42354, "cache_read_input_tokens": 7552, "cache_creation_input_tokens": 0, "output_tokens": 354, "reasoning_tokens": 255, "total_tokens": 50260}, "num_turns": 2, "total_cost_usd": 0.03080672, "total_cost_usd_ticks": 308067200, "modelUsage": {"grok-4.7-build": {"inputTokens": 42354, "outputTokens": 354, "cacheReadInputTokens": 7552, "cacheCreationInputTokens": 0, "modelCalls": 2, "costUSD": 0.03080672}}}

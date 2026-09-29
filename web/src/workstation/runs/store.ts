@@ -4,7 +4,7 @@
 // fixtures.ts) replaces all of it only when asked for (tests, demos). Recomputed on data events
 // only (and once a second while something runs, since a running turn ends at "now"), never per frame.
 import { useSyncExternalStore } from "react";
-import { AGENT_NAMES, agents, fetchRuns, type AgentKind } from "../../session/agents";
+import { AGENT_NAMES, agentName, agents, fetchRuns, type AgentKind } from "../../session/agents";
 import { sessionNames } from "../../multi/writes";
 import { fromTree, runFromTranscript } from "./derive";
 import { longWindow, scenario, scratchRun } from "./fixtures";
@@ -34,7 +34,8 @@ const derived = new WeakMap<object, { key: string; run: WorkRun }>();
 /** How a session is called: its agent, or its tab name when two sessions of one agent are around. */
 export function runName(sessionId: string, bound: Record<string, { agent: AgentKind }>, names: Record<string, string>): string {
   const kind = bound[sessionId]?.agent;
-  const agent = kind ? AGENT_NAMES[kind] : "Agent";
+  // agentName, not AGENT_NAMES[kind]: a CLI the page has not heard of yet (its adapter list is still loading) has no entry there
+  const agent = agentName(kind);
   const twins = Object.values(bound).filter((b) => b.agent === kind).length > 1;
   return twins && names[sessionId] ? names[sessionId] : agent;
 }

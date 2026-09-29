@@ -226,6 +226,8 @@ class Adapter:
     claims_by_open_file: bool = False
     # Two-way headless: the turn's stdin stays open (the host answers the CLI's requests and can interrupt).
     duplex: bool = False
+    # The permission mode Agora asks the CLI for; the session header compares it with the mode the CLI reports.
+    asked_mode: str = "auto"
 
     def native_from_open_files(self, paths: list[str], home: Path | None = None) -> str | None:
         """The native session id named by the files a CLI process has open, None when none does."""

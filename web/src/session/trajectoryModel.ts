@@ -286,7 +286,7 @@ export function buildTurns(items: readonly Item[], defaults: { model?: string | 
     }
     if (it.kind === "tool") {
       const s = inStep(t, it.msg ?? null, false);
-      const dur = it.endAt && it.endAt >= it.at ? it.endAt - it.at : null;
+      const dur = it.endAt && it.endAt >= it.at && !it.durationInferred ? it.endAt - it.at : null;
       const name = it.tool?.name || "tool";
       s.records.push(record(t, it, "tool", `${name} ${oneLine(it.tool?.input)}`.trim(), dur));
       t.toolCount += 1;

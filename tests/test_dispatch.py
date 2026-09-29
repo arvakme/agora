@@ -310,7 +310,7 @@ async def test_dispatch_rules(rig):
     with pytest.raises(DispatchError, match="empty"):
         await rig.dp.dispatch(source=SRC, task=" ", to="s-b")
     with pytest.raises(DispatchError, match="--new takes"):
-        await rig.dp.dispatch(source=SRC, task="x", new="grok")
+        await rig.dp.dispatch(source=SRC, task="x", new="no-such-agent")  # (Grok was the example while it was observed only)
 
 
 async def test_a_new_session_is_made_and_bound_like_one_made_by_hand(rig, store, monkeypatch):
