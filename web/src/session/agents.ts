@@ -322,7 +322,11 @@ export const setBridgeHandler = (h: BridgeHandler) => void (bridgeHandler = h);
 
 /** Apply one server event (exported for tests). */
 export async function handleEvent(e: Record<string, unknown> & { t: string }) {
-  if (e.t === "hello") return set({ connected: true });
+  if (e.t === "hello") {
+    subId = typeof e.sub === "string" ? e.sub : null;
+    set({ connected: true });
+    return reportPage();
+  }
   if (e.t === "transcript") return upsert(e.sessionId as string, e.items as Item[], !!e.reset);
   if (e.t === "request") {
     const r = (e as unknown as { request: HostRequest }).request;
@@ -359,6 +363,11 @@ export async function handleEvent(e: Record<string, unknown> & { t: string }) {
   }
   if (e.t === "bridge" && bridgeHandler) {
     const { rid } = e as unknown as { rid: string };
+    // Run it only if the server grants this page the request (it is offered to one page at a time; a page that was
+    // skipped and wakes up later is refused): an edit is never applied twice. An old server has no page id: run it.
+    if (bridgeSeen.has(rid)) return;
+    bridgeSeen.add(rid);
+    if (subId && !(await claimBridge(rid))) return;
     let result: unknown;
     try {
       result = await bridgeHandler(e as unknown as Parameters<BridgeHandler>[0]);
@@ -369,12 +378,38 @@ export async function handleEvent(e: Record<string, unknown> & { t: string }) {
   }
 }
 
+// This page as an executor of canvas edits: its id from the server, what it reports about itself.
+let subId: string | null = null;
+let lastFocus = typeof document !== "undefined" && typeof document.hasFocus === "function" && document.hasFocus() ? Date.now() : 0;
+const bridgeSeen = new Set<string>();
+const json2 = { "content-type": "application/json" };
+const claimBridge = (rid: string) =>
+  fetch(`/api/agent/bridge/${rid}/claim`, { method: "POST", headers: json2, body: JSON.stringify({ sub: subId }) })
+    .then((r) => r.json())
+    .then((b: { ok?: boolean }) => !!b.ok)
+    .catch(() => false);
+/** Tell the server whether this page is on screen and when it last had the focus: edits go to a page that can answer. */
+function reportPage() {
+  if (!subId) return;
+  const visible = typeof document === "undefined" || document.visibilityState === "visible";
+  void fetch(`/api/agent/events/${subId}/state`, { method: "POST", headers: json2, body: JSON.stringify({ visible, focusedAt: lastFocus }), keepalive: true }).catch(() => {});
+}
+
 let source: EventSource | null = null;
 /** Subscribe to the project's agent events; this page executes canvas bridge requests. */
 export function connectAgents() {
   if (source) return;
   void loadAdapters();
-  source = new EventSource("/api/agent/events?executor=1");
+  source = new EventSource("/api/agent/events?executor=2"); // 2: this page claims a request before it runs it
+  if (typeof window !== "undefined") {
+    const seen = () => {
+      lastFocus = Date.now();
+      reportPage();
+    };
+    window.addEventListener("focus", seen);
+    window.addEventListener("blur", reportPage);
+    document.addEventListener("visibilitychange", () => (document.visibilityState === "visible" ? seen() : reportPage()));
+  }
   source.onmessage = (m) => {
     try {
       void handleEvent(JSON.parse(m.data));

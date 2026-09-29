@@ -147,8 +147,10 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 | GET | `/sessions/{id}/items/{itemId}` | 一条会话记录的全文（工具输入 / 输出超过预览长度时，页面「展开全文」用） |
 | GET | `/sessions/{id}/summary` | `{text}`：按快照生成的「接着之前的讨论」摘要（最近的轮次优先，约 6000 字以内），不调用模型 |
 | POST | `/sessions/{id}/restart` | 原生日志确实没了：换一个新的原生 id（`started: false`），下一条消息新建它；日志还在时拒绝 |
-| GET | `/events?executor=1` | SSE：`transcript`、`status`、`delivered`、`done`、`bridge`（给执行页面） |
+| GET | `/events?executor=2` | SSE：`transcript`、`status`、`delivered`、`done`、`bridge`（给执行页面）；第一条 `hello` 带这个页面的 `sub`。`executor=2` 表示页面先认领再执行，`executor=1` 是旧页面（直接执行） |
 | POST | `/bridge/{rid}` | 页面回传 read/apply/anim 结果 |
+| POST | `/events/{sub}/state` | 页面报告自己是否在前台（`visible`）和最近一次获得焦点的时刻（`focusedAt`） |
+| POST | `/bridge/{rid}/claim` | 页面认领一个改图请求（`{sub}`）：只有正被交给的那个页面、且只有一次能得到 ok |
 | GET / POST | `/canvas/list`、`/canvas/read`、`/canvas/apply`、`/canvas/anim`、`/canvas/link` | `agora canvas` 用（`link` 见 [进度指针](progress-pointer.md)） |
 
 ## 6. 限制
@@ -199,3 +201,17 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 | Claude Code | 日志 `message.model` | 绑定时选的（日志不记） | 日志 `message.usage` | 交互：`turn_duration`；无头：结束减开始 | 只有无头续接（runner 结果 `total_cost_usd`）；终端里的轮次不显示 |
 | Pi | 日志 `model_change` / 消息 | `thinking_level_change` | 消息 `usage` | 结束减开始 | 消息 `usage.cost.total` |
 | Codex | `turn_context.model` | `turn_context.effort` | `token_usage_record` | `task_complete.duration_ms` | 不记，不显示 |
+
+
+## 改图交给哪个页面（BR1）
+
+`agora canvas read/apply/anim/link/child` 由一个打开的 Agora 页面执行（它持有画布、做校验、记撤销）。挑页面的顺序（`server/canvas/executors.py`）：
+
+1. 上一次被问时答上来了的页面在前，没答上来的排到所有页面后面，直到它再答上来一次；
+2. 看得见的页面（`document.visibilityState === "visible"`）优先；
+3. 最近获得焦点的；
+4. 最近连上来的。
+
+请求先交给第一个页面；它 6 秒内没有**认领**，就把同一个请求交给下一个，全部加起来不超过 25 秒。**页面认领之后才执行**：服务端只把认领给正被交给的那个页面、且只给一次，所以被跳过的页面（比如浏览器冻住的后台标签）过后醒来，认领会被拒绝，它不会去执行；它迟到的回报也会被丢掉。已经认领的页面不会被换掉（它的改动可能已经落在它的画布上），服务端一直等它回报，等不到就报「页面已接手这次改图但没有回报：图上可能已经改了，先看一眼图，再决定要不要重试」；没有页面认领时报「开着的 Agora 页面都没有回应：把 Agora 的标签页切到前台再试一次」。
+
+`apply` 本身不是幂等的（每次都生成新的批次、新的元素）；靠上面的认领保证一个请求只被一个页面执行一次。分享链接的访客页面不当执行者：分享网关只提供 `/api/guest/*`，访客连不到 `/api/agent/events`。
