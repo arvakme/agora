@@ -5,9 +5,9 @@ import { runName } from "./store.ts";
 
 describe("runName", () => {
   it("a known agent", () => expect(runName("s1", { s1: { agent: "claude" } }, {})).toBe("Claude Code"));
-  it("an agent the page has no name for yet: its kind, never undefined", () => {
+  it("an agent the page has no name for yet: its kind with a capital, never undefined", () => {
     expect(runName("s1", { s1: { agent: "grok" } }, {})).toBeTruthy();
-    expect(runName("s1", { s1: { agent: "cursor" } }, {})).toBe("cursor");
+    expect(runName("s1", { s1: { agent: "cursor" } }, {})).toBe("Cursor");
   });
   it("two sessions of one agent: the tab name tells them apart", () => expect(runName("s1", { s1: { agent: "pi" }, s2: { agent: "pi" } }, { s1: "画图" })).toBe("画图"));
 });

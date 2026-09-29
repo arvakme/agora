@@ -4,7 +4,7 @@
 // fixtures.ts) replaces all of it only when asked for (tests, demos). Recomputed on data events
 // only (and once a second while something runs, since a running turn ends at "now"), never per frame.
 import { useSyncExternalStore } from "react";
-import { AGENT_NAMES, agentName, agents, fetchRuns, type AgentKind } from "../../session/agents";
+import { adapters, agentName, agents, fetchRuns, type AgentKind } from "../../session/agents";
 import { sessionNames } from "../../multi/writes";
 import { fromTree, runFromTranscript } from "./derive";
 import { longWindow, scenario, scratchRun } from "./fixtures";
@@ -34,7 +34,6 @@ const derived = new WeakMap<object, { key: string; run: WorkRun }>();
 /** How a session is called: its agent, or its tab name when two sessions of one agent are around. */
 export function runName(sessionId: string, bound: Record<string, { agent: AgentKind }>, names: Record<string, string>): string {
   const kind = bound[sessionId]?.agent;
-  // agentName, not AGENT_NAMES[kind]: a CLI the page has not heard of yet (its adapter list is still loading) has no entry there
   const agent = agentName(kind);
   const twins = Object.values(bound).filter((b) => b.agent === kind).length > 1;
   return twins && names[sessionId] ? names[sessionId] : agent;
@@ -94,7 +93,7 @@ function maybeFetch(sid: string, items: unknown, live: boolean) {
   fetched.set(sid, { items, at: now, inflight: true });
   void fetchRuns(sid, { items: true })
     .then((tree) => {
-      const t = fromTree(tree, sid, { now: Date.now(), root, name: (k) => AGENT_NAMES[k] ?? k });
+      const t = fromTree(tree, sid, { now: Date.now(), root, name: agentName });
       trees.set(sid, { ...t, live: flatten(t.children).some((x) => x.run.running) });
       refresh();
     })
@@ -123,12 +122,14 @@ function start() {
   if (timer) return;
   const offA = agents.subscribe(refresh);
   const offN = sessionNames.subscribe(refresh);
+  // The adapter list arriving renames agents: the runs made with the old names (sub-agents from a run tree too) are made again.
+  const offL = adapters.subscribe(() => (fetched.clear(), refresh()));
   // Running turns end at "now": refresh once a second while anything runs (or the mock plays).
   timer = window.setInterval(() => {
     if (MOCK || value.flat.some((f) => f.run.running)) refresh();
   }, 1000);
   value = compute();
-  stop = () => (offA(), offN(), clearInterval(timer), (timer = 0));
+  stop = () => (offA(), offN(), offL(), clearInterval(timer), (timer = 0));
 }
 let stop = () => {};
 

@@ -18,7 +18,7 @@ import { byId, type El } from "../canvas/scene";
 import { SessionPane } from "../session/SessionPane";
 import { sessions, type Session, type Turn } from "../session/store";
 import { agentChoice, canvases, ui } from "../session/ui";
-import { AGENT_NAMES, agents, type Binding } from "../session/agents";
+import { agents, useAgentName, type Binding } from "../session/agents";
 import { SessionMark } from "../session/AgentAvatar";
 import { pointerFollow } from "../pointer/follow";
 import { createThreadStore, threadStores, useThreads, type ThreadSnapshot, type ThreadStore } from "../comments/threads";
@@ -213,13 +213,14 @@ export function App({ boot }: { boot: Boot }) {
   };
   // Session names follow their agent and first message (docs/workspace-model.md §2).
   useSyncExternalStore(agents.subscribe, bindingKey);
+  const agentLabel = useAgentName(); // a session tab is named after its agent: it follows the adapter list
   const bindings = agents.get().bindings;
   const followTitle = useFollowTitle();
   const names: Record<string, string> = {
     ...Object.fromEntries(docs.map((d) => [d.id, d.title])),
     ...sessionTitles(docs, (sid, d) => {
       const kind = bindings[sid]?.agent ?? d.agent;
-      return { agent: kind && AGENT_NAMES[kind] };
+      return { agent: kind && agentLabel(kind) };
     }),
   };
   const isDraftDoc = (d: Doc | undefined) => d?.kind === "session" && sessions.isDraft(d.sessionId);

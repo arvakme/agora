@@ -13,7 +13,7 @@ import { GUEST } from "../guest/mode";
 import { SPRING } from "./motion";
 import { useSessions, useTurn } from "../session/store";
 import { useTrash } from "../workspace/trash";
-import { AGENT_NAMES, agentName, useAgents } from "../session/agents";
+import { useAgentName, useAgents } from "../session/agents";
 import { AgentAvatar } from "../session/AgentAvatar";
 import { ui } from "../session/ui";
 import { collapseSuperseded, PIN_LABEL, pinState } from "./handoffState";
@@ -32,6 +32,7 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
   pos: CardPos;
   onHover?: (inside: boolean) => void;
 }) {
+  const agentName = useAgentName();
   const full = mode === "full";
   const [first, ...rest] = t.messages;
   const running = t.agent === "running";
@@ -160,12 +161,13 @@ function Row({ m, first, onUndo, tools }: { m: Message; first?: boolean; onUndo?
   const other = m.author === "you" && !!m.by && m.by.id !== identity()?.id;
   // A native session's reply shows that session's agent (Pi / Claude Code / Codex) by its own mark.
   const agentKind = useAgents().bindings[m.sessionId ?? ""]?.agent;
+  const nameOf = useAgentName();
   return (
     <div className="trow" data-first={first} data-tone={reply?.tone ?? m.tone}>
       {m.author === "agent" && agentKind ? <AgentAvatar kind={agentKind} size={26} /> : <Avatar who={m.author} name={other ? m.by!.name : undefined} />}
       <div className="trow-main">
         <div className="trow-meta">
-          <b>{m.author === "agent" ? (agentKind ? AGENT_NAMES[agentKind] : "Agent") : m.author === "system" ? "系统" : other ? m.by!.name : "你"}</b>
+          <b>{m.author === "agent" ? nameOf(agentKind) : m.author === "system" ? "系统" : other ? m.by!.name : "你"}</b>
           {other && isGuestId(m.by!.id) && !GUEST && <span className="tguest">访客</span>}
           <time>{meta}</time>
           {m.editedAt && <span className="tedited" title={`编辑于 ${new Date(m.editedAt).toLocaleString("zh-CN")}`}>已编辑</span>}

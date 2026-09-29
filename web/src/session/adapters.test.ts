@@ -28,7 +28,7 @@ describe("adapter registry on the page", () => {
     expect(m.sessionKinds()).toEqual(["pi", "claude", "codex"]);
     expect(m.deleteCommandOf("codex")).toBe("codex delete {id}");
     expect(m.forkHeadless("codex")).toBe(false);
-    expect(m.agentName("grok")).toBe("grok");
+    expect(m.agentName("grok")).toBe("Grok"); // its kind with a capital, not `grok` (agentNames.test.ts)
   });
 
   it("uses the server's list: T1 kinds for the picker, names, log dirs and delete commands for any CLI", async () => {
@@ -38,7 +38,6 @@ describe("adapter registry on the page", () => {
     await m.loadAdapters();
     expect(m.sessionKinds()).toEqual(["pi", "claude", "codex"]);
     expect(m.agentName("grok")).toBe("Grok");
-    expect(m.AGENT_NAMES.grok).toBe("Grok");
     expect(m.logDirOf("grok")).toBe("~/.grok/");
     expect(m.deleteCommandOf("grok")).toBe("grok sessions delete {id}");
     const { nativeRemoval } = await import("../workspace/trash.ts");

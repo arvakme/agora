@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { IconClose, IconRetry, IconTrash } from "../app/icons";
 import { SPRING } from "../comments/motion";
 import { AgentAvatar } from "../session/AgentAvatar";
-import { AGENT_NAMES, type AgentKind } from "../session/agents";
+import { useAgentName, type AgentKind } from "../session/agents";
 import { nativeRemoval, trash, useTrash, type TrashItem } from "./trash";
 
 type Props = {
@@ -21,6 +21,7 @@ type Props = {
 const when = (at: number) => new Date(at).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 export function TrashPanel({ focus, canvasTitles, onRestore, onDismiss }: Props) {
+  const nameOf = useAgentName();
   const items = useTrash();
   const [confirm, setConfirm] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -69,12 +70,12 @@ export function TrashPanel({ focus, canvasTitles, onRestore, onDismiss }: Props)
               const meta =
                 m.kind === "canvas"
                   ? [m.linked?.length ? `${m.linked.length} 个会话仍在工作区` : "", m.sharesEnded?.length ? `结束了 ${m.sharesEnded.length} 个分享` : ""]
-                  : [agent ? AGENT_NAMES[agent] : "会话", canvasId ? (canvasTitles[canvasId] ? `画布「${canvasTitles[canvasId]}」` : "画布不在工作区") : ""];
+                  : [agent ? nameOf(agent) : "会话", canvasId ? (canvasTitles[canvasId] ? `画布「${canvasTitles[canvasId]}」` : "画布不在工作区") : ""];
               return confirm === m.trashId ? (
                 <li key={m.trashId} className="ad-confirm" role="alertdialog" aria-label={`彻底删除 ${m.title}`}>
                   <p>
                     彻底删除「{m.title || m.id}」？{m.kind === "canvas" ? "画布和它的评论从本机删除，不能再恢复（提交过的版本还在 git 里）。" : "Agora 里的会话记录、改图记录和轨迹快照从本机删除，不能再恢复。"}
-                    {m.kind === "session" && m.native?.nativeId ? `原生对话不删，仍在 ${m.native.logPath ?? `${agent ? AGENT_NAMES[agent] : "CLI"} 自己的日志里`}。` : ""}
+                    {m.kind === "session" && m.native?.nativeId ? `原生对话不删，仍在 ${m.native.logPath ?? `${agent ? nameOf(agent) : "CLI"} 自己的日志里`}。` : ""}
                   </p>
                   <div>
                     <button className="btn sm ghost" autoFocus onClick={() => setConfirm(null)}>取消</button>

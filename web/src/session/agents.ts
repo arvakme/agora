@@ -85,8 +85,8 @@ export async function fetchRuns(sessionId: string, opts: { depth?: number | "all
   return (await r.json()) as RunTree;
 }
 
-/** Fallbacks until `/api/agent/adapters` answers (and for older servers). */
-export const AGENT_NAMES: Record<AgentKind, string> = { pi: "Pi", claude: "Claude Code", codex: "Codex" };
+/** The three built-in agents' names, for before `/api/agent/adapters` answers (and for older servers). Read them through `agentName` / `useAgentName`. */
+const BUILTIN_NAMES: Record<AgentKind, string> = { pi: "Pi", claude: "Claude Code", codex: "Codex" };
 export const AGENT_KINDS: AgentKind[] = ["pi", "claude", "codex"];
 const FALLBACK: Record<string, Pick<AgentInfo, "logDir" | "deleteCommand"> & { forkHeadless: boolean }> = {
   pi: { logDir: "~/.pi/agent/sessions/", deleteCommand: null, forkHeadless: true },
@@ -95,20 +95,41 @@ const FALLBACK: Record<string, Pick<AgentInfo, "logDir" | "deleteCommand"> & { f
 };
 let adapterList: AgentInfo[] | null = null;
 let adaptersP: Promise<AgentInfo[]> | null = null;
+/** The adapter list arriving (or failing) is a change the page has to follow: what depends on a name is drawn again. */
+let adaptersVersion = 0;
+const adapterListeners = new Set<() => void>();
+export const adapters = {
+  subscribe: (l: () => void) => (adapterListeners.add(l), () => void adapterListeners.delete(l)),
+  version: () => adaptersVersion,
+};
+const adaptersChanged = () => {
+  adaptersVersion++;
+  adapterListeners.forEach((l) => l());
+};
 /** The registry's AgentInfo list (fetched once per page; `?versions=0`: no `--version` probes). */
 export function loadAdapters(): Promise<AgentInfo[]> {
   adaptersP ??= fetch("/api/agent/adapters?versions=0")
     .then((r) => (r.ok ? (r.json() as Promise<AgentInfo[]>) : []))
     .then((list) => {
       adapterList = Array.isArray(list) ? list : [];
-      for (const a of adapterList) AGENT_NAMES[a.kind] = a.name;
+      adaptersChanged();
       return adapterList;
     })
-    .catch(() => (adapterList = []));
+    .catch(() => {
+      adapterList = [];
+      adaptersChanged();
+      return adapterList;
+    });
   return adaptersP;
 }
 export const agentInfo = (kind: AgentKind | undefined): AgentInfo | undefined => (kind ? adapterList?.find((a) => a.kind === kind) : undefined);
-export const agentName = (kind: AgentKind | undefined): string => (kind ? (agentInfo(kind)?.name ?? AGENT_NAMES[kind] ?? kind) : "Agent");
+/** What an agent is called: the registry's name; before the list has answered (or for a CLI it does not list), a built-in name, else its kind with a capital — never `undefined`. */
+export const agentName = (kind: AgentKind | undefined): string => (kind ? (agentInfo(kind)?.name ?? BUILTIN_NAMES[kind] ?? kind.charAt(0).toUpperCase() + kind.slice(1)) : "Agent");
+/** `agentName` for a component: it is drawn again when the adapter list arrives, so the names on the page follow the registry's. */
+export function useAgentName(): (kind: AgentKind | undefined) => string {
+  useSyncExternalStore(adapters.subscribe, adapters.version);
+  return agentName;
+}
 /** The session agents (T1) to offer in the picker, in the registry's order. */
 export const sessionKinds = (): AgentKind[] => (adapterList?.length ? adapterList.filter((a) => a.tier === "T1").map((a) => a.kind) : AGENT_KINDS);
 export const logDirOf = (kind: AgentKind | undefined): string => agentInfo(kind)?.logDir || (kind && FALLBACK[kind]?.logDir) || "CLI 自己的目录";

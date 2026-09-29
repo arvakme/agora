@@ -8,7 +8,7 @@ import { IconHistory, IconLayers, IconPlus, IconTrash } from "../app/icons";
 import { SPRING } from "../comments/motion";
 import { sessions } from "../session/store";
 import { SessionMark } from "../session/AgentAvatar";
-import { AGENT_NAMES, agents, logDirOf } from "../session/agents";
+import { agents, logDirOf, useAgentName } from "../session/agents";
 import { listGroups, type CanvasDoc, type Doc, type SessionDoc } from "./model";
 import { useTrash } from "./trash";
 
@@ -97,6 +97,7 @@ export function AllDocs({ docs, titles, open, focused, confirm, setConfirm, canv
 }
 
 function Confirm({ doc, title, comments, sessions: linked, kids, onCancel, onConfirm }: { doc: Doc; title: string; comments: number; sessions: number; kids: number; onCancel: () => void; onConfirm: () => void }) {
+  const nameOf = useAgentName();
   const [shares, setShares] = useState(0);
   useEffect(() => {
     if (doc.kind !== "canvas") return;
@@ -107,7 +108,7 @@ function Confirm({ doc, title, comments, sessions: linked, kids, onCancel, onCon
   }, [doc]);
   const turns = doc.kind === "session" ? (sessions.get().sessions[doc.sessionId]?.turnIds.length ?? 0) : 0;
   const b = doc.kind === "session" ? agents.get().bindings[doc.sessionId] : undefined;
-  const agent = b ? AGENT_NAMES[b.agent] : "CLI";
+  const agent = b ? nameOf(b.agent) : "CLI";
   const where = logDirOf(b?.agent ?? "claude");
   // What moves to the trash, what stays, what ends — the plan's wording (web/docs/workspace-model.md §1).
   const what =

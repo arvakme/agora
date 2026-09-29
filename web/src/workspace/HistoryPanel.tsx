@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { IconClose, IconHistory, IconRetry, IconSearch } from "../app/icons";
 import { SPRING } from "../comments/motion";
 import { AgentAvatar } from "../session/AgentAvatar";
-import { AGENT_KINDS, AGENT_NAMES, agents, useAgents, type AgentKind } from "../session/agents";
+import { AGENT_KINDS, agents, useAgentName, useAgents, type AgentKind } from "../session/agents";
 import { sessions } from "../session/store";
 import { sessionDocId, type Doc, type SessionDoc } from "./model";
 
@@ -59,6 +59,7 @@ const STATES = { all: "全部状态", open: "打开的", closed: "已关闭", tr
 const when = (at?: number) => (at ? new Date(at).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
 
 export function HistoryPanel({ docs, titles, canvasTitles, open, currentCanvas, onOpen, onRestore, onImported, onDismiss }: Props) {
+  const agentLabel = useAgentName();
   const [data, setData] = useState<{ rows: HistoryRow[]; found: HistoryRow[] } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [q, setQ] = useState("");
@@ -105,7 +106,7 @@ export function HistoryPanel({ docs, titles, canvasTitles, open, currentCanvas, 
   const nameOf = (r: HistoryRow) => {
     const d = docOf(r);
     if (d) return titles[d.id] ?? d.title;
-    const agentName = r.agent ? AGENT_NAMES[r.agent] : "会话";
+    const agentName = r.agent ? agentLabel(r.agent) : "会话";
     return r.title || (r.topic ? `${agentName} · ${r.topic}` : r.firstMessage ? `${agentName} · ${r.firstMessage.slice(0, 24)}` : agentName);
   };
   const label = (r: HistoryRow): { text: string; tone?: "caution" | "error" } => {
@@ -219,7 +220,7 @@ export function HistoryPanel({ docs, titles, canvasTitles, open, currentCanvas, 
           <div className="seg" data-static role="radiogroup" aria-label="Agent">
             {(["all", ...AGENT_KINDS] as const).map((k) => (
               <button key={k} role="radio" aria-checked={agent === k} data-on={agent === k} onClick={() => setAgent(k)}>
-                {k === "all" ? "全部" : AGENT_NAMES[k]}
+                {k === "all" ? "全部" : agentLabel(k)}
               </button>
             ))}
           </div>
