@@ -1,0 +1,13 @@
+/* 「在图上看这一轮」 + ▶ in a turn's head (session/TraceTurn.tsx). */
+.ds-trace-turn { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; flex: none; }
+.ds-trace-btn { height: 22px; padding: 0 8px; border-radius: var(--r-xs); background: var(--surface); box-shadow: var(--box); color: var(--accent); font-size: var(--text-xs); line-height: 22px; white-space: nowrap; }
+.ds-trace-btn:hover:not(:disabled) { background: var(--accent-fill); color: var(--accent-fg); text-decoration: none; }
+.ds-trace-btn:disabled { color: var(--fg-subtle); cursor: default; }
+/* the trajectory view's turn head: the head button and these two share one sticky row */
+.ds-turn-headrow { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: var(--space-3); padding-right: var(--space-5); background: var(--bg); border-bottom: 1px solid var(--line); }
+.ds-turn-headrow .ds-turn-head { position: static; flex: 1 1 auto; width: auto; border-bottom: 0; }
+/* the row a stop on the canvas was clicked for */
+.ds-rec[data-flash] { animation: ds-rec-flash 1.6s var(--ease-out); }
+@keyframes ds-rec-flash { 0%, 55% { background: var(--accent-fill); } 100% { background: transparent; } }
+.ds-rec[data-hot] { background: var(--accent-fill); }
+@media (prefers-reduced-motion: reduce) { .ds-rec[data-flash] { animation: none; background: var(--accent-fill); } }

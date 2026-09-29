@@ -9,10 +9,17 @@
 //   - where each of its sub-agents was sent from, the places it went and where it handed back.
 // Only the stretch of work t is in (the figure is on the canvas for that stretch only; a sub-agent's is
 // its whole errand). In replay what comes after t in that stretch is listed too, not yet reached.
-import { bursts, planFor, stateAt, type Ctx } from "./place";
+import { bursts, outsideProject, OUTSIDE, planFor, stateAt, type Ctx } from "./place";
 import { tripAt, type Move, type Pt, type Trip } from "./rig";
 import type { Leg } from "./route";
-import type { WorkRun } from "./runs/types";
+import type { RunSeg, WorkRun } from "./runs/types";
+
+/**
+ * One tool call (or dispatch) of the trace, shown at the stop where it happened (web/docs/workstation.md §11
+ * 按轮追踪): `tool` = a lane segment of the run that has a transcript item (`itemId`: the session's
+ * trajectory row — the link both ways), `spawn` = it sent a sub-agent, `back` = the sub-agent handed back.
+ */
+export type Call = { kind: "tool" | "spawn" | "back"; label: string; at: number; run: string; itemId?: string; child?: string };
 
 /** One place it went to: a node's element id, or OUTSIDE (the 图外 tray). */
 export type Stop = {
@@ -23,6 +30,8 @@ export type Stop = {
   at: number;
   /** Got there by t. */
   done: boolean;
+  /** The tool calls made here, in order (this turn's only, when a turn is traced). */
+  calls: Call[];
   /** It worked below this node, in the sub-diagram the node opens: that canvas, and the nodes it went to in there, in order. */
   portal?: { canvasId: string; labels: string[] };
 };
@@ -53,23 +62,25 @@ function stretchOf(run: WorkRun, t: number): { start: number; end: number } | nu
  * Pure: the run's trace at t on the canvas `ctx` describes. `known`: the end of what has happened (live:
  * now) — a scripted log (the dev mock) knows its future, a live one does not; later moves are left out.
  */
-export function traceAt(run: WorkRun, t: number, ctx: Ctx, known = Infinity): Trace {
+export function traceAt(run: WorkRun, t: number, ctx: Ctx, known = Infinity, win?: { start: number; end: number }): Trace {
   const out: Trace = { id: run.id, stops: [], ways: [], subs: [] };
-  const span = stretchOf(run, t);
+  const span = win ?? stretchOf(run, t);
   if (!span) return out;
   // Every move of the stretch (the state at its end has them all, a sub-agent's walk back included).
   const end = stateAt(run, span.end, ctx);
-  const moves = end.moves.filter((m) => m.from !== m.to && m.t <= known);
-  // where it appeared: the first move sets off from there (no move: it stays where it is)
-  out.stops.push({ place: end.moves[0]?.from ?? end.at, t0: span.start, at: span.start, done: span.start <= t });
+  // (a turn's window can lie inside a longer burst of work: the moves before it belong to the turns before)
+  const moves = end.moves.filter((m) => m.from !== m.to && m.t <= known && (!win || m.t >= win.start));
+  // where it appeared: the first move sets off from there (no move: it stays where it is — for a turn, where it stood as the turn began)
+  out.stops.push({ place: moves[0]?.from ?? (win ? stateAt(run, win.start, ctx).at : (end.moves[0]?.from ?? end.at)), t0: span.start, at: span.start, done: span.start <= t, calls: [] });
   for (const m of moves) {
     const trip = ctx.reduced ? null : planFor(m, ctx);
     const at = trip ? trip.t1 : m.t;
     const legs = legsOf(m, ctx);
     out.ways.push({ from: out.stops.length - 1, to: out.stops.length, t0: m.t, t1: at, legs, len: lengthOf(legs), trip });
-    out.stops.push({ place: m.to, t0: m.t, at, done: at <= t });
+    out.stops.push({ place: m.to, t0: m.t, at, done: at <= t, calls: [] });
   }
   entries(run, { start: span.start, end: Math.min(span.end, known) }, out.stops, ctx);
+  attachCalls(run, { start: span.start, end: Math.min(span.end, known) }, out.stops, ctx);
   for (const c of run.children) {
     // one known only by its receipts never walks: there is no way to show
     if (c.coarse || c.spawnAt == null || c.spawnAt > t || c.spawnAt < span.start || c.spawnAt > span.end) continue;
@@ -79,6 +90,73 @@ export function traceAt(run: WorkRun, t: number, ctx: Ctx, known = Infinity): Tr
     out.subs.push({ id: c.id, sent: k.stops[0], back, stops: k.stops });
   }
   return out;
+}
+
+/** How long after a call begins its walk may set off (its stop then still gets the call). */
+const SET_OFF_MS = 3000;
+const clip = (s: string, n = 72) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+/** What one segment says as a tool call (null: not a call — thinking). */
+function callLabel(run: WorkRun, g: RunSeg): string | null {
+  switch (g.kind) {
+    case "read":
+      return `Read ${g.path ?? ""}`.trim();
+    case "write":
+      return `Edit ${g.path ?? g.files?.[0]?.path ?? ""}`.trim();
+    case "exec":
+      return `Bash ${clip(g.cmd ?? "")}`.trim();
+    case "wait":
+      return `问你：${clip(g.question ?? "")}`;
+    case "delegate": {
+      const c = run.children.find((x) => x.id === g.child);
+      return `派出 ${c?.name ?? "子代理"}${c?.task ? `：${clip(c.task, 48)}` : ""}`;
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * The tool calls of the stretch, each at the stop where it happened: a call on a file goes to the latest stop
+ * at that file's node (a glance from elsewhere is still "on that node"), a file no node claims to the 图外
+ * tray, one outside the project (or with no file) to the stop the agent stood at. Sub-agents' dispatch and
+ * hand-back are calls of their dispatcher.
+ */
+function attachCalls(run: WorkRun, span: { start: number; end: number }, stops: Stop[], ctx: Ctx) {
+  const standing = (at: number) => {
+    let s = stops[0];
+    for (const x of stops) if (x.t0 <= at) s = x;
+    return s;
+  };
+  // a walk sets off a moment after the call that sends it there begins: that call is still the walk's own
+  const stopAt = (place: string, at: number) => {
+    let s: Stop | undefined;
+    for (const x of stops) if (x.place === place && x.t0 <= at + SET_OFF_MS) s = x;
+    return s ?? standing(at);
+  };
+  const dispatched = new Set<string>();
+  // a dispatch segment that does not say which run it sent (the page could not link them) is the nearest one sent just after it
+  const claim = (g: RunSeg) => {
+    if (g.child) return g.child;
+    let best: WorkRun | undefined;
+    for (const c of run.children) if (!dispatched.has(c.id) && c.spawnAt != null && Math.abs(c.spawnAt - g.start) <= 10_000 && (!best || Math.abs(c.spawnAt - g.start) < Math.abs(best.spawnAt! - g.start))) best = c;
+    return best?.id;
+  };
+  for (const g of run.segs) {
+    if (g.start < span.start || g.start > span.end) continue;
+    const child = g.kind === "delegate" ? claim(g) : g.child;
+    const label = callLabel(run, child === g.child ? g : { ...g, child });
+    if (label == null) continue;
+    if (g.kind === "delegate" && child) dispatched.add(child);
+    const target = g.path && !outsideProject(g.path) ? (ctx.locate(g.path)?.place ?? OUTSIDE) : null;
+    const stop = target ? stopAt(target, g.start) : standing(g.start);
+    stop.calls.push({ kind: g.kind === "delegate" ? "spawn" : "tool", label, at: g.start, run: run.id, ...(g.itemId ? { itemId: g.itemId } : {}), ...(child ? { child } : {}) });
+  }
+  for (const c of run.children) {
+    if (c.spawnAt == null || c.spawnAt < span.start || c.spawnAt > span.end) continue;
+    if (!dispatched.has(c.id)) standing(c.spawnAt).calls.push({ kind: "spawn", label: `派出 ${c.name}${c.task ? `：${clip(c.task, 48)}` : ""}`, at: c.spawnAt, run: run.id, child: c.id });
+    if (c.doneAt != null && c.doneAt <= span.end) standing(c.doneAt).calls.push({ kind: "back", label: `${c.name} 交回`, at: c.doneAt, run: run.id, child: c.id });
+  }
+  for (const s of stops) s.calls.sort((a, b) => a.at - b.at);
 }
 
 /** The sub-diagram entries: a file its node claims through a child canvas, worked on while it stood there (a glance from elsewhere does not count). */
@@ -180,4 +258,41 @@ export function walkedAt(w: Way, t: number): number {
   const H = Math.abs(x.b.y - x.a.y);
   const f = L > 1e-6 ? Math.abs(r.x - x.a.x) / L : H > 1e-6 ? Math.abs(r.y - x.a.y) / H : 1;
   return Math.max(0, Math.min(w.len, s + (e - s) * Math.max(0, Math.min(1, f))));
+}
+
+// ——— by turn (web/docs/workstation.md §11): the trace of one turn of a session, and the way to and from its rows ———
+
+/** One turn of a session as the trace's stretch: `end` null = still running (up to now). */
+export type TurnWindow = { n: number; start: number; end: number | null };
+
+/** The turn `n` of a run as the segments say it (the session's turn numbers): from its first segment to its last (running: to now). */
+export function turnWindowOf(run: WorkRun, n: number): TurnWindow | null {
+  const segs = run.segs.filter((g) => g.turn === n);
+  if (!segs.length) return null;
+  const last = Math.max(...run.segs.map((g) => g.turn ?? 0));
+  return { n, start: Math.min(...segs.map((g) => g.start)), end: run.running && n === last ? null : Math.max(...segs.map((g) => g.end)) };
+}
+/** The run's current (or latest) turn — what tracing a figure starts on. Null when its segments carry no turn numbers. */
+export function latestTurnWindow(run: WorkRun): TurnWindow | null {
+  const last = Math.max(0, ...run.segs.map((g) => g.turn ?? 0));
+  return last ? turnWindowOf(run, last) : null;
+}
+/** A window as the stretch traceAt takes: a running turn ends now. */
+export const spanOf = (w: TurnWindow, now: number) => ({ start: w.start, end: w.end ?? Math.max(now, w.start) });
+
+/** The stop (and whose: the traced run's or a sub-agent's) whose calls include this transcript item — the canvas end of a trajectory row. */
+export function stopForItem(tr: Trace, itemId: string): { run: string; index: number } | null {
+  const find = (stops: Stop[]) => stops.findIndex((s) => s.calls.some((c) => c.itemId === itemId));
+  const i = find(tr.stops);
+  if (i >= 0) return { run: tr.id, index: i };
+  for (const k of tr.subs) {
+    const j = find(k.stops);
+    if (j >= 0) return { run: k.id, index: j };
+  }
+  return null;
+}
+/** The transcript item a stop stands for: its first call that has one — the trajectory end of a stop. */
+export function itemOfStop(tr: Trace, runId: string, index: number): string | null {
+  const stops = runId === tr.id ? tr.stops : tr.subs.find((k) => k.id === runId)?.stops;
+  return stops?.[index]?.calls.find((c) => c.itemId)?.itemId ?? null;
 }

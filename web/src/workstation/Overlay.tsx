@@ -35,7 +35,7 @@ import { clipPath } from "../canvas/chrome";
 import type { Box } from "../canvas/clearance";
 import { viewport, type Viewport } from "../canvas/viewport";
 import { useNested } from "../nested/store";
-import { ui } from "../session/ui";
+import { canvases, ui } from "../session/ui";
 import { clock, prefersReducedMotion, useReplay } from "./clock";
 import { placeBubbles, protoSpot, type BubbleIn } from "./bubbles";
 import { pickBubbles, slots } from "./crowd";
@@ -58,7 +58,8 @@ import { scenePlaces } from "./scenePlaces";
 import { useRuns, type Runs } from "./runs/store";
 import { RECEIPT_NAMES, type FlatRun } from "./runs/types";
 import { TalkBubble } from "./TalkBubble";
-import { pointAt, traceAt, walkedAt, type Trace } from "./trace";
+import { glideTo } from "./pan";
+import { itemOfStop, latestTurnWindow, pointAt, spanOf, stopForItem, traceAt, walkedAt, type Trace, type TurnWindow } from "./trace";
 import { TrayHint } from "./TrayHint";
 import "./workstation.css";
 
@@ -155,7 +156,7 @@ const tripAlpha = (p: Trip, t: number) => Math.max(0, Math.min(1, (t - p.t0) / T
  * false; `now`: what has happened by — in a replay the stops after t up to now show, not yet reached).
  * `only`: draw just these runs (the follow pane: those in its sub-diagram).
  */
-export function snapshot(runs: Runs, t: number, ctx: Ctx, conflicts: WriteConflict[], figuresOn: boolean, selected: string | null, o: { traced?: string | null; only?: (runId: string) => boolean; route?: boolean; now?: number } = {}): Snap {
+export function snapshot(runs: Runs, t: number, ctx: Ctx, conflicts: WriteConflict[], figuresOn: boolean, selected: string | null, o: { traced?: string | null; turn?: TurnWindow | null; only?: (runId: string) => boolean; route?: boolean; now?: number } = {}): Snap {
   const states = new Map<string, RunState>();
   const present: FlatRun[] = [];
   const byId = new Map(runs.flat.map((f) => [f.run.id, f]));
@@ -210,7 +211,9 @@ export function snapshot(runs: Runs, t: number, ctx: Ctx, conflicts: WriteConfli
     }
   }
   const tr = o.traced && o.route !== false ? byId.get(o.traced) : undefined;
-  const trace = tr ? traceAt(tr.run, t, ctx, o.now ?? Infinity) : null;
+  // 按轮追踪: the stretch is one turn of the run (the chosen one, else its current or latest); a run without turn numbers keeps the stretch of work t is in
+  const win = tr ? (o.turn ?? latestTurnWindow(tr.run)) : null;
+  const trace = tr ? traceAt(tr.run, t, ctx, o.now ?? Infinity, win ? spanOf(win, o.now ?? Date.now()) : undefined) : null;
   // the tray shows while someone stands there or looks at it, and for a traced way through it
   const tray = figs.some((x) => x.place === OUTSIDE || states.get(x.f.run.id)!.glance?.place === OUTSIDE) || !!trace?.stops.some((s) => s.place === OUTSIDE) || !!trace?.subs.some((s) => s.stops.some((x) => x.done && x.place === OUTSIDE));
   return { t, figs, bubbles, rings: ringsOf(present, states, conflicts, t), tethers, chips: [], states, byId, folded, tray, trips, trace };
@@ -402,7 +405,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
       last = performance.now();
       pending = 0;
       const i = inputs.current;
-      setSnap(snapshot(i.runs, clock.time(), i.ctx, i.conflicts, i.figuresOn, i.fo.selected, { traced: i.fo.traced, only: i.only, route: !i.pane, now: Date.now() }));
+      setSnap(snapshot(i.runs, clock.time(), i.ctx, i.conflicts, i.figuresOn, i.fo.selected, { traced: i.fo.traced, turn: i.fo.turn, only: i.only, route: !i.pane, now: Date.now() }));
     };
     const kick = () => {
       if (pending) return;
@@ -415,7 +418,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
     return () => (clearInterval(timer), clearTimeout(pending), offC());
   }, []);
   // data or settings changed: rebuild (same rate limit)
-  useEffect(() => rebuild.current(), [runs, ctx, conflicts, figuresOn, fo.selected, fo.traced]);
+  useEffect(() => rebuild.current(), [runs, ctx, conflicts, figuresOn, fo.selected, fo.traced, fo.turn]);
 
   // ── imperative nodes: figures and tethers, created per snapshot, moved per frame ──
   const rootEl = useRef<HTMLDivElement>(null);
@@ -945,8 +948,19 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const extra: Snap["rings"] = [];
   const hp = segPlace(fo.segHover);
   const sp = segPlace(fo.segSel);
+  // a trajectory row under the pointer rings its node too (the tool call it is: ../session/TrajectoryView.tsx)
+  const placeOfItem = (item: string | null): string | null => {
+    if (!item) return null;
+    for (const f of runs.flat) {
+      const g = f.run.segs.find((x) => x.itemId === item);
+      if (g) return g.path && !outsideProject(g.path) ? (geom.locate(g.path)?.place ?? OUTSIDE) : null;
+    }
+    return null;
+  };
+  const rp = placeOfItem(fo.itemHover);
   if (hp) extra.push({ place: hp, tone: "hover", ids: [] });
   if (sp) extra.push({ place: sp, tone: "sel", ids: [] });
+  if (rp && rp !== hp) extra.push({ place: rp, tone: "hover", ids: [] });
   const rings = useExiting([...snap.rings, ...extra].map((r) => ({ ...r, key: `${r.place}|${r.tone === "sel" || r.tone === "hover" ? r.tone : "busy"}` })), RING_EXIT_MS);
   // 追踪: clicking a figure (or its bubble) selects and traces it; clicking it again lets go of both.
   const pick = (id: string) => {
@@ -968,8 +982,33 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
     const here = trv!.stops.filter((x) => x.place === s.place && x.portal);
     const seen = here.filter((x) => x.done).length ? here.filter((x) => x.done) : here;
     const entry = k === 0 ? [...new Set(seen.flatMap((x) => x.portal!.labels))] : [];
-    return [{ key: `s${i}|${s.t0}`, n: i + 1, s, x: b.x, y: b.y, dy: k * 20, entry }];
+    return [{ key: `s${i}|${s.t0}`, n: i + 1, i, s, x: b.x, y: b.y, dy: k * 20, entry }];
   });
+  // 按轮追踪: the stop whose calls include the trajectory row under the pointer lights up
+  const hot = trv && fo.itemHover ? stopForItem(trv, fo.itemHover) : null;
+  const tracedRun = fo.traced ? runs.byId.get(fo.traced) : undefined;
+  /** A stop clicked: the session's trajectory scrolls to the step it stands for (the turn's head when it has none). */
+  const jumpToStop = (i: number) => {
+    const sid = tracedRun?.sessionId;
+    if (!sid || !trv) return;
+    const turn = fo.turn?.n ?? (tracedRun ? latestTurnWindow(tracedRun)?.n : undefined);
+    ui.openSession(sid);
+    setTimeout(() => dispatchEvent(new CustomEvent("agora:step", { detail: { sessionId: sid, itemId: itemOfStop(trv, trv.id, i), turn } })), 60);
+  };
+  // 「在图上看这一轮」 / a row clicked in the trajectory: glide this canvas there, once
+  useEffect(() => {
+    const p = fo.pan;
+    const api = canvases.get(view.id)?.api;
+    if (!p || !api || pane) return;
+    let place: string | null | undefined;
+    if (p.to === "item") place = placeOfItem(p.item);
+    else if (tracedRun) {
+      const win = fo.turn ?? latestTurnWindow(tracedRun);
+      place = traceAt(tracedRun, clock.time(), ctx, Date.now(), win ? spanOf(win, Date.now()) : undefined).stops[0]?.place;
+    }
+    const b = place ? geom.boxOf(place) : undefined;
+    if (b) glideTo(api, { x: b.x + b.w / 2, y: b.y + b.h / 2 });
+  }, [fo.pan?.key]);
   const errands = (trv?.subs ?? []).map((k) => ({ id: k.id, ...errand(k.stops.filter((x) => x.done).map((x) => geom.dock(x.place))), run: snap.byId.get(k.id)?.run }));
   const placeName = (p: string) => (p === OUTSIDE ? "图外" : (geom.labels.get(p) ?? "节点"));
   return (
@@ -1050,17 +1089,41 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
           key={m.key}
           className="ws-stop"
           data-exit={traceOut || undefined}
-          aria-hidden
+          data-hot={(hot && hot.run === trv?.id && hot.index === m.i) || undefined}
           ref={(el) => {
             if (el) {
               markEls.current.set(m.key, { el, x: m.x, y: m.y, dy: m.dy, at: m.s.at, done: null });
               marksMoved.current = true;
             } else markEls.current.delete(m.key);
           }}
-          title={`第 ${m.n} 站 · ${placeName(m.s.place)} · ${hhmmss(m.s.at)}`}
         >
-          <i>{m.n}</i>
+          <i
+            role="button"
+            tabIndex={0}
+            aria-label={`第 ${m.n} 站 · ${placeName(m.s.place)} · ${m.s.calls.length} 次调用`}
+            onClick={() => jumpToStop(m.i)}
+            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), jumpToStop(m.i))}
+          >
+            {m.n}
+          </i>
           {m.entry.length > 0 && <em>↘ 子图 · {m.entry.join("、")}</em>}
+          <div className="ws-stop-calls" role="tooltip">
+            <b>
+              第 {m.n} 站 · {placeName(m.s.place)} · {hhmmss(m.s.at)}
+            </b>
+            {m.s.calls.length ? (
+              <ol>
+                {m.s.calls.slice(0, 12).map((c, j) => (
+                  <li key={j} data-kind={c.kind} data-hot={(fo.itemHover && c.itemId === fo.itemHover) || undefined}>
+                    {c.label}
+                  </li>
+                ))}
+                {m.s.calls.length > 12 && <li className="more">…还有 {m.s.calls.length - 12} 条</li>}
+              </ol>
+            ) : (
+              <span className="none">这一站没有工具调用</span>
+            )}
+          </div>
         </span>
       ))}
       {errands.map((k) =>

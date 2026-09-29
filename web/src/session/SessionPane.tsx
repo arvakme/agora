@@ -17,6 +17,7 @@ import { hhmmss } from "../workstation/axis";
 import { useRuns } from "../workstation/runs/store";
 import { Markdown } from "./markdown";
 import { ProcessFold, TrajectoryView } from "./TrajectoryView";
+import { TraceTurn } from "./TraceTurn";
 import { buildTurns, fmtCost, fmtDuration, fmtTokens, sumUsage, type TrajTurn } from "./trajectoryModel";
 import { SPRING } from "../comments/motion";
 import { Composer } from "./Composer";
@@ -253,6 +254,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
     if (!replay && autoTraj.current) (autoTraj.current = false), startTransition(() => setView("chat"));
   }, [!!replay]);
   const [focusTurn, setFocusTurn] = useState<{ n: number; key: number } | null>(null);
+  const [focusItem, setFocusItem] = useState<{ id: string; n?: number; key: number } | null>(null);
   const canvasTitle = canvasTitles[session.canvasId];
   const inflight = ag.inflight[sessionId];
   const working = !!(status?.running || status?.busy || inflight);
@@ -280,9 +282,18 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
       setView("trajectory");
       setFocusTurn({ n: d.turn, key: Date.now() });
     };
+    // a stop clicked on the canvas: the trajectory scrolls to its step (or the turn's head when it has none)
+    const onStep = (e: Event) => {
+      const d = (e as CustomEvent<{ sessionId: string; itemId: string | null; turn?: number }>).detail;
+      if (d.sessionId !== sessionId) return;
+      setView("trajectory");
+      if (d.itemId) setFocusItem({ id: d.itemId, n: d.turn, key: Date.now() });
+      else if (d.turn != null) setFocusTurn({ n: d.turn, key: Date.now() });
+    };
     addEventListener("agora:turn", on);
     addEventListener("agora:trajectory", onTraj);
-    return () => (removeEventListener("agora:turn", on), removeEventListener("agora:trajectory", onTraj));
+    addEventListener("agora:step", onStep);
+    return () => (removeEventListener("agora:turn", on), removeEventListener("agora:trajectory", onTraj), removeEventListener("agora:step", onStep));
   }, [session, sessionId]);
   const send = async (text: string, refs: Turn["refs"]) => {
     const selected = Object.keys(canvases.get(session.canvasId)?.api.getAppState().selectedElementIds ?? {});
@@ -473,7 +484,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
       {replay && view === "trajectory" && <p className="sp-replay-note">回放到 {hhmmss(replayAt!)}：灰色的是之后发生的。拖时间线或点一段跳到那一刻。</p>}
       {view === "trajectory" ? (
         <div className="sp-traj">
-          <TrajectoryView sessionId={sessionId} turns={turns} focusTurn={focusTurn} agent={binding.agent} cutoff={replay ? replayAt : null} />
+          <TrajectoryView sessionId={sessionId} turns={turns} focusTurn={focusTurn} focusItem={focusItem} agent={binding.agent} cutoff={replay ? replayAt : null} />
         </div>
       ) : (
         <div className="sp-scroll" ref={scroll}>
@@ -659,6 +670,7 @@ function Conversation({ sessionId, turns, changes, canvasTitles, flash, onTrajec
               {t.running ? " · 进行中" : t.durationMs != null && t.durationMs > 20_000 ? ` · 用时 ${fmtDuration(t.durationMs)}` : ""}
             </button>
             {t.source === "terminal" && <span className="ds-tag">终端</span>}
+            <TraceTurn sessionId={sessionId} turn={t} />
           </header>
           {t.user && (
             <div className="ds-user" data-source={t.user.source}>
