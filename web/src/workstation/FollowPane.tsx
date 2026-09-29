@@ -24,7 +24,8 @@ import type { Node } from "../workspace/layout";
 import { viewport } from "../canvas/viewport";
 import { nav, useNested } from "../nested/store";
 import { canvases } from "../session/ui";
-import { clock, prefersReducedMotion, useReplay, useTick, useWorkstation } from "./clock";
+import { usePrefs } from "../app/prefs";
+import { autoFollowTabAllowed, clock, prefersReducedMotion, useReplay, useTick, useWorkstation } from "./clock";
 import { figurePositions } from "./focus";
 import { follow, paneView, useFollow } from "./follow";
 import { mayOpenFollowTab } from "./liveCamera";
@@ -55,8 +56,8 @@ function useFollowing(main: string) {
   const nst = useNested();
   // a played turn has its own camera (./replayView.ts): no follow view while it plays
   const playing = !!usePlay().play;
-  const on = useWorkstation() && !playing;
-  useReplay();
+  const replaying = !!useReplay();
+  const on = useWorkstation() && !playing && autoFollowTabAllowed(replaying, usePrefs().autoFollowTab);
   useTick(250);
   const t = clock.time();
   const ctx = useMemo(() => subviewCtx(main, nst.scenes, nst.titles, (id) => runs.byId.get(id), () => canvasWhere.get(main)?.ctx), [main, nst.scenes, nst.titles, runs]);

@@ -153,3 +153,12 @@ export function useReplayAt(): number | null {
   const now = useTick(250, !!r?.playing);
   return r ? replayTime(r, now) : null;
 }
+
+// ── going into a replay is explicit ──
+/** Which gestures go into a replay: dragging the playhead, ▶ on the strip, 「回放到这里」 on a segment's card. A click only selects. */
+export type ReplayGesture = "click" | "click-track" | "drag" | "play" | "replay-here" | "locate";
+export const entersReplay = (g: ReplayGesture) => g === "drag" || g === "play" || g === "replay-here";
+/** The follow tab opens by itself only when the person turned that on (⋯, off by default) and live; during a replay only one the person opened stays. */
+export const autoFollowTabAllowed = (replaying: boolean, pref: boolean) => pref && !replaying;
+/** The session panel keeps the view the person chose, replaying or not. */
+export const panelViewDuring = <V extends string>(view: V, _replaying: boolean): V => view;

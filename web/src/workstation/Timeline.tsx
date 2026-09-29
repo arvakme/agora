@@ -17,6 +17,7 @@ import { focus, useFocus, type SegRef } from "./focus";
 import { follow, useFollow } from "./follow";
 import { frame } from "./frame";
 import { canvasWhere, OUTSIDE, outsideProject, planFor, stateAt, writeConflicts } from "./place";
+import { plays } from "./replayMode";
 import { idleStrip, laneLabel, yieldView, type LaneAct } from "./stripRules";
 import { excalidrawEl, occupiedOf } from "./replayDom";
 import { canvases } from "../session/ui";
@@ -448,19 +449,31 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
       if (!d || d.moved) return;
       const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
       const sg = el?.closest<HTMLElement>("[data-seg]") ?? d.seg;
-      if (sg) return pickSeg(sg.dataset.run!, Number(sg.dataset.seg));
+      if (sg) {
+        // a click selects the segment and its card opens (and stays for the buttons: 「回放到这里」 …)
+        const ref = { run: sg.dataset.run!, i: Number(sg.dataset.seg) };
+        pickSeg(ref.run, ref.i);
+        keepTip();
+        return setTip({ ref, x: e.clientX, y: sg.getBoundingClientRect().top });
+      }
+      // a plain click on the bare track only lets go of the selection: a replay starts by dragging the playhead, ▶, or 「回放到这里」
       focus.selectSeg(null);
-      seek(timeAt(d.el, d.A, e.clientX), d.A);
     },
   });
-  /** The prototype's select(): pick the segment (the canvas rings its node) and jump to its middle. */
+  /** Click on a segment: only select it (its card opens, the canvas rings its node) — no replay. */
   const pickSeg = (runId: string, i: number) => {
+    if (!runs.byId.get(runId)?.segs[i]) return;
+    focus.selectSeg({ run: runId, i });
+  };
+  /** 「回放到这里」 on the card: go into the replay at the middle of the segment. */
+  const replayHere = (runId: string, i: number) => {
     const g = runs.byId.get(runId)?.segs[i];
     if (!g) return;
+    hideTip();
     focus.selectSeg({ run: runId, i });
     seek(Math.min(g.start + (g.end - g.start) / 2, Date.now() - 300), axis);
   };
-  /** 定位节点: pick the segment (the figure goes back to that moment), then pan to the figure once it is drawn there. */
+  /** 定位节点: select the segment and pan to its agent's figure (no replay). */
   const locateSeg = (runId: string, i: number) => {
     pickSeg(runId, i);
     requestAnimationFrame(() => requestAnimationFrame(() => onLocate?.(runId)));
@@ -501,6 +514,20 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
       clock.live();
     }
   };
+  // Esc goes back to live from anywhere on the page while a replay runs (the timeline's own Esc, above, does it when focus is in it)
+  useEffect(() => {
+    if (!replay) return;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable], [data-esc-local]")) return;
+      if (focus.get().traced || plays.active()) return;
+      hideTip();
+      focus.selectSeg(null);
+      clock.live();
+    };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [!!replay]);
   /** 追踪: a lane name traces its agent and pans the canvas to it (the smooth move, once). */
   const traceAndLocate = (id: string) => {
     focus.trace(id);
@@ -824,6 +851,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
           <div className="acts">
             {f.root.sessionId && <button className="btn sm quiet" onClick={() => openSeg(f.run.id, g)}><IconMessage size={14} />在会话里看</button>}
             {g.path && <button className="btn sm quiet" onClick={() => locateSeg(f.run.id, tip.ref.i)}><IconTarget size={14} />定位节点</button>}
+            {g.end <= Date.now() && <button className="btn sm quiet" onClick={() => replayHere(f.run.id, tip.ref.i)}><IconHistory size={14} />回放到这里</button>}
           </div>
         )}
       </div>

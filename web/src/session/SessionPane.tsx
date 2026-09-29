@@ -244,15 +244,9 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   const [termMsg, setTermMsg] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [view, setView] = useState<"chat" | "trajectory">("chat");
-  // Replay (the timeline dragged into the past): the pane shows the trajectory, later steps greyed.
+  // Replay (the timeline dragged into the past): the pane keeps the view you chose; in the trajectory later steps are greyed.
   const replay = useReplay();
   const replayAt = useReplayAt();
-  const autoTraj = useRef(false);
-  useEffect(() => {
-    // A transition: the trajectory mounts without holding up the frame the replay starts in.
-    if (replay && view === "chat") (autoTraj.current = true), startTransition(() => setView("trajectory"));
-    if (!replay && autoTraj.current) (autoTraj.current = false), startTransition(() => setView("chat"));
-  }, [!!replay]);
   const [focusTurn, setFocusTurn] = useState<{ n: number; key: number } | null>(null);
   const [focusItem, setFocusItem] = useState<{ id: string; n?: number; key: number } | null>(null);
   const canvasTitle = canvasTitles[session.canvasId];
@@ -481,7 +475,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           {status?.terminal.alive && termMsg && <span className="sp-attach-msg">{termMsg}{status.terminal.clients ? ` · ${status.terminal.clients} 个窗口` : ""}</span>}
         </div>
       )}
-      {replay && view === "trajectory" && <p className="sp-replay-note">回放到 {hhmmss(replayAt!)}：灰色的是之后发生的。拖时间线或点一段跳到那一刻。</p>}
+      {replay && view === "trajectory" && <p className="sp-replay-note">回放到 {hhmmss(replayAt!)}：灰色的是之后发生的。拖时间线，或在细条上点 ▶ 回放。</p>}
       {view === "trajectory" ? (
         <div className="sp-traj">
           <TrajectoryView sessionId={sessionId} turns={turns} focusTurn={focusTurn} focusItem={focusItem} agent={binding.agent} cutoff={replay ? replayAt : null} />
@@ -490,8 +484,12 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
         <div className="sp-scroll" ref={scroll}>
           {!turns.length && !changes.length && (
             <div className="sp-hello">
-              <p>和 {AGENT_NAMES[binding.agent]} 讨论「{canvasTitle ?? "画布"}」的架构；它用 agora-canvas skill 读图、改图、做算法动画。</p>
-              <p>画布评论「交给 Agent」也会来到这里。想直接写代码时点「在终端打开」，两边说的话会同步。</p>
+              <p>怎么用「{canvasTitle ?? "画布"}」：</p>
+              <ol>
+                <li>在这里告诉 {AGENT_NAMES[binding.agent]} 你要做什么；</li>
+                <li>它干活时，左边图上的小人会带你看它在改哪里；点小人可以直接对它说话；</li>
+                <li>在图上留评论，点「交给 {AGENT_NAMES[binding.agent]}」让它处理。</li>
+              </ol>
             </div>
           )}
           <Conversation sessionId={sessionId} turns={turns} changes={changes} canvasTitles={canvasTitles} flash={flash} onTrajectory={(n) => (setView("trajectory"), setFocusTurn({ n, key: Date.now() }))} />

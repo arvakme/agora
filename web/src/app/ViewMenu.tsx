@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { SPRING } from "../comments/motion";
 import { clock, useWorkstation } from "../workstation/clock";
 import { canNotify, notifyBlocked, setWaitNotify } from "../workstation/WaitNotifier";
-import { IconCheck, IconComment, IconHint, IconMessage, IconMore, IconPath, IconTarget, IconUser } from "./icons";
+import { IconCheck, IconComment, IconEnter, IconHint, IconMessage, IconMore, IconPath, IconTarget, IconUser } from "./icons";
 import { prefs, usePrefs } from "./prefs";
 import { theme, useTheme, type ThemePref } from "./theme";
 import type { Preset } from "../workspace/layout";
@@ -76,6 +76,7 @@ export function ViewMenu({ onLayout, layouts }: { onLayout: (p: Preset) => void;
             <hr />
             {sw(ws, "工位视图（小人）", <IconUser size={14} />, () => clock.setEnabled(!ws))}
             {sw(p.followCamera, "镜头跟随主 agent", <IconTarget size={14} />, () => prefs.set({ followCamera: !p.followCamera }))}
+            {sw(p.autoFollowTab, "有 agent 进子图时自动打开跟随窗口", <IconEnter size={14} />, () => prefs.set({ autoFollowTab: !p.autoFollowTab }))}
             {sw(p.footprints, "小人的脚印", <IconPath size={14} />, () => prefs.set({ footprints: !p.footprints }))}
             {canNotify() && sw(p.notifyWait, notifyBlocked() ? "等你时通知我（浏览器已拦截）" : "等你时通知我", <IconMessage size={14} />, () => void setWaitNotify(!p.notifyWait))}
             {sw(p.showResolved, "显示已解决的评论", <IconCheck size={14} />, () => prefs.set({ showResolved: !p.showResolved }))}

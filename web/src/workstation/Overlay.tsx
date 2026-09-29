@@ -1224,13 +1224,6 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         </div>
       )}
       {playing && <ReplayMarks view={view} ctx={ctx} />}
-      {replay && !playing && (
-        <div className="ws-banner" role="status">
-          <IconHistory size={14} />
-          正在回放 <b ref={bannerTime}>{hhmmss(t)}</b>
-          <button className="btn sm primary" onClick={() => clock.live()}>回到实时</button>
-        </div>
-      )}
     </div>
   );
 }
