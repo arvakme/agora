@@ -57,7 +57,7 @@ export const sceneIndex = (scene: Scene) => {
 };
 
 const opTarget = (o: Op): string =>
-  o.op === "add_shape" ? o.text : o.op === "add_arrow" ? `${o.from} → ${o.to}` : o.op === "insert_library_item" ? o.label ?? o.ref : o.id;
+  o.op === "add_shape" ? o.text : o.op === "add_arrow" ? `${o.from} → ${o.to}` : o.op === "insert_library_item" ? o.label ?? o.ref : o.op === "add_junction" ? o.ref : o.id;
 
 export async function runTurn(input: {
   api: ExcalidrawImperativeAPI;

@@ -78,6 +78,10 @@ def cmd_canvas(p, a) -> int:
     try:
         if a.action == "schema":
             name = {"ops": "plan.schema.json", "anim": "anim.schema.json"}[a.what]
+            if a.what == "ops":
+                from server.canvas import graph_ops
+
+                return out(graph_ops.with_layout_op(schemas.load(name)))
             return out(schemas.load(name))
 
         if a.action == "list":
@@ -95,6 +99,34 @@ def cmd_canvas(p, a) -> int:
             token = save_read(store, cid, got.pop("versions"))
             info = {"id": cid, "name": got["name"], **{k: got["scene"].pop(k) for k in ("path", "parent") if k in got["scene"]}}
             return out({"canvas": info, "base": token, "source": "file", "scene": got["scene"]})
+
+        if a.action == "lint":
+            if base:
+                code, body = call(base, "POST", "/api/agent/canvas/lint", {"canvas": canvas, "session": session})
+                return out(body, 0 if code == 200 else 1)
+            from server.canvas import graph_lint
+
+            cid = resolve_canvas(store, canvas, session)
+            got = file_read(store, cid)
+            return out({"canvas": {"id": cid, "name": got["name"]}, "source": "file", **graph_lint.lint(got["scene"])})
+
+        if a.action == "layout":
+            if not a.nodes and not a.all:
+                return out({"error": "usage: agora canvas layout --nodes a,b,c | --all [--apply] (only says what would move unless --apply; new nodes: end an `apply` batch with {\"op\": \"layout\"})"}, 2)
+            nodes = [n.strip() for n in (a.nodes or "").split(",") if n.strip()]
+            if base:
+                code, body = call(base, "POST", "/api/agent/canvas/layout", {"canvas": canvas, "session": session, "nodes": nodes, "everything": a.all, "execute": a.apply, "note": a.note}, timeout=90)
+                if code == 503:
+                    return out(body, 3)
+                return out(body, 0 if code == 200 and body.get("status") in ("preview", "nothing", "applied") else 1)
+            if a.apply:
+                return out({"error": "Agora 服务没在运行：先在项目里 `agora open`（改图由打开的页面执行）。不加 --apply 可以先看会动哪些。"}, 3)
+            from server.canvas import graph_lint, graph_ops
+
+            cid = resolve_canvas(store, canvas, session)
+            got = file_read(store, cid)
+            plan = graph_ops.plan_reflow(got["scene"], None if a.all else nodes)
+            return out({"status": "preview", "source": "file", "canvas": {"id": cid, "name": got["name"]}, "willMove": plan["moves"], "before": graph_lint.brief(plan["before"]), "after": graph_lint.brief(plan["after"])})
 
         if a.action == "child":
             parent = a.parent or canvas
@@ -184,7 +216,9 @@ def add_parsers(sub) -> None:
         ("list", "canvases and agent sessions of this project"),
         ("read", "the canvas as the model sees it, plus a base token for apply"),
         ("search", "search the asset library"),
-        ("apply", "apply typed ops (JSON on stdin or --json) as one undoable change"),
+        ("apply", "apply typed ops (JSON on stdin or --json) as one undoable change; end with {\"op\": \"layout\"} to arrange the new shapes"),
+        ("lint", "measure the diagram: line crossings, lines through nodes, overlaps, label clashes, length"),
+        ("layout", "re-arrange nodes already on the canvas (says what would move; --apply does it)"),
         ("anim", "mount an animation script (JSON on stdin or --json)"),
         ("schema", "print the JSON schema of ops or animation scripts"),
         ("link", "associate a diagram element with code paths (globs) for the progress pointer"),
@@ -196,6 +230,11 @@ def add_parsers(sub) -> None:
         if name == "search":
             s.add_argument("query", nargs="+")
             s.add_argument("--limit", type=int, default=8)
+        if name == "layout":
+            s.add_argument("--nodes", default=None, help="comma-separated ids of the existing nodes to re-arrange")
+            s.add_argument("--all", action="store_true", help="re-arrange every node on the canvas")
+            s.add_argument("--apply", action="store_true", help="do it (default: only say what would move, and how the diagram measures before and after)")
+            s.add_argument("--note", default=None, help="one short sentence for the person (with --apply)")
         if name == "apply":
             s.add_argument("--base", required=True, help="the base token printed by `agora canvas read`")
             s.add_argument("--note", default=None, help="one short sentence for the person")

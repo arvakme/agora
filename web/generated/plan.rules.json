@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "_": "The referential rules of an edit plan (which fields each op takes, which kinds of element each field may name, the limits). ONE file, read by the page's validatePlan (src/ops/ops.ts) and by the server's fallback executor (server/canvas/plan_rules.py); tests/../generated/plan.cases.json runs the same cases through both.",
+  "ref": "^[a-z][a-z0-9_-]{0,31}$",
+  "stringMax": 200,
+  "size": { "min": 8, "max": 2000 },
+  "coordinateMax": 20000,
+  "gapMax": 800,
+  "numeric": ["x", "y", "width", "height"],
+  "booleans": ["bothEnds", "plain"],
+  "path": { "min": 2, "max": 64 },
+  "shapes": ["rectangle", "ellipse", "diamond"],
+  "sides": ["right", "left", "above", "below"],
+  "ops": {
+    "update_text": { "req": ["id", "text"], "opt": [], "targets": { "id": ["shape", "arrow", "frame", "library"] } },
+    "move": { "req": ["id", "x", "y"], "opt": [], "targets": { "id": ["shape", "frame", "library"] } },
+    "resize": { "req": ["id", "width", "height"], "opt": [], "targets": { "id": ["shape", "frame"] } },
+    "add_shape": { "req": ["ref", "shape", "text", "x", "y"], "opt": ["width", "height", "frameId"], "targets": { "frameId": ["frame"] }, "creates": "shape" },
+    "add_arrow": { "req": ["from", "to"], "opt": ["ref", "text", "bothEnds", "path", "plain"], "targets": { "from": ["shape", "library"], "to": ["shape", "library"] }, "creates": "arrow" },
+    "add_junction": { "req": ["ref", "x", "y"], "opt": [], "creates": "shape" },
+    "route": { "req": ["id", "path"], "opt": [], "targets": { "id": ["arrow"] } },
+    "delete": { "req": ["id"], "opt": [], "targets": { "id": ["shape", "arrow", "frame", "library"] } },
+    "insert_library_item": { "req": ["ref", "item"], "opt": ["near", "at", "label", "width", "frameId"], "targets": { "frameId": ["frame"], "near.id": ["shape", "frame", "library"] }, "creates": "library" }
+  }
+}

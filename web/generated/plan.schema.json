@@ -170,12 +170,93 @@
        },
        "bothEnds": {
         "type": "boolean"
+       },
+       "path": {
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 64,
+        "items": {
+         "type": "array",
+         "minItems": 2,
+         "maxItems": 2,
+         "items": {
+          "type": "number"
+         }
+        }
+       },
+       "plain": {
+        "type": "boolean"
        }
       },
       "required": [
        "op",
        "from",
        "to"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "op": {
+        "const": "add_junction"
+       },
+       "ref": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "x": {
+        "type": "number"
+       },
+       "y": {
+        "type": "number"
+       }
+      },
+      "required": [
+       "op",
+       "ref",
+       "x",
+       "y"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "op": {
+        "const": "route"
+       },
+       "id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "path": {
+        "anyOf": [
+         {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 64,
+          "items": {
+           "type": "array",
+           "minItems": 2,
+           "maxItems": 2,
+           "items": {
+            "type": "number"
+           }
+          }
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "op",
+       "id",
+       "path"
       ]
      },
      {

@@ -11,7 +11,10 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from server.canvas.graph_geom import default_path
+
 SHAPES = ("rectangle", "ellipse", "diamond")
+PLAIN_SLACK = 8  # a straight arrow whose ends are this close to where the page would put them is "plain"
 
 
 def _r(v: Any) -> int:
@@ -31,6 +34,11 @@ def code_paths(e: dict[str, Any] | None) -> list[str]:
     """Code paths (globs) the element stands for — ``customData.codePaths`` (progress pointer)."""
     v = ((e or {}).get("customData") or {}).get("codePaths")
     return [str(x) for x in v if isinstance(x, str) and x] if isinstance(v, list) else []
+
+
+def is_junction(e: dict[str, Any] | None) -> bool:
+    """A small dot where several lines meet (``customData.junction``): geometry lines end on, not a node."""
+    return bool(((e or {}).get("customData") or {}).get("junction"))
 
 
 def child_canvas(e: dict[str, Any] | None) -> str | None:
@@ -76,7 +84,7 @@ def model_view(elements: list[dict[str, Any]]) -> dict[str, Any]:
     live = [e for e in elements if not e.get("isDeleted") and not inside(e)]
     nodes = []
     for e in live:
-        if e.get("type") not in SHAPES:
+        if e.get("type") not in SHAPES or is_junction(e):
             continue
         lib = library_meta(e)
         n: dict[str, Any] = {"id": e["id"], "type": "library" if lib else e["type"]}
@@ -105,6 +113,9 @@ def model_view(elements: list[dict[str, Any]]) -> dict[str, Any]:
             a["label"] = label
         if e.get("startArrowhead"):
             a["bothEnds"] = True
+        path = _drawn_path(e, live)
+        if path:
+            a["path"] = path
         arrows.append(a)
     frames = [
         {
@@ -122,7 +133,22 @@ def model_view(elements: list[dict[str, Any]]) -> dict[str, Any]:
         for e in live
         if e.get("type") == "frame"
     ]
-    return {"nodes": nodes, "arrows": arrows, "frames": frames}
+    junctions = [{"id": e["id"], "x": _r(e.get("x")), "y": _r(e.get("y")), "width": _r(e.get("width")), "height": _r(e.get("height"))} for e in live if e.get("type") in SHAPES and is_junction(e)]
+    return {"nodes": nodes, "arrows": arrows, "frames": frames, **({"junctions": junctions} if junctions else {})}
+
+
+def _drawn_path(e: dict[str, Any], live: list[dict[str, Any]]) -> list[list[int]] | None:
+    """The line's absolute points, when it is not the plain straight arrow the page draws between its two nodes."""
+    pts = [[float(e["x"]) + float(p[0]), float(e["y"]) + float(p[1])] for p in e.get("points") or []]
+    if len(pts) < 2:
+        return None
+    ends = [(e.get("startBinding") or {}).get("elementId"), (e.get("endBinding") or {}).get("elementId")]
+    shapes = {s["id"]: s for s in live if s.get("type") in SHAPES}
+    if len(pts) == 2 and all(i in shapes for i in ends):
+        plain = default_path(shapes[ends[0]], shapes[ends[1]])
+        if all(abs(p[0] - q[0]) <= PLAIN_SLACK and abs(p[1] - q[1]) <= PLAIN_SLACK for p, q in zip(pts, plain)):
+            return None
+    return [[_r(x), _r(y)] for x, y in pts]
 
 
 def versions(elements: list[dict[str, Any]]) -> dict[str, str]:

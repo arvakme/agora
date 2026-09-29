@@ -1,5 +1,7 @@
 // Typed edit operations: the only thing the model may return. Pure schema + validation
-// (no DOM), shared by the browser executor and the dev-server planner.
+// (no DOM), shared by the browser executor and the dev-server planner; its rules are generated/plan.rules.json.
+
+import RULES from "../../generated/plan.rules.json" with { type: "json" };
 
 export type ShapeKind = "rectangle" | "ellipse" | "diamond";
 export type Op =
@@ -7,7 +9,20 @@ export type Op =
   | { op: "move"; id: string; x: number; y: number }
   | { op: "resize"; id: string; width: number; height: number }
   | { op: "add_shape"; ref: string; shape: ShapeKind; text: string; x: number; y: number; width?: number; height?: number; frameId?: string }
-  | { op: "add_arrow"; ref?: string; from: string; to: string; text?: string; bothEnds?: boolean }
+  | {
+      op: "add_arrow";
+      ref?: string;
+      from: string;
+      to: string;
+      text?: string;
+      bothEnds?: boolean;
+      /** The line's absolute points, first on the start node's edge, last on the end node's (a bent line; default: straight). */
+      path?: Point[];
+      /** No arrowhead at either end: a line that only joins a junction dot. */
+      plain?: boolean;
+    }
+  | { op: "add_junction"; ref: string; x: number; y: number }
+  | { op: "route"; id: string; path: Point[] | null }
   | { op: "delete"; id: string }
   | {
       op: "insert_library_item";
@@ -25,10 +40,13 @@ export type Op =
       frameId?: string;
     };
 export type Side = "right" | "left" | "above" | "below";
+export type Point = [number, number];
 export type Plan = { ops: Op[]; note?: string };
 
 const str = { type: "string", minLength: 1, maxLength: 200 };
 const num = { type: "number" };
+const point = { type: "array", minItems: 2, maxItems: 2, items: num };
+const path = { type: "array", minItems: RULES.path.min, maxItems: RULES.path.max, items: point };
 const obj = (op: string, props: Record<string, unknown>, required: string[]) => ({
   type: "object",
   additionalProperties: false,
@@ -56,7 +74,9 @@ export const PLAN_SCHEMA = {
             { ref: str, shape: { enum: ["rectangle", "ellipse", "diamond"] }, text: str, x: num, y: num, width: num, height: num, frameId: str },
             ["ref", "shape", "text", "x", "y"],
           ),
-          obj("add_arrow", { ref: str, from: str, to: str, text: str, bothEnds: { type: "boolean" } }, ["from", "to"]),
+          obj("add_arrow", { ref: str, from: str, to: str, text: str, bothEnds: { type: "boolean" }, path, plain: { type: "boolean" } }, ["from", "to"]),
+          obj("add_junction", { ref: str, x: num, y: num }, ["ref", "x", "y"]),
+          obj("route", { id: str, path: { anyOf: [path, { type: "null" }] } }, ["id", "path"]),
           obj("delete", { id: str }, ["id"]),
           obj(
             "insert_library_item",
@@ -77,17 +97,16 @@ export const PLAN_SCHEMA = {
   },
 } as const;
 
-const KEYS: Record<Op["op"], { req: string[]; opt: string[] }> = {
-  update_text: { req: ["id", "text"], opt: [] },
-  move: { req: ["id", "x", "y"], opt: [] },
-  resize: { req: ["id", "width", "height"], opt: [] },
-  add_shape: { req: ["ref", "shape", "text", "x", "y"], opt: ["width", "height", "frameId"] },
-  add_arrow: { req: ["from", "to"], opt: ["ref", "text", "bothEnds"] },
-  delete: { req: ["id"], opt: [] },
-  insert_library_item: { req: ["ref", "item"], opt: ["near", "at", "label", "width", "frameId"] },
-};
-const NUMERIC = new Set(["x", "y", "width", "height"]);
-const REF = /^[a-z][a-z0-9_-]{0,31}$/;
+// The referential rules are data, in one file the server's fallback executor reads too (server/canvas/plan_rules.py):
+// which fields each op takes, which kinds of element each field may name, the limits.
+type OpRules = { req: string[]; opt: string[]; targets?: Record<string, Kind[]>; creates?: Kind };
+const OPS = RULES.ops as Record<string, OpRules>;
+const NUMERIC = new Set<string>(RULES.numeric);
+const BOOLEANS = new Set<string>(RULES.booleans);
+const REF = new RegExp(RULES.ref);
+/** How a pattern prints in a message (the same on the server side). */
+const REF_TEXT = `/${RULES.ref}/`;
+const targets = (op: string, field: string): Kind[] => OPS[op].targets?.[field] ?? [];
 
 /** What validation needs to know about the current scene. */
 export type Kind = "shape" | "arrow" | "frame" | "library";
@@ -108,7 +127,7 @@ export function validatePlan(raw: unknown, scene: SceneIndex): { plan?: Plan; er
     const at = `ops[${i}]`;
     if (!o || typeof o !== "object") return void errors.push(`${at} 不是对象`);
     const op = o as Record<string, unknown>;
-    const spec = KEYS[op.op as Op["op"]];
+    const spec = OPS[op.op as string];
     if (!spec) return void errors.push(`${at}.op 未知：${String(op.op)}`);
     for (const k of Object.keys(op)) if (k !== "op" && !spec.req.includes(k) && !spec.opt.includes(k)) errors.push(`${at} 多余字段 ${k}`);
     for (const k of spec.req) if (op[k] === undefined) errors.push(`${at} 缺少 ${k}`);
@@ -116,11 +135,15 @@ export function validatePlan(raw: unknown, scene: SceneIndex): { plan?: Plan; er
       if (k === "op" || v === undefined || k === "near" || k === "at") continue;
       if (NUMERIC.has(k)) {
         if (typeof v !== "number" || !Number.isFinite(v)) errors.push(`${at}.${k} 不是有限数字`);
-        else if ((k === "width" || k === "height") && (v < 8 || v > 2000)) errors.push(`${at}.${k} 超出 8–2000`);
-        else if (Math.abs(v) > 20000) errors.push(`${at}.${k} 超出画布范围`);
-      } else if (k === "bothEnds") {
-        if (typeof v !== "boolean") errors.push(`${at}.bothEnds 不是布尔值`);
-      } else if (typeof v !== "string" || !v.trim() || v.length > 200) errors.push(`${at}.${k} 不是非空字符串`);
+        else if ((k === "width" || k === "height") && (v < RULES.size.min || v > RULES.size.max)) errors.push(`${at}.${k} 超出 ${RULES.size.min}–${RULES.size.max}`);
+        else if (Math.abs(v) > RULES.coordinateMax) errors.push(`${at}.${k} 超出画布范围`);
+      } else if (BOOLEANS.has(k)) {
+        if (typeof v !== "boolean") errors.push(`${at}.${k} 不是布尔值`);
+      } else if (k === "path") {
+        if (v === null && op.op === "route") continue; // back to the plain straight arrow
+        if (!Array.isArray(v) || v.length < RULES.path.min || v.length > RULES.path.max || !v.every((p) => Array.isArray(p) && p.length === 2)) errors.push(`${at}.path 需要 ${RULES.path.min}–${RULES.path.max} 个 [x, y] 点`);
+        else if (!v.every((p) => p.every((n: unknown) => typeof n === "number" && Number.isFinite(n) && Math.abs(n) <= RULES.coordinateMax))) errors.push(`${at}.path 的坐标要是有限数字，绝对值不超过 ${RULES.coordinateMax}`);
+      } else if (typeof v !== "string" || !v.trim() || v.length > RULES.stringMax) errors.push(`${at}.${k} 不是非空字符串`);
     }
     const need = (id: unknown, allowed: string[], field = "id") => {
       const k = typeof id === "string" ? kind(id) : undefined;
@@ -129,28 +152,34 @@ export function validatePlan(raw: unknown, scene: SceneIndex): { plan?: Plan; er
     };
     switch (op.op) {
       case "update_text":
-        need(op.id, ["shape", "arrow", "frame", "library"]);
+        need(op.id, targets("update_text", "id"));
         break;
       case "move":
-        need(op.id, ["shape", "frame", "library"]);
+        need(op.id, targets("move", "id"));
         break;
       case "resize":
-        need(op.id, ["shape", "frame"]);
+        need(op.id, targets("resize", "id"));
         break;
       case "delete":
-        need(op.id, ["shape", "arrow", "frame", "library"]);
+        need(op.id, targets("delete", "id"));
         if (typeof op.id === "string") deleted.add(op.id);
         break;
       case "add_shape":
-        if (!["rectangle", "ellipse", "diamond"].includes(op.shape as string)) errors.push(`${at}.shape 非法`);
-        if (op.frameId !== undefined) need(op.frameId, ["frame"], "frameId");
-        addRef(op.ref, "shape");
+        if (!RULES.shapes.includes(op.shape as string)) errors.push(`${at}.shape 非法`);
+        if (op.frameId !== undefined) need(op.frameId, targets("add_shape", "frameId"), "frameId");
+        addRef(op.ref, OPS.add_shape.creates!);
         break;
       case "add_arrow":
-        need(op.from, ["shape", "library"], "from");
-        need(op.to, ["shape", "library"], "to");
+        need(op.from, targets("add_arrow", "from"), "from");
+        need(op.to, targets("add_arrow", "to"), "to");
         if (op.from === op.to) errors.push(`${at} 起止相同`);
-        if (op.ref !== undefined) addRef(op.ref, "arrow");
+        if (op.ref !== undefined) addRef(op.ref, OPS.add_arrow.creates!);
+        break;
+      case "add_junction":
+        addRef(op.ref, OPS.add_junction.creates!);
+        break;
+      case "route":
+        need(op.id, targets("route", "id"));
         break;
       case "insert_library_item": {
         if (typeof op.item !== "string" || !scene.libraryItem?.(op.item)) errors.push(`${at}.item 不是素材库里的组件 id：${String(op.item)}（先用 search_library 查）`);
@@ -158,18 +187,18 @@ export function validatePlan(raw: unknown, scene: SceneIndex): { plan?: Plan; er
         const pos = op.at as { x?: unknown; y?: unknown } | undefined;
         if (!near === !pos) errors.push(`${at} 需要 near 或 at 其中之一`);
         if (near) {
-          need(near.id, ["shape", "frame", "library"], "near.id");
-          if (!["right", "left", "above", "below"].includes(near.side as string)) errors.push(`${at}.near.side 非法`);
-          if (near.gap !== undefined && (typeof near.gap !== "number" || near.gap < 0 || near.gap > 800)) errors.push(`${at}.near.gap 超出 0–800`);
+          need(near.id, targets("insert_library_item", "near.id"), "near.id");
+          if (!RULES.sides.includes(near.side as string)) errors.push(`${at}.near.side 非法`);
+          if (near.gap !== undefined && (typeof near.gap !== "number" || near.gap < 0 || near.gap > RULES.gapMax)) errors.push(`${at}.near.gap 超出 0–${RULES.gapMax}`);
         }
         if (pos && (typeof pos.x !== "number" || typeof pos.y !== "number" || !Number.isFinite(pos.x) || !Number.isFinite(pos.y))) errors.push(`${at}.at 需要有限的 x/y`);
-        if (op.frameId !== undefined) need(op.frameId, ["frame"], "frameId");
-        addRef(op.ref, "library");
+        if (op.frameId !== undefined) need(op.frameId, targets("insert_library_item", "frameId"), "frameId");
+        addRef(op.ref, OPS.insert_library_item.creates!);
         break;
       }
     }
     function addRef(ref: unknown, k: Kind) {
-      if (typeof ref !== "string" || !REF.test(ref)) return void errors.push(`${at}.ref 需匹配 ${REF}`);
+      if (typeof ref !== "string" || !REF.test(ref)) return void errors.push(`${at}.ref 需匹配 ${REF_TEXT}`);
       if (kind(ref) || created.has(ref)) return void errors.push(`${at}.ref ${ref} 与已有元素重名`);
       created.set(ref, k);
     }

@@ -24,3 +24,30 @@ an asset whose search result has `hasText: true` (it already shows its name). To
 what the request is about. Laying out a new sub-diagram: see nested.md (layers, upstream on top).
 
 If the request cannot be done on this canvas, apply nothing and say why.
+
+## Readable diagrams
+
+Lines that cross, run through a box or pile onto one spot make a diagram unreadable, so measure it and fix
+what the measure says. Upstream on top, downstream below (the caller above what it calls).
+
+1. **Draw new shapes with `x: 0, y: 0` and end the batch with `{"op": "layout"}`.** It places only the
+   shapes and lines *this batch* adds: layers top to bottom, order chosen to cross as little as possible,
+   lines straight when clean and elbowed around boxes otherwise, several lines on one side of a box
+   spread apart, an unavoidable crossing drawn as a small hop. Nodes already on the canvas (yours from an
+   earlier batch, or the person's) stay exactly where they are; the new ones are placed around them.
+   It must be the last op. `{"op": "layout", "bus": true}` draws a fan of 4+ lines out of (or into) one
+   box as one trunk to a small dot and branches from it: use it for a hub such as a gateway or a database.
+2. **The answer of `apply` carries `lint`** (also `agora canvas lint`): one sentence
+   (`8 个节点、9 条线：没有交叉，…；线总长 …`) and lists naming the pairs, boxes and lines to change.
+   Aim for: 0 crossings, 0 lines through unrelated boxes, 0 overlaps, no `stackedAnchors`, no `textOverflow`
+   (new shapes without `width`/`height` are sized to their label by `layout`; for old ones `resize`).
+   A hop ("另有 N 处跳线") is fine: it shows two lines that are not connected.
+3. **Crossings will not go down?** The layer is too wide or too tangled: split it into a child canvas
+   ([nested.md](nested.md)) or merge boxes that always travel together. Adding more lines to a clean diagram is
+   how it becomes a hairball; ≥ 10 boxes on one canvas is already a reason to split.
+4. **Never re-arrange what is already there.** Moving existing nodes is a separate, explicit act:
+   `agora canvas layout --nodes a,b,c` (or `--all`) *only says* what would move and how the diagram
+   measures before and after; add `--apply` after the person agreed. Never for a diagram the person drew.
+
+`read` shows a line's `path` (its points) when it is not the plain straight arrow, and `junctions` (the small
+dots where lines meet: they are not nodes and `lint` does not count them).
