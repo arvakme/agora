@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { handOff, undoAgent } from "../ops/agent";
 import type { AnchorState } from "../canvas/anchors";
-import { IconCheck, IconClose, IconHint, IconPencil, IconRetry, IconSend, IconTrash, IconUndo } from "../app/icons";
+import { IconCheck, IconClose, IconHint, IconPencil, IconRetry, IconSend, IconTarget, IconTrash, IconUndo } from "../app/icons";
 import type { Message, Thread, ThreadStore } from "./threads";
 import { canDelete, canEdit, identity, isGuestId } from "./threads";
 import { offerUndo } from "./undo";
@@ -20,10 +20,12 @@ import { collapseSuperseded, PIN_LABEL, pinState } from "./handoffState";
 import { handoffLine, routeMessage, type MentionTarget } from "./mention";
 import { MentionField } from "./MentionField";
 import "./handoff.css";
-import { AnchorTag, type AnchorName } from "./AnchorTag";
+import { useAuthorColors, type AuthorSlot } from "./authorColor";
+import { anchorNote } from "./anchorNote";
+import { MomentChip } from "./MomentChip";
 import type { CardPos } from "./CommentLayer";
 
-export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
+export function ThreadCard({ t, st, mode, api, store, pos, onHover, onRepin }: {
   t: Thread;
   st: AnchorState;
   mode: "preview" | "full";
@@ -31,8 +33,11 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
   store: ThreadStore;
   pos: CardPos;
   onHover?: (inside: boolean) => void;
+  /** 「重新钉到…」: the next element picked becomes this thread's anchor. */
+  onRepin?: (threadId: string) => void;
 }) {
   const agentName = useAgentName();
+  const colors = useAuthorColors(store);
   const full = mode === "full";
   const [first, ...rest] = t.messages;
   const running = t.agent === "running";
@@ -60,7 +65,8 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
         <motion.header layout="position" className="tcard-head" transition={SPRING}>
           <span className="tcard-anchor">
             <span className="tcard-n">#{t.n}</span>
-            <AnchorTag names={st.names} />
+            {st.status === "whole" && <span className="tcard-whole">整张图</span>}
+            <MomentChip t={t} canvasId={store.canvasId} />
           </span>
           <span className="tcard-actions">
             {!GUEST && (
@@ -77,11 +83,15 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
           </span>
         </motion.header>
       )}
-      {st.status !== "ok" && full && (
-        <div className="tcard-warn"><IconHint size={14} /><b>锚点丢失</b>{st.status === "lost" ? "被评论的元素已删除；撤销删除或重新钉一条" : "有的元素已删除，其余仍在"}</div>
+      {full && anchorNote(st) && (
+        <div className="tcard-warn">
+          <IconHint size={14} />
+          <span>{anchorNote(st)}</span>
+          {!GUEST && onRepin && <button className="btn sm quiet" onClick={() => onRepin(t.id)}><IconTarget size={14} />重新钉到…</button>}
+        </div>
       )}
       <div className="tcard-scroll">
-        <Row m={first} first tools={full ? { store, threadId: t.id } : undefined} />
+        <Row m={first} first tools={full ? { store, threadId: t.id } : undefined} slot={colors.ofMessage(first)} />
         {!full && (rest.length > 0 || running) && (
           <motion.div layout="position" className="tcard-more">
             {running ? <span className="waiting"><i className="dot" data-tone="ok" />Agent 正在处理…</span> : `${rest.length} 条回复`}
@@ -95,7 +105,7 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
               </Reveal>
             ) : (
               <Reveal key={m.id}>
-                <Row m={m} tools={{ store, threadId: t.id }} onUndo={GUEST ? undefined : () => undoAgent(api, store, t.id, m.id)} />
+                <Row m={m} tools={{ store, threadId: t.id }} slot={colors.ofMessage(m)} onUndo={GUEST ? undefined : () => undoAgent(api, store, t.id, m.id)} />
               </Reveal>
             ))}
           {full && running && (
@@ -150,7 +160,7 @@ function Reveal({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Row({ m, first, onUndo, tools }: { m: Message; first?: boolean; onUndo?: () => void; tools?: { store: ThreadStore; threadId: string } }) {
+function Row({ m, first, onUndo, tools, slot }: { m: Message; first?: boolean; onUndo?: () => void; tools?: { store: ThreadStore; threadId: string }; /** the author's colour (./authorColor.ts) */ slot?: AuthorSlot }) {
   const [editing, setEditing] = useState(false);
   // Eval replies are the session turn itself; native-session replies carry the agent's own
   // text and point at their last canvas change (for undo) and the session.
@@ -164,7 +174,7 @@ function Row({ m, first, onUndo, tools }: { m: Message; first?: boolean; onUndo?
   const nameOf = useAgentName();
   return (
     <div className="trow" data-first={first} data-tone={reply?.tone ?? m.tone}>
-      {m.author === "agent" && agentKind ? <AgentAvatar kind={agentKind} size={26} /> : <Avatar who={m.author} name={other ? m.by!.name : undefined} />}
+      {m.author === "agent" && agentKind ? <AgentAvatar kind={agentKind} size={26} /> : <Avatar who={m.author} name={other ? m.by!.name : undefined} author={m.author === "you" ? slot : undefined} />}
       <div className="trow-main">
         <div className="trow-meta">
           <b>{m.author === "agent" ? nameOf(agentKind) : m.author === "system" ? "系统" : other ? m.by!.name : "你"}</b>
@@ -237,10 +247,10 @@ function SessionLink({ sessionId, turnId }: { sessionId: string; turnId?: string
   return <span className="tsession" data-gone>会话已删除</span>;
 }
 
-/** People and agents alike are an initial in a neutral circle; the system note is a hint icon. */
-export function Avatar({ who, name }: { who: Message["author"]; name?: string }) {
+/** A person is an initial in a circle of their colour; the system note is a hint icon (an agent has its own mark). */
+export function Avatar({ who, name, author }: { who: Message["author"]; name?: string; /** A person's colour (./authorColor.ts); an agent and the system have none. */ author?: AuthorSlot }) {
   return (
-    <span className="avatar" data-who={who} data-other={!!name}>
+    <span className="avatar" data-who={who} data-other={!!name} data-author={author}>
       {who === "agent" ? "A" : who === "system" ? <IconHint size={14} /> : name ? [...name.trim()][0] ?? "?" : "你"}
     </span>
   );
@@ -291,9 +301,8 @@ function Reply({ onSend, resolved, bound, canvasId, handoff }: { onSend: (text: 
   );
 }
 
-export function Composer({ names, pos, text, onText, onCancel, onSubmit, canvasId }: {
+export function Composer({ pos, text, onText, onCancel, onSubmit, canvasId }: {
   canvasId?: string;
-  names: AnchorName[];
   pos: CardPos;
   text: string;
   onText: (text: string) => void;
@@ -320,7 +329,7 @@ export function Composer({ names, pos, text, onText, onCancel, onSubmit, canvasI
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="composer-head">
-        <span className="composer-anchor"><span className="tcard-n new">新评论</span><AnchorTag names={names} /></span>
+        <span className="composer-anchor"><span className="tcard-n new">新评论</span></span>
         <button type="button" className="icon-btn sm muted" onClick={onCancel} aria-label="取消评论" title="取消（Esc）"><IconClose size={16} /></button>
       </div>
       <div className="treply bare">

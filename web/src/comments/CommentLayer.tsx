@@ -2,6 +2,7 @@
 // comment, a line joins its pin to the worker, and a check pops on the pin when it answers
 // (../workstation/CommentWork.tsx).
 import { PIN_LABEL, pinState } from "./handoffState";
+import { threadAuthorName, useAuthorColors } from "./authorColor";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -20,6 +21,7 @@ import { CommentWork, useMockThreads } from "../workstation/CommentWork";
 import { handOff, resumeRunning } from "../ops/agent";
 import { routeMessage } from "./mention";
 import { GUEST } from "../guest/mode";
+import { WholeCanvas } from "./WholeCanvas";
 
 /** An unsent comment: where it is pinned and what has been typed so far. */
 export type Draft = { anchor: Anchor; text: string };
@@ -40,10 +42,13 @@ type Props = {
   /** 「重新钉到…」: the next element picked becomes this thread's anchor. */
   repin?: string | null;
   onRepinned?: () => void;
+  /** A card's 「重新钉到…」 (its anchor element is gone). */
+  onRepin?: (threadId: string) => void;
 };
 
-export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreated, onOpenResolved, repin, onRepinned }: Props) {
+export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreated, onOpenResolved, repin, onRepinned, onRepin }: Props) {
   const { threads: all, activeId } = useThreads(store);
+  const colors = useAuthorColors(store);
   const { showResolved } = usePrefs();
   // a page loaded mid-run: threads whose hand-off the server has not finished show 「处理中」 again (dispatch records)
   useEffect(() => void resumeRunning(store), [store]);
@@ -118,13 +123,14 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
             data-status={st.status}
             data-running={t.agent === "running"}
             data-state={pinState(t)}
+            data-author={colors.ofThread(t)}
             data-mock={fake || undefined}
             style={{ transform: `translate3d(${p.x}px, ${p.y}px, 0)` }}
             onPointerDown={(e) => e.stopPropagation()}
             onPointerEnter={() => !fake && hover(t.id)}
             onPointerLeave={() => hover(null)}
             onClick={() => (fake ? undefined : t.resolved ? onOpenResolved?.(t.id) : store.open(t.id))}
-            aria-label={`线程 ${t.n}（${PIN_LABEL[pinState(t)]}）`}
+            aria-label={`线程 ${t.n}（${PIN_LABEL[pinState(t)]}）· ${threadAuthorName(t)}`}
           >
             <span className="pin-body">
               {t.resolved ? (
@@ -141,7 +147,7 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
           </button>
         );
       })}
-      <CommentWork canvasId={view.id} pins={resolved.map(({ t, p }) => ({ n: t.n, ids: t.anchor.ids, x: (p.x + PIN / 2) / a.zoom.value - a.scrollX, y: (p.y - PIN / 2) / a.zoom.value - a.scrollY }))} />
+      <CommentWork canvasId={view.id} pins={resolved.map(({ t, p }) => ({ n: t.n, ids: t.anchor?.ids ?? [], x: (p.x + PIN / 2) / a.zoom.value - a.scrollX, y: (p.y - PIN / 2) / a.zoom.value - a.scrollY }))} />
       <AnimatePresence>
         {shown && !draft && (
           <ThreadCard
@@ -152,6 +158,7 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
             api={api}
             store={store}
             pos={cardPos(shown.p)}
+            onRepin={onRepin}
             onHover={(inside) => shown.t.id !== activeId && hover(inside ? shown.t.id : null)}
           />
         )}
@@ -163,7 +170,6 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
           <Composer
             key="composer"
             canvasId={store.canvasId}
-            names={resolveAnchor(draft.anchor, view.map).names}
             pos={cardPos(landing(draft.anchor))}
             text={draft.text}
             onText={(text) => setDraft({ ...draft, text })}
@@ -178,6 +184,7 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
           />
         )}
       </AnimatePresence>
+      <WholeCanvas api={api} store={store} width={W} height={H} />
       <UndoToast canvasId={store.canvasId} />
     </div>
   );

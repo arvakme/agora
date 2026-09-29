@@ -1,6 +1,7 @@
 // Scene helpers on top of Excalidraw's public API. The Excalidraw element array is the
 // single source of truth; everything here reads it or rebuilds elements with stable ids.
 import { convertToExcalidrawElements, FONT_FAMILY, ROUNDNESS } from "@excalidraw/excalidraw";
+import { edgePoint } from "./lines";
 import type {
   ExcalidrawArrowElement,
   ExcalidrawElement,
@@ -88,39 +89,32 @@ export function bbox(el: El) {
   return { x: el.x, y: el.y, width: el.width, height: el.height };
 }
 
-/** Point where the ray from the box centre towards (tx, ty) leaves the box, pushed out by gap. */
-function edgePoint(el: El, tx: number, ty: number, gap: number): [number, number] {
-  const cx = el.x + el.width / 2, cy = el.y + el.height / 2;
-  const dx = tx - cx, dy = ty - cy;
-  if (!dx && !dy) return [cx, cy];
-  const hw = el.width / 2 + gap, hh = el.height / 2 + gap;
-  let t: number;
-  if (el.type === "ellipse") t = 1 / Math.hypot(dx / hw, dy / hh);
-  else if (el.type === "diamond") t = 1 / (Math.abs(dx) / hw + Math.abs(dy) / hh);
-  else t = Math.min(dx ? hw / Math.abs(dx) : Infinity, dy ? hh / Math.abs(dy) : Infinity);
-  return [cx + dx * t, cy + dy * t];
-}
-
 type ArrowSpec = {
   id: string;
   from: El;
   to: El;
   label?: string;
   bothEnds?: boolean;
+  /** No arrowhead at either end (a line that only joins a junction dot). */
+  plain?: boolean;
+  /** The line's absolute points, first on the start node's edge, last on the end node's: a bent line, not the straight default. */
+  path?: readonly (readonly [number, number])[];
   base?: Partial<El>;
 };
 
 /**
- * Builds a straight, bound arrow (plus its label) between two shapes via
- * convertToExcalidrawElements, which computes binding focus/gap and label layout.
- * Endpoints are passed as throwaway skeleton copies; callers patch the real
- * endpoints' boundElements.
+ * Builds a bound arrow (plus its label) between two shapes via convertToExcalidrawElements,
+ * which computes binding focus/gap and label layout. Straight between the two edges unless a
+ * `path` says how it runs. Endpoints are passed as throwaway skeleton copies; callers patch the
+ * real endpoints' boundElements.
  */
-export function buildArrow({ id, from, to, label, bothEnds, base }: ArrowSpec): El[] {
+export function buildArrow({ id, from, to, label, bothEnds, plain, path, base }: ArrowSpec): El[] {
   const fc = [from.x + from.width / 2, from.y + from.height / 2];
   const tc = [to.x + to.width / 2, to.y + to.height / 2];
-  const [sx, sy] = edgePoint(from, tc[0], tc[1], 6);
-  const [ex, ey] = edgePoint(to, fc[0], fc[1], 6);
+  const line: [number, number][] = path && path.length >= 2 ? path.map((p) => [p[0], p[1]]) : [edgePoint(from, tc[0], tc[1], 6), edgePoint(to, fc[0], fc[1], 6)];
+  const [sx, sy] = line[0];
+  const points = line.map(([x, y]) => [x - sx, y - sy]);
+  const xs = points.map((p) => p[0]), ys = points.map((p) => p[1]);
   const endpoint = (e: El) => ({ type: e.type as ShapeKind, id: e.id, x: e.x, y: e.y, width: e.width, height: e.height });
   const out = convertToExcalidrawElements(
     [
@@ -134,11 +128,11 @@ export function buildArrow({ id, from, to, label, bothEnds, base }: ArrowSpec): 
         id,
         x: sx,
         y: sy,
-        width: ex - sx,
-        height: ey - sy,
-        points: [[0, 0], [ex - sx, ey - sy]] as never,
-        startArrowhead: bothEnds ? "arrow" : null,
-        endArrowhead: "arrow",
+        width: Math.max(...xs) - Math.min(...xs),
+        height: Math.max(...ys) - Math.min(...ys),
+        points: points as never,
+        startArrowhead: bothEnds && !plain ? "arrow" : null,
+        endArrowhead: plain ? null : "arrow",
         start: { id: from.id },
         end: { id: to.id },
         ...(label ? { label: { text: label, ...FONT, fontSize: 14 } } : {}),
@@ -147,6 +141,15 @@ export function buildArrow({ id, from, to, label, bothEnds, base }: ArrowSpec): 
     { regenerateIds: false },
   );
   return out.filter((e) => e.id !== from.id && e.id !== to.id);
+}
+
+/** The small solid dot where several lines meet: an ellipse marked in customData, so it is not a node (lines end on it). */
+export const JUNCTION_SIZE = 10;
+export function buildJunction({ id, x, y }: { id: string; x: number; y: number }): El[] {
+  return convertToExcalidrawElements(
+    [{ ...STYLE, roundness: null, backgroundColor: STYLE.strokeColor, type: "ellipse", id, x, y, width: JUNCTION_SIZE, height: JUNCTION_SIZE, customData: { junction: true } }],
+    { regenerateIds: false },
+  );
 }
 
 type ShapeSpec = {

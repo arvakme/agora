@@ -11,6 +11,9 @@ export type Anchor = {
   last: { x: number; y: number };
 };
 
+/** Where in the build replay (web/docs/share-build-replay.md) a comment was made: the step being watched. */
+export type Moment = { step: number };
+
 export type Message = {
   id: string;
   author: "you" | "agent" | "system";
@@ -40,7 +43,10 @@ export type Person = { id: string; name: string };
 export type Thread = {
   id: string;
   n: number;
-  anchor: Anchor;
+  /** What it is pinned to; null = a comment on the whole canvas (no pin: the list and the corner button show it). */
+  anchor: Anchor | null;
+  /** The moment of the build replay it was made at (optional; a click on it goes back there). */
+  moment?: Moment;
   resolved: boolean;
   agent: "idle" | "running";
   messages: Message[];
@@ -132,11 +138,12 @@ export function createThreadStore(canvasId: string, initial?: ThreadSnapshot, re
       seq = 0;
       commit([], null);
     },
-    create(anchor: Anchor, text: string): Thread {
+    create(anchor: Anchor | null, text: string, moment?: Moment): Thread {
       const t: Thread = {
         id: uid(),
         n: ++seq,
         anchor,
+        ...(moment && { moment }),
         resolved: false,
         agent: "idle",
         createdAt: Date.now(),
@@ -195,7 +202,7 @@ export function createThreadStore(canvasId: string, initial?: ThreadSnapshot, re
       if (!t || t.deleted || !isOwner()) return null;
       const now = Date.now();
       const wasOpen = state.activeId === id;
-      commit(all.map((x) => (x.id === id ? { id: t.id, n: t.n, createdAt: t.createdAt, ...(t.createdBy && { createdBy: t.createdBy }), anchor: t.anchor, agent: "idle", resolved: true, deleted: true, updatedAt: now, messages: [] } : x)));
+      commit(all.map((x) => (x.id === id ? { id: t.id, n: t.n, createdAt: t.createdAt, ...(t.createdBy && { createdBy: t.createdBy }), anchor: t.anchor, ...(t.moment && { moment: t.moment }), agent: "idle", resolved: true, deleted: true, updatedAt: now, messages: [] } : x)));
       return {
         canvasId,
         label: `已删除线程 #${t.n}`,

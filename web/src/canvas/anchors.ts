@@ -7,11 +7,27 @@ const lastSeen = new WeakMap<Anchor, { x: number; y: number }>();
 
 export type AnchorState = {
   point: { x: number; y: number };
-  status: "ok" | "partial" | "lost";
+  /** ``whole``: a comment on the whole canvas, pinned to nothing. */
+  status: "ok" | "partial" | "lost" | "whole";
   names: { id: string; name: string; alive: boolean }[];
 };
 
-export function resolveAnchor(anchor: Anchor, map: Map<string, El>): AnchorState {
+/** The names a person knows elements by, with whether each is still on the canvas (a deleted one keeps its old label). */
+export function elementNames(ids: readonly string[], map: Map<string, El>): AnchorState["names"] {
+  return ids.map((id) => {
+    const e = map.get(id);
+    // A deleted element keeps its (deleted) label in the scene; show that rather than the id.
+    const text = e?.boundElements?.find((b) => b.type === "text");
+    const t = text && map.get(text.id);
+    // A part of an inserted component (its icon's inner rectangle, say) is named by the component.
+    const owner = e ? componentOf(e, map) : undefined;
+    const name = e && !live(e) && t?.type === "text" ? t.text : owner ? nameOf(owner, map) : e ? nameOf(e, map) : id;
+    return { id, name, alive: live(e) };
+  });
+}
+
+export function resolveAnchor(anchor: Anchor | null, map: Map<string, El>): AnchorState {
+  if (!anchor) return { point: { x: 0, y: 0 }, names: [], status: "whole" };
   const primary = anchor.ids.map((id) => map.get(id)).find(live);
   let point = lastSeen.get(anchor) ?? anchor.last;
   if (primary) {
@@ -24,16 +40,7 @@ export function resolveAnchor(anchor: Anchor, map: Map<string, El>): AnchorState
       : { x: b.x + b.width, y: b.y };
     lastSeen.set(anchor, point);
   }
-  const names = anchor.ids.map((id) => {
-    const e = map.get(id);
-    // A deleted element keeps its (deleted) label in the scene; show that rather than the id.
-    const text = e?.boundElements?.find((b) => b.type === "text");
-    const t = text && map.get(text.id);
-    // A part of an inserted component (its icon's inner rectangle, say) is named by the component.
-    const owner = e ? componentOf(e, map) : undefined;
-    const name = e && !live(e) && t?.type === "text" ? t.text : owner ? nameOf(owner, map) : e ? nameOf(e, map) : id;
-    return { id, name, alive: live(e) };
-  });
+  const names = elementNames(anchor.ids, map);
   const alive = names.filter((n) => n.alive).length;
   return { point, names, status: alive === names.length ? "ok" : alive === 0 ? "lost" : "partial" };
 }

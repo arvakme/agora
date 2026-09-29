@@ -9,7 +9,7 @@ import { groupThreads, pinnable } from "./visibility.ts";
 const anchor = (id: string) => ({ ids: [id], rel: { x: 0, y: 0 }, last: { x: 0, y: 0 } });
 const th = (n: number, x: Partial<Thread>): Thread => ({ id: `t${n}`, n, anchor: anchor(`e${n}`), resolved: false, agent: "idle", createdAt: n, messages: [{ id: `m${n}`, author: "you", text: `#${n}`, at: n }], ...x });
 // e3 and e4 are gone from the scene (lost anchors).
-const resolve = (t: Thread): AnchorState => ({ point: { x: 0, y: 0 }, names: [], status: ["e3", "e4"].includes(t.anchor.ids[0]) ? "lost" : "ok" });
+const resolve = (t: Thread): AnchorState => ({ point: { x: 0, y: 0 }, names: [], status: !t.anchor ? "whole" : ["e3", "e4"].includes(t.anchor.ids[0]) ? "lost" : "ok" });
 const threads = [th(1, {}), th(2, { resolved: true }), th(3, { resolved: true }), th(4, {}), th(5, {})];
 
 describe("pinnable", () => {
@@ -54,6 +54,25 @@ describe("resolving and replying", () => {
     const st = createThreadStore("c1");
     const t = st.create(anchor("gone"), "x");
     st.reanchor(t.id, anchor("b"));
-    expect(st.thread(t.id)!.anchor.ids).toEqual(["b"]);
+    expect(st.thread(t.id)!.anchor?.ids).toEqual(["b"]);
+  });
+});
+
+describe("a comment on the whole canvas (no anchor)", () => {
+  const whole = [th(6, { anchor: null }), th(7, { anchor: null, resolved: true })];
+  it("is pinned to nothing, resolved toggle or not", () => {
+    expect(pinnable([...threads, ...whole], resolve, true).map((t) => t.n)).toEqual([2, 1, 5]);
+  });
+  it("is in the comment list like any other, never among the lost", () => {
+    const g = groupThreads([...threads, ...whole], resolve);
+    expect(g.open.map((t) => t.n)).toEqual([1, 5, 6]);
+    expect(g.resolved.map((t) => t.n)).toEqual([2, 7]);
+    expect(g.lost.map((t) => t.n)).toEqual([4, 3]); // only the two whose element is gone
+  });
+  it("is made without an anchor, and may note the moment of the build replay it was made at", () => {
+    const st = createThreadStore("c1");
+    const t = st.create(null, "整体上看不错", { step: 12 });
+    expect(st.thread(t.id)).toMatchObject({ anchor: null, moment: { step: 12 }, resolved: false });
+    expect(st.create(null, "没有时刻").id && st.get().threads.at(-1)!.moment).toBeUndefined();
   });
 });

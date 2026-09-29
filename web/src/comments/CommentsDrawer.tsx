@@ -1,29 +1,36 @@
-// The comment list for one canvas: a flush column beside the drawing (D13). 进行中 / 已解决 tabs,
+// The comment list for one canvas: a panel floating over the drawing at its top right (it takes no room from the canvas),
+// dragged by its head, folded to a small button; where it is and whether it is folded stay in this browser (./drawerPlace.ts). 进行中 / 已解决 tabs,
 // the 「在画布上显示已解决」 switch (the same one as in ⋯), and a 「锚点已失效」 group for threads whose
 // element is gone (never drawn on the canvas): 重新钉到… another element, or 删除. Picking a thread
 // pans to its pin (if it is off screen) and opens it; a resolved one opens here, with 重新打开.
 import { pinState } from "./handoffState";
+import { useAuthorColors } from "./authorColor";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as RPointerEvent } from "react";
 import { resolveAnchor } from "../canvas/anchors";
 import type { CanvasViewState } from "../canvas/CanvasView";
-import { IconCheck, IconClose, IconRetry, IconTarget, IconTrash } from "../app/icons";
+import { IconCheck, IconClose, IconList, IconRetry, IconTarget, IconTrash } from "../app/icons";
 import { prefs, usePrefs } from "../app/prefs";
 import { isOwner, useThreads, type Thread, type ThreadStore } from "./threads";
 import { groupThreads } from "./visibility";
 import { offerUndo } from "./undo";
 import { SPRING } from "./motion";
 import { AnchorTag } from "./AnchorTag";
+import { MomentChip } from "./MomentChip";
 import { ago } from "./ThreadCard";
 import { GUEST } from "../guest/mode";
+import { clampPlace, loadPanel, panelBox, savePanel, type Panel } from "./drawerPlace";
+import "./drawerFloat.css";
 
-export function CommentsDrawer({ title, api, store, view, open, onClose, focusId, onRepin }: {
+export function CommentsDrawer({ title, api, store, view, open, onOpen, onClose, focusId, onRepin }: {
   title: string;
   api: ExcalidrawImperativeAPI;
   store: ThreadStore;
   view: CanvasViewState;
   open: boolean;
+  /** The small button was pressed: the list is open again. */
+  onOpen: () => void;
   onClose: () => void;
   /** A thread to show (a resolved pin clicked on the canvas): its tab opens and the row expands. */
   focusId?: { id: string; key: number } | null;
@@ -31,7 +38,45 @@ export function CommentsDrawer({ title, api, store, view, open, onClose, focusId
   onRepin?: (threadId: string) => void;
 }) {
   const { threads, activeId } = useThreads(store);
+  const colors = useAuthorColors(store);
   const { showResolved } = usePrefs();
+  // the canvas pane the panel floats over: its size decides the panel's, and where a dragged panel may go
+  const box = useRef<HTMLElement>(null);
+  const [pane, setPane] = useState({ w: view.appState.width, h: view.appState.height });
+  useLayoutEffect(() => {
+    const host = box.current?.parentElement;
+    if (!host) return;
+    const measure = () => setPane({ w: host.clientWidth, h: host.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, [open]);
+  const [panel, setPanel] = useState<Panel>(() => loadPanel());
+  const keep = (p: Panel) => (setPanel(p), savePanel(p));
+  // Opening the list from the dock shows it whole; closing it (✕ or the dock) leaves nothing behind. Only a folded list
+  // that was never closed stays as its small button, also after a reload.
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    if (open !== wasOpen.current && panel.folded) keep({ ...panel, folded: false });
+    wasOpen.current = open;
+  }, [open]);
+  const place = clampPlace(panel.place, pane);
+  const at = panelBox(place, pane);
+  const drag = useRef<{ x: number; y: number; from: typeof place } | null>(null);
+  const grab = (e: RPointerEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    drag.current = { x: e.clientX, y: e.clientY, from: place };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const move = (e: RPointerEvent) => {
+    const d = drag.current;
+    if (d) setPanel((p) => ({ ...p, place: clampPlace({ right: d.from.right - (e.clientX - d.x), top: d.from.top + (e.clientY - d.y) }, pane) }));
+  };
+  const drop = () => {
+    if (drag.current) savePanel({ ...panel, place });
+    drag.current = null;
+  };
   const [tab, setTab] = useState<"open" | "resolved">("open");
   const [expanded, setExpanded] = useState<string | null>(null);
   const g = groupThreads(threads, (t) => resolveAnchor(t.anchor, view.map));
@@ -48,30 +93,33 @@ export function CommentsDrawer({ title, api, store, view, open, onClose, focusId
   const focus = (id: string) => {
     const t = store.thread(id)!;
     if (t.resolved) return setExpanded(expanded === id ? null : id);
+    if (!t.anchor) return store.open(id); // on the whole canvas: nothing to pan to, the card opens by the corner button
     const st = resolveAnchor(t.anchor, view.map);
     const a = view.appState;
     const sx = (st.point.x + a.scrollX) * a.zoom.value, sy = (st.point.y + a.scrollY) * a.zoom.value;
-    // The column sits beside the canvas now, so the whole canvas is visible: pan only when the pin is off it.
-    if (sx < 40 || sy < 40 || sx > a.width - 40 || sy > a.height - 80) {
+    // The panel floats over the canvas: pan when the pin is off the canvas or under the panel.
+    const under = !panel.folded && sx > at.x - 24 && sx < at.x + at.w && sy > at.y - 24 && sy < at.y + at.h;
+    if (sx < 40 || sy < 40 || sx > a.width - 40 || sy > a.height - 80 || under) {
       api.updateScene({ appState: { scrollX: a.width / 2 / a.zoom.value - st.point.x, scrollY: a.height / 2 / a.zoom.value - st.point.y } });
     }
     store.open(id);
   };
 
-  if (!open) return null;
+  if (!open && !panel.folded) return null;
   const row = (t: Thread, lost = false) => {
     const st = resolveAnchor(t.anchor, view.map);
     const isOpen = expanded === t.id;
     return (
       <motion.div layout="position" key={t.id} className="ditem-wrap" data-ditem={t.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.12 } }} transition={SPRING}>
         <button className="ditem" data-active={t.id === activeId || isOpen} onClick={() => (lost ? setExpanded(isOpen ? null : t.id) : focus(t.id))} aria-expanded={t.resolved || lost ? isOpen : undefined}>
-          <span className="ditem-pin" data-resolved={t.resolved} data-lost={lost || undefined}>
+          <span className="ditem-pin" data-resolved={t.resolved} data-lost={lost || undefined} data-author={colors.ofThread(t)}>
             {lost ? <i className="ditem-warn" data-open={!t.resolved || undefined} /> : t.resolved ? <IconCheck size={12} /> : t.n}
           </span>
           <span className="ditem-main">
             <span className="ditem-meta">
               {lost && <b className="ditem-n">#{t.n}</b>}
-              <AnchorTag names={st.names} />
+              <AnchorTag names={st.names} whole={st.status === "whole"} />
+              <MomentChip t={t} canvasId={store.canvasId} />
               <time>{ago(t.messages.at(-1)!.at)}</time>
             </span>
             <span className="ditem-text">{t.messages[0].text}</span>
@@ -100,11 +148,21 @@ export function CommentsDrawer({ title, api, store, view, open, onClose, focusId
       </motion.div>
     );
   };
+  if (panel.folded)
+    return (
+      <button ref={box as never} className="drawer-fab" style={{ right: place.right, top: place.top }} onPointerDown={(e) => e.stopPropagation()} onClick={() => (onOpen(), keep({ ...panel, place, folded: false }))} aria-label={`展开「${title}」的评论列表 · ${g.open.length} 条进行中`} title="展开评论列表">
+        <IconList size={16} />
+        <em>{g.open.length}</em>
+      </button>
+    );
   return (
-    <aside className="drawer" aria-label={`「${title}」的评论`} onPointerDown={(e) => e.stopPropagation()}>
-      <header className="drawer-head">
+    <aside ref={box} className="drawer" style={{ left: at.x, top: at.y, width: at.w, maxHeight: at.h }} aria-label={`「${title}」的评论`} onPointerDown={(e) => e.stopPropagation()}>
+      <header className="drawer-head" onPointerDown={grab} onPointerMove={move} onPointerUp={drop} onPointerCancel={drop} title="拖动可以挪位置">
         <h2 className="drawer-title" title={title}>{title}<span> 的评论</span></h2>
-        <button className="icon-btn muted" onClick={onClose} aria-label="收起评论列表" title="收起"><IconClose size={16} /></button>
+        <button className="icon-btn muted" onClick={() => keep({ ...panel, place, folded: true })} aria-label="收成小按钮" title="收成小按钮">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="M6 12h12" /></svg>
+        </button>
+        <button className="icon-btn muted" onClick={onClose} aria-label="关闭评论列表" title="关闭"><IconClose size={16} /></button>
       </header>
       <div className="drawer-bar">
         <div className="seg" role="tablist">
@@ -128,7 +186,7 @@ export function CommentsDrawer({ title, api, store, view, open, onClose, focusId
         {!shown.length && (
           <div className="drawer-empty">
             <span className="dither-field" aria-hidden />
-            {tab === "open" ? <span>没有进行中的评论。<br />按 C，再点一个元素钉一条。</span> : <span>还没有已解决的评论。</span>}
+            {tab === "open" ? <span>没有进行中的评论。<br />按 C，再点一个元素钉一条；或用左下角的「整张图」评论整张图。</span> : <span>还没有已解决的评论。</span>}
           </div>
         )}
         {g.lost.length > 0 && (

@@ -1,6 +1,6 @@
 // The message an agent gets for a canvas comment (comments/handoff.ts): a guest's words are marked as untrusted.
 import { describe, expect, it } from "vitest";
-import { commentMessage } from "./handoff.ts";
+import { commentMessage, parseCommentMessage } from "./handoff.ts";
 
 const msg = (author: "you" | "agent" | "system", text: string, by?: { id: string; name: string }) => ({ id: text, author, text, at: 1, ...(by ? { by } : {}) }) as never;
 
@@ -51,5 +51,19 @@ describe("commentMessage", () => {
     const t = commentMessage({ n: 6, messages: [msg("you", "第一行\n第二行", { id: "user:me", name: "我" })] }, []);
     expect(t).toContain("- 我：第一行\n第二行");
     expect(t).not.toContain("“");
+  });
+});
+
+describe("parseCommentMessage", () => {
+  it("reads back what commentMessage wrote: the number, the anchors by name and id, who said what", () => {
+    const t = commentMessage({ n: 3, messages: [msg("you", "看看这个\n第二行", { id: "user:me", name: "我" }), msg("agent", "好的")] }, [{ id: "a", name: "API 服务" }, { id: "b", name: "MySQL" }]);
+    expect(parseCommentMessage(t)).toEqual({ n: 3, followUp: false, anchors: [{ name: "API 服务", id: "a" }, { name: "MySQL", id: "b" }], messages: [{ who: "我", text: "看看这个\n第二行" }, { who: "Agent", text: "好的" }] });
+  });
+
+  it("knows a follow-up, a whole-canvas comment, and that other text is not one", () => {
+    const t = commentMessage({ n: 4, messages: [msg("you", "再改", { id: "user:me", name: "我" })] }, [], { followUp: true });
+    expect(parseCommentMessage(t)).toMatchObject({ n: 4, followUp: true, anchors: [] });
+    expect(parseCommentMessage("画布评论 是什么")).toBeUndefined();
+    expect(parseCommentMessage(undefined)).toBeUndefined();
   });
 });

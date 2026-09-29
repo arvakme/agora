@@ -32,3 +32,21 @@ export function commentMessage(thread: Pick<Thread, "n" | "messages">, anchors: 
   const note = opts.followUp ? ["（这条评论有新的回复，下面只列出你还没看到的部分；前面的你已经处理过。）"] : [];
   return [`画布评论 #${thread.n}（${where}）：`, ...note, ...lines, ...(shown.some(guest) ? ["", GUEST_NOTE] : []), "", "请按这条评论处理画布，完成后用一两句话答复（会贴回评论线程）。"].join("\n");
 }
+
+/** A comment hand-off read back (`commentMessage`'s text as it stands in a session's log): what the page draws as a card. */
+export type ParsedComment = { n: number; anchors: { id: string; name: string }[]; followUp: boolean; messages: { who: string; text: string }[] };
+
+export function parseCommentMessage(text: string | undefined): ParsedComment | undefined {
+  const lines = (text ?? "").split("\n");
+  const head = /^画布评论 #(\d+)（锚点：(.*)）：$/.exec(lines[0]?.trim() ?? "");
+  if (!head) return undefined;
+  // each anchor ends with its id in brackets, before the next 「、」 or the end (a name may have brackets of its own)
+  const anchors = [...head[2].matchAll(/(.+?)（([^（）、\s]+)）(?=、|$)/g)].map((m) => ({ name: m[1].replace(/^、/, ""), id: m[2] }));
+  const messages: ParsedComment["messages"] = [];
+  for (const line of lines.slice(1)) {
+    const m = /^- ([^：]+)：(.*)$/.exec(line);
+    if (m) messages.push({ who: m[1], text: m[2] });
+    else if (messages.length && line && !line.startsWith("请按这条评论处理画布") && line !== GUEST_NOTE) messages[messages.length - 1].text += `\n${line}`;
+  }
+  return { n: Number(head[1]), anchors, followUp: lines[1]?.startsWith("（这条评论有新的回复") ?? false, messages };
+}
