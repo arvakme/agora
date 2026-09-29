@@ -10,7 +10,7 @@
 // Only the stretch of work t is in (the figure is on the canvas for that stretch only; a sub-agent's is
 // its whole errand). In replay what comes after t in that stretch is listed too, not yet reached.
 import { bursts, outsideProject, OUTSIDE, planFor, stateAt, type Ctx } from "./place";
-import { tripAt, type Move, type Pt, type Trip } from "./rig";
+import { rawRoot, type Move, type Pt, type Trip } from "./rig";
 import type { Leg } from "./route";
 import type { RunSeg, WorkRun } from "./runs/types";
 
@@ -253,7 +253,7 @@ export function walkedAt(w: Way, t: number): number {
   const x = ph.find((p) => t < p.t1) ?? ph[ph.length - 1];
   const s = along(w.legs, x.a);
   const e = along(w.legs, x.b);
-  const r = tripAt(w.trip, t).root;
+  const r = rawRoot(w.trip, t); // along the way as planned, not the body with its corners rounded (rig.ts ROUND_MS)
   const L = Math.abs(x.b.x - x.a.x);
   const H = Math.abs(x.b.y - x.a.y);
   const f = L > 1e-6 ? Math.abs(r.x - x.a.x) / L : H > 1e-6 ? Math.abs(r.y - x.a.y) / H : 1;
