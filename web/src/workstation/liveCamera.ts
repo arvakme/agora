@@ -156,3 +156,12 @@ export function liveStep(m: LiveMachine, i: LiveIn): LiveAct {
   }
   return { type: "none" };
 }
+
+/**
+ * 「继续跟随 <agent>」: only while there is something to follow. The camera has been taken by the person, the followed
+ * turn is at work (`isWorking`, the camera's own standard) and its figure is on this canvas (or in its tray). An idle or
+ * departed agent has nowhere to be followed to; when it starts working again the button comes back if still paused.
+ */
+export function showResume(o: { paused: boolean; run: { running: boolean; segs: readonly { start: number; end: number }[] } | null; now: number; drawn: boolean }): boolean {
+  return o.paused && o.drawn && !!o.run && isWorking(o.run, o.now);
+}
