@@ -4,7 +4,7 @@
 import { PIN_LABEL, pinState } from "./handoffState";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence, motion } from "motion/react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { resolveAnchor } from "../canvas/anchors";
 import { layoutPins, PIN, sceneBlocks } from "./pinLayout";
 import { IconCheck, IconClose, IconPlus } from "../app/icons";
@@ -17,6 +17,7 @@ import { Aim, snap } from "./Aim";
 import { dismissUndo, runUndo, useUndo } from "./undo";
 import { SPRING } from "./motion";
 import { CommentWork, useMockThreads } from "../workstation/CommentWork";
+import { resumeRunning } from "../ops/agent";
 
 /** An unsent comment: where it is pinned and what has been typed so far. */
 export type Draft = { anchor: Anchor; text: string };
@@ -42,6 +43,8 @@ type Props = {
 export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreated, onOpenResolved, repin, onRepinned }: Props) {
   const { threads: all, activeId } = useThreads(store);
   const { showResolved } = usePrefs();
+  // a page loaded mid-run: threads whose hand-off the server has not finished show 「处理中」 again (dispatch records)
+  useEffect(() => void resumeRunning(store), [store]);
   // Open threads only by default; resolved ones as quiet pins when asked for; lost anchors never.
   const list = useMemo(() => pinnable(all, (t) => resolveAnchor(t.anchor, view.map), showResolved), [all, view.map, showResolved]);
   const [hoverId, setHoverId] = useState<string | null>(null);

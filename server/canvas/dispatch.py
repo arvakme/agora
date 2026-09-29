@@ -465,7 +465,7 @@ class Dispatches:
             elif src.get("kind") == "session" and src.get("sessionId"):
                 head = {"done": "完成了", "failed": "失败了", "blocked": "受阻", "idle_no_reply": "对方这一轮结束了，但没有交回执"}.get(state, state)
                 more = f"答复：{answer}" if answer else "没有答复内容"
-                msg = f"[Agora 派发回执 {d.id[:8]}] 你派给 {target} 的任务：{head}。{more}（记录 {self.files.folder(d.id)}；`agora dispatch status {d.id}` 查看）"
+                msg = f"[Agora 派发回执 {d.id[:8]}] 你派给 {target} 的任务：{head}。{more}（记录 {self.files.folder(d.id)}；`agora dispatch status {d.id}` 查看）（这是通知，不需要回复；有下一步再做。）"
                 self.hub.send(src["sessionId"], agora_prompt(msg, canvas_id=None, canvas_name=None, extra=f"dispatch-receipt={d.id}", session_id=src["sessionId"]))
         except Exception:  # a source that cannot take the note (gone, a copy) does not undo the record
             pass

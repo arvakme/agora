@@ -151,6 +151,7 @@ async def test_pending_then_in_flight_then_accepted_then_done(rig):
     await asyncio.sleep(1.0)  # A is told through the hub's queue, not by typing into anything
     told = [t for sid, t in rig.terms.pastes if sid == "s-a"]
     assert len(told) == 2 and "没有交回执" in told[0] and "完成了" in told[1] and "已在 notes.md 末尾加了一行" in told[1]  # a late receipt moves it and is told once more
+    assert all("这是通知，不需要回复" in t for t in told)  # so A does not answer with "same receipt as before"
     assert (folder / "reply.md").read_text().strip() == "已在 notes.md 末尾加了一行"
 
 

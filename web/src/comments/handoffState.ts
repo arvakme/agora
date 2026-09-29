@@ -1,5 +1,6 @@
 // What a canvas comment says about its hand-off to an agent (web/docs/workstation.md §12「交给 Agent」发给谁;
 // ThreadCard.tsx, CommentLayer.tsx, CommentsDrawer.tsx read it). Pure.
+import type { Dispatch } from "../session/agents";
 import type { Message, Thread } from "./threads";
 
 /** The four things a pin can say about the agent: nothing from it yet, at work, answered, the person closed the thread. */
@@ -28,6 +29,17 @@ export function handLabel(o: { running?: boolean; name?: string; many?: boolean;
   if (o.running) return "处理中";
   if (!o.name) return "交给 Agent…";
   return `交给 ${o.name}${o.many && o.sessionName ? ` · ${o.sessionName}` : ""}`;
+}
+
+/**
+ * The comment threads of one canvas that still have a hand-off the server has not finished: read from the
+ * dispatch records (`GET /api/agent/dispatches?active=1`, the truth, kept in `.agora/dispatch`), so a page
+ * loaded mid-run shows 「处理中」 again. `over` = the states after which nothing more is expected.
+ */
+export function runningThreads(ds: readonly Pick<Dispatch, "id" | "state" | "source">[], canvasId: string, over: ReadonlySet<string>): { threadId: string; dispatchId: string }[] {
+  return ds
+    .filter((d) => d.source.kind === "comment" && d.source.canvasId === canvasId && !!d.source.threadId && !over.has(d.state))
+    .map((d) => ({ threadId: d.source.threadId!, dispatchId: d.id }));
 }
 
 /** A run of hand-off failures that a later answer replaced, as one grey line. */

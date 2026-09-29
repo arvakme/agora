@@ -454,10 +454,20 @@ export const agents = {
     )) as Dispatch;
     const inflight: Inflight = { sendId: d.id, sessionId, canvasId: opts.canvasId, turnIds: [], threadId: opts.threadId, threadN: opts.threadN, anchor: opts.anchor };
     set({ inflight: { ...state.inflight, [sessionId]: inflight }, activeAt: { ...state.activeAt, [sessionId]: Date.now() } });
-    const done = new Promise<Dispatch>((ok) => {
+    const done = agents.waitDispatch(d).then((r) => {
+      if (state.inflight[sessionId]?.sendId === d.id) {
+        const { [sessionId]: _, ...rest } = state.inflight;
+        set({ inflight: rest });
+      }
+      return { ...r, turnIds: inflight.turnIds };
+    });
+    return { dispatch: d, done };
+  },
+  /** Resolves when the dispatch is over: the event stream says so, or the server's record does (polled: the stream can drop). */
+  waitDispatch(d: Dispatch): Promise<Dispatch> {
+    return new Promise<Dispatch>((ok) => {
       if (DISPATCH_OVER.has(d.state)) return ok(d);
       dispatchWaiters.set(d.id, [...(dispatchWaiters.get(d.id) ?? []), ok]);
-      // The event stream can drop; the record on the server is the truth.
       const poll = setInterval(async () => {
         const now = (await fetch(`/api/agent/dispatches/${d.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)) as Dispatch | null;
         if (now && DISPATCH_OVER.has(now.state)) {
@@ -467,14 +477,15 @@ export const agents = {
         }
       }, 3000);
       dispatchWaiters.set(d.id, [...(dispatchWaiters.get(d.id) ?? []), () => clearInterval(poll)]);
-    }).then((r) => {
-      if (state.inflight[sessionId]?.sendId === d.id) {
-        const { [sessionId]: _, ...rest } = state.inflight;
-        set({ inflight: rest });
-      }
-      return { ...r, turnIds: inflight.turnIds };
     });
-    return { dispatch: d, done };
+  },
+  /** The dispatches the server has not finished (the records under .agora/dispatch). */
+  async activeDispatches(): Promise<Dispatch[]> {
+    try {
+      return ((await json(await fetch("/api/agent/dispatches?active=1"))) as { dispatches?: Dispatch[] }).dispatches ?? [];
+    } catch {
+      return [];
+    }
   },
   /** Apply turns created while a send is in flight belong to it (a comment's undo, its reply link). */
   noteTurn(sessionId: string, turnId: string) {

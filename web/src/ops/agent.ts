@@ -9,12 +9,13 @@ import { threadRequest } from "../canvas/context";
 import { byId } from "../canvas/scene";
 import { runTurn, undoTurn, type AgentOutcome } from "../session/runTurn";
 import { sessions } from "../session/store";
-import { agents } from "../session/agents";
+import { agents, DISPATCH_OVER } from "../session/agents";
 import { pickSession } from "../session/pickSession";
 import { openSessions, ui } from "../session/ui";
 import { pointerFollow } from "../pointer/follow";
 import type { ThreadStore } from "../comments/threads";
 import { commentMessage } from "../comments/handoff";
+import { runningThreads } from "../comments/handoffState";
 
 export { sceneIndex } from "../session/runTurn";
 
@@ -37,6 +38,21 @@ export async function handToAgent(api: ExcalidrawImperativeAPI, threads: ThreadS
     return { ...o, msgId: msg.id };
   } finally {
     threads.setAgent(threadId, "idle");
+  }
+}
+
+/**
+ * A page loaded (or reloaded) while comments are still with an agent: threads whose dispatch the server has not
+ * finished show 「处理中」 again until it is over. The state is the dispatch record's, nothing is kept on the page;
+ * the answer itself is posted into the thread by the server.
+ */
+export async function resumeRunning(threads: ThreadStore): Promise<void> {
+  const ds = await agents.activeDispatches();
+  const byId = new Map(ds.map((d) => [d.id, d]));
+  for (const { threadId, dispatchId } of runningThreads(ds, threads.canvasId, DISPATCH_OVER)) {
+    if (!threads.thread(threadId) || threads.thread(threadId)?.agent === "running") continue; // gone, or this page's own hand-off is showing it
+    threads.setAgent(threadId, "running");
+    void agents.waitDispatch(byId.get(dispatchId)!).then(() => threads.setAgent(threadId, "idle"));
   }
 }
 
