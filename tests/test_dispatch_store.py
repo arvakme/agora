@@ -119,3 +119,22 @@ def test_the_state_is_a_pure_function_of_the_record(steps, reply, expects, want)
 def test_a_delivery_error_or_a_stopped_headless_run_decide_the_state():
     assert derive_state(make(error="log gone")) == "failed"
     assert derive_state(make(stopped={"at": 1, "how": "headless run cancelled"})) == "interrupted"
+
+
+# ——— RVF-C: robustness of the store ———
+def test_an_id_with_a_trailing_newline_is_not_an_id(tmp_path):
+    files = DispatchStore(tmp_path)
+    with pytest.raises(ValueError):
+        files.folder(RID + "\n")
+    files.folder(RID)  # the real one still is
+
+
+def test_a_record_with_a_wrong_field_type_is_skipped_not_fatal(tmp_path):
+    files = DispatchStore(tmp_path)
+    files.write(make())
+    other = "1e2f3a4b-0000-4000-8000-000000000001"
+    bad = to_json(make())
+    bad.update(id=other, delivery=5)  # a hand-edited or damaged record: `.get` on an int
+    (tmp_path / "dispatch" / f"{other}.json").write_text(json.dumps(bad))
+    assert [d.id for d in files.all()] == [RID]  # the good one is listed, the broken one is not fatal
+    assert files.read(other) is None

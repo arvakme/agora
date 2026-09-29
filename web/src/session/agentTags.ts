@@ -5,7 +5,7 @@ import type { WorkRun } from "../workstation/runs/types";
 
 export type TagState = "working" | "waiting" | "thinking" | "idle";
 export const TAG_STATE_NAME: Record<TagState, string> = { working: "干活中", waiting: "等你", thinking: "在想", idle: "空闲" };
-export type AgentTag = { runId: string; sessionId?: string; agent: string; name: string; state: TagState; kids: number; lastAt: number };
+export type AgentTag = { runId: string; sessionId?: string; agent: string; name: string; state: TagState; kids: number; lastAt: number; /** waiting: since when (the wait segment's start) */ waitSince?: number };
 
 /** 「At work」 is `isWorking` (the camera's standard too); at work, a question asked of the person is 等你, thinking or between calls is 在想. */
 export function tagState(run: Pick<WorkRun, "running" | "segs">, now: number): TagState {
@@ -21,7 +21,11 @@ const count = (r: WorkRun): number => r.children.reduce((n, c) => n + 1 + count(
 /** The tags of the top-level runs: working, waiting, thinking, then the most recently idle. */
 export function agentTags(tops: readonly WorkRun[], now: number): AgentTag[] {
   return tops
-    .map((r) => ({ runId: r.id, sessionId: r.sessionId, agent: r.agent, name: r.name, state: tagState(r, now), kids: count(r), lastAt: r.lastAt }))
+    .map((r) => {
+      const state = tagState(r, now);
+      const waitSince = state === "waiting" ? r.segs.find((s) => s.kind === "wait" && s.start <= now && now < s.end)?.start : undefined;
+      return { runId: r.id, sessionId: r.sessionId, agent: r.agent, name: r.name, state, kids: count(r), lastAt: r.lastAt, ...(waitSince !== undefined ? { waitSince } : {}) };
+    })
     .sort((a, b) => RANK[a.state] - RANK[b.state] || b.lastAt - a.lastAt);
 }
 

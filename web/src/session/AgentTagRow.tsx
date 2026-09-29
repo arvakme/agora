@@ -8,12 +8,16 @@ import { RunAvatar } from "../workstation/RunAvatar";
 import { useRuns } from "../workstation/runs/store";
 import type { WorkRun } from "../workstation/runs/types";
 import { agentTags, splitTags, tagLabel, TAG_STATE_NAME, type AgentTag } from "./agentTags";
+import { waitLabel } from "./requestModel";
 import { sessions } from "./store";
 import { ui } from "./ui";
 import "./agentTags.css";
 
 const TAG_W = 150;
 const MORE_W = 44;
+
+/** The tag's state in words: a waiting one says for how long (「等你 3 分钟」). */
+const stateText = (t: AgentTag, now: number) => (t.state === "waiting" ? (waitLabel(t.waitSince, now) ?? TAG_STATE_NAME.waiting) : TAG_STATE_NAME[t.state]);
 
 /** 「在 <node>」: where the session's agent is on its canvas now, when the canvas's overlay has said. */
 function whereIs(run: WorkRun, now: number): string | null {
@@ -52,10 +56,10 @@ export function AgentTags() {
     const where = whereIs(run, now);
     const doing = run.segs.find((s) => s.start <= now && now < s.end)?.label;
     return (
-      <button key={t.runId} className="agent-tag" data-state={t.state} data-listed={listed || undefined} onClick={() => (t.sessionId && ui.openSession(t.sessionId), setMenu(false))} title={`${t.name} · ${TAG_STATE_NAME[t.state]}${doing && t.state !== "idle" ? ` · ${doing}` : ""}${where ? `\n在 ${where}` : ""}${t.kids ? `\n${t.kids} 个子代理` : ""}`}>
+      <button key={t.runId} className="agent-tag" data-state={t.state} data-listed={listed || undefined} onClick={() => (t.sessionId && ui.openSession(t.sessionId), setMenu(false))} title={`${t.name} · ${stateText(t, now)}${doing && t.state !== "idle" ? ` · ${doing}` : ""}${where ? `\n在 ${where}` : ""}${t.kids ? `\n${t.kids} 个子代理` : ""}`}>
         <RunAvatar agent={t.agent} size={18} />
         <span className="at-name">{label(t)}</span>
-        <span className="at-state"><i className="at-dot" />{t.state !== "idle" && TAG_STATE_NAME[t.state]}</span>
+        <span className="at-state"><i className="at-dot" />{t.state !== "idle" && stateText(t, now)}</span>
         {t.kids > 0 && <span className="at-kids" aria-label={`${t.kids} 个子代理`}>+{t.kids}</span>}
       </button>
     );

@@ -66,6 +66,11 @@ class TerminalError(RuntimeError):
     pass
 
 
+class PasteSubmitFailed(TerminalError):
+    """The text was pasted into the CLI's input box but Enter did not go through: it sits there unsent.
+    Sending it again some other way would run it twice; the caller says it is not known whether it was taken."""
+
+
 @dataclass(frozen=True)
 class Client:
     name: str
@@ -470,10 +475,13 @@ class Terminals:
         try:
             w._run("load-buffer", "-b", buf, "-", input=data)
             w._run("paste-buffer", "-p", "-d", "-b", buf, "-t", self.pane(session_id))
-            time.sleep(settle_s)  # a TUI merges keys that arrive while it still takes the paste in
-            w._run("send-keys", "-c", client, "-t", self.pane(session_id), "Enter")
         except subprocess.CalledProcessError as exc:
             raise TerminalError((exc.stderr or b"").decode(errors="replace").strip() or "tmux paste failed") from None
+        time.sleep(settle_s)  # a TUI merges keys that arrive while it still takes the paste in
+        try:
+            w._run("send-keys", "-c", client, "-t", self.pane(session_id), "Enter")
+        except subprocess.CalledProcessError as exc:
+            raise PasteSubmitFailed((exc.stderr or b"").decode(errors="replace").strip() or "tmux send-keys Enter failed") from None
 
     def socket_path(self) -> Path:
         """Where tmux puts this server's socket ($TMUX_TMPDIR or /tmp, then tmux-<uid>/<name>)."""

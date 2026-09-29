@@ -75,7 +75,7 @@ def cmd_reply(p, a) -> int:
     # No server: the receipt is a file the server reads when it next looks at this dispatch.
     from server.canvas.dispatch_store import ID_RE, REPLY_STATUSES
 
-    if a.status not in REPLY_STATUSES or not ID_RE.match(a.request):
+    if a.status not in REPLY_STATUSES or not ID_RE.fullmatch(a.request):
         return out({"error": f"--request is a dispatch id, --status one of {', '.join(REPLY_STATUSES)}"}, 2)
     folder = p.store.dir / "dispatch" / a.request
     if not (p.store.dir / "dispatch" / f"{a.request}.json").exists():

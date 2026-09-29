@@ -84,11 +84,17 @@ PASTE_TAG = re.compile(r"</?pasted_content[^>]*>")
 DISPATCH_MARK = re.compile(r"agora-req-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
 
 
+# The token in the footer of the note that tells a giver its dispatch ended (dispatch.py): with it a restarted
+# server can see in the giver's own log that this note was already delivered, and not send it twice.
+RECEIPT_MARK = re.compile(r"agora-receipt-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[a-z_]+)")
+
+
 def user_item(id: str, text: str, at: int) -> dict[str, Any]:
     clean = PASTE_TAG.sub("", text).strip()
     body, from_agora = split_agora(clean)
     mark = DISPATCH_MARK.search(clean[len(body):]) if from_agora else None
-    return {"id": id, "kind": "user", "text": _clip(body, MAX_TEXT), "at": at, "source": "agora" if from_agora else "terminal", **({"dispatch": mark.group(1)} if mark else {})}
+    receipt = RECEIPT_MARK.search(clean[len(body):]) if from_agora else None
+    return {"id": id, "kind": "user", "text": _clip(body, MAX_TEXT), "at": at, "source": "agora" if from_agora else "terminal", **({"dispatch": mark.group(1)} if mark else {}), **({"receipt": receipt.group(1)} if receipt else {})}
 
 
 def _full(v: Any) -> str:

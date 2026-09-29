@@ -54,6 +54,16 @@ export function terminalBanner(t: Term | undefined): "attached" | "background" |
   return t.clients > 0 || t.inputRight === "human" ? "attached" : "background";
 }
 
+/**
+ * How long the person has kept the agent waiting, as the words for the panel head and the top-bar tag: 「等你」 for the
+ * first minute, then 「等你 N 分钟」. Nothing is denied or given up on: the turn waits until it is answered or stopped.
+ */
+export function waitLabel(since: number | null | undefined, now: number): string | null {
+  if (since == null) return null;
+  const min = Math.floor(Math.max(0, now - since) / 60_000);
+  return min < 1 ? "等你" : `等你 ${min} 分钟`;
+}
+
 export type InputRightNote = { text: string; by: "window" | "takeover"; canSendNow: boolean; canTakeOver: boolean; takenOver: boolean };
 /** Messages wait because a person holds the pane's input: say who, and offer "send now" and take over / give back. */
 export function inputRightNote(s: Pick<Status, "queued" | "held" | "terminal">): InputRightNote | null {
@@ -61,5 +71,19 @@ export function inputRightNote(s: Pick<Status, "queued" | "held" | "terminal">):
   if (!t?.alive || s.queued < 1) return null;
   if (t.inputRight === "human") return { text: "终端已被你接管 · 你的话在排队", by: "takeover", canSendNow: true, canTakeOver: true, takenOver: true };
   if ((t.writers ?? 0) > 0 || t.paused) return { text: "终端窗口开着 · 你的话在排队", by: "window", canSendNow: true, canTakeOver: true, takenOver: false };
+  return null;
+}
+
+/**
+ * The one terminal statement in the session pane: a window that can write (or a takeover) holds the input, whether or not
+ * anything waits yet. Nothing when there is no such window — a CLI finishing in the background is not the person's to manage.
+ */
+export function windowNote(s: Pick<Status, "queued" | "held" | "terminal">): InputRightNote | null {
+  const t = s.terminal;
+  if (!t?.alive) return null;
+  const waiting = inputRightNote(s);
+  if (waiting) return waiting;
+  if (t.inputRight === "human") return { text: "终端已被你接管 · 你的话在排队", by: "takeover", canSendNow: false, canTakeOver: true, takenOver: true };
+  if ((t.writers ?? 0) > 0 || t.paused) return { text: "终端窗口开着 · 你的话在排队", by: "window", canSendNow: false, canTakeOver: true, takenOver: false };
   return null;
 }

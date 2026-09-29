@@ -17,6 +17,14 @@ describe("tagState", () => {
   it("nothing going on is 空闲", () => expect(tagState(run("a", { segs: [seg("write", 100, 200)] }), NOW)).toBe("idle"));
 });
 
+describe("agentTags: how long a waiting tag has waited", () => {
+  it("carries the start of the wait it is in, and nothing when it is not waiting", () => {
+    const tags = agentTags([run("w", { segs: [seg("wait", 400, 1100)] }), run("x", { segs: [seg("exec", 900, 1100)] })], NOW);
+    expect(tags.find((t) => t.runId === "w")?.waitSince).toBe(400);
+    expect(tags.find((t) => t.runId === "x")?.waitSince).toBeUndefined();
+  });
+});
+
 describe("agentTags: order and sub-agent count", () => {
   const tops = [
     run("idle-old", { lastAt: 100 }),

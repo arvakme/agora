@@ -204,6 +204,8 @@ export type Status = {
   running: boolean;
   /** The CLI has a question or an approval open with the person (`requests` has them). */
   waiting?: boolean;
+  /** Since when (ms) the oldest request has waited for the person. */
+  waitingSince?: number | null;
   /** The permission mode a two-way CLI really runs in (`asked` is what Agora asked for). */
   mode?: { actual: string | null; asked: string } | null;
   busy: boolean;
