@@ -196,15 +196,16 @@ def test_resolve_canvas(store):
 
 # ——— terminal pane: delivery and log following ———
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="needs tmux")
-async def test_terminal_pane_both_directions(store, tmp_path, monkeypatch):
+async def test_terminal_pane_both_directions(store, tmp_path, monkeypatch, request):
     log = tmp_path / "native.jsonl"
     monkeypatch.setattr(agents, "locate_log", lambda kind, nid, root=None, home=None, hint=None: agents.LogLookup("found", log, (log,)) if nid else agents.LogLookup("missing"))
     monkeypatch.setattr(agents, "interactive_argv", lambda *a, **k: [sys.executable, str(TUI), str(log)])
     hub = AgentHub(store)
+    request.addfinalizer(hub.terms.kill_server)  # its tmux server goes with the test, whatever happens in it (KT1)
     store.bind("s-t", agent="pi", native_id="n-1")
     sub = hub.subscribe(executor=False)
-    hub.ensure_started()
     try:
+        hub.ensure_started()
         opened = await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
         assert opened["created"] and hub.terms.socket in opened["attach"] and "attach -t agora-s-t" in opened["attach"]
         assert "agora-s-t" in hub.terms.sessions()

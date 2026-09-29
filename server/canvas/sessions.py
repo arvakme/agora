@@ -34,7 +34,7 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
-from server.canvas import adapters, agents, nested, schemas
+from server.canvas import adapters, agents, nested, proctree, schemas
 from server.canvas.adapters import drift
 from server.canvas.local import Local
 from server.canvas.model_view import model_view, versions
@@ -1401,8 +1401,7 @@ def _preview(inp: dict[str, Any]) -> dict[str, Any]:
 
 
 def _stop_process(pid: Any, argv: Any) -> None:
-    """End a leftover CLI process group — only when the pid still runs the command that was recorded (pids are reused)."""
-    import signal
+    """End a leftover CLI turn and its whole tree — only when the pid still runs the command that was recorded (pids are reused)."""
     import subprocess
 
     if not isinstance(pid, int) or pid <= 1 or not isinstance(argv, list):
@@ -1413,12 +1412,7 @@ def _stop_process(pid: Any, argv: Any) -> None:
         return
     if cmd != " ".join(argv):
         return
-    for sig in (signal.SIGTERM, signal.SIGKILL):
-        try:
-            os.killpg(pid, sig)
-        except (ProcessLookupError, PermissionError):
-            return
-        time.sleep(0.5)
+    proctree.stop(pid)
 
 
 def binding_started(b: dict[str, Any]) -> bool:

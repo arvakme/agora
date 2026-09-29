@@ -287,9 +287,13 @@ async def hub(tmp_path, monkeypatch) -> AsyncIterator[AgentHub]:
     monkeypatch.setattr(agents, "interactive_argv", lambda *a, **k: [sys.executable, str(TUI), str(log)])
     h = AgentHub(s, terminals=Terminals(s.root, s.run_dir, socket=f"agora-t-{uuid4().hex[:8]}"))
     s.bind("s-t", agent="pi", native_id="n-1")
-    yield h
-    await h.close()
-    h.terms.kill_server()
+    try:
+        yield h
+    finally:
+        try:
+            await h.close()
+        finally:
+            h.terms.kill_server()  # also when the test failed or closing failed (KT1)
     assert not h.terms.socket_path().exists()
 
 

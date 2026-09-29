@@ -13,7 +13,7 @@ log, which Agora follows. What the host still needs from the process is what the
 
 Stopping also stops what Devin started: its tool processes live in their own process groups, so
 killing the CLI leaves them running (measured with ``sleep 45``); every descendant is stopped here.
-Standard library only, run by path (the project directory is the working directory, not this repo).
+Run by path (the project directory is the working directory, not this repo); it only needs the standard library and server/canvas/proctree.py, which does the stopping for every CLI.
 Usage: ``devin_run.py <devin> [devin args…]``."""
 
 from __future__ import annotations
@@ -29,8 +29,10 @@ import time
 import urllib.parse
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # run by path: the repo root for the shared stop
+from server.canvas import proctree  # noqa: E402
+
 POLL_S = 0.3
-GRACE_S = 2.0
 
 
 def emit(**event: object) -> None:
@@ -62,56 +64,6 @@ def option(args: list[str], *names: str) -> str | None:
     return None
 
 
-def descendants(pid: int) -> list[int]:
-    try:
-        out = subprocess.run(["ps", "-A", "-o", "pid=,ppid="], capture_output=True, text=True, timeout=5).stdout
-    except (OSError, subprocess.SubprocessError):
-        return []
-    kids: dict[int, list[int]] = {}
-    for line in out.splitlines():
-        parts = line.split()
-        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
-            kids.setdefault(int(parts[1]), []).append(int(parts[0]))
-    found: list[int] = []
-    todo = [pid]
-    while todo:
-        for k in kids.get(todo.pop(), []):
-            if k not in found:
-                found.append(k)
-                todo.append(k)
-    return found
-
-
-def stop_tree(pid: int, known: set[int] = frozenset()) -> None:  # type: ignore[assignment]
-    """SIGTERM to the process and all its descendants — the ones seen earlier too: when the whole group is stopped
-    at once, Devin dies first and its tool processes are handed to init, out of the tree — SIGKILL to whatever is
-    still there after a grace."""
-    tree = list(dict.fromkeys([*descendants(pid), *sorted(known), pid]))
-    for sig, wait in ((signal.SIGTERM, GRACE_S), (signal.SIGKILL, 0.0)):
-        for p in tree:
-            try:
-                os.kill(p, sig)
-            except (ProcessLookupError, PermissionError):
-                pass
-        end = time.time() + wait
-        while wait and time.time() < end and any(_alive(p) for p in tree):
-            time.sleep(0.05)
-
-
-def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    # a zombie counts as gone
-    try:
-        return subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, timeout=2).stdout.strip()[:1] not in ("", "Z")
-    except (OSError, subprocess.SubprocessError):
-        return True
-
-
 def main(argv: list[str]) -> int:
     if not argv:
         sys.stderr.write("usage: devin_run.py <devin> [args…]\n")
@@ -130,12 +82,12 @@ def main(argv: list[str]) -> int:
 
     stopping = threading.Event()
     child: subprocess.Popen[str] | None = None
-    seen: set[int] = set()  # descendants noticed while the turn ran
+    watch: proctree.Watch | None = None  # descendants noticed while the turn ran
 
     def on_signal(signum: int, _frame: object) -> None:
         stopping.set()
         if child is not None:
-            stop_tree(child.pid, seen)
+            proctree.stop(child.pid, watch.seen if watch else None, 2.0)
 
     signal.signal(signal.SIGTERM, on_signal)
     signal.signal(signal.SIGINT, on_signal)
@@ -145,6 +97,7 @@ def main(argv: list[str]) -> int:
     except OSError as exc:
         emit(type="turn_end", code=127, stderr=f"spawn: {exc}")
         return 127
+    watch = proctree.Watch(child.pid)
     out: list[str] = []
     err: list[str] = []
     readers = [threading.Thread(target=lambda: out.append(child.stdout.read()), daemon=True), threading.Thread(target=lambda: err.append(child.stderr.read()), daemon=True)]
@@ -156,7 +109,7 @@ def main(argv: list[str]) -> int:
         return next((r[0] for r in rows if r[0] not in before), None)
 
     while child.poll() is None:
-        seen.update(descendants(child.pid))
+        watch.update()
         if session is None:
             session = claim()
             if session:
