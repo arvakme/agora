@@ -22,6 +22,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from server.canvas import replays
 from server.canvas.backup import Backups, FileHistory
 from server.canvas.discover import full_text, session_history
 from server.canvas.events import Events
@@ -170,6 +171,20 @@ def create_project_router(store: ProjectStore, events: Events | None = None, *, 
             events.publish({"t": "canvas", "canvasId": id, "version": out["version"]})
         return out
 
+
+    @router.get("/replays")
+    def list_pr_replays():
+        """The PR replays imported by ``agora replay import-pr`` (web/docs/pr-replay.md), newest PR first."""
+        return replays.list_replays(store.root)
+
+    @router.get("/replays/{id}")
+    def get_pr_replay(id: str):
+        if not replays.valid_id(id):
+            raise HTTPException(status_code=400, detail="a replay id is pr-<number>")
+        got = replays.read_replay(store.root, id)
+        if got is None:
+            raise HTTPException(status_code=404, detail=f"no replay {id}")
+        return got
 
     @router.put("/threads/{id}")
     def put_threads(id: str, body: Write):
