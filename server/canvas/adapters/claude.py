@@ -34,6 +34,7 @@ from server.canvas.adapters.common import (
     _summary,
     _usage,
     end_item,
+    image_b64,
     read_jsonl,
     rel_path,
     text_of,
@@ -357,6 +358,8 @@ class ClaudeAdapter(Adapter):
     prunes_logs_after_days = 30
 
     # Headless
+    steer = True  # a user line written to the running turn is read at its next step (measured, docs/cli-adapters.md)
+    images = True  # stream-json image blocks in the first line (``headless_stdin``)
     duplex = True  # stdin stays open for the turn: the host answers the CLI's requests and can interrupt
     assigns_id = "agora"
     can_fork_headless = True
@@ -510,7 +513,10 @@ class ClaudeAdapter(Adapter):
 
     def headless_stdin(self, req: Any) -> bytes:
         """The turn's first message as one stream-json line; the pipe stays open (``duplex``)."""
-        return (json.dumps({"type": "user", "message": {"role": "user", "content": req.prompt}}, ensure_ascii=False) + "\n").encode()
+        content: Any = req.prompt
+        if req.images:  # the selection as a picture, before the words (measured: Claude Code 2.1.284 answers from it)
+            content = [*({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": image_b64(p)}} for p in req.images), {"type": "text", "text": req.prompt}]
+        return (json.dumps({"type": "user", "message": {"role": "user", "content": content}}, ensure_ascii=False) + "\n").encode()
 
     # ——— Interactive ———
     def fork_argv(self, fork: dict[str, Any]) -> list[str]:

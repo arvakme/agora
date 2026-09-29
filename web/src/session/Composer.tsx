@@ -8,6 +8,8 @@ import type { Scene } from "../canvas/scene";
 import type { Turn } from "./store";
 import { canvases } from "./ui";
 import { IconSend } from "../app/icons";
+import { selectedIds, selectionElements, selectionLabel } from "./selection";
+import { CHOICES, defaultChoice, whyNoSteer, type SendMode, type SendPlan } from "./steerModel";
 
 type Option = { id: string; label: string; hint?: string };
 
@@ -29,23 +31,27 @@ function elementOptions(canvasId: string, q: string): Option[] {
     .slice(0, 8);
 }
 
-export function Composer({ canvasId, canvasTitle, agentName, onSend, initial, working, onStop }: {
+export function Composer({ canvasId, canvasTitle, agentName, onSend, initial, working, plan, onStop }: {
   canvasId: string;
   canvasTitle?: string;
   agentName: string;
-  onSend: (text: string, refs: Turn["refs"]) => Promise<void>;
+  onSend: (text: string, refs: Turn["refs"], mode?: SendMode) => Promise<void>;
   /** Text to start with (a summary of a lost session, to edit before sending). */
   initial?: string;
-  /** The agent is in a turn: new messages queue after it, and 停止 interrupts it. */
+  /** The agent is in a turn, and 停止 interrupts it. */
   working?: boolean;
+  /** What a message does now (./steerModel.ts): goes into the turn (steer), asks which of two ways (choose), or the ordinary send. */
+  plan?: SendPlan;
   onStop?: () => void;
 }) {
   const [text, setText] = useState(initial ?? "");
   const [refs, setRefs] = useState<Turn["refs"]>([]);
   const [pick, setPick] = useState<{ q: string; start: number; i: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [way, setWay] = useState<"interrupt" | "wait">(defaultChoice());
   const ta = useRef<HTMLTextAreaElement>(null);
-  const sel = Object.keys(canvases.get(canvasId)?.api.getAppState().selectedElementIds ?? {}).length;
+  const selApi = canvases.get(canvasId)?.api;
+  const sel = selApi ? selectionElements(selApi.getSceneElements() as never, selectedIds(selApi)).length : 0; // what is sent: a box and its label count once
   const options = pick ? elementOptions(canvasId, pick.q) : [];
 
   const update = (value: string, caret: number) => {
@@ -71,9 +77,10 @@ export function Composer({ canvasId, canvasTitle, agentName, onSend, initial, wo
     if (!t) return;
     const kept = refs.filter((r) => t.includes(`#${r.label}`));
     setErr(null);
-    onSend(t, kept).catch((e) => (setErr((e as Error).message), setText(t)));
+    onSend(t, kept, plan?.kind === "choose" ? way : plan?.kind === "steer" ? "steer" : undefined).catch((e) => (setErr((e as Error).message), setText(t)));
     setText("");
     setRefs([]);
+    setWay(defaultChoice());
   };
 
   return (
@@ -96,7 +103,7 @@ export function Composer({ canvasId, canvasTitle, agentName, onSend, initial, wo
           ref={ta}
           value={text}
           rows={2}
-          placeholder={working ? `${agentName} 在干活，新消息会排在这一轮之后` : `给 ${agentName} 发消息…  # 引用画布元素`}
+          placeholder={working ? (plan?.kind === "steer" ? `${agentName} 在干活，你的话会直接插进这一轮` : plan?.kind === "choose" ? `${agentName} 在干活，发出前选一下怎么说` : `${agentName} 在干活，新消息会排在这一轮之后`) : `给 ${agentName} 发消息…  # 引用画布元素`}
           onChange={(e) => update(e.target.value, e.target.selectionStart)}
           onKeyDown={(e) => {
             e.stopPropagation();
@@ -110,9 +117,20 @@ export function Composer({ canvasId, canvasTitle, agentName, onSend, initial, wo
           }}
         />
         <span className="sp-ctx">
-          {sel > 0 && <span className="chip"><span>选区 · {sel} 个元素</span></span>}
+          {sel > 0 && <span className="chip"><span>{selectionLabel(sel)}</span></span>}
           {refs.map((r) => <span key={r.id} className="chip"><span>#{r.label}</span></span>)}
         </span>
+        {plan?.kind === "choose" && (
+          <fieldset className="sp-ways" aria-label="这一轮还在跑，你的话怎么说">
+            <legend>{whyNoSteer(agentName, plan.reason)}</legend>
+            {CHOICES.map((c) => (
+              <label key={c.mode}>
+                <input type="radio" name="sp-way" checked={way === c.mode} onChange={() => setWay(c.mode)} />
+                {c.label}
+              </label>
+            ))}
+          </fieldset>
+        )}
         {err && <p className="sp-warn" role="alert">没有发出去：{err}</p>}
       </div>
       {working && onStop && (

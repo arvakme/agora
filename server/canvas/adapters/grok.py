@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from server.canvas.adapters.base import valid_id, Adapter, NativeRef, ParentLink, VersionRange, tool_facts
-from server.canvas.adapters.common import MAX_TEXT, LogLookup, Out, State, StreamMapper, _clip, _end, _full, _ms, _start, _summary, _usage, add_usage, read_jsonl, rel_path, user_item
+from server.canvas.adapters.common import MAX_TEXT, LogLookup, Out, State, StreamMapper, _clip, _end, _full, _ms, _start, _summary, _usage, add_usage, image_b64, read_jsonl, rel_path, user_item
 from server.canvas.adapters.shell_files import shell_tool
 from server.canvas.adapters.tools import activity_of
 from server.canvas.runner import Usage, _int, _num, empty_usage
@@ -285,6 +285,7 @@ def project(rec: dict[str, Any], st: State) -> Out:
 
 class GrokAdapter(Adapter):
     kind = "grok"
+    no_steer = "Grok 的 `-p` 只收启动时的一条提示，这一轮开始后没有输入口"
     name = "Grok"
     binaries = ("grok",)
     tested = VersionRange(">=1.0.40,<1.1")
@@ -299,6 +300,7 @@ class GrokAdapter(Adapter):
     asked_mode = ASKED_MODE  # what the session header compares the reported mode with
     project_skill_dir = ".agents/skills"
 
+    images = True  # ACP image blocks in ``--prompt-json`` (measured: grok 1.0.44)
     assigns_id = "agora"  # -s <uuid> starts a new session under exactly that id
     can_fork_headless = False
     terminal_fork = ""
@@ -422,7 +424,8 @@ class GrokAdapter(Adapter):
     def headless_args(self, cmd: list[str], req: Any, *, log_exists: Callable[[str], bool] | bool = False, skill_dir: Path | None = None) -> list[str]:
         o = req.options
         # The prompt as JSON content blocks: as a plain argument one starting with "-" would be read as a flag.
-        args = [*cmd, "--prompt-json", json.dumps([{"type": "text", "text": req.prompt}], ensure_ascii=False), "--output-format", "streaming-json", "--always-approve"]
+        blocks = [*({"type": "image", "data": image_b64(p), "mimeType": "image/png"} for p in req.images), {"type": "text", "text": req.prompt}]
+        args = [*cmd, "--prompt-json", json.dumps(blocks, ensure_ascii=False), "--output-format", "streaming-json", "--always-approve"]
         if o.session:
             has = log_exists(o.session) if callable(log_exists) else bool(log_exists)
             args += ["-r" if has else "-s", o.session]

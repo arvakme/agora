@@ -28,6 +28,7 @@
 | `adapters/registry.py` | `ADAPTERS`、`implemented_tier`、`info`（`AgentInfo`）、`adapter_infos`、`session_kinds`、`cached_version` |
 | `adapters/drift.py` | `probe` / `probe_all`（`agora doctor --agents`）、`observe`（跟随会话时计数）、`trust`（`.agora/agents.toml`） |
 | `adapters/runs.py` | `AgentRun` 树与每个 run 的时间线（`/api/agent/runs`）、画布节点映射（移植 `codeLinks.ts`）；`log_stat`：日志不是文件时由适配器给出大小与最后写入时间（缓存与「运行中」） |
+| `../resident.py`（`server/canvas/resident.py`） | Codex 的 `app-server`、Pi 的 RPC：一个会话一个常驻进程（`ResidentPool`、`CodexResidentBackend`、`PiResidentBackend`），能插话；起不来退回一次性跑法（见「常驻进程」一节） |
 | `scripts/record_agent_fixture.py` | 录样本（§6） |
 
 `sessions.py`、`discover.py`、`local.py`、`agent_router.py`、`project.py`、`agora_cli/` 里原来按 `kind ==` 写死的地方都改成问能力：
@@ -267,3 +268,76 @@ v1 = 上面 §1–§7（步骤 0–6 与 8：适配层、工具事实、漂移�
 | Devin | `devin_run.py` 把命令行的 `--permission-mode` 原样回显（`dangerous`） | 否：只是回显启动参数 |
 
 所以 Grok、Cursor、Devin 的头部显示的是「Agora 请求了什么」，不是「CLI 实际用了什么」，头部也不会因为 CLI 没照做而变色。CLI 输出里能读到实际模式时再改成读实际值；现在读不到。
+
+## 插话（steer）：agent 干活时说的话（2026-09-29 实测，ST1）
+
+用户在 agent 干活时发的话，能直接进这一轮就直接进（`adapter.steer`），进不去的把选择交给用户，不再默默排到这一轮之后。每一项都在临时项目里用真实 CLI 测过：任务是「依次读 f1..f5，每个单独一次工具调用」，第一次工具调用后约 1 秒插一句「停一下，只读前两个」。脚本与原始输出在 `round-05/evidence/ST1/`（`spike_*.py`、`e2e_steer.py`、`e2e-*.txt`）。
+
+| CLI | 无头（Agora 现在的跑法）能插话吗 | 实测 | 协议上有没有 |
+|---|---|---|---|
+| Claude Code | **能**：`--input-format stream-json` 的 stdin 不关，再写一行 user 消息 | 它在**下一步**看到：读完 f1 后收到，多读了 f2 就停，只有一个 `result` | 同左 |
+| Codex | **能**（ST2 起）：`codex app-server` 常驻，`turn/steer`（`threadId`、`expectedTurnId`、`input`）。一次性的 `codex exec --json` 不能，起不来时退回它 | ST2 端到端：读完 f1 后插入，读了 f2 就停（`ST2/e2e-codex.txt`）；ST1 协议实测 14.0 s 插入、21.6 s 结束 | 同左 |
+| Pi | **能**（ST2 起）：`pi --mode rpc` 常驻，`steer`。一次性的 `pi -p --mode json` 不能，起不来时退回它 | ST2 端到端：`steer` 成功，话在下一个工具边界进上下文；换成 `magpie/group/gpt-6-sol` 读了 f1、f2 就停（`ST2/e2e-pi-gpt.txt`）；默认的 `group/opus-5-5` 收到后仍读满 5 个（`e2e-pi.txt`、`e2e-pi-strong.txt`：话确实在上下文里，是这个模型没听） | 同左 |
+| Grok | 不能：`-p` 只收启动时的一条（`--prompt-json` 也是单轮） | 打断后新一轮：读 f1、f2 | 没有 stdin 输入口 |
+| Cursor | 不能：`-p` 没有 `--input-format` | 打断后新一轮：读 f1、f2 | 没有 |
+| Devin | 不能：`-p` 的提示只在命令行上 | 打断后新一轮（Devin 一轮 30 秒内读满 5 个，所以在第 7 秒插） | 没有 |
+| 终端里的交互 TUI（Claude） | **能**：TUI 里打字本来就是插话 | 第 7 秒粘贴回车，它在当前这一步做完后收下：读完 f1、f2、f3（f3 已在跑）后停，没读 f4、f5 | — |
+
+Agora 的做法（`server/canvas/sessions.py` `AgentHub.send(sid, prompt, mode)`，`POST /api/agent/sessions/{id}/send` 的 `mode`）：
+
+- `steer`：`adapter.steer` 为真且这一轮是双工无头：写一行 `adapter.steer_line(prompt)` 到这一轮的 stdin（`Control`）；服务端在转录里加一条 `notice`（`tone: "steer"`，`afterId` = 这一轮刚做完的工具调用 id）并广播 `steered`；轨迹里这句挂在那一步下面（`TrajStep.steers`）。界面写「已插话给 X」。回执 `how: "steer"`，不起新的一轮。
+- `interrupt`：不能 steer 的 CLI：先 `interrupt(sid)` 停掉这一轮，这句话作为新一轮发出（`how: "interrupt"`；那一轮记「已停止」）。
+- `wait`：原来的排队（`how: "queued"`）。
+- `auto`（缺省）：能 steer 就 steer，否则排队。派出去的会话（`agora dispatch`）、评论交接、`agora reply` 的回执走 `hub.send`，不带 `mode`，所以对能 steer 的 CLI 同样直接插话；对不能的保持原来的排队，没有人在框前，不该替他选停止。
+- 页面上：能 steer 的直接插；不能的，说话框和会话输入框里给两个选择，默认第一个「停下这一轮，改说这句」，第二个「等这一轮做完再说」，并写清 `adapter.no_steer`（该 CLI 为什么不能）。选择的逻辑在 `web/src/session/steerModel.ts`。
+- 终端里有 pane 时不受影响：仍是「终端窗口开着 · 你的话在排队」「agent 正在回复，回复完再投递」等原来的规则（人正在终端里打字时暂停投递）。
+
+Codex、Pi 的 steer 见下一节「常驻进程」。
+
+## 图片：把选区当截图发给能收图的 CLI（2026-09-29 实测，RN1）
+
+发消息时选着元素，页面把选中的元素用 Excalidraw 导出成图（`exportToSvg` 给消息下面的缩略图，`exportToBlob` 出一张最长边 1024 px 的 PNG），服务端存下来（`.agora/local/selections/<id>/`，`server/canvas/selection.py`），能收图的 CLI 把这张 PNG 和文字一起收到，不能收的只收文字（名字（id）都写在页脚里，两种情况一样）。适配器的 `images = True` 表示无头一轮能收图；`RunRequest.images` 是文件路径，`AgentHub.send` 只对 `images` 为真的 CLI 传。每一项都在临时项目、临时 HOME 里用真实 CLI 测过：一张 160×160、白底上一个橙色大方块的 PNG，问「大方块什么颜色，一个词」。
+
+| CLI | 无头收图吗 | 怎么给 | 实测 |
+|---|---|---|---|
+| Claude Code 2.1.284 | **收** | `--input-format stream-json` 的首行 `content` 换成块数组：`{"type":"image","source":{"type":"base64","media_type":"image/png","data":…}}` 在前，文字块在后 | 回答「Orange.」；它自己的日志里这条 user 记录有 image 块，另有一条 `[Image: source: …]`（不进对话：见下） |
+| Codex 0.157.1 | **收** | `codex exec [resume <id>] -i <文件> --json …`：`-i` 收多个值，放在下一个选项之前，最后的 `-` 仍是「提示从 stdin 读」 | 新一轮、`exec resume` 都回答「Orange」 |
+| Pi 0.87.1 | **收** | `pi -p --mode json … -- @<文件> "提示"`：`@文件` 是参数，图片文件进上下文；Pi 的日志把它写成消息开头的 `<file name="…"></file>`（`agora_msg.strip_file_tags` 去掉，不当作用户的话） | 回答「Orange」；RPC 模式的 `prompt` 命令也带 `images`，Agora 没有用 RPC |
+| Grok 1.0.44 | **收** | `--prompt-json` 里 ACP 内容块：`{"type":"image","data":<base64>,"mimeType":"image/png"}` 在前，文字块在后（Claude 那种 `source` 写法被拒：`missing field data`） | 回答「Orange」 |
+| Cursor 2026.09.28 | **不收** | `-p` 没有图片参数，也没有 `--input-format`。提示里写 `@orange.png` 它会自己开 glob / Read 去找文件，那是它读文件，不是收到图片 | 只发文字 |
+| Devin 3000.10.21 | **不收** | `-p` 不能和位置参数 `[PATH]` 同用；提示里写文件名它会用工具去读 | 只发文字 |
+| 终端里的交互 TUI（任何 CLI） | 不发 | 往终端窗格里粘的是文字，没有图片通道 | 只发文字 |
+
+- 插话（steer）：写进正在跑的这一轮的那一行只有文字，不带图（`steer_line(prompt)` 只有一个参数）。
+- 图片放不下时（SVG 超过 1.5 MB，PNG 超过 3 MB）服务端拒绝保存，文字照发，页脚里选区照样写名字（id）。页面端 SVG 太大时会先去掉嵌入的图片素材重画一次。
+- Claude 的日志里，图片之后还有一条 `[Image: source: …/images/1.png]` 的 user 记录（`isMeta`），适配器不当作用户消息。
+
+### 常驻进程：Codex 的 app-server、Pi 的 RPC（ST2）
+
+Codex、Pi 原来每轮起一个进程（`codex exec --json`、`pi -p --mode json`），一轮开始后没有输入口。现在一个会话一个常驻进程（`server/canvas/resident.py`）：
+
+| | Codex | Pi |
+|---|---|---|
+| 进程 | `codex app-server`（stdio 上的 JSON-RPC 行） | `pi --mode rpc --session-id … --model … --thinking …` |
+| 起来 | `initialize` → `initialized` → `thread/start`（新会话：`cwd`、`approvalPolicy: never`、`model`）或 `thread/resume`（`threadId`、`excludeTurns`） | `get_state`（有回应才算起来） |
+| 一轮 | `turn/start`（`effort`） | `prompt` |
+| 插话 | `turn/steer`（`expectedTurnId`） | `steer` |
+| 中断 | `turn/interrupt`，一轮以 `turn/completed`（`status: interrupted`）结束，进程留着 | `abort`，以 `agent_settled` 结束，进程留着 |
+| 一轮结束 | `turn/completed` | `agent_settled` |
+| 映射 | `CodexAppStream`（用量取线程累计值的差） | `PiStream`（和一次性跑法同一批事件） |
+| 它问主机的事 | 审批、表单等请求一律回「不支持」，不悬着 | 扩展的 select / confirm / input / editor 回 `cancelled` |
+
+会话记录仍是 CLI 自己的原生日志，Agora 照旧读；权限是默认 auto、不加边界（Codex 的 `approvalPolicy: never` 与 `codex exec` 一致，沙箱用用户自己的配置）。主机发给这一轮的仍是双工协议那两种行（`Adapter.steer_line` 的 user 消息、`interrupt_request`），由后端翻成各家的命令。
+
+**进程的一生**（`ResidentPool`）：
+- 会话第一轮起，之后的轮复用；进程的启动参数或环境（`AGORA_CANVAS` 等）变了、或要续的线程不是它持有的，先停掉再起新的（`thread/resume` 从原生日志接上，不重发）。
+- 空闲 `AGORA_RESIDENT_IDLE_S`（缺省 600 秒）回收；同时最多 `AGORA_RESIDENT_MAX`（缺省 8）个，多了让最久没用的空闲进程让位；忙的从不回收。
+- 一个会话一个进程、一把锁：一个会话卡死只影响它自己（这一轮有 30 分钟上限，超时停进程），不拖别的。
+- 中断先软后硬：先发 `turn/interrupt` / `abort`，`INTERRUPT_GRACE_S` 后还没结束就 `task.cancel()`，后端停进程并用 `proctree` 连子孙进程一起停（这一轮的状态不明，进程不再复用）。
+- 进程中途死了：这一轮记错误（带 stderr 末尾和退出码），池里去掉它，下一轮起新的并续线程。
+- Agora 重启：进程的 stdin 随服务断开，CLI 自己退出；每个进程在 `.agora/run/residents/<pid>.json` 留标记，新服务启动时把死服务留下的（进程还在、命令对得上的）停掉；没有轮次在跑就什么都不提示，下一轮 `thread/resume` 接上，不重发。实测：SIGKILL 服务后四个进程都已退出、标记被清；重启后 Codex 和 Pi 都从原生日志续上，答得出上文。
+- `agora down` / SIGTERM：`AgentHub.close()` 先结束在跑的轮，再 `ResidentPool.close_all()`，有上限；实测有两个常驻进程时服务立刻干净退出，进程和标记都没剩。
+
+**起不来就退回**：Codex 没有 `app-server`、Pi 没有 rpc 模式、二进制找不到、进程一起来就退出、无回应（30 秒），这一轮退回一次性跑法，并发一个 `resident` 事件 `{"ok": false, "why": …}`；会话状态带 `steer: false`、`steerWhy`，会话头部写「… 的常驻进程没起来，这个会话现在用一次性跑法，中途不能插话：原因」，页面对这个会话按「不能插话」给两个选择。CLI 本身的问题（起不来）记 5 分钟，这段时间每轮直接用一次性跑法，不再每轮试；线程恢复失败只影响这一轮。`AGORA_RESIDENT=0` 关掉常驻（用户自己的开关，不写原因）。带图片的轮、分叉的轮、规划用的调用（`schema`）、没有会话的调用一律走一次性跑法，也不写原因。
+
+会话状态的 `steer`：`true`（这一轮的进程能收话）/ `null`（Codex、Pi 的进程还没起来：这时说的话排队，不丢）/ `false`（不能）。

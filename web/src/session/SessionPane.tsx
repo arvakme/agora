@@ -18,6 +18,10 @@ import { usePlay } from "../workstation/replayMode";
 import { useRuns } from "../workstation/runs/store";
 import { panelPlays } from "./replayStep";
 import { Markdown } from "./markdown";
+import { CardMessage } from "./AgoraCard";
+import { cardTurnLabel, messageCard, quietReply } from "./agentMessage";
+import { captureSelection } from "./selection";
+import { SelectionAttachment } from "./SelectionAttachment";
 import { ProcessFold, TrajectoryView } from "./TrajectoryView";
 import { TraceTurn } from "./TraceTurn";
 import { buildTurns, fmtCost, fmtDuration, fmtTokens, sumUsage, type TrajTurn } from "./trajectoryModel";
@@ -27,11 +31,13 @@ import { InputRight } from "./InputRight";
 import { RequestCards } from "./RequestCards";
 import { modeLabel, waitLabel } from "./requestModel";
 import { canvasChoices, topOf } from "./canvasChoices";
-import { useNested } from "../nested/store";
-import { agents, effortChoices, forkHeadless, loadAdapters, sessionKinds, useAgentName, useAgents, type AgentKind, type Catalog, type TerminalApps } from "./agents";
+import { agents, effortChoices, forkHeadless, loadAdapters, sessionKinds, steerOf, useAgentName, useAgents, type AgentKind, type Catalog, type TerminalApps } from "./agents";
+import { planSend, type SendMode } from "./steerModel";
 import { AgentAvatar } from "./AgentAvatar";
 import { Picker } from "./Picker";
 import { kindShown, recommendAgent } from "./recommend";
+import { drawPlan, isEmptyCanvas } from "./firstDraw";
+import { useNested } from "../nested/store";
 import "./recommend.css";
 import { effortGroups, modelGroups } from "./pickerModel";
 import { TerminalAppIcon } from "../app/terminals/TerminalAppIcon";
@@ -213,6 +219,24 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
       setBusy(false);
     }
   };
+  // The main button of an empty canvas: the recommended agent, started with the written prompt (session/firstDraw.ts).
+  const empty = isEmptyCanvas(useNested().scenes.get(canvasId ?? ""));
+  const draw = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const plan = drawPlan(rec);
+      const e = cat?.[plan.kind];
+      const m = e ? e.default || e.featured[0] || "" : "";
+      await agents.bind(sessionId, plan.kind, m, effortChoices(e, m).initial);
+      agentChoice.resolve(sessionId, sessionId);
+      await agents.send(sessionId, plan.prompt, canvasId ? { canvasId } : {});
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const models = useMemo(() => modelGroups(c), [c]);
   const efforts = useMemo(() => effortGroups(eff), [eff.levels.join(), eff.initial, eff.cliDefault]);
   const scopeNote = !c
@@ -225,6 +249,12 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
   return (
     <div className="sp">
       <div className="sp-choose sp-choose2">
+        {empty && (
+          <div className="sp-draw">
+            <button className="btn primary" disabled={busy || catState === "loading"} onClick={() => void draw()}>画出这个项目的架构</button>
+            <p>用 {nameOf(rec)} 看一遍这个项目，把整体架构画到这张图上，主要的子系统各做一张子图；画完用两三句话告诉你。</p>
+          </div>
+        )}
         <h2>选一个 agent 来讨论「{canvasTitle ?? "这张图"}」</h2>
         <p>它会一直是这个会话的 agent：先在图上和你讨论架构，再去写代码；你在图上看得到它在哪干活。选定后不能更改。</p>
         {waiting && (
@@ -354,14 +384,13 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
     addEventListener("agora:step", onStep);
     return () => (removeEventListener("agora:turn", on), removeEventListener("agora:trajectory", onTraj), removeEventListener("agora:step", onStep));
   }, [session, sessionId]);
-  const send = async (text: string, refs: Turn["refs"]) => {
-    const selected = Object.keys(canvases.get(session.canvasId)?.api.getAppState().selectedElementIds ?? {});
-    const notes = [
-      refs.length ? `引用的画布元素：${refs.map((r) => `${r.label}（${r.id}）`).join("、")}` : "",
-      selected.length ? `当前选区：${selected.join(", ")}` : "",
-    ].filter(Boolean);
-    await agents.send(sessionId, notes.length ? `${text}\n\n（${notes.join("；")}）` : text, { canvasId: session.canvasId });
+  const send = async (text: string, refs: Turn["refs"], mode?: SendMode) => {
+    // what is selected goes as names with ids in the footer and as a picture (./selection.ts); the words stay the person's own
+    const api = canvases.get(session.canvasId)?.api;
+    const selection = api ? await captureSelection(api, session.canvasId) : null;
+    await agents.send(sessionId, text, { canvasId: session.canvasId, refs: refs.map((r) => ({ id: r.id, name: r.label })), ...(selection && { selection }), ...(mode && { mode }) });
   };
+  const plan = planSend({ running: !!status?.running, terminalAlive: !!status?.terminal.alive, ...steerOf(binding.agent, status) });
   const [termMenu, setTermMenu] = useState(false);
   const [apps, setApps] = useState<TerminalApps | null>(null);
   useEffect(() => {
@@ -501,6 +530,11 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           <span>{termNote}</span>
         </div>
       )}
+      {status?.steerWhy && (
+        <div className="notice sp-steer-why" data-tone="caution" role="status">
+          <span>{nameOf(binding.agent)} 的常驻进程没起来，这个会话现在用一次性跑法，中途不能插话：{status.steerWhy}</span>
+        </div>
+      )}
       {view === "trajectory" ? (
         <div className="sp-traj">
           <TrajectoryView sessionId={sessionId} turns={turns} focusTurn={focusTurn} focusItem={focusItem} agent={binding.agent} cutoff={playAt} working={working} play={playing && played && playAt != null ? { n: played.n, at: playAt } : null} />
@@ -518,7 +552,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
               </ol>
             </div>
           )}
-          <Conversation sessionId={sessionId} turns={turns} changes={changes} canvasTitles={canvasTitles} flash={flash} onTrajectory={(n) => (setView((v) => panelView(v, "trajectory")), setFocusTurn({ n, key: Date.now() }))} />
+          <Conversation sessionId={sessionId} canvasId={session.canvasId} turns={turns} changes={changes} canvasTitles={canvasTitles} flash={flash} onTrajectory={(n) => (setView((v) => panelView(v, "trajectory")), setFocusTurn({ n, key: Date.now() }))} />
           {working && <LiveLine sessionId={sessionId} />}
         </div>
         <JumpPill show={jump.show} unread={jump.unread} running={working} onJump={jump.jump} />
@@ -565,6 +599,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           agentName={nameOf(binding.agent)}
           onSend={send}
           working={working}
+          plan={plan}
           onStop={status?.running ? () => void agents.interrupt(sessionId) : undefined}
         />
         </>
@@ -679,7 +714,7 @@ const rememberStale = (sid: string) => {
 };
 
 /** 对话 view: per turn — header with usage, the person's message, the process folded into one line, canvas changes, the answer. */
-function Conversation({ sessionId, turns, changes, canvasTitles, flash, onTrajectory }: { sessionId: string; turns: TrajTurn[]; changes: Turn[]; canvasTitles: Record<string, string>; flash: string | null; onTrajectory: (n: number) => void }) {
+function Conversation({ sessionId, canvasId, turns, changes, canvasTitles, flash, onTrajectory }: { sessionId: string; canvasId: string; turns: TrajTurn[]; changes: Turn[]; canvasTitles: Record<string, string>; flash: string | null; onTrajectory: (n: number) => void }) {
   // Canvas changes belong to the turn they happened in (by time); ones before any turn stand alone.
   const byTurn = new Map<number, Turn[]>();
   const loose: Turn[] = [];
@@ -692,28 +727,34 @@ function Conversation({ sessionId, turns, changes, canvasTitles, flash, onTrajec
   return (
     <div className="ds-convo">
       {loose.map(card)}
-      {turns.map((t) => (
+      {turns.map((t) => {
+        // what Agora wrote into the session (a receipt, a task, a comment) is a card and its turn says what arrived
+        const msg = t.user && messageCard(t.user);
+        return (
         <article key={t.n} className="ds-convo-turn">
-          <header className="ds-convo-head">
-            <button onClick={() => onTrajectory(t.n)} title="在轨迹里看这一轮">
-              第 {t.n} 轮 · {clock(t.startedAt)}
+          <header className="ds-convo-head" data-card={msg ? msg.kind : undefined}>
+            <button onClick={() => onTrajectory(t.n)} title={msg ? `在轨迹里看这一轮（第 ${t.n} 轮）` : "在轨迹里看这一轮"}>
+              {msg ? cardTurnLabel(msg) : `第 ${t.n} 轮`} · {clock(t.startedAt)}
               {t.running ? " · 进行中" : t.durationMs != null && t.durationMs > 20_000 ? ` · 用时 ${fmtDuration(t.durationMs)}` : ""}
             </button>
             {t.source === "terminal" && <span className="ds-tag">终端</span>}
             <TraceTurn sessionId={sessionId} turn={t} />
           </header>
-          {t.user && (
+          {t.user && msg && <CardMessage item={t.user} card={msg} />}
+          {t.user && !msg && (
             <div className="ds-user" data-source={t.user.source}>
               <p>{t.user.text}</p>
             </div>
           )}
+          {t.user?.selection && <SelectionAttachment sel={t.user.selection} canvasId={canvasId} />}
           <ProcessFold sessionId={sessionId} turn={t} />
           {(byTurn.get(t.n) ?? []).map(card)}
-          {t.reply?.text && <Markdown className="ds-say" text={t.reply.text} />}
+          {t.reply?.text && <Markdown className={msg && quietReply(t) ? "ds-say quiet" : "ds-say"} text={t.reply.text} />}
           {t.error && !t.running && (t.error === "interrupted" ? <p className="sp-notice">这一轮已停止</p> : <p className="ds-say" data-error>这一轮出错：{t.error}</p>)}
           {(t.notices ?? []).map((n) => <p key={n.id} className="sp-notice" data-tone={n.tone}>{n.text}</p>)}
         </article>
-      ))}
+        );
+      })}
     </div>
   );
 }

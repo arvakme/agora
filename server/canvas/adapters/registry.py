@@ -81,6 +81,8 @@ def info(a: Adapter, *, version: str | None = None, installed: bool | None = Non
             "forkHeadless": bool(getattr(a, "can_fork_headless", False)),
             "cost": a.has_cost,
             "waits": a.waits,
+            "steer": a.steer,
+            "noSteer": a.no_steer,
         },
         "icon": {"kind": "mark", "src": a.icon or a.kind},
         "logDir": a.log_dir,

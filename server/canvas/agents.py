@@ -239,6 +239,27 @@ class _CliBackend:
         own = getattr(adapters.need(self.name), "headless_stdin", None)
         return own(req) if own is not None else req.prompt.encode()
 
+    def result(self, mapper: StreamMapper, req: RunRequest, started: int, error: str | None) -> dict[str, Any]:
+        """The turn's ``result`` event: what the mapper gathered, and ``error`` when it did not end well."""
+        at = now_ms()
+        usage = mapper.final_usage(at - started)
+        out: dict[str, Any] = {
+            "t": "result",
+            "at": at,
+            "raw": mapper.text or None,
+            "costUsd": usage["costUsd"],
+            "durationMs": usage["durationMs"],
+            "usage": usage,
+            "backend": self.name,
+            "session": mapper.session,
+            "prompt": req.prompt,
+        }
+        if getattr(mapper, "interrupted", False):
+            out["interrupted"] = True
+        if error:
+            out["error"] = error
+        return out
+
     async def run(self, req: RunRequest) -> AsyncIterator[dict[str, Any]]:
         o = req.options
         started = now_ms()
@@ -246,24 +267,7 @@ class _CliBackend:
         yield {"t": "start", "at": started, "backend": self.name, "model": o.model or None, "session": o.session}
 
         def finish(error: str | None) -> dict[str, Any]:
-            at = now_ms()
-            usage = mapper.final_usage(at - started)
-            out: dict[str, Any] = {
-                "t": "result",
-                "at": at,
-                "raw": mapper.text or None,
-                "costUsd": usage["costUsd"],
-                "durationMs": usage["durationMs"],
-                "usage": usage,
-                "backend": self.name,
-                "session": mapper.session,
-                "prompt": req.prompt,
-            }
-            if getattr(mapper, "interrupted", False):
-                out["interrupted"] = True
-            if error:
-                out["error"] = error
-            return out
+            return self.result(mapper, req, started, error)
 
         data = self.stdin(req)
         cmd_args = self.args(req)
@@ -584,3 +588,7 @@ __all__ = [
     "migrate_pi_log",
     "new_native_since",
 ]
+
+
+# The resident ways of Codex and Pi (ST2) replace their entries in ``BACKEND_CLASSES``.
+from server.canvas import resident as _resident  # noqa: E402,F401

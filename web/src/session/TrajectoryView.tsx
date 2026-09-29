@@ -17,6 +17,8 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
 import { IconChevron, IconCopy, IconSearch } from "../app/icons";
 import { agents, type AgentKind, type Item } from "./agents";
+import { messageCard } from "./agentMessage";
+import { liveFollow, useLiveFollow } from "../workstation/replayLive";
 import { focus, useFocus } from "../workstation/focus";
 import { TraceTurn } from "./TraceTurn";
 import { panToStep, playTurn } from "./playTurn";
@@ -413,7 +415,7 @@ function TurnSection({ sessionId, turn, open, dim, onToggle, kids, children }: {
 
 /** The sub-agents this turn dispatched: name, state, time taken; a click traces it on the diagram. */
 function SubAgents({ kids }: { kids: WorkRun[] }) {
-  const traced = useFocus().traced;
+  const followed = useLiveFollow().run;
   const at = Date.now();
   return (
     <div className="ds-kids">
@@ -423,7 +425,7 @@ function SubAgents({ kids }: { kids: WorkRun[] }) {
         const state = k.running && !k.doneAt ? "运行中" : last ? RECEIPT_NAMES[receiptView(k, last)] : "";
         const took = k.spawnAt != null ? fmtDuration(Math.max(0, (k.doneAt ?? (k.running ? at : k.lastAt)) - k.spawnAt)) : null;
         return (
-          <button key={k.id} className="ds-kid" data-on={traced === k.id || undefined} onClick={() => focus.trace(traced === k.id ? null : k.id)} title={k.task ?? "在图上追踪它"}>
+          <button key={k.id} className="ds-kid" data-on={followed === k.id || undefined} onClick={() => liveFollow.follow(k.id)} title={k.task ?? "让镜头跟着它"}>
             <RunAvatar agent={k.agent} size={16} />
             <span className="ds-kid-name">{k.name}</span>
             <span className="ds-kid-state">{state}</span>
@@ -443,6 +445,7 @@ function StepGroup({ step, children }: { step: TrajStep; children: React.ReactNo
         {step.description && <em>{step.description}</em>}
       </div>
       {children}
+      {step.steers?.map((n) => <p key={n.id} className="ds-steer" role="note">{n.text}</p>)}
     </div>
   );
 }
@@ -476,7 +479,7 @@ function RecordRow({ sessionId, r, canPlay, onGo, onPlay, selected, onSelect, ag
           <div className="ds-inspector">
             <div className="ds-payload">
               <div className="ds-payload-head">
-                {r.kind === "user" ? (r.item.source === "terminal" ? "终端输入" : "来自 Agora") : "回复"}
+                {r.kind === "user" ? (r.item.source === "terminal" ? "终端输入" : messageCard(r.item) ? "来自 Agora · 原文" : "来自 Agora") : "回复"}
                 <span>{clock(r.at)}</span>
               </div>
               <pre className="ds-prose">{r.item.text}</pre>

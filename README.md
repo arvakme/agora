@@ -123,7 +123,7 @@ cd ~/code/my-service                            # 你的项目
 - 删除的画布和会话进「回收站」，30 天内可恢复（刷新、重启后也行）；「所有画布」底部还有「会话历史」，可以按时间、agent、主题、画布找会话，也能把本机找到的原生会话重新导入。
 - 仓库移动、`cp -r` 复制、重新 clone 都有处理：移动后 Pi 会话的日志跟着挪；副本里的会话只读、可分叉继续；别的机器建的会话显示成只读卡片。`git clean -fdx` 删掉的本机数据（会话绑定、改图记录、回收站）由仓库外的每日备份和本机注册表兜底：`agora doctor --fix`。见[项目存储](web/docs/project-storage.md)。
 
-- 首次打开会建一块「示例架构图」和一个会话；在会话里选好 agent 就可以开始讨论。
+- 首次打开会建一块以项目命名的空画布和一个会话；会话里的「画出这个项目的架构」按钮让推荐的 agent 看一遍项目、把架构画上去（也可以自己选 agent、自己写第一句话）；「看一个示例」会把示例图作为另一张画布打开。
 - 绑定会话时会自动为该 agent 安装 `agora` skill（旧的 `agora-canvas` 链接会被换掉）；也可以手动 `agora skill install --agent claude|codex|pi|all`（Claude Code 链接到 `.claude/skills/`，Codex 链接到 `.agents/skills/`，Pi 每次启动带 `--skill`；链接写进 `.git/info/exclude`，不改全局配置）。
 - 把 `~/code/agora/bin` 加进 `PATH` 后可以直接用 `agora up` / `agora open`。`agora up` 只起服务并打印地址；`agora open --dev` 走 vite 热更新，开发 Agora 本身时用。
 

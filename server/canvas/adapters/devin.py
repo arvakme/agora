@@ -277,6 +277,7 @@ class DevinTail:
 
 class DevinAdapter(Adapter):
     kind = "devin"
+    no_steer = "Devin 的 `-p` 只收命令行上的一条提示，这一轮开始后没有输入口"
     name = "Devin"
     binaries = ("devin",)
     tested = VersionRange(">=3000.10.21,<3000.11")

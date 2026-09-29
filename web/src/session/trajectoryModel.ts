@@ -13,6 +13,7 @@
 //     ("读取了文件，修改了文件并执行了命令等")    ui-chat/src/client/conversation-nodes/process-activity.ts,
 //                                             ui-chat/src/client/chat/step-process.ts
 // Only what the log recorded is shown: unknown durations, tokens or costs stay null.
+import { cardLine, messageCard } from "./agentMessage";
 import type { FileOp, Item, Usage } from "./agents";
 
 export type RecordKind = "user" | "message" | "tool";
@@ -28,7 +29,7 @@ export type TrajRecord = {
   running: boolean;
   item: Item;
 };
-export type TrajStep = { n: number; records: TrajRecord[]; startedAt: number; endedAt: number; description: string };
+export type TrajStep = { n: number; records: TrajRecord[]; startedAt: number; endedAt: number; description: string; /** Words the person steered into the running turn right after this step's last tool call (ST1). */ steers?: Item[] };
 export type UsageSum = { input: number | null; output: number | null; cacheRead: number | null; cacheWrite: number | null; cost: number | null; requests: number };
 export type FileTouch = { path: string; op: FileOp; at: number; toolId: string; turn: number };
 export type Activity = "read" | "search" | "write" | "edit" | "commands" | "webSearch" | "webFetch" | "subagents" | "plan" | "questions" | "tools";
@@ -178,6 +179,11 @@ function stepDescription(records: TrajRecord[]): string {
 }
 
 const oneLine = (s = "") => s.replace(/\s+/g, " ").trim();
+/** A user message in one line: what Agora wrote into the session (a receipt, a task) says what arrived, not its raw text. */
+const userLine = (it: Item) => {
+  const c = messageCard(it);
+  return c ? cardLine(c) : (it.text ?? "");
+};
 
 /**
  * Fold transcript items into turns. `defaults` is the session's binding (model and effort used
@@ -251,7 +257,7 @@ export function buildTurns(items: readonly Item[], defaults: { model?: string | 
     }
     if (it.kind === "user") {
       cur = open(it.at, it);
-      cur.steps.push({ n: 0, records: [record(cur, it, "user", oneLine(it.text), null)], startedAt: it.at, endedAt: it.at, description: "" });
+      cur.steps.push({ n: 0, records: [record(cur, it, "user", oneLine(userLine(it)), null)], startedAt: it.at, endedAt: it.at, description: "" });
       step = null;
       continue;
     }
@@ -308,6 +314,11 @@ export function buildTurns(items: readonly Item[], defaults: { model?: string | 
       s.description = s.n > 0 ? stepDescription(s.records) : "";
     }
     t.steps = t.steps.filter((s) => s.records.length);
+    for (const n of t.notices ?? []) {
+      if (n.tone !== "steer" || !n.afterId) continue;
+      const s = t.steps.find((x) => x.records.some((r) => r.id === n.afterId));
+      if (s) s.steers = [...(s.steers ?? []), n];
+    }
     t.activity = [...(counts.get(t) ?? new Map())].map(([kind, count]) => ({ kind, count })).sort((a, b) => b.count - a.count);
     // The runner's own accounting for headless turns: cost (Claude only reports it there), and
     // tokens / wall time when the log had none.

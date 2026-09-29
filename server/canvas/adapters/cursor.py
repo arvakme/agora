@@ -332,6 +332,7 @@ def cursor_catalog(ids: list[str], names: dict[str, str], default: str, source: 
 
 class CursorAdapter(Adapter):
     kind = "cursor"
+    no_steer = "Cursor 的 `-p` 只收启动时的一条提示，这一轮开始后没有输入口"
     name = "Cursor"
     binaries = ("cursor-agent",)
     tested = VersionRange(">=2026.09.26,<2026.11")

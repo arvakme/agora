@@ -181,3 +181,4 @@ p.ds-say { white-space: pre-wrap; }
 .ds-rec:hover .ds-rec-play, .ds-rec-play:focus-visible { opacity: 1; }
 .ds-rec-play:hover { background: var(--accent-fill); color: var(--accent-fg); }
 @media (hover: none) { .ds-rec-play { opacity: 1; } }
+.ds-steer { margin: 2px var(--space-5) var(--space-3) var(--space-7); padding-left: var(--space-4); border-left: 2px solid var(--accent-fg); color: var(--fg-muted); font-size: var(--text-xs); line-height: 1.45; }
