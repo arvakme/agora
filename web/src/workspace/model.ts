@@ -1,6 +1,6 @@
 // Workspace model (see web/docs/workspace-model.md): which canvases and sessions exist,
 // which are open as tabs, and the naming / placement rules. Pure functions only.
-import { activate, addTab, group, groupOf, groups, removeTab, type Group, type Node } from "./layout.ts";
+import { activate, addTab, group, groupOf, groups, moveTab, removeTab, type Group, type Node } from "./layout.ts";
 import { FOLLOW_TAB } from "./followTab.ts";
 
 /** `reviewedAt`: a child canvas the person checked against the code at that time (docs/nested-canvas.md §5). */
@@ -110,6 +110,53 @@ export function canvasTree(ids: string[], parentOf: (id: string) => string | und
   roots.forEach((r) => walk(r, 0));
   for (const id of ids) walk(id, 0); // a loop has no root: list what is left at the top
   return out;
+}
+
+export type NewWhat = "canvas" | "session" | "sample" | "open";
+/** What a group's「+」offers: canvas and mixed groups a menu, session groups nothing (it creates a session straight away). */
+export const plusMenu = (kind: GroupKind): NewWhat[] | null => (kind === "session" ? null : ["canvas", "session", "sample", "open"]);
+
+/** A doc opened beside the canvas in use takes this share of the split; the canvas keeps the larger one. */
+const SPLIT = [0.6, 0.4];
+const two = (n: Node): Node => (n.kind === "split" && n.children.length === 2 ? { ...n, sizes: SPLIT } : n);
+
+/**
+ * Open `id` in its home group (homeGroup), the one placement for every new doc: a session joins the
+ * session column, or splits one off the canvas's right (canvas about 60%). `keepVisible`: a tab in
+ * the home group that must stay on screen, so the new one splits beside it instead of covering it.
+ */
+export function placeDoc(
+  root: Node,
+  id: string,
+  kind: DocKind,
+  ctx: Parameters<typeof homeGroup>[2] & { keepVisible?: string },
+): Node {
+  const home = homeGroup(root, kind, ctx);
+  const next = openTab(root, id, home.groupId);
+  if (ctx.keepVisible && groupOf(root, ctx.keepVisible)?.id === home.groupId) {
+    const beside = moveTab(next, id, home.groupId, "left");
+    return two(activate(beside, groupOf(beside, ctx.keepVisible)!.id, ctx.keepVisible));
+  }
+  return home.split ? two(moveTab(next, id, home.groupId, "right")) : next;
+}
+
+/**
+ * The first screen of a page load: without a `?canvas=` link every canvas tab shows the top of its
+ * tree (the overall architecture), not the child level it was left on. A link (also a reload inside
+ * a child) keeps the saved layout as is.
+ */
+export function firstScreen(a: { root: Node; focused: string; urlCanvas: string | null; topOf: (id: string) => string; kindOf: (id: string) => DocKind | undefined }): { root: Node; focused: string } {
+  if (a.urlCanvas) return { root: a.root, focused: a.focused };
+  let root = a.root;
+  for (const id of openIds(a.root)) {
+    const top = a.kindOf(id) === "canvas" ? a.topOf(id) : id;
+    if (top === id) continue;
+    const r = replaceTab(root, id, top);
+    root = r.closed ? r.root : closeTab(r.root, id); // the top was already open: the child's tab is redundant
+
+  }
+  const top = a.kindOf(a.focused) === "canvas" ? a.topOf(a.focused) : a.focused;
+  return root === a.root ? { root, focused: a.focused } : { root, focused: top };
 }
 
 /**
