@@ -5,7 +5,7 @@ import type { ThreadSnapshot } from "../comments/threads";
 import type { FileError, LocalChange, ProjectInfo } from "../persist";
 import { sessions } from "../session/store";
 import { group, moveTab, type Node } from "../workspace/layout";
-import { migrateDocs, recoverWorkspace, SAMPLE_CANVAS, sessionDocId, type Doc } from "../workspace/model";
+import { migrateDocs, recoverWorkspace, sessionDocId, type Doc } from "../workspace/model";
 
 export type WorkspaceState = { v?: 2; docs: Doc[]; root: Node; focused: string };
 export type Boot = {
@@ -23,11 +23,14 @@ export type Boot = {
   change?: LocalChange | null;
 };
 
-/** First run: the sample canvas on the left, a draft session docked on the right. Later canvases start blank. */
-function defaults(): WorkspaceState {
+/** The first canvas of a new project has nothing on it (the example is a click away: session/firstDraw.ts). */
+export const FIRST_SCENE: readonly El[] = [];
+
+/** First run: an empty canvas named after the project on the left, a draft session docked on the right. Later canvases start blank. */
+function defaults(projectName?: string): WorkspaceState {
   const s = sessions.create("c1", undefined, { draft: true });
   const p = sessionDocId(s.id);
-  const docs: Doc[] = [{ id: "c1", kind: "canvas", title: SAMPLE_CANVAS }, { id: p, kind: "session", sessionId: s.id, title: "" }];
+  const docs: Doc[] = [{ id: "c1", kind: "canvas", title: projectName?.trim() || "画布" }, { id: p, kind: "session", sessionId: s.id, title: "" }];
   const g = group(["c1", p]);
   const root = moveTab(g, p, g.id, "right");
   return { v: 2, docs, root: root.kind === "split" ? { ...root, sizes: [0.6, 0.4] } : root, focused: "c1" };
@@ -50,9 +53,9 @@ export function prepareBoot(boot: Boot): Boot {
   const onDisk = [...Object.keys(boot.canvases), ...unreadable];
   if (!workspace) {
     if (boot.empty !== false || !onDisk.length) {
-      // Only a project the server calls empty gets the sample (and even then c1 is written with
+      // Only a project the server calls empty gets the first canvas (and even then c1 is written with
       // base null, so an existing file is never overwritten).
-      workspace = defaults();
+      workspace = defaults(boot.project?.name);
       firstRun = true;
     } else {
       // workspace.json missing, empty or unreadable, canvases on disk: rebuild the list from them.

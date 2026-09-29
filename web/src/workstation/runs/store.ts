@@ -3,7 +3,7 @@
 // session/agents.ts, converted by derive.ts `fromTree`). The scripted dev mock (`?mock=runs`,
 // fixtures.ts) replaces all of it only when asked for (tests, demos). Recomputed on data events
 // only (and once a second while something runs, since a running turn ends at "now"), never per frame.
-import { useSyncExternalStore } from "react";
+import { createContext, useContext, useSyncExternalStore } from "react";
 import { adapters, agentName, agents, fetchRuns, type AgentKind } from "../../session/agents";
 import { sessionNames } from "../../multi/writes";
 import { fromTree, runFromTranscript } from "./derive";
@@ -147,4 +147,9 @@ export const runs = {
   mock: MOCK,
 };
 
-export const useRuns = () => useSyncExternalStore(runs.subscribe, runs.get);
+/** Where a subtree gets its runs from: the page's own (default), or another store — the build replay's figures (../../buildreplay/). */
+export const RunsSource = createContext<{ subscribe: (l: () => void) => () => void; get: () => Runs } | null>(null);
+export const useRuns = () => {
+  const source = useContext(RunsSource) ?? runs;
+  return useSyncExternalStore(source.subscribe, source.get);
+};

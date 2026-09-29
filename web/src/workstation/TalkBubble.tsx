@@ -1,21 +1,23 @@
 // 对小人说话 (web/docs/workstation.md §12): click a figure and a small input opens just under it;
 // Enter sends the words to that agent's session (`agents.send`), Esc closes it. A sub-agent has no
 // session of its own: the box says so and sends to the session that dispatched it instead, naming the
-// sub-agent. After Enter the box says who got it — 已发给 Claude Code — and, when a turn is running, that it
-// 会在这一轮结束后送达 (panel messages wait for the turn to end); the figure turns and nods when the message
+// sub-agent. After Enter the box says who got it — 已发给 Claude Code, or 已插话给 Claude Code when a turn was
+// running and the CLI takes words into it (steer); a CLI that cannot asks first: 停下这一轮，改说这句 (Enter, the
+// default) or 等这一轮做完再说 (../session/steerModel.ts). The figure turns and nods when the message
 // really shows up in the session, not when it is sent (./talk.ts `watchDelivery`). Mount it in the
 // overlay's layer (screen coordinates of the canvas pane); it follows the selected figure's feet in
 // the one frame loop. `data-esc-local`: the app's global Esc leaves it alone.
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { viewport } from "../canvas/viewport";
-import { agentName, agents } from "../session/agents";
+import { agentName, agents, steerOf } from "../session/agents";
+import { CHOICES, defaultChoice, planSend, whyNoSteer, type SendMode } from "../session/steerModel";
 import { InputRight } from "../session/InputRight";
 import { figurePositions, useFocus } from "./focus";
 import { frame } from "./frame";
 import { occupiedOf } from "./replayDom";
 import { useRuns } from "./runs/store";
 import type { FlatRun } from "./runs/types";
-import { deliveryNote, placeTalk, sendState, talkDismissed, talkHost, talkSent, talkTarget, type Side, type TBox } from "./talk";
+import { deliveryNote, placeTalk, sendState, talkDismissed, talkHost, talkSent, talkTarget, type SendState, type Side, type TBox } from "./talk";
 import "./TalkBubble.css";
 
 /**
@@ -40,12 +42,19 @@ export function TalkBubble({ canvasId, obstacles }: { canvasId: string; obstacle
   return f && host === canvasId ? <Talk key={f.run.id} f={f} canvasId={canvasId} obstacles={obstacles} /> : null;
 }
 
+/** What words to this session do now (../session/steerModel.ts). */
+function sayPlan(sid: string) {
+  const s = agents.get();
+  return planSend({ running: !!s.status[sid]?.running, terminalAlive: !!s.status[sid]?.terminal.alive, ...steerOf(s.bindings[sid]?.agent, s.status[sid]) });
+}
+
 function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstacles: () => TBox[] }) {
   const [shut, setShut0] = useState(() => talkDismissed.run === f.run.id);
   const setShut = (v: boolean) => (v && (talkDismissed.run = f.run.id), setShut0(v));
   const [text, setText] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [ask, setAsk] = useState(false); // the words are held while the person picks: stop and say it now, or wait
   // the note under the box is the module's (./talk.ts `talkSent`): it survives this box unmounting while the figure is in another view
   const sent = useSyncExternalStore(talkSent.subscribe, () => talkSent.get(f.run.id));
   const box = useRef<HTMLDivElement>(null);
@@ -87,23 +96,30 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
     return () => (clearTimeout(t), off());
   }, [shut, id, canvasId]);
   const working = useSyncExternalStore(agents.subscribe, () => !!f.root.sessionId && sendState(f.root.sessionId) === "queued");
-  const target = talkTarget({ name: f.run.name, hasSession: !!f.run.sessionId, rootName: f.root.name, working });
+  // what the words do now: into the running turn, a choice of two, or the ordinary send (../session/steerModel.ts)
+  const planKind = useSyncExternalStore(agents.subscribe, () => (f.root.sessionId ? sayPlan(f.root.sessionId).kind : "send"));
+  const target = talkTarget({ name: f.run.name, hasSession: !!f.run.sessionId, rootName: f.root.name, working, plan: planKind === "steer" || planKind === "choose" ? planKind : undefined });
   // closed by Esc, or after the delivery note had been up for a while
   const dismissed = useSyncExternalStore(talkSent.subscribe, () => talkDismissed.run === f.run.id);
   if (shut || dismissed) return null;
   // who gets it: the agent's own session, or — for a sub-agent — the session that dispatched it
   const to = f.root;
-  const send = async () => {
+  const send = async (way?: "interrupt" | "wait") => {
     const words = text.trim();
     if (!words || busy || !to.sessionId) return;
+    const sid = to.sessionId;
+    const plan = sayPlan(sid);
+    // an agent that cannot take words mid-turn: the box asks which way first (Enter takes the first), nothing is queued unasked
+    if (plan.kind === "choose" && !way) return void setAsk(true);
     setBusy(true);
     setErr(null);
     try {
-      const sid = to.sessionId;
-      const state = sendState(sid); // before the send: is a turn running now?
+      const state: SendState = plan.kind === "steer" ? "steered" : plan.kind === "choose" ? (way === "interrupt" ? "interrupted" : "queued") : sendState(sid); // before the send: is a turn running now?
       const sentAt = Date.now() - 1500; // the log's clock and the page's are one machine's; a little slack
-      await agents.send(sid, target.prefix + words, { canvasId: canvasId.startsWith("follow:") ? canvasId.slice(7) : canvasId });
+      const mode: SendMode | undefined = plan.kind === "steer" ? "steer" : plan.kind === "choose" ? way : undefined;
+      await agents.send(sid, target.prefix + words, { canvasId: canvasId.startsWith("follow:") ? canvasId.slice(7) : canvasId, ...(mode && { mode }) });
       const agent = agentName(agents.get().bindings[sid]?.agent);
+      setAsk(false);
       talkSent.start({ runId: f.run.id, nodId: to.id, sessionId: sid, words, sentAt, agent, state });
     } catch (e) {
       setErr(`没发出去：${(e as Error).message}`);
@@ -115,6 +131,18 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
     <div className="ws-talk" ref={box} style={{ visibility: "hidden" }} data-esc-local onPointerDown={(e) => e.stopPropagation()}>
       {sent ? (
         <p className="ws-talk-note" role="status" data-state={sent.state}>{deliveryNote(sent.agent, sent.state)}</p>
+      ) : (
+      ask ? (
+        <div className="ws-talk-ways" role="group" aria-label="这一轮还在跑，你的话怎么说" onKeyDown={(e) => e.key === "Escape" && (e.stopPropagation(), setAsk(false))}>
+          <p className="ws-talk-sub">{whyNoSteer(agentName(agents.get().bindings[to.sessionId ?? ""]?.agent), steerOf(agents.get().bindings[to.sessionId ?? ""]?.agent, agents.get().status[to.sessionId ?? ""]).noSteer)}</p>
+          <p className="ws-talk-sub">
+            {CHOICES.map((c) => (
+              <button key={c.mode} type="button" autoFocus={c.mode === defaultChoice()} disabled={busy} onClick={() => void send(c.mode)}>
+                {c.label}
+              </button>
+            ))}
+          </p>
+        </div>
       ) : (
       <input
         ref={input}
@@ -132,7 +160,7 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
           }
         }}
       />
-      )}
+      ))}
       {target.note && !sent && <p className="ws-talk-sub">{target.note}</p>}
       {err && <p className="ws-talk-err" role="alert">{err}</p>}
       {to.sessionId && <InputRight sessionId={to.sessionId} />}

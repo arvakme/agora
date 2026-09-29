@@ -16,13 +16,14 @@ import { bbox, byId, live, type El } from "./scene";
 import type { ThreadStore } from "../comments/threads";
 import { useHighlight } from "../session/ui";
 import { PointerLayer } from "../pointer/PointerLayer";
-import { childAt, OwnerBreadcrumb, OwnerChildMarkers } from "../nested/NestedLayer";
+import { OwnerBreadcrumb, OwnerChildMarkers } from "../nested/NestedLayer";
 import { nav } from "../nested/store";
 import { WorkstationOverlay } from "../workstation/Overlay";
 import { useWorkstation } from "../workstation/clock";
 import { firstView, viewport } from "./viewport";
 import { BENCH_BARE } from "../bench/bench";
 import { useChrome } from "./useChrome";
+import { EMPTY_HINT, sampleRequests } from "../session/firstDraw";
 import type { Box } from "./clearance";
 import { KEEPS_CARD_OPEN } from "./pressOutside";
 import { AnimatePresence, motion } from "motion/react";
@@ -232,16 +233,6 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onGone, o
       <div
         className="canvas-layers"
         ref={setLayers}
-        onDoubleClickCapture={(e) => {
-          // Double-click on a node that opens a child canvas enters it (text editing stays on Enter).
-          if (!view || (e.target as HTMLElement).closest(".ptr-ui, .nest-mark, .tcard, .pin")) return;
-          const r = e.currentTarget.getBoundingClientRect();
-          const child = childAt(view, e.clientX - r.left, e.clientY - r.top);
-          if (!child) return;
-          e.stopPropagation();
-          e.preventDefault();
-          enter(child);
-        }}
       >
       <Excalidraw
         excalidrawAPI={setApi}
@@ -278,7 +269,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onGone, o
         )}
       </Excalidraw>
       {api && !readOnly && <AnimLayer api={api} />}
-      {api && view && !readOnly && !view.elements.some((e) => !e.isDeleted) && <EmptyCanvas onSample={() => api.updateScene({ elements: buildFixture() as never, captureUpdate: CaptureUpdateAction.IMMEDIATELY })} />}
+      {api && view && !readOnly && !view.elements.some((e) => !e.isDeleted) && <EmptyCanvas />}
       {hasParked && !draft && <div className="parked-hint">有一条未发送的评论 · 按 C 恢复</div>}
       {api && view && (
         <>
@@ -296,6 +287,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onGone, o
             onOpenResolved={(id) => (onDrawer(true), setListFocus({ id, key: Date.now() }))}
             repin={repin}
             onRepinned={() => setRepin(null)}
+            onRepin={setRepin}
           />
           {!readOnly && <HighlightLayer canvasId={doc.id} view={view} />}
           {readOnly ? overlay?.(view, chrome) : <OwnerChildMarkers view={view} canvasId={doc.id} chrome={chrome} />}
@@ -305,24 +297,20 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onGone, o
       )}
       </div>
       </div>
-      {api && view && <CommentsDrawer title={doc.title} api={api} store={doc.store} view={view} open={drawerOpen} onClose={() => onDrawer(false)} focusId={listFocus} onRepin={setRepin} />}
+      {api && view && <CommentsDrawer title={doc.title} api={api} store={doc.store} view={view} open={drawerOpen} onOpen={() => onDrawer(true)} onClose={() => onDrawer(false)} focusId={listFocus} onRepin={setRepin} />}
     </div>
   );
 }
 
-/** A blank canvas (docs/workbench-focus.md state e): the one question — what first. */
-function EmptyCanvas({ onSample }: { onSample: () => void }) {
+/** A blank canvas (docs/workbench-focus.md state e): one sentence pointing at the one main button in the session's chooser
+ * (session/firstDraw.ts), and a quiet way to look at the example — which opens as another canvas, this one stays empty. */
+function EmptyCanvas() {
   return (
     <div className="empty-cv" aria-label="空白画布">
       <div className="empty-cv-box">
         <span className="dither-field" aria-hidden />
-        <h3>一张空白画布</h3>
-        <ol>
-          <li><i>1</i><b>画出架构</b>用上面的工具画，或让 agent 画</li>
-          <li><i>2</i><b>和 agent 讨论</b>在左边选一个 agent，它会改这张图</li>
-          <li><i>3</i><b>让它写代码</b>它读写哪个模块，就站到哪个节点旁</li>
-        </ol>
-        <button className="btn ghost sm" onClick={onSample}>从示例新建</button>
+        <p>{EMPTY_HINT}</p>
+        <button className="btn ghost sm" onClick={() => sampleRequests.request()}>看一个示例</button>
       </div>
     </div>
   );

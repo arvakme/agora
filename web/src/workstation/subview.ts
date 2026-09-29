@@ -8,8 +8,8 @@
 //
 // `presenceAt` says where a run stands at t in those terms — ./place.ts `stateAt` with the deepest
 // nodes as its places, so a short read of another node is a glance exactly as it is on the canvas —
-// and since when it has been working below the main canvas. The follow pane (./FollowPane.tsx)
-// opens for newcomers (`arrivals`) and follows the latest. Pure; memoised per scenes and context.
+// and since when it has been working below the main canvas. The entry marks (./EntryMarks.tsx)
+// show who is below a node. Pure; memoised per scenes and context.
 import { effectiveLinks, type NestedLink, type Scenes } from "../nested/graph";
 import { elementFor } from "../pointer/codeLinks";
 import { bursts, DOOR_MS, OUTSIDE, stateAt, type Ctx } from "./place";
@@ -170,11 +170,4 @@ function entry(run: WorkRun, t: number, c: SubviewCtx): number | null {
     e = g.start;
   }
   return e;
-}
-
-/** Runs working below the main canvas whose entry is not the one in `announced` (the pane reacted to it already), the most recent first. */
-export function arrivals(ps: ReadonlyMap<string, Presence | null>, announced: ReadonlyMap<string, number>): string[] {
-  const out: [string, number][] = [];
-  for (const [id, p] of ps) if (p?.entered != null && announced.get(id) !== p.entered) out.push([id, p.entered]);
-  return out.sort((a, b) => b[1] - a[1]).map(([id]) => id);
 }

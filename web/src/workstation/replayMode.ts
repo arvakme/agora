@@ -53,7 +53,7 @@ let main: string | null = null;
 let until = 0;
 let doneAt = 0;
 
-const mainCanvas = () => (main ??= state.play?.canvasId ?? [...canvasWhere.keys()].find((k) => !k.startsWith("follow:")) ?? null);
+const mainCanvas = () => (main ??= state.play?.canvasId ?? [...canvasWhere.keys()][0] ?? null);
 const run = (): WorkRun | null => (state.play ? (runs.get().byId.get(state.play.runId) ?? null) : null);
 /** The camera: the main view follows the traced agent (./replayView.ts). */
 const camera = createCamera(() => (state.play ? mainCanvas() : null), run, () => state.play?.win ?? null, { setManual: (on) => state.manual !== on && set({ manual: on }) });

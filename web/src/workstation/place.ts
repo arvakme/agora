@@ -510,7 +510,7 @@ export const leaveAfter =
 /** `empty`: the canvas has nothing drawn on it (its 「一张空白画布」 guide shows): the overlay draws no one, the strip says so. */
 export const canvasWhere = new Map<string, { ctx: Ctx; label: (place: string) => string; empty?: boolean }>();
 
-const contextOf = (id: string) => canvasWhere.get(id)?.ctx ?? canvasWhere.get(`follow:${id}`)?.ctx;
+const contextOf = (id: string) => canvasWhere.get(id)?.ctx;
 /** The door timing of the canvas `canvasId` (a child canvas when `parents` has it), from the canvases the overlays have published:
  * `enter` from the nearest published canvas outside it, `leave` from a child canvas by its id. */
 export function doorTiming(canvasId: string, parents: ReadonlyMap<string, { canvasId: string }>): Pick<NonNullable<Ctx["door"]>, "enter" | "leave"> {

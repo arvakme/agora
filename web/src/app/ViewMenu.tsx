@@ -4,6 +4,9 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { SPRING } from "../comments/motion";
+import { BuildReplayHost } from "../buildreplay/BuildReplay";
+import { buildReplay } from "../buildreplay/store";
+import { canvasFromUrl, nested } from "../nested/store";
 import { clock, useWorkstation } from "../workstation/clock";
 import { canNotify, notifyBlocked, setWaitNotify } from "../workstation/WaitNotifier";
 import { IconCheck, IconComment, IconEnter, IconHint, IconMessage, IconMore, IconPath, IconTarget, IconUser } from "./icons";
@@ -23,7 +26,7 @@ const THEMES: [ThemePref, string][] = [
   ["dark", "深色"],
 ];
 
-export function ViewMenu({ onLayout, layouts }: { onLayout: (p: Preset) => void; layouts: boolean }) {
+export function ViewMenu({ onLayout, onRestore, layouts }: { onLayout: (p: Preset) => void; /** 恢复默认布局: canvases left, sessions right. */ onRestore: () => void; layouts: boolean }) {
   const [open, setOpen] = useState(false);
   const [help, setHelp] = useState(false);
   const t = useTheme();
@@ -67,6 +70,7 @@ export function ViewMenu({ onLayout, layouts }: { onLayout: (p: Preset) => void;
                 <button key={k} disabled={!layouts && k !== "single"} onClick={() => onLayout(k)}>{label}</button>
               ))}
             </div>
+            <button role="menuitem" className="vm-restore" onClick={() => (onRestore(), setOpen(false))}>恢复默认布局</button>
             <p className="menu-title">主题</p>
             <div className="seg vm-seg" role="radiogroup" aria-label="主题">
               {THEMES.map(([k, label]) => (
@@ -76,12 +80,15 @@ export function ViewMenu({ onLayout, layouts }: { onLayout: (p: Preset) => void;
             <hr />
             {sw(ws, "工位视图（小人）", <IconUser size={14} />, () => clock.setEnabled(!ws))}
             {sw(p.followCamera, "镜头跟随主 agent", <IconTarget size={14} />, () => prefs.set({ followCamera: !p.followCamera }))}
-            {sw(p.autoFollowTab, "有 agent 进子图时自动打开跟随窗口", <IconEnter size={14} />, () => prefs.set({ autoFollowTab: !p.autoFollowTab }))}
             {sw(p.footprints, "小人的脚印", <IconPath size={14} />, () => prefs.set({ footprints: !p.footprints }))}
             {canNotify() && sw(p.notifyWait, notifyBlocked() ? "等你时通知我（浏览器已拦截）" : "等你时通知我", <IconMessage size={14} />, () => void setWaitNotify(!p.notifyWait))}
             {sw(p.showResolved, "显示已解决的评论", <IconCheck size={14} />, () => prefs.set({ showResolved: !p.showResolved }))}
             {sw(p.hints, "画布操作提示", <IconHint size={14} />, () => prefs.set({ hints: !p.hints }))}
             <hr />
+            <button role="menuitem" onClick={() => (buildReplay.open(canvasFromUrl() ?? [...nested.get().scenes.keys()][0] ?? "c1"), setOpen(false))}>
+              <IconEnter size={14} />
+              看这张图是怎么搭起来的
+            </button>
             <button role="menuitem" onClick={() => (setHelp(true), setOpen(false))}>
               <IconComment size={14} />
               快捷键与帮助
@@ -91,6 +98,7 @@ export function ViewMenu({ onLayout, layouts }: { onLayout: (p: Preset) => void;
         )}
       </AnimatePresence>
       <AnimatePresence>{help && <Help onClose={() => setHelp(false)} />}</AnimatePresence>
+      <BuildReplayHost />
     </div>
   );
 }
@@ -99,8 +107,8 @@ const KEYS: [string, string][] = [
   ["V", "浏览"],
   ["C", "评论模式：点一个元素钉评论；先选中几个元素再按 C，评论这组选区"],
   ["Esc", "退出评论模式 / 回到实时 / 取消选中"],
+  ["⇧↵", "进入选中节点的子图（节点右下角的小图标也行）；双击仍是 Excalidraw 自己的：改文字"],
   ["⌘↑", "从子图回到上一层"],
-  ["双击节点", "进入它的子图"],
   ["时间线 ← →", "回放时前后 1 秒（⇧ 5 秒），[ ] 上一步 / 下一步，空格 播放"],
   ["?", "打开或关闭这张表"],
 ];

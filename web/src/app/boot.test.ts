@@ -1,16 +1,34 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { sessions } from "../session/store";
-import { prepareBoot, type Boot } from "./boot";
+import { FIRST_SCENE, prepareBoot, type Boot } from "./boot";
 
 const canvas = (elements: unknown[] = []) => ({ elements: elements as never[], threads: { threads: [], seq: 0 } });
 
 describe("prepareBoot", () => {
   beforeEach(() => sessions.reset());
 
-  it("only a project the server calls empty gets the first-run sample", () => {
+  it("only a project the server calls empty gets the first-run canvas", () => {
     const b = prepareBoot({ canvases: {}, empty: true });
     expect(b.firstRun).toBe(true);
     expect(b.workspace!.docs[0]).toMatchObject({ id: "c1", kind: "canvas" });
+  });
+
+  it("the first canvas is empty and named after the project, not a generic sample", () => {
+    const b = prepareBoot({ canvases: {}, empty: true, project: { id: "p", name: "agora-fresh", root: "/x/agora-fresh", me: { id: "u", name: "我" } } as never });
+    expect(b.workspace!.docs[0]).toMatchObject({ id: "c1", kind: "canvas", title: "agora-fresh" });
+    expect(b.workspace!.docs.some((d) => d.kind === "canvas" && d.title === "示例架构图")).toBe(false);
+    expect(FIRST_SCENE).toEqual([]);
+  });
+
+  it("without a project name the canvas is just 画布", () => {
+    expect(prepareBoot({ canvases: {}, empty: true }).workspace!.docs[0]).toMatchObject({ title: "画布" });
+  });
+
+  it("an older project that already has its sample canvas is not touched", () => {
+    const ws = { v: 2 as const, docs: [{ id: "c1", kind: "canvas" as const, title: "示例架构图" }], root: { kind: "group" as const, id: "g", tabs: ["c1"], active: "c1" }, focused: "c1" };
+    const b = prepareBoot({ workspace: ws, canvases: { c1: canvas([{ id: "A" }]) }, empty: false, project: { id: "p", name: "old-proj", root: "/x", me: { id: "u", name: "我" } } as never });
+    expect(b.firstRun).toBe(false);
+    expect(b.workspace!.docs[0].title).toBe("示例架构图");
   });
 
   // Experiment B3: workspace.json deleted, c1 (edited) and c2 still on disk. Before, the page took

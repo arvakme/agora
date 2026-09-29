@@ -5,7 +5,7 @@ import { ClaudeMark, CursorMark, DevinMark, PiMark } from "../app/agents/marks";
 import { AgentAvatar, type AvatarSize } from "../session/AgentAvatar";
 import { hasOwnMark } from "../session/agentMarks";
 import type { AgentKind } from "../session/agents";
-import { symbolId, type SYMBOL_AGENTS } from "./headMark";
+import { LETTERS, symbolId, type SYMBOL_AGENTS } from "./headMark";
 
 export function RunAvatar({ agent, size = 16, parent }: { agent: string; size?: AvatarSize | 14 | 18 | 22; parent?: string }) {
   const s = size as AvatarSize;
@@ -13,7 +13,7 @@ export function RunAvatar({ agent, size = 16, parent }: { agent: string; size?: 
     <AgentAvatar kind={agent as AgentKind} size={s} />
   ) : (
     <span className="agent-avatar run-letter" style={{ "--av": `${size}px` } as React.CSSProperties} aria-hidden>
-      {agent === "worker" ? "W" : (agent[0] ?? "?").toUpperCase()}
+      {LETTERS[agent] ?? (agent[0] ?? "?").toUpperCase()}
     </span>
   );
   if (!parent) return face;

@@ -1,23 +1,22 @@
 // The camera follows the main agent by default (web/docs/workstation.md §10 默认跟随): who it follows (a played
-// turn first, then a traced agent, then the main agent — the top-level run of the session the person is
+// turn first, then the one the person chose, then the main agent — the top-level run of the session the person is
 // looking at, else the top-level run most recently at work), when it holds still (the agent is idle), when
-// the person's own doing pauses it and what resumes it, and whether the follow tab should still open for
-// an agent the camera is already following. Pure.
+// the person's own doing pauses it and what resumes it. Pure.
 import { describe, expect, it } from "vitest";
-import { followsWhere, mayOpenFollowTab, nextPaused, pickFollow, whereOf, ENTER_MS, HOME_AFTER_MS, isWorking, lastWorkStart, liveStep, MOUNT_GRACE_MS, newLiveMachine, type LiveIn, type Top } from "./liveCamera.ts";
+import { followsWhere, nextPaused, pickFollow, whereOf, ENTER_MS, HOME_AFTER_MS, isWorking, lastWorkStart, liveStep, MOUNT_GRACE_MS, newLiveMachine, type LiveIn, type Top } from "./liveCamera.ts";
 
 const top = (id: string, o: Partial<Top> = {}): Top => ({ id, sessionId: `s-${id}`, working: false, lastWorkAt: 0, ...o });
-const base = { on: true, playing: null, traced: null, focusedSession: null, tops: [] as Top[] };
+const base = { on: true, playing: null, chosen: null, focusedSession: null, tops: [] as Top[] };
 
 describe("pickFollow: whom the camera follows", () => {
   it("nobody when the switch is off (the canvas does not move) — except for a played turn, which the person asked for", () => {
     expect(pickFollow({ ...base, on: false, tops: [top("a", { working: true })] })).toBeNull();
     expect(pickFollow({ ...base, on: false, playing: "a", tops: [top("a")] })).toEqual({ run: "a", why: "play" });
   });
-  it("a played turn beats a traced agent beats the main agent", () => {
+  it("a played turn beats a chosen agent beats the main agent", () => {
     const tops = [top("a", { working: true }), top("b", { working: true })];
-    expect(pickFollow({ ...base, tops, playing: "b", traced: "a" })).toEqual({ run: "b", why: "play" });
-    expect(pickFollow({ ...base, tops, traced: "b" })).toEqual({ run: "b", why: "trace" });
+    expect(pickFollow({ ...base, tops, playing: "b", chosen: "a" })).toEqual({ run: "b", why: "play" });
+    expect(pickFollow({ ...base, tops, chosen: "b" })).toEqual({ run: "b", why: "chosen" });
     expect(pickFollow({ ...base, tops })).toMatchObject({ why: "main" });
   });
   it("the main agent is the top-level run of the session the person is looking at", () => {
@@ -35,8 +34,8 @@ describe("pickFollow: whom the camera follows", () => {
   it("a focused session that is not on the page (no run) falls back to the most recent one", () => {
     expect(pickFollow({ ...base, tops: [top("a", { lastWorkAt: 5 })], focusedSession: "s-gone" })).toEqual({ run: "a", why: "main" });
   });
-  it("a traced sub-agent is followed as well (the traced one, whoever it is)", () => {
-    expect(pickFollow({ ...base, tops: [top("a", { working: true })], traced: "kid" })).toEqual({ run: "kid", why: "trace" });
+  it("a chosen sub-agent is followed as well (the chosen one, whoever it is)", () => {
+    expect(pickFollow({ ...base, tops: [top("a", { working: true })], chosen: "kid" })).toEqual({ run: "kid", why: "chosen" });
   });
   it("nobody at all: nobody", () => {
     expect(pickFollow(base)).toBeNull();
@@ -57,24 +56,6 @@ describe("nextPaused: the person's own doing pauses the camera; only the button 
   });
   it("a fresh page starts unpaused (a pause is not a switch: it is not kept)", () => {
     expect(nextPaused(false, "agent-moves")).toBe(false);
-  });
-});
-
-describe("mayOpenFollowTab: the follow tab for an agent the camera already follows is not needed", () => {
-  const cam = { on: true, paused: false, run: "main" };
-  it("not for the main agent while the camera follows it", () => {
-    expect(mayOpenFollowTab("main", true, cam)).toBe(false);
-  });
-  it("for a sub-agent, as before", () => {
-    expect(mayOpenFollowTab("kid", false, cam)).toBe(true);
-    expect(mayOpenFollowTab("kid", false, { ...cam, run: "kid" })).toBe(true);
-  });
-  it("for the main agent once the camera is paused or switched off, as before", () => {
-    expect(mayOpenFollowTab("main", true, { ...cam, paused: true })).toBe(true);
-    expect(mayOpenFollowTab("main", true, { ...cam, on: false })).toBe(true);
-  });
-  it("for another top-level agent than the one followed", () => {
-    expect(mayOpenFollowTab("other", true, cam)).toBe(true);
   });
 });
 

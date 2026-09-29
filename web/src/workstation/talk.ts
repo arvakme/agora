@@ -4,13 +4,14 @@
 // ms; the frame loop compares it with its own time, so nothing here renders anything per frame.
 import { agents } from "../session/agents";
 
-export type SendState = "sent" | "queued" | "delivered";
+export type SendState = "sent" | "queued" | "delivered" | "steered" | "steerRead" | "interrupted";
 /** Sent behind a turn that is running (or others already waiting)? Messages from the panel wait for the turn to end. */
 export function sendState(sessionId: string): "sent" | "queued" {
   const s = agents.get().status[sessionId];
   return s && (s.running || s.busy || s.queued > 0) ? "queued" : "sent";
 }
-export const deliveryNote = (agent: string, state: SendState) => `已发给 ${agent}${state === "queued" ? " · 会在这一轮结束后送达" : state === "delivered" ? " · 已送达" : ""}`;
+export const deliveryNote = (agent: string, state: SendState) =>
+  state === "steered" ? `已插话给 ${agent}` : state === "steerRead" ? `已插话给 ${agent} · 它已读到` : state === "interrupted" ? `已停下 ${agent} 的这一轮，改说这句` : `已发给 ${agent}${state === "queued" ? " · 会在这一轮结束后送达" : state === "delivered" ? " · 已送达" : ""}`;
 
 /** Calls `done` once, when a user item containing `words` and newer than `sentAt` is in the session's transcript. Returns the stop. */
 export function watchDelivery(sessionId: string, words: string, sentAt: number, done: () => void): () => void {
@@ -61,8 +62,8 @@ export function pickTalkHost(views: readonly TalkView[], prev: string | null): s
  * session that dispatched it — 「对 Claude Code 说（关于 T-ed3070）…」 —, the message gets 「关于你派的 T-ed3070：」 in front,
  * and one grey line under the box says so. `working`: a turn is running, the words wait for its end.
  */
-export function talkTarget(o: { name: string; hasSession: boolean; rootName: string; working: boolean }): { direct: boolean; placeholder: string; prefix: string; note: string | null } {
-  const tail = o.working ? "（这一轮结束后送达）" : "";
+export function talkTarget(o: { name: string; hasSession: boolean; rootName: string; working: boolean; plan?: "steer" | "choose" }): { direct: boolean; placeholder: string; prefix: string; note: string | null } {
+  const tail = o.working ? (o.plan === "steer" ? "（直接插进这一轮）" : o.plan === "choose" ? "（回车后选：停下改说 / 等做完）" : "（这一轮结束后送达）") : "";
   if (o.hasSession) return { direct: true, placeholder: `对 ${o.name} 说…${tail || "（回车发送）"}`, prefix: "", note: null };
   return { direct: false, placeholder: `对 ${o.rootName} 说（关于 ${o.name}）…${tail}`, prefix: `关于你派的 ${o.name}：`, note: `${o.name} 是 ${o.rootName} 派的，话会发给 ${o.rootName}` };
 }
@@ -146,7 +147,7 @@ export const talkSent = {
     stops.set(
       o.runId,
       watchDelivery(o.sessionId, o.words, o.sentAt, () => {
-        sentNotes.set(o.runId, { agent: o.agent, state: "delivered" });
+        sentNotes.set(o.runId, { agent: o.agent, state: o.state === "steered" ? "steerRead" : o.state === "interrupted" ? "interrupted" : "delivered" });
         talk.said(o.nodId);
         sentEmit();
         timers.set(

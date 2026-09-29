@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { IconBack, IconEnter, IconHint, IconNested, IconSparkles } from "../app/icons";
 import type { CanvasViewState } from "../canvas/CanvasView";
 import { codePathsOf, isShape, labelOf, live, type El } from "../canvas/scene";
-import { childNodeAt, nodeBox } from "../canvas/nodes";
+import { nodeBox } from "../canvas/nodes";
 import { clipPath } from "../canvas/chrome";
 import type { Box } from "../canvas/clearance";
 import { threadStores } from "../comments/threads";
@@ -18,6 +18,7 @@ import { ui } from "../session/ui";
 import { pointerFollow } from "../pointer/follow";
 import { ancestry, childOf, descendants, openThreads, staleness, type Staleness } from "./graph";
 import { blankChild, nav, nested, useNested } from "./store";
+import { ENTER_KEY_LABEL, MARK_SIZE } from "./enter";
 import { BACK_HINT_MS, backHintDue, backHintQuiet, backHintSeen, backHintVisible, markBackHintSeen, onBackHintSeen, staleDot, staleNote, upKeyLabel } from "./up";
 import { writeChildLink } from "./writeChild";
 import "./nested.css";
@@ -60,10 +61,9 @@ export function ChildMarkers({ view, canvasId, info, onEnter, chrome = [] }: { v
             key={e.id}
             className="nest-mark"
             data-stale={stale || undefined}
-            style={{ transform: `translate(${Math.round(x - 14)}px, ${Math.round(y - 13)}px)` }}
+            style={{ transform: `translate(${Math.round(x - MARK_SIZE / 2 - 2)}px, ${Math.round(y - MARK_SIZE / 2)}px)`, minWidth: MARK_SIZE, height: MARK_SIZE }}
             onClick={() => onEnter(child)}
-            onDoubleClick={(ev) => ev.stopPropagation()}
-            title={`进入子图「${i.title}」${i.open ? ` · ${i.open} 条未解决评论` : ""}${stale ? ` · 可能过时：${i.stale!.files.length} 次改动发生在子图画好之后` : ""}（也可以双击节点）`}
+            title={`进入子图「${i.title}」${i.open ? ` · ${i.open} 条未解决评论` : ""}${stale ? ` · 可能过时：${i.stale!.files.length} 次改动发生在子图画好之后` : ""}（选中节点后 ${ENTER_KEY_LABEL}）`}
             aria-label={`进入子图 ${i.title}`}
           >
             <IconEnter size={14} />
@@ -282,7 +282,7 @@ export function ChildMenu({ api, view, canvasId, target, onAct }: { api: Excalid
       {has ? (
         <>
           <button role="menuitem" onClick={() => act("enter", () => nav.go(canvasId, child!))}>
-            <IconEnter size={14} />进入子图<kbd>双击</kbd>
+            <IconEnter size={14} />进入子图<kbd>{ENTER_KEY_LABEL}</kbd>
           </button>
           {st.scenes.get(child!)?.some((e) => live(e)) ? (
             <button role="menuitem" onClick={() => act("ai", () => askAgent(child!, updatePrompt(child!, st.titles[child!] ?? child!, [])))}>
@@ -311,10 +311,4 @@ export function ChildMenu({ api, view, canvasId, target, onAct }: { api: Excalid
       )}
     </div>
   );
-}
-
-/** The node (with a child canvas) under a screen point in the stage, for double-click → enter. */
-export function childAt(view: CanvasViewState, x: number, y: number): string | null {
-  const a = view.appState;
-  return childNodeAt(view.elements, view.map, x / a.zoom.value - a.scrollX, y / a.zoom.value - a.scrollY, (e) => childOf(e))?.child ?? null;
 }

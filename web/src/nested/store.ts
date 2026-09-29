@@ -1,7 +1,7 @@
 // The page's view of every canvas's scene, for nesting (parents, breadcrumbs, roll-ups) across
 // canvases that are not open. The app shell feeds it (App.tsx); layers read it. Also the
 // navigation actions the shell provides (enter a child, go back up) and the URL they keep in sync.
-import { useSyncExternalStore } from "react";
+import { createContext, useContext, useSyncExternalStore } from "react";
 import type { El } from "../canvas/scene";
 import { parentIndex, type ParentRef } from "./graph";
 
@@ -61,7 +61,12 @@ export const nested = {
     ls.forEach((l) => l());
   },
 };
-export const useNested = () => useSyncExternalStore(nested.subscribe, nested.get);
+/** Where a subtree gets its canvases from: the page's own (default), or another set — the build replay's (../buildreplay/). */
+export const NestedSource = createContext<{ subscribe: (l: () => void) => () => void; get: () => NestedState } | null>(null);
+export const useNested = () => {
+  const source = useContext(NestedSource) ?? nested;
+  return useSyncExternalStore(source.subscribe, source.get);
+};
 
 /** Filled in by the app shell (or the guest page). */
 export const nav = {

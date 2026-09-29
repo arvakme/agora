@@ -1,16 +1,15 @@
 // Which agent the person is looking at (web/docs/workstation.md §选中与定位):
 //   selected — a figure / bubble clicked on the canvas (shows its action row);
 //   hovered  — the lane or figure under the pointer;
-//   traced   — the agent being traced (§追踪): the others dim, its route shows, the timeline keeps
-//              only it and its sub-agents;
+//   traced   — the agent whose turn was played (§追踪): the others dim, its route shows (until 「关闭」 or Esc), the
+//              timeline keeps only it and its sub-agents; only a played turn traces;
 //   turn     — which turn of that agent the trace covers (§11 按轮追踪: stops, route and sub-agents are
 //              that turn's only); null = its current or latest turn, worked out where the trace is drawn;
 //   itemHover / pan — the trajectory row under the pointer (its node and stop light up on the canvas) and
 //              a one-off request to glide the canvas to a row's node.
 // A lane name "locates" its agent: the canvas the timeline belongs to pans smoothly to the figure,
-// once. Following an agent in its own pane is ./follow.ts; nothing moves the person's own view.
+// once. Following an agent is the camera's (./replayLive.ts); nothing else moves the person's own view.
 import { useSyncExternalStore } from "react";
-import { follow } from "./follow";
 import type { TurnWindow } from "./trace";
 
 /** A timeline segment: run id and index in its segs. */
@@ -41,14 +40,10 @@ export const focus = {
   hoverItem: (id: string | null) => set({ itemHover: id }),
   /** A trajectory row clicked: glide the canvas to its node, once. */
   panToItem: (item: string) => set({ pan: { key: ++panKey, item } }),
-  /** Esc: leave the trace first, then stop following, then drop the selection. Returns whether it did something. */
+  /** Esc: close the route first, then drop the selection. Returns whether it did something. */
   escape(): boolean {
     if (state.traced) {
       set({ traced: null, turn: null });
-      return true;
-    }
-    if (follow.get().run) {
-      follow.stop();
       return true;
     }
     if (!state.selected && !state.segSel) return false;

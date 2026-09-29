@@ -1,7 +1,7 @@
 // Workspace model (see web/docs/workspace-model.md): which canvases and sessions exist,
 // which are open as tabs, and the naming / placement rules. Pure functions only.
+import { SHARES } from "./twoColumns.ts";
 import { activate, addTab, group, groupOf, groups, moveTab, removeTab, type Group, type Node } from "./layout.ts";
-import { FOLLOW_TAB } from "./followTab.ts";
 
 /** `reviewedAt`: a child canvas the person checked against the code at that time (docs/nested-canvas.md §5). */
 export type CanvasDoc = { id: string; kind: "canvas"; title: string; reviewedAt?: number };
@@ -116,9 +116,8 @@ export type NewWhat = "canvas" | "session" | "sample" | "open";
 /** What a group's「+」offers: canvas and mixed groups a menu, session groups nothing (it creates a session straight away). */
 export const plusMenu = (kind: GroupKind): NewWhat[] | null => (kind === "session" ? null : ["canvas", "session", "sample", "open"]);
 
-/** A doc opened beside the canvas in use takes this share of the split; the canvas keeps the larger one. */
-const SPLIT = [0.6, 0.4];
-const two = (n: Node): Node => (n.kind === "split" && n.children.length === 2 ? { ...n, sizes: SPLIT } : n);
+/** A doc opened beside the canvas in use takes the smaller share of the split; the canvas keeps the larger one. */
+const two = (n: Node): Node => (n.kind === "split" && n.children.length === 2 ? { ...n, sizes: SHARES } : n);
 
 /**
  * Open `id` in its home group (homeGroup), the one placement for every new doc: a session joins the
@@ -271,9 +270,7 @@ export function savedWorkspace(
     for (const [k, v] of Object.entries(m) as [keyof SessionMeta, unknown][]) if (v !== undefined && v !== "" && v !== null) (next as Record<string, unknown>)[k] = v;
     return next;
   };
-  // the follow view is a tab of this page's layout only, never the project's
-  const noFollow = groupOf(ws.root, FOLLOW_TAB) ? (removeTab(ws.root, FOLLOW_TAB) ?? emptyGroup()) : ws.root;
-  ws = { ...ws, root: noFollow, focused: ws.focused === FOLLOW_TAB ? (groups(noFollow).find((g) => g.active)?.active ?? "") : ws.focused, docs: ws.docs.map(withMeta) };
+  ws = { ...ws, docs: ws.docs.map(withMeta) };
   const drafts = ws.docs.filter((d) => d.kind === "session" && isDraft(d.sessionId)).map((d) => d.id);
   if (!drafts.length) return { v: 2, ...ws };
   let root: Node = ws.root;

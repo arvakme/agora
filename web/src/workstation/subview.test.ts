@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { El } from "../canvas/scene";
 import type { Scenes } from "../nested/graph";
 import type { RunSeg, WorkRun } from "./runs/types.ts";
-import { arrivals, levelsOf, presenceAt, subviewCtx, type Level, type Presence } from "./subview.ts";
+import { levelsOf, presenceAt, subviewCtx, type Level, type Presence } from "./subview.ts";
 
 const el = (x: Record<string, unknown>): El => ({ angle: 0, isDeleted: false, groupIds: [], boundElements: [], x: 0, y: 0, width: 120, height: 60, ...x }) as unknown as El;
 /** A linked node with its label; `child` = the canvas it opens. */
@@ -147,25 +147,5 @@ describe("presenceAt: where an agent is below the main canvas at t, and since wh
       expect(presenceAt(pi, t, ctxOf([pi]))).toEqual(presenceAt(pi, t, c));
       if (t % 250 === 0) expect(stepped).toEqual(presenceAt(pi, t, c));
     }
-  });
-});
-
-describe("arrivals: whom the follow pane reacts to", () => {
-  const below = (entered: number | null, ended = false): Presence => ({ levels: [{ canvasId: "c1", title: "总架构", node: "api", label: "API 服务" }, { canvasId: "c-api", title: "API 服务", node: "users", label: "用户模块" }], entered, ended });
-  const ps = new Map<string, Presence | null>([
-    ["pi", below(3 * S)],
-    ["cc", below(12 * S)],
-    ["codex", below(null)],
-    ["gone", null],
-    ["top", { levels: [{ canvasId: "c1", title: "总架构", node: "web", label: "Web 前端" }], entered: null, ended: false }],
-  ]);
-
-  it("everyone who came below to work and has not been reacted to, the most recent first", () => {
-    expect(arrivals(ps, new Map())).toEqual(["cc", "pi"]);
-  });
-
-  it("an entry already reacted to does not come back (closing the pane keeps it closed); a new entry does", () => {
-    expect(arrivals(ps, new Map([["pi", 3 * S], ["cc", 12 * S]]))).toEqual([]);
-    expect(arrivals(ps, new Map([["pi", 3 * S], ["cc", 5 * S]]))).toEqual(["cc"]);
   });
 });
