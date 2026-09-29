@@ -165,7 +165,7 @@ def test_registry_and_interactive_commands(tmp_path, monkeypatch):
 
 
 def test_install_skill_links_into_project_only(tmp_path):
-    (tmp_path / ".git" / "info").mkdir(parents=True)
+    _git("init", "-q", cwd=tmp_path)
     done = agents.install_skill(tmp_path, ["claude", "pi", "codex"])
     assert (tmp_path / ".claude" / "skills" / "agora").resolve() == agents.SKILL_DIR.resolve()
     assert (tmp_path / ".agents" / "skills" / "agora" / "SKILL.md").exists()
@@ -178,7 +178,7 @@ def test_install_skill_links_into_project_only(tmp_path):
 
 
 def test_install_skill_drops_the_old_agora_canvas_link(tmp_path):
-    (tmp_path / ".git" / "info").mkdir(parents=True)
+    _git("init", "-q", cwd=tmp_path)
     old = tmp_path / ".claude" / "skills" / "agora-canvas"
     old.parent.mkdir(parents=True)
     old.symlink_to(agents.REPO / "skills" / "agora-canvas")  # dangling: the skill was renamed
@@ -190,6 +190,51 @@ def test_install_skill_drops_the_old_agora_canvas_link(tmp_path):
     assert mine.is_dir()
     exclude = (tmp_path / ".git" / "info" / "exclude").read_text().splitlines()
     assert "/.claude/skills/agora-canvas" not in exclude and "/.claude/skills/agora" in exclude
+
+
+def _git(*a, cwd):
+    import subprocess
+
+    subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True, env={**__import__("os").environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+
+
+def test_install_skill_in_a_git_worktree_writes_the_shared_exclude(tmp_path):
+    main = tmp_path / "main"
+    main.mkdir()
+    _git("init", "-q", cwd=main)
+    _git("commit", "-q", "--allow-empty", "-m", "x", cwd=main)
+    wt = tmp_path / "wt"
+    _git("worktree", "add", "-q", str(wt), "-b", "b", cwd=main)
+    assert (wt / ".git").is_file()  # a worktree's .git is a file, not a directory
+    agents.install_skill(wt, ["claude"])
+    exclude = (main / ".git" / "info" / "exclude").read_text().splitlines()
+    assert "/.claude/skills/agora" in exclude
+    status = __import__("subprocess").run(["git", "status", "--short"], cwd=wt, capture_output=True, text=True).stdout
+    assert ".claude" not in status
+
+
+def test_install_skill_without_git_skips_the_ignore_list(tmp_path):
+    done = agents.install_skill(tmp_path, ["claude"])
+    assert (tmp_path / ".claude" / "skills" / "agora").is_symlink() and done
+
+
+def test_install_skill_drops_old_links_into_another_checkout_or_nowhere(tmp_path):
+    other = tmp_path / "other-checkout" / "skills" / "agora-canvas"
+    other.mkdir(parents=True)  # exists: another Agora checkout's own copy
+    (tmp_path / "p" / ".claude" / "skills").mkdir(parents=True)
+    (tmp_path / "p" / ".agents" / "skills").mkdir(parents=True)
+    a = tmp_path / "p" / ".claude" / "skills" / "agora-canvas"
+    a.symlink_to(other)
+    b = tmp_path / "p" / ".agents" / "skills" / "agora-canvas"
+    b.symlink_to(tmp_path / "gone")  # target no longer exists
+    agents.install_skill(tmp_path / "p", ["claude", "codex"])
+    assert not a.is_symlink() and not b.is_symlink()
+    assert other.is_dir()  # only the link goes
+    stray = tmp_path / "q" / ".claude" / "skills" / "agora-canvas"
+    stray.parent.mkdir(parents=True)
+    stray.symlink_to(tmp_path)  # a link to something that is not an Agora skill stays
+    agents.install_skill(tmp_path / "q", ["claude"])
+    assert stray.is_symlink()
 
 
 async def test_stopping_a_running_turn_kills_its_process_group(tmp_path, monkeypatch):

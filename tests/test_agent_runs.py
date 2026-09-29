@@ -213,3 +213,23 @@ def test_timeline_cache_is_bounded_by_bytes(home, monkeypatch):
         runs.timeline("claude", c, ROOT)
     assert len(runs._cache) == 2 and runs._cache_bytes <= runs.CACHE_BYTES
     assert [k[0] for k in runs._cache] == [str(copies[2]), str(copies[3])]
+
+
+def test_a_codex_read_of_a_project_file_lands_on_its_node(home):
+    """DEMO1: a dispatched Codex read ``controlplane/internal/ratelimit/ratelimit.go`` with ``nl -ba``
+    (the rollout's real record, stdout left out). The file is recognised and mapped to the node whose
+    codePaths cover it; the command starts and ends in the same millisecond, so the segment is the
+    fixed short one (what the page then draws as a glance, not a walk)."""
+    cwd = "/Users/zhijie/Devs/.worktrees/yuanzhuoai-dev/agora-validate"
+    at = 1790669019092
+    rec = {"type": "event_msg", "timestamp": ts(5), "payload": {"type": "item_completed", "item": {
+        "type": "CommandExecution", "id": "exec-b971d135", "command": ["/bin/zsh", "-lc", "nl -ba controlplane/internal/ratelimit/ratelimit.go"],
+        "cwd": f"file://{cwd}", "parsed_cmd": [{"type": "read", "cmd": "nl -ba controlplane/internal/ratelimit/ratelimit.go", "name": "ratelimit.go", "path": "controlplane/internal/ratelimit/ratelimit.go"}],
+        "source": "unified_exec_startup", "status": "completed", "exit_code": 0, "duration": {"secs": 0, "nanos": 5375}, "started_at_ms": at, "completed_at_ms": at}}}
+    path = codex_rollout(home, "cx-demo", cwd, "cli", [rec])
+    (seg,) = runs.timeline("codex", path, cwd)["segments"]
+    assert (seg["kind"], seg["path"]) == ("read", "controlplane/internal/ratelimit/ratelimit.go")
+    links = [("cp", ["controlplane/**"]), ("edge", ["controlplane/internal/ratelimit/**", "controlplane/cmd/**"])]
+    assert runs.node_for(seg["path"], links[:1]) == "cp"  # the overview canvas
+    assert runs.node_for(seg["path"], links[1:]) == "edge"  # the controlplane child canvas
+    assert seg["end"] - seg["start"] == 300

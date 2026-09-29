@@ -29,6 +29,7 @@ import asyncio
 import json
 import os
 import signal
+import subprocess
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -416,6 +417,27 @@ SKILL_DIRS = {k: a.project_skill_dir for k, a in adapters.ADAPTERS.items() if k 
 
 
 # ——— project skill install ———
+def _is_agora_link(path: Path, name: str) -> bool:
+    """A symlink to some Agora checkout's ``skills/<name>`` (or to nothing any more): ours to remove."""
+    if not path.is_symlink():
+        return False
+    target = Path(os.readlink(path))
+    return target.parts[-2:] == ("skills", name) or not path.exists()
+
+
+def _exclude_file(root: Path) -> Path | None:
+    """The project's .git/info/exclude (a worktree's ``.git`` is a file, so ask git); None without git."""
+    try:
+        r = subprocess.run(["git", "-C", str(root), "rev-parse", "--git-path", "info/exclude"], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+    path = Path(r.stdout.strip())
+    path = path if path.is_absolute() else root / path
+    return path if path.parent.is_dir() else None
+
+
 def install_skill(root: Path, agents: list[str], copy: bool = False) -> list[dict[str, str]]:
     """Link (or copy) skills/agora into the project dirs the chosen CLIs read; drops the old agora-canvas links.
 
@@ -433,7 +455,7 @@ def install_skill(root: Path, agents: list[str], copy: bool = False) -> list[dic
         target = root / rel / SKILL_NAME
         target.parent.mkdir(parents=True, exist_ok=True)
         old = target.parent / LEGACY_SKILL_NAME
-        if old.is_symlink() and REPO in old.resolve().parents:  # only our own link; a folder the person made stays
+        if _is_agora_link(old, LEGACY_SKILL_NAME):  # only a link Agora made (any checkout's); a folder the person made stays
             old.unlink()
         if target.is_symlink() and target.resolve() == SKILL_DIR.resolve():
             state = "exists"
@@ -455,8 +477,8 @@ def install_skill(root: Path, agents: list[str], copy: bool = False) -> list[dic
             else:
                 target.symlink_to(SKILL_DIR)
         done.append({"path": str(target), "state": state, "for": ", ".join(k for k in agents if SKILL_DIRS.get(k) == rel)})
-    exclude = root / ".git" / "info" / "exclude"
-    if exclude.parent.is_dir():
+    exclude = _exclude_file(root)
+    if exclude is not None:
         lines = exclude.read_text().splitlines() if exclude.exists() else []
         want = [f"/{rel}/{SKILL_NAME}" for rel in rels]
         stale = {f"/{rel}/{LEGACY_SKILL_NAME}" for rel in rels}
