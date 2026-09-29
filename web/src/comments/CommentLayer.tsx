@@ -162,6 +162,7 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
         {draft && (
           <Composer
             key="composer"
+            canvasId={store.canvasId}
             names={resolveAnchor(draft.anchor, view.map).names}
             pos={cardPos(landing(draft.anchor))}
             text={draft.text}

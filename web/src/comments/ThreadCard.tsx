@@ -120,6 +120,8 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
       {full && (
         <Reply
           resolved={t.resolved}
+          canvasId={store.canvasId}
+          handoff={t.handoff}
           bound={!!t.handoff && !GUEST}
           onSend={(text, mention) => {
             const route = routeMessage({ guest: GUEST, mention, handoff: t.handoff });
@@ -272,7 +274,7 @@ function EditBox({ initial, onSave, onCancel }: { initial: string; onSave: (text
 }
 
 /** Replying to a resolved thread reopens it (the store does that; the placeholder says so). `bound`: the thread is a conversation with an agent, so the reply goes to it. */
-function Reply({ onSend, resolved, bound }: { onSend: (text: string, mention: MentionTarget | null) => void; resolved?: boolean; bound?: boolean }) {
+function Reply({ onSend, resolved, bound, canvasId, handoff }: { onSend: (text: string, mention: MentionTarget | null) => void; resolved?: boolean; bound?: boolean; canvasId?: string; handoff?: Thread["handoff"] }) {
   const [text, setText] = useState("");
   const send = (t: string, mention: MentionTarget | null) => {
     onSend(t, mention);
@@ -281,13 +283,14 @@ function Reply({ onSend, resolved, bound }: { onSend: (text: string, mention: Me
   const placeholder = resolved ? "回复会重新打开这条评论…" : bound ? "回复（会发给上面的对话）…" : GUEST ? "回复…" : "回复，输入 @ 交给 agent…";
   return (
     <form className="treply" onSubmit={(e) => (e.preventDefault(), text.trim() && send(text.trim(), null))}>
-      <MentionField value={text} onValue={setText} onSend={send} placeholder={placeholder} />
+      <MentionField value={text} onValue={setText} onSend={send} placeholder={placeholder} canvasId={canvasId} handoff={handoff} />
       <button type="submit" className="send" disabled={!text.trim()} aria-label="发送回复"><IconSend size={14} /></button>
     </form>
   );
 }
 
-export function Composer({ names, pos, text, onText, onCancel, onSubmit }: {
+export function Composer({ names, pos, text, onText, onCancel, onSubmit, canvasId }: {
+  canvasId?: string;
   names: AnchorName[];
   pos: CardPos;
   text: string;
@@ -319,7 +322,7 @@ export function Composer({ names, pos, text, onText, onCancel, onSubmit }: {
         <button type="button" className="icon-btn sm muted" onClick={onCancel} aria-label="取消评论" title="取消（Esc）"><IconClose size={16} /></button>
       </div>
       <div className="treply bare">
-        <MentionField textareaRef={ref} value={text} onValue={onText} onSend={submit} rows={2} placeholder={GUEST ? "添加评论…" : "添加评论，输入 @ 交给 agent…"} />
+        <MentionField textareaRef={ref} value={text} onValue={onText} onSend={submit} rows={2} canvasId={canvasId} placeholder={GUEST ? "添加评论…" : "添加评论，输入 @ 交给 agent…"} />
         <button type="submit" className="send" disabled={!text.trim()} aria-label="发表评论"><IconSend size={14} /></button>
       </div>
     </motion.form>

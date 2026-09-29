@@ -31,6 +31,8 @@ import { useNested } from "../nested/store";
 import { AGENT_NAMES, agents, effortChoices, forkHeadless, loadAdapters, sessionKinds, useAgents, type AgentKind, type Catalog, type TerminalApps } from "./agents";
 import { AgentAvatar } from "./AgentAvatar";
 import { Picker } from "./Picker";
+import { kindShown, recommendAgent } from "./recommend";
+import "./recommend.css";
 import { effortGroups, modelGroups } from "./pickerModel";
 import { TerminalAppIcon } from "../app/terminals/TerminalAppIcon";
 import { undoTurn } from "./runTurn";
@@ -164,7 +166,7 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
   const [cat, setCat] = useState<Catalog | null>(null);
   // the model list: loading, failed (the session then starts on the CLI's defaults) or ready — session/chooserModel.ts
   const [catState, setCatState] = useState<CatalogState>("loading");
-  const [kind, setKind] = useState<AgentKind>("claude");
+  const [picked, setPicked] = useState<AgentKind | null>(null);
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -172,6 +174,12 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
   const waiting = agentChoice.pending(sessionId);
   // The session agents (tier T1) from the server's adapter registry; the built-in three until it answers.
   const [kinds, setKinds] = useState<AgentKind[]>(sessionKinds());
+  // Selected until the person picks another: the recommended agent (session/recommend.ts, the same one the @ list recommends).
+  const ag = useAgents();
+  const canvasId = useSessions().sessions[sessionId]?.canvasId;
+  const onCanvas = canvasId ? sessions.onCanvas(canvasId).map((x) => x.id) : undefined;
+  const rec = recommendAgent({ kinds: cat ? kinds.filter((k) => cat[k]?.installed) : kinds, bindings: ag.bindings, activeAt: ag.activeAt, canvas: onCanvas });
+  const kind = kindShown(picked, rec);
   const loadCatalog = () => {
     setCatState("loading");
     setErr(null);
@@ -228,10 +236,13 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
             const e = cat?.[k];
             const def = e ? e.default || e.featured[0] || "默认模型" : "";
             return (
-              <button key={k} role="radio" aria-checked={kind === k} data-on={kind === k} disabled={cat ? !cat[k]?.installed : false} onClick={() => setKind(k)}>
+              <button key={k} role="radio" aria-checked={kind === k} data-on={kind === k} disabled={cat ? !cat[k]?.installed : false} onClick={() => setPicked(k)}>
                 <AgentAvatar kind={k} size={32} />
                 <span className="sp-card-t">
-                  <b>{AGENT_NAMES[k] ?? k}</b>
+                  <div className="sp-card-h">
+                    <b>{AGENT_NAMES[k] ?? k}</b>
+                    {k === rec && <i className="rec-tag">推荐</i>}
+                  </div>
                   <span>{AGENT_BLURB[k] ?? ""}{def ? `${AGENT_BLURB[k] ? " · " : ""}${e?.names?.[def] ?? def}` : ""}</span>
                 </span>
                 {cat && !cat[k]?.installed && <em>未安装</em>}
