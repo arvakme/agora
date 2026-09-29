@@ -10,7 +10,11 @@ Expanding a node (「展开」, 「画出 X 的内部」):
    named after the node, `--title` renames) or `exists` (update that one). Use the returned `canvas.id`.
 2. Read the code the node stands for (its `codePaths`, or find it by name).
 3. `agora canvas read --canvas <child>`, then `apply --canvas <child>`: the inner modules and
-   the calls between them, one level down, not the whole codebase.
+   the calls between them, one level down, not the whole codebase. Lay a new child out in layers:
+   upstream on top, downstream below (the caller above what it calls), so most arrows run down and an
+   agent's figure walks them as ladders. What several nodes share (a cache, a database) goes in a lower
+   layer with a few arrows pointing at it: that is layering, not a tree. Never re-arrange a diagram a
+   person drew (their positions mean something).
 4. `agora canvas link --canvas <child> …` its nodes to their finer code.
 5. Tell the person in a sentence or two what the child shows.
 

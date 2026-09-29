@@ -3,6 +3,8 @@
 // follow pane), a pale purple ring while one of them writes in there, and the warm "waiting" mark
 // (a dot and a warm outline, 「等你回复 · name」 on hover) while one of them waits on you in there. Who is inside comes from
 // ./subview.ts, relative to this canvas, so it works on the pane's picture of a canvas too.
+// The node's top edge shows the one who is in there in person (./hatch.ts: the hole, the ladder, a head looking out of it),
+// so where that head is the only one in there and nothing waits, this mark would say the same thing twice: it is left out.
 // Mounted inside the canvas overlay (./Overlay.tsx `.ws-layer`, which clips it); rebuilt ≤ 4 Hz,
 // moved by the frame loop with the view.
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
@@ -20,9 +22,10 @@ import { presenceAt, subviewCtx } from "./subview";
 import "./follow.css";
 
 const SHOWN = 3;
-type Door = { node: string; box: Box; title: string; ids: string[]; writing: boolean; waiting: string[] };
+type Door = { node: string; box: Box; title: string; ids: string[]; writing: boolean; waiting: string[]; /** its one agent shows itself at the hole: no mark */ quiet: boolean };
 
-export function EntryMarks({ view }: { view: CanvasViewState }) {
+/** `peeks`: node → whose head looks out of its hole (./Overlay.tsx). */
+export function EntryMarks({ view, peeks }: { view: CanvasViewState; peeks?: ReadonlyMap<string, string> }) {
   const canvasId = canvasOfView(view.id);
   const runs = useRuns();
   const nst = useNested();
@@ -30,7 +33,7 @@ export function EntryMarks({ view }: { view: CanvasViewState }) {
   useTick(250);
   const t = clock.time();
   const ctx = useMemo(() => subviewCtx(canvasId, nst.scenes, nst.titles, (id) => runs.byId.get(id)), [canvasId, nst.scenes, nst.titles, runs]);
-  const at = new Map<string, Omit<Door, "box">>();
+  const at = new Map<string, Omit<Door, "box" | "quiet">>();
   for (const x of runs.flat) {
     const p = presenceAt(x.run, t, ctx);
     if (!p?.levels || p.levels.length < 2) continue;
@@ -43,7 +46,7 @@ export function EntryMarks({ view }: { view: CanvasViewState }) {
   }
   const doors: Door[] = [...at.values()].flatMap((d) => {
     const el = view.map.get(d.node);
-    return el && !el.isDeleted ? [{ ...d, box: nodeBox(el, view.map, view.elements) }] : [];
+    return el && !el.isDeleted ? [{ ...d, quiet: d.ids.length === 1 && peeks?.get(d.node) === d.ids[0] && !d.waiting.length, box: nodeBox(el, view.map, view.elements) }] : [];
   });
 
   const world = useRef<SVGGElement>(null);
@@ -80,7 +83,7 @@ export function EntryMarks({ view }: { view: CanvasViewState }) {
           {doors.map((d) => (d.writing || d.waiting.length ? <rect key={d.node} x={d.box.x - 9} y={d.box.y - 9} width={d.box.w + 18} height={d.box.h + 18} rx={16} data-tone={d.waiting.length ? "wait" : "write"} vectorEffect="non-scaling-stroke" /> : null))}
         </g>
       </svg>
-      {doors.map((d) => (
+      {doors.filter((d) => !d.quiet).map((d) => (
         <div
           key={d.node}
           className="ws-door"

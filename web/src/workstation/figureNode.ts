@@ -11,6 +11,7 @@
 // own spring here: the head turns first), the save flash and a command's verdict on the screen.
 import codex128 from "../app/agents/codex-128.png";
 import { focus } from "./focus";
+import { PEEK_DOWN, PEEK_UP } from "./hatch";
 import { RIG, Spring, type Bone, type Joints, type Pt } from "./rig";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -64,6 +65,8 @@ export function mark(agent: string, r: number, parent: Element) {
   }
 }
 
+let cuts = 0;
+
 export class FigureNode {
   readonly g: SVGGElement;
   private body: SVGGElement;
@@ -104,9 +107,11 @@ export class FigureNode {
   private last: Record<string, string> = {};
   /** Where the pointer is over this figure (figure space), or null: for the gesture that looks at it. */
   pointer: Pt | null = null;
+  private clip: SVGRectElement | null = null;
+  private clipId = "";
 
   constructor(readonly id: string, agent: string, o: { parentAgent?: string; label: string }) {
-    this.g = el("g", { class: "ws-worker", "data-run": id, role: "button", tabindex: 0, "aria-label": o.label });
+    this.g = el("g", { class: "ws-worker", "data-run": id, role: "button", tabindex: 0, "aria-label": o.label, opacity: 0 }); // unseen until its first `place`
     el("rect", { x: -14, y: -64, width: 32, height: 66, fill: "transparent", class: "ws-hit" }, this.g);
     // pointer events only (never per frame): where the pointer is, in figure space
     this.g.addEventListener("pointermove", (e) => {
@@ -316,6 +321,22 @@ export class FigureNode {
     }
   }
 
+  /** Cut the figure off at a horizontal line (`y`, figure space), keeping the part `above` it (smaller y) or `below` it; null: not cut. A door's ladder: the body past the floor line is not there. */
+  cut(keep: "above" | "below" | null, y = 0) {
+    const v = keep ? `${keep}|${f2(y)}` : "";
+    if (this.last.cut === v || (!keep && this.last.cut === undefined)) return;
+    this.last.cut = v;
+    if (!keep) return this.g.removeAttribute("clip-path");
+    if (!this.clip) {
+      const path = el("clipPath", { id: `ws-cut-${++cuts}` }, this.g);
+      this.clip = el("rect", { x: -400, width: 800 }, path);
+      this.clipId = path.id;
+    }
+    this.clip.setAttribute("y", keep === "above" ? "-2000" : f2(y));
+    this.clip.setAttribute("height", keep === "above" ? f2(2000 + y) : "2000");
+    this.g.setAttribute("clip-path", `url(#${this.clipId})`);
+  }
+
   /** Place the figure (screen transform), fade it, dim it (trace). */
   place(x: number, y: number, scale: number, opacity: number, dim: boolean, idle = false) {
     this.set(this.g, "g", "transform", `translate(${f2(x)} ${f2(y)}) scale(${f2(scale)})`);
@@ -325,5 +346,45 @@ export class FigureNode {
       this.last.idle = String(idle);
       this.g.toggleAttribute("data-idle", idle);
     }
+  }
+}
+
+/**
+ * The head that looks out of a node's hole while its owner is down in the node's sub-diagram (./hatch.ts): the head and shoulders of the figure, cut off at the floor
+ * line (the origin of its space, up is −y), in the same look as a figure's head. Clicking it follows its owner. Placed by the frame loop like a figure.
+ */
+export class PeekNode {
+  readonly g: SVGGElement;
+  private inner: SVGGElement;
+  private last: Record<string, string> = {};
+  constructor(readonly id: string, agent: string, title: string, onFollow: (id: string) => void) {
+    this.g = el("g", { class: "ws-peek", "data-peek": id, role: "button", tabindex: 0, "aria-label": title });
+    el("title", {}, this.g).textContent = title;
+    const clip = el("clipPath", { id: `ws-peek-${++cuts}` }, this.g);
+    el("rect", { x: -40, y: -100, width: 80, height: 100 }, clip);
+    el("rect", { x: -9, y: -PEEK_UP - RIG.head - 2, width: 18, height: PEEK_UP + RIG.head + 4, fill: "transparent", class: "ws-hit" }, this.g);
+    const cut = el("g", { "clip-path": `url(#${clip.id})` }, this.g);
+    this.inner = el("g", {}, cut);
+    // the shoulders under the head, as far as the floor line shows them
+    el("path", { d: capsule(0, RIG.head - 1, 0, RIG.head + 14, R.torso), fill: PAPER, ...outline() }, this.inner);
+    el("circle", { r: RIG.head, fill: PAPER, ...outline(HEAD_LINE) }, this.inner);
+    mark(agent, RIG.head * 0.9, this.inner);
+    this.g.addEventListener("pointerdown", (e) => e.stopPropagation());
+    this.g.addEventListener("click", (e) => (e.stopPropagation(), onFollow(id)));
+    this.g.addEventListener("keydown", (e) => e.key === "Enter" && onFollow(id));
+  }
+  private set(node: Element, key: string, attr: string, v: string) {
+    if (this.last[`${key}.${attr}`] === v) return;
+    this.last[`${key}.${attr}`] = v;
+    node.setAttribute(attr, v);
+  }
+  /** At the hole (x, y), for figures at k world px per unit: the head `rise` of the way out of it (0 hidden … 1 looking out), or just there or not with `still`; dimmed by a trace, selected like a figure. */
+  place(x: number, y: number, k: number, rise: number, still: boolean, dim: boolean, selected: boolean) {
+    const shown = rise > 0.001;
+    this.set(this.g, "d", "display", shown ? "inline" : "none");
+    this.set(this.g, "g", "transform", `translate(${f2(x)} ${f2(y)}) scale(${f2(k)})`);
+    this.set(this.g, "sel", "style", selected ? SELECTED : "");
+    this.set(this.g, "dim", "data-dim", dim ? "1" : "0");
+    this.set(this.inner, "i", "transform", `translate(0 ${f2(still ? -PEEK_UP : PEEK_DOWN + (-PEEK_UP - PEEK_DOWN) * rise)})`);
   }
 }

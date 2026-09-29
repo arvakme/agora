@@ -21,6 +21,6 @@ frames `{id,name,x,y,width,height,children}`. Pixels; x grows right, y grows dow
 Layout: target ids from the scene, never invented ones; leave ≥ 40 px between nodes and
 keep existing sizes unless asked; place components with `near.gap ≥ 40`. Skip `label` on
 an asset whose search result has `hasText: true` (it already shows its name). Touch only
-what the request is about.
+what the request is about. Laying out a new sub-diagram: see nested.md (layers, upstream on top).
 
 If the request cannot be done on this canvas, apply nothing and say why.

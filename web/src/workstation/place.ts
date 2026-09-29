@@ -11,15 +11,16 @@
 //     the comment: what it does without a file, it does at the node the comment is on (`ctx.anchor`);
 //     its files still take it to their nodes. When the turn ends its answer goes to the thread.
 //   - Doors (`ctx.door`, §评论联动与进出子图): a file in a node's sub-diagram takes the worker to that
-//     node and in — it shrinks and fades at the node's top edge over DOOR_MS and is not on this canvas
-//     while it works in there — and back out the same way before it walks on. On a child canvas the
-//     files not on it lie behind its entrance. Before its first file a worker is where that file is.
+//     node and in — down a ladder from the node's top edge over DOOR_MS, the body cut off by that line — and is
+//     not on this canvas while it works in there — and back up it before it walks on. On a child canvas the
+//     files not on it lie behind its entrance: it comes in down a ladder from above the entrance and leaves up
+//     it. Before its first file a worker is where that file is.
 //   - A sub-agent appears at its dispatcher's spot when dispatched, walks to its own files, and
 //     when it reports back walks to the dispatcher, hands over (or goes in, when the dispatcher is
 //     behind a door), and fades out. A receipts-only worker never moves.
 // Places are node element ids or OUTSIDE (the 图外 tray next to the diagram).
 import { REF_K } from "./docks";
-import { planTrip, SUB_SCALE, tripAt, type Foot, type Move, type Pose, type Pt, type Trip } from "./rig";
+import { DOOR_MS, planTrip, SUB_SCALE, tripAt, type Foot, type Move, type Pose, type Pt, type Trip } from "./rig";
 import type { Leg, Route } from "./route";
 import { receiptAt, type WorkRun, type ReceiptState, type RunSeg } from "./runs/types";
 
@@ -39,10 +40,8 @@ export const APPEAR_MS = 320;
 /** A read shorter than this (with the reads right after it at the same node), with no write or command
  * there, is a glance: the worker looks over from where it stands instead of walking there. */
 export const GLANCE_MS = 2500;
-/** Going through a door takes this long: the figure shrinks to DOOR_SCALE and fades out at the node's
- * top edge (coming out, the reverse). */
-export const DOOR_MS = 400;
-export const DOOR_SCALE = 0.5;
+/** Going through a door — down (or up) its ladder, all the way out of sight, or back — takes this long (./rig.ts `planDoor`). */
+export { DOOR_MS };
 /** A comment's turn has ended — its answer went to the thread — for this long: the pin's check, a nod. */
 export const ANSWER_MS = 1000;
 
@@ -111,11 +110,17 @@ export type RunState = {
   portal?: Located["portal"];
   /** When it starts going through each door into a node's sub-diagram (ms): its walk to the door is over then. */
   doorsIn: number[];
-  /** Going through a door at `at` (ctx.door): `in` — shrinking and fading into it; `behind` — in there,
-   * not on this canvas (present false); `out` — coming back out. */
+  /** Every door it goes through, in time order (those still to come after a walk to them included). */
+  doors: DoorRec[];
+  /** Going through a door at `at` (ctx.door): `in` — down (or up) the ladder, out of sight; `behind` — in there,
+   * not on this canvas (present false); `out` — coming back the way it went. */
   portalPhase?: "in" | "behind" | "out";
-  /** Its scale while it goes through a door (DOOR_SCALE … 1), about its feet; its opacity is in `fade`. */
-  portalScale?: number;
+  /** The door's ladder goes `below` the floor (on the canvas the door is in) or `above` it (on the sub-diagram's canvas: it hangs from above the entrance). */
+  portalSide?: Side;
+  /** ms since the phase began (in, out: of the climb, 0 … DOOR_MS; behind: since it was all the way down, Infinity when it began there). */
+  portalT?: number;
+  /** Coming `out`: how long it was all the way down before (ms; Infinity when it began there). */
+  portalBelow?: number;
   /** The canvas comment it is working on (its turn began with it). */
   comment?: CommentSpan;
   /** It answered a comment (the turn ended) less than ANSWER_MS ago. */
@@ -127,10 +132,15 @@ export type RunState = {
 /** Where a segment's work happens: a place, and whether that lies behind the place's door. */
 type Here = Located & { behind?: boolean };
 /** Through the door at the place it is at: in (then behind it), or out. */
-type Door = { t: number; into: boolean };
+export type Side = "below" | "above";
+/** A door it goes through: when it starts on the ladder, going in (out of this canvas) or out, which way the ladder goes, and at what place. */
+export type DoorRec = { t: number; into: boolean; side: Side; at: string };
+type Door = DoorRec;
+/** The ladder of a door goes up from the entrance of a child canvas (unless it leads into a node's own sub-diagram), else down from a node. */
+const sideOf = (ctx: Ctx, portal: Located["portal"]): Side => (ctx.door?.entrance && !portal ? "above" : "below");
 /** A walk so far: where it is (behind that place's door or not), whether it started behind one, when it
  * last went in, what it glances at, its moves and the doors it went through, in time order. */
-type Walk = { at: string; portal?: Located["portal"]; behind: boolean; startBehind: boolean; inAt: number; glance?: { place: string }; moves: Move[]; doors: Door[] };
+type Walk = { at: string; portal?: Located["portal"]; behind: boolean; startBehind: boolean; startSide: Side; inAt: number; glance?: { place: string }; moves: Move[]; doors: Door[] };
 
 /** Where a segment's work happens on this canvas: its file's node (with doors, a file in a node's
  * sub-diagram lies behind that node's door and, on a child canvas, one not on it behind the entrance;
@@ -156,8 +166,14 @@ function glanced(ctx: Ctx, segs: readonly RunSeg[], i: number, place: string): b
   return j === i && segs[i].kind === "read" && segs[i].durationKnown !== false && segs[i].end - segs[i].start < GLANCE_MS;
 }
 
-const through = (s: Walk, t: number, into: boolean) => {
-  s.doors.push({ t, into });
+/** When the worker behind a door may come out for work starting at t0, seen at t: not before the canvas on the other side of the door has it there (Infinity while it does not yet). */
+const outAfter = (ctx: Ctx, s: Walk, run: WorkRun | undefined, t0: number, t: number) => {
+  const d = ctx.door;
+  return run && d ? Math.max(t0, (s.portal ? d.leave?.(run, s.portal.canvasId, t0, t) : d.enter?.(run, t0, t)) ?? t0) : t0;
+};
+
+const through = (ctx: Ctx, s: Walk, t: number, into: boolean, place: string, portal: Located["portal"]) => {
+  s.doors.push({ t, into, side: sideOf(ctx, portal), at: place });
   s.behind = into;
   if (into) s.inAt = t;
 };
@@ -169,24 +185,32 @@ const through = (s: Walk, t: number, into: boolean) => {
  * move even to the same place, as the handover needs one).
  */
 function step(ctx: Ctx, s: Walk, w: Here, t0: number, t: number, o: { run?: WorkRun; sub?: boolean; ret?: boolean; next?: number } = {}): "moved" | "waiting" | "stayed" {
-  // still on its way to a door when it has to go elsewhere: it never went in
-  if (s.behind && t0 < s.inAt) {
+  const behind = !!w.behind;
+  // still on its way to a door when it has to go elsewhere: it never went in (more work behind the same door does not change that: it goes in when it gets there)
+  if (s.behind && t0 < s.inAt && !(behind && w.place === s.at)) {
     s.doors.pop();
     s.behind = false;
   }
-  const behind = !!w.behind;
   let r: "moved" | "waiting" | "stayed" = "stayed";
   if (w.place === s.at && (!o.ret || (behind && s.behind))) {
-    if (behind !== s.behind) through(s, t0, behind);
+    if (behind && !s.behind) through(ctx, s, t0, true, w.place, w.portal);
+    else if (!behind && s.behind) {
+      // coming out where it stands (the work is at the node it went in by): not before the canvas on the other side of the door has it there
+      const tOut = outAfter(ctx, s, o.run, t0, t);
+      if (tOut > t) return "waiting";
+      through(ctx, s, tOut, false, s.at, s.portal);
+      s.portal = undefined;
+    }
   } else {
-    let t1 = t0;
+    // it sets off only once it is out of the door it came through (that may have been the work before, at the entrance itself)
+    const out = s.doors[s.doors.length - 1];
+    let t1 = out && !out.into ? Math.max(t0, out.t + DOOR_MS) : t0;
     if (s.behind) {
       // coming out: what it works on now is not in there. Not before the canvas on the other side of the door has it
       // there (it walked to the door or to the entrance first): the two canvases show the same moment
-      const d = ctx.door;
-      const tOut = o.run && d ? Math.max(t0, (s.portal ? d.leave?.(o.run, s.portal.canvasId, t0, t) : d.enter?.(o.run, t0, t)) ?? t0) : t0;
+      const tOut = outAfter(ctx, s, o.run, t0, t);
       if (tOut > t) return "waiting";
-      through(s, tOut, false);
+      through(ctx, s, tOut, false, s.at, s.portal);
       s.portal = undefined;
       t1 = tOut + DOOR_MS;
     }
@@ -208,7 +232,7 @@ function step(ctx: Ctx, s: Walk, w: Here, t0: number, t: number, o: { run?: Work
     if (t1 > t) return "waiting";
     const m: Move = { ...take, to: w.place, t: t1, slot: 0, ...(o.ret ? { ret: true } : {}), ...(o.sub ? { sub: true } : {}) };
     s.moves.push(m);
-    if (behind) through(s, ctx.reduced ? t1 : planFor(m, ctx).t1, true);
+    if (behind) through(ctx, s, ctx.reduced ? t1 : planFor(m, ctx).t1, true, w.place, w.portal);
     r = "moved";
   }
   s.at = w.place;
@@ -219,7 +243,7 @@ function step(ctx: Ctx, s: Walk, w: Here, t0: number, t: number, o: { run?: Work
 /** From `from`, along a run's segments up to t: the moves to each new place (not for a glance), the doors
  * it goes through, where it is, and what it glances at, if anything, at t. */
 function follow(ctx: Ctx, run: WorkRun, segs: readonly RunSeg[], t: number, from: Here, sub: boolean): Walk {
-  const s: Walk = { at: from.place, portal: from.portal, behind: !!from.behind, startBehind: !!from.behind, inAt: -Infinity, moves: [], doors: [] };
+  const s: Walk = { at: from.place, portal: from.portal, behind: !!from.behind, startBehind: !!from.behind, startSide: sideOf(ctx, from.portal), inAt: -Infinity, moves: [], doors: [] };
   for (let i = 0; i < segs.length; i++) {
     const g = segs[i];
     if (g.start > t) break;
@@ -246,19 +270,20 @@ function follow(ctx: Ctx, run: WorkRun, segs: readonly RunSeg[], t: number, from
 /** Where a worker's state puts it as a place to go to: behind the door while it goes in or is in there. */
 const hereOf = (st: RunState): Here => (st.portalPhase === "in" || st.portalPhase === "behind" ? { place: st.at, behind: true } : { place: st.at });
 
-const FRONT = { fade: 1, scale: 1 } as const;
-const BEHIND = { phase: "behind", fade: 0, scale: DOOR_SCALE } as const;
-const smooth = (u: number) => u * u * (3 - 2 * u);
-/** The door at t: going in, in there, or coming out, and how visible and how big it is meanwhile (with
- * reduced motion it only fades). */
-function doorAt(s: Walk, t: number, still: boolean): { phase?: "in" | "behind" | "out"; fade: number; scale: number } {
-  let last: Door | undefined;
-  for (const d of s.doors) if (d.t <= t) last = d;
-  if (!last) return s.startBehind ? BEHIND : FRONT;
-  const u = (t - last.t) / DOOR_MS;
-  if (u >= 1) return last.into ? BEHIND : FRONT;
-  const k = still ? 0 : smooth(u);
-  return last.into ? { phase: "in", fade: 1 - u, scale: still ? 1 : 1 - (1 - DOOR_SCALE) * k } : { phase: "out", fade: u, scale: still ? 1 : DOOR_SCALE + (1 - DOOR_SCALE) * k };
+type DoorNow = { phase?: "in" | "behind" | "out"; fade: number; side?: Side; t?: number; below?: number };
+/** The door at t: going in, in there, or coming out, how far into it, and — with reduced motion, which has no ladder — how visible the figure is meanwhile. */
+function doorAt(s: Walk, t: number, still: boolean): DoorNow {
+  let i = -1;
+  s.doors.forEach((d, n) => d.t <= t && (i = n));
+  const last = s.doors[i];
+  if (!last) return s.startBehind ? { phase: "behind", fade: 1, side: s.startSide, t: Infinity } : { fade: 1 };
+  const ms = t - last.t;
+  if (ms >= DOOR_MS) return last.into ? { phase: "behind", fade: 1, side: last.side, t: ms - DOOR_MS } : { fade: 1 };
+  const u = ms / DOOR_MS;
+  const fade = still ? (last.into ? 1 - u : u) : 1;
+  if (last.into) return { phase: "in", fade, side: last.side, t: ms };
+  const prev = s.doors[i - 1];
+  return { phase: "out", fade, side: last.side, t: ms, below: prev?.into ? Math.max(0, last.t - prev.t - DOOR_MS) : Infinity };
 }
 
 /** Work stretches: segments split where nothing happened for longer than IDLE_LEAVE_MS. */
@@ -397,8 +422,9 @@ function compute(run: WorkRun, t: number, ctx: Ctx): RunState {
     receipt,
     ...(walk.portal ? { portal: walk.portal } : {}),
     doorsIn: walk.doors.filter((d) => d.into).map((d) => d.t),
-    ...(door.phase ? { portalPhase: door.phase } : {}),
-    ...(door.phase !== "behind" && door.scale !== 1 ? { portalScale: door.scale } : {}),
+    doors: walk.doors,
+    ...(door.phase ? { portalPhase: door.phase, portalSide: door.side, portalT: door.t } : {}),
+    ...(door.below != null ? { portalBelow: door.below } : {}),
     ...(comment ? { comment } : {}),
     ...(answered ? { answered } : {}),
     handoff,

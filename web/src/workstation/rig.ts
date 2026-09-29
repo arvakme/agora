@@ -449,6 +449,45 @@ export function planTrip(m: Move, rt: Route, from: Pt, k = 1): Trip {
   return trip;
 }
 
+/** How high a door's ladder is, in figure units: a figure's height, so that going all the way down (or up) takes all of it past the floor line. */
+export const DOOR_H = 50;
+/** Hands and feet go onto the ladder over the first DOOR_GRAB ms of going in, and off it over the last of coming out. */
+const DOOR_GRAB = 100;
+/** The climb's share of its time spent gathering speed, and again slowing (its top speed is CLIMB_SPEED). */
+const DOOR_RAMP = 0.2;
+const DOOR_CLIMB_MS = Math.round((DOOR_H * REF_K) / (CLIMB_SPEED * (1 - DOOR_RAMP)));
+/** Going through a door — down (or up) its ladder, from the floor to all the way out of sight, or back — takes this long; a smaller figure takes as long over a shorter way. */
+export const DOOR_MS = DOOR_GRAB + DOOR_CLIMB_MS;
+
+/**
+ * The trip through a door (pure), for a figure drawn at k world px per unit, the floor at (0, 0) and the ladder at x = 0, times
+ * 0 … DOOR_MS: `dir` 1 — the ladder goes down from the floor (a node's top edge, on the canvas the door is in); −1 — up from it (on
+ * the sub-diagram's canvas, the ladder hangs from one figure's height above the floor); `leaving`: from the floor to the far end
+ * (gone from this canvas), else from the far end to the floor. Hands and feet take hold as it goes on the ladder (a standing beat
+ * of DOOR_GRAB first) and let go as it steps off. It is faced `f`.
+ */
+export function planDoor(k: number, dir: 1 | -1, leaving: boolean, f: 1 | -1 = 1): Trip {
+  const far: Pt = { x: 0, y: dir * DOOR_H * k };
+  const floor: Pt = { x: 0, y: 0 };
+  const [a, b] = leaving ? [floor, far] : [far, floor];
+  const rungs = rungsOf(a.y, b.y, k, 4);
+  const st = RIG.stance * k;
+  const home = (foot: 0 | 1): Pt => ({ x: (foot ? -st : st) * f, y: 0 });
+  const hold: [Foot, Foot] = [{ ...home(0), lift: 0 }, { ...home(1), lift: 0 }];
+  const trip: Trip = { t0: 0, t1: DOOR_MS, a, b, f, k, phases: [], bridges: [], ladders: [] };
+  const T = DOOR_CLIMB_MS;
+  const stand = (t0: number, t1: number, feet: [Foot, Foot], steps: Swing[] = []): WalkPhase => ({ kind: "walk", t0, t1, a: floor, b: floor, f, ramp: RAMP, feet, steps, bumps: [] });
+  if (leaving) {
+    trip.phases.push(stand(0, DOOR_GRAB, hold), { kind: "climb", t0: DOOR_GRAB, t1: DOOR_MS, a, b, f, ramp: DOOR_RAMP, x: 0, rungs, on: DOOR_GRAB, off: 0 });
+  } else {
+    // stepping off onto the floor: the feet close up to where they stand
+    const onLadder: [Foot, Foot] = [{ x: 0, y: 0, lift: 0 }, { x: 0, y: 0, lift: 0 }];
+    const steps: Swing[] = [0, 1].map((n) => ({ foot: n as 0 | 1, t0: T + DOOR_GRAB * 0.3 * n, t1: DOOR_MS - DOOR_GRAB * 0.3 * (1 - n), from: onLadder[n], to: home(n as 0 | 1), up: LIFT * k * 0.3 }));
+    trip.phases.push({ kind: "climb", t0: 0, t1: T, a, b, f, ramp: DOOR_RAMP, x: 0, rungs, on: 0, off: DOOR_GRAB }, stand(T, DOOR_MS, onLadder, steps));
+  }
+  return trip;
+}
+
 /** Where a walk or a climb has everything at t (hands and feet on the ladder while climbing). */
 function poseIn(x: Phase, t: number, k: number): TripPose {
   const u = x.t1 > x.t0 ? clamp((t - x.t0) / (x.t1 - x.t0), 0, 1) : 1;
