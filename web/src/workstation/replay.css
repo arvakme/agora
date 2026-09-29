@@ -7,6 +7,10 @@
 .ws-play-bar .k { color: var(--accent-ink); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
 .ws-play-bar .ttl { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg-muted); }
 
+/* the live camera, paused by the person (§10 默认跟随): one button, top centre under the toolbar (Excalidraw's property panel covers the left); it goes once the camera follows again */
+.ws-live-bar { pointer-events: auto; position: absolute; z-index: 7; top: 66px; left: 50%; transform: translateX(-50%); display: inline-flex; max-width: calc(100% - 24px); }
+.ws-live-bar .btn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 /* the nodes it changes (inside .ws-layer): a frame in the accent, +N at the top right */
 .ws-play-marks { position: absolute; inset: 0; pointer-events: none; }
 .ws-play-frames { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }

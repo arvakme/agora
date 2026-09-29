@@ -27,6 +27,8 @@ import { canvases } from "../session/ui";
 import { clock, prefersReducedMotion, useReplay, useTick, useWorkstation } from "./clock";
 import { figurePositions } from "./focus";
 import { follow, paneView, useFollow } from "./follow";
+import { mayOpenFollowTab } from "./liveCamera";
+import { liveFollow, useLiveFollow } from "./replayLive";
 import { usePlay } from "./replayMode";
 import { frame } from "./frame";
 import { WorkstationOverlay } from "./Overlay";
@@ -71,7 +73,8 @@ function useFollowing(main: string) {
  * body is `FollowView`.
  */
 export function FollowPane({ main, root, setRoot, isSession }: { main: string; root: Node; setRoot: (f: (r: Node) => Node) => void; /** Whether a tab is a session's (a follow view opens above the session group on the canvas's right). */ isSession: (tab: string) => boolean }) {
-  const { f, on, ps, open } = useFollowing(main);
+  const { f, on, ps, open, runs } = useFollowing(main);
+  useLiveFollow();
   // ── open for a newcomer, move on when its agent leaves, say it ended ──
   const announced = useRef(new Map<string, number>());
   useEffect(() => {
@@ -79,14 +82,19 @@ export function FollowPane({ main, root, setRoot, isSession }: { main: string; r
     const fresh = arrivals(ps, announced.current);
     for (const [id, p] of ps) if (p?.entered != null) announced.current.set(id, p.entered);
     if (!on) return void (cur.run && cur.auto && follow.stop());
+    // The camera takes the person into the sub-diagram after the main agent (./replayLive.ts): no tab for it then; sub-agents still get one.
+    const cam = liveFollow.get();
+    const may = (id: string) => mayOpenFollowTab(id, !runs.byId.get(id)?.parentId, { on: true, paused: cam.paused, run: cam.run });
+    if (cur.run && cur.auto && !may(cur.run)) return void follow.stop();
     // Someone came below to work: follow the latest — unless the person chose whom to follow.
-    if (fresh.length && (!cur.run || cur.auto)) return void follow.start(fresh[0], { auto: true });
+    const newcomers = fresh.filter(may);
+    if (newcomers.length && (!cur.run || cur.auto)) return void follow.start(newcomers[0], { auto: true });
     if (!cur.run) return;
     const p = ps.get(cur.run);
     const below = !!p && !p.ended && (p.levels?.length ?? 0) > 1;
     if (cur.auto && !below) {
       // It left (or finished): the latest of the others still working below takes over.
-      const next = arrivals(ps, new Map()).find((id) => id !== cur.run);
+      const next = arrivals(ps, new Map()).find((id) => id !== cur.run && may(id));
       if (next) return void follow.start(next, { auto: true });
     }
     const done = !p || p.ended || (cur.auto && !below);
