@@ -55,6 +55,7 @@ import { ReplayBar, TraceBar } from "./ReplayBar";
 import { stopEntryText } from "./traceText";
 import { ReplayMarks } from "./ReplayMarks";
 import { shortAgentName } from "./stripRules";
+import { showResume } from "./liveCamera";
 import { liveFollow, useLiveFollow } from "./replayLive";
 import { plays, usePlay } from "./replayMode";
 import { RunAvatar } from "./RunAvatar";
@@ -958,6 +959,9 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         keep: id === fo.selected,
         // a walking figure passes by: other bubbles don't dodge it (they would hop as it goes)
         body: h.walking ? undefined : { x: rs.x - 12 * u, y: rs.y - 50 * u, w: 26 * u, h: 50 * u },
+        // its own bubble never covers it, walking or not: from the top of its head down to its feet (~60 figure units below the
+        // head's centre; taken from the head, since a figure at a door has its bubble at the hole, not at its feet)
+        self: { x: hs.x - 16 * u, y: hs.y - h.r * v.zoom, w: 32 * u, h: h.r * v.zoom + 60 * u },
         prev: (() => {
           const o = bubbleOff.current.get(id);
           const pl = lastPlace.current.get(id);
@@ -1330,7 +1334,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
       {playing && !only && <ReplayBar />}
       {!playing && !only && fo.traced && trv && trv.stops.length > 0 && <TraceBar turn={fo.turn?.n ?? (tracedRun ? latestTurnWindow(tracedRun)?.n ?? null : null)} />}
       {!playing && !only && playState.starting && <div className="ws-live-bar" role="status"><span className="btn sm">正在准备回放…（Esc 取消）</span></div>}
-      {!playing && !only && camFollow.run && camFollow.paused && (
+      {!playing && !only && showResume({ paused: camFollow.paused, run: (camFollow.run && snap.byId.get(camFollow.run)?.run) || null, now: snap.t, drawn: !!camFollow.run && snap.figs.some((x) => x.f.run.id === camFollow.run) }) && (
         <div className="ws-live-bar" role="status">
           <button className="btn sm primary" onClick={() => liveFollow.resume()} title="你动了画布，镜头停下了；点一下继续跟着它走">继续跟随 {shortAgentName(camFollow.name)}</button>
         </div>

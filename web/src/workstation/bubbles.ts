@@ -7,7 +7,8 @@
 // arrow labels). When none of those spots is clear it collapses to a small chip right at the figure
 // (verb only) instead of drifting away. Rules that always hold:
 //   - no two bubbles (or chips, or stems) overlap;
-//   - a bubble never covers the drawing or another figure unless it is the selected one;
+//   - a bubble never covers the drawing or another figure unless it is the selected one, and never its own figure (`self`):
+//     with no room above the head it goes beside it;
 //   - a chip only fails to show for a foldable (sub-agent) figure with no free spot at all — its
 //     dispatcher's bubble then counts it as +N.
 // Bubbles come in priority order (needs-you first, the main agent, then sub-agents); figures whose
@@ -33,6 +34,8 @@ export type BubbleIn = {
   keep?: boolean;
   /** The figure itself (screen box), so other bubbles avoid covering it. */
   body?: Box;
+  /** Its own figure from head to feet, always (a walking one too): its bubble never covers it, whatever else is in the way. */
+  self?: Box;
   /** The prototype's own spot for this bubble, tried first (see protoSpot). */
   proto?: { x: number; y: number; tail: Tail; tailX: number };
   /** Where it was last time (same frame of reference): kept while still clear, so bubbles don't hop. */
@@ -110,13 +113,17 @@ export function placeBubbles(list: readonly BubbleIn[], o: { width: number; heig
     if (b.prev) cands.push({ ...b.prev, cost: -0.5 });
     for (const row of [0, 1])
       for (const tx of txs) cands.push({ x: hx - tx, y: y0 - row * (h + 6), tail: "d", tailX: tx, stem: row * (h + 6), cost: row * 10 + (Math.abs(tx - pref) / Math.max(1, w)) * 4 });
-    cands.push({ x: hx + b.r + SIDE, y: hy - h / 2, tail: "l", tailX: 0, stem: 0, cost: 7 });
-    cands.push({ x: hx - b.r - SIDE - w, y: hy - h / 2, tail: "r", tailX: 0, stem: 0, cost: 7 });
+    // beside the figure: past its body (shoulders and arms), not just past the head
+    const right = Math.max(hx + b.r, b.self ? b.self.x + b.self.w : -Infinity) + SIDE;
+    const left = Math.min(hx - b.r, b.self ? b.self.x : Infinity) - SIDE;
+    cands.push({ x: right, y: hy - h / 2, tail: "l", tailX: 0, stem: 0, cost: 7 });
+    cands.push({ x: left - w, y: hy - h / 2, tail: "r", tailX: 0, stem: 0, cost: 7 });
+    const onSelf = (r: Box) => !!b.self && hit(b.self, r);
     const stemBox = (c: Cand): Box | null => (c.stem ? { x: hx - 1, y: c.y + h, w: 2, h: c.stem + TAIL_H } : null);
     let pick: Cand | null = null;
     for (const c of cands) {
       const r = { x: c.x, y: c.y, w, h };
-      if (!inView(r) || onBubble(r) || onChrome(r)) continue;
+      if (!inView(r) || onBubble(r) || onChrome(r) || onSelf(r)) continue;
       const s = stemBox(c);
       if (s && (onBubble(s, 1) || onNode(s))) continue;
       if (!b.keep && (onNode(r) || onFigures(b.id, r))) continue;
@@ -138,13 +145,13 @@ export function placeBubbles(list: readonly BubbleIn[], o: { width: number; heig
       { x: hx - cw / 2, y: cy, tail: "d", tailX: cw / 2, stem: 0, cost: 0 },
       { x: hx - 12, y: cy, tail: "d", tailX: 12, stem: 0, cost: 1 },
       { x: hx - cw + 12, y: cy, tail: "d", tailX: cw - 12, stem: 0, cost: 1 },
-      { x: hx + b.r + SIDE, y: hy - ch / 2, tail: "l", tailX: 0, stem: 0, cost: 2 },
-      { x: hx - b.r - SIDE - cw, y: hy - ch / 2, tail: "r", tailX: 0, stem: 0, cost: 2 },
+      { x: right, y: hy - ch / 2, tail: "l", tailX: 0, stem: 0, cost: 2 },
+      { x: left - cw, y: hy - ch / 2, tail: "r", tailX: 0, stem: 0, cost: 2 },
     ];
     let best: Cand | null = null;
     for (const c of chips) {
       const r = { x: c.x, y: c.y, w: cw, h: ch };
-      if (!inView(r) || onBubble(r)) continue;
+      if (!inView(r) || onBubble(r) || onSelf(r)) continue;
       const cost = c.cost + onNode(r) * 20 + (onChrome(r) ? 50 : 0) + onFigures(b.id, r) * 4;
       if (!best || cost < best.cost) best = { ...c, cost };
     }
@@ -155,7 +162,7 @@ export function placeBubbles(list: readonly BubbleIn[], o: { width: number; heig
     if (!best) {
       // must show: stack above the highest thing in its column (still never on another bubble)
       let y = cy;
-      while (onBubble({ x: hx - cw / 2, y, w: cw, h: ch })) y -= ch + gap;
+      while (onBubble({ x: hx - cw / 2, y, w: cw, h: ch }) || onSelf({ x: hx - cw / 2, y, w: cw, h: ch })) y -= ch + gap;
       best = { x: hx - cw / 2, y, tail: null, tailX: cw / 2, stem: 0, cost: 0 };
     }
     at.set(b.id, { x: best.x, y: best.y, tail: best.tail, tailX: best.tailX, stem: 0, chip: true });

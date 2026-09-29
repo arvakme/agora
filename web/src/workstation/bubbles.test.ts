@@ -85,3 +85,56 @@ describe("placeBubbles", () => {
     }
   });
 });
+
+// A figure's body from head to feet (screen px), 2 px per figure unit: 48 wide, the head at its top.
+const bodyOf = (hx: number, hy: number, r = 10): Box => ({ x: hx - 24, y: hy - r, w: 48, h: 62 });
+const withSelf = (id: string, hx: number, hy: number, o: Partial<BubbleIn> = {}): BubbleIn => ({ ...fig(id, hx, hy, o), self: bodyOf(hx, hy) });
+const boxOf = (b: BubbleIn, p: { x: number; y: number; chip: boolean }): Box => ({ x: p.x, y: p.y, w: p.chip ? (b.chip?.w ?? 40) : b.w, h: p.chip ? (b.chip?.h ?? 22) : b.h });
+
+describe("a bubble never covers its own figure", () => {
+  it("a figure against the bottom edge: the bubble stays above it", () => {
+    const b = withSelf("a", 300, 740);
+    const { at } = placeBubbles([b], { width: 1000, height: 800, nodes: [] });
+    expect(overlap(boxOf(b, at.get("a")!), b.self!)).toBe(false);
+  });
+  it("a figure against the top edge: no room above, so it goes to the side, tail still on the head", () => {
+    const b = withSelf("a", 300, 24);
+    const { at } = placeBubbles([b], { width: 1000, height: 800, nodes: [] });
+    const p = at.get("a")!;
+    expect(overlap(boxOf(b, p), b.self!)).toBe(false);
+    expect(p.tail === "l" || p.tail === "r").toBe(true);
+  });
+  it("a figure in the corner: still clear of it", () => {
+    for (const [x, y] of [[30, 24], [970, 24], [30, 776], [970, 776]]) {
+      const b = withSelf("a", x, y);
+      const { at } = placeBubbles([b], { width: 1000, height: 800, nodes: [] });
+      expect(overlap(boxOf(b, at.get("a")!), b.self!), `${x},${y}`).toBe(false);
+    }
+  });
+  it("where it was last time is not kept once that spot covers the figure (it has walked under its own bubble)", () => {
+    const b = withSelf("a", 300, 400, { prev: { x: 200, y: 380, tail: "d", tailX: 100, stem: 0 } });
+    const { at } = placeBubbles([b], { width: 1000, height: 800, nodes: [] });
+    expect(overlap(boxOf(b, at.get("a")!), b.self!)).toBe(false);
+  });
+  it("the selected bubble too, standing in a tray that is an obstacle around it", () => {
+    const tray = { x: 100, y: 700, w: 500, h: 100 };
+    const b = withSelf("a", 300, 730, { keep: true, prev: { x: 250, y: 720, tail: "d", tailX: 50, stem: 0 } });
+    const { at } = placeBubbles([b], { width: 1000, height: 800, nodes: [tray] });
+    expect(overlap(boxOf(b, at.get("a")!), b.self!)).toBe(false);
+  });
+  it("a chip is clear of its figure as well, and so is the last resort", () => {
+    const nodes = [{ x: 0, y: 0, w: 1000, h: 800 }];
+    const b = withSelf("a", 500, 400);
+    const { at } = placeBubbles([b], { width: 1000, height: 800, nodes });
+    const p = at.get("a")!;
+    expect(p.chip).toBe(true);
+    expect(overlap(boxOf(b, p), b.self!)).toBe(false);
+  });
+  it("other figures' bodies are still avoided too", () => {
+    const a = withSelf("a", 300, 300);
+    const o: BubbleIn = { ...withSelf("o", 300, 200), w: 100 }; // another figure standing right where a's bubble would go
+    const { at } = placeBubbles([a, o], { width: 1000, height: 800, nodes: [] });
+    for (const f of [a, o]) for (const g of [a, o]) if (f !== g && at.has(f.id)) expect(overlap(boxOf(f, at.get(f.id)!), g.self!), `${f.id} over ${g.id}`).toBe(false);
+  });
+});
+
