@@ -2,8 +2,8 @@
 // into the full thread (layout animation), with replies, agent results and actions.
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
-import { handToSession, undoAgent } from "../ops/agent";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { handTarget, handToSession, undoAgent } from "../ops/agent";
 import type { AnchorState } from "../canvas/anchors";
 import { IconCheck, IconClose, IconHint, IconPencil, IconRetry, IconSend, IconTrash, IconUndo } from "../app/icons";
 import type { Message, Thread, ThreadStore } from "./threads";
@@ -13,11 +13,24 @@ import { GUEST } from "../guest/mode";
 import { SPRING } from "./motion";
 import { useSessions, useTurn } from "../session/store";
 import { useTrash } from "../workspace/trash";
-import { AGENT_NAMES, useAgents } from "../session/agents";
+import { AGENT_NAMES, agentName, useAgents } from "../session/agents";
 import { AgentAvatar } from "../session/AgentAvatar";
-import { ui } from "../session/ui";
+import { openSessions, ui } from "../session/ui";
+import { pointerFollow } from "../pointer/follow";
+import "./handoff.css";
 import { AnchorTag, type AnchorName } from "./AnchorTag";
 import type { CardPos } from "./CommentLayer";
+
+/** Who "交给 Agent" would send to right now, and whether there are several to choose from (then the button names it). */
+function useHandTarget(canvasId: string) {
+  const ag = useAgents();
+  const { sessions: all } = useSessions();
+  useSyncExternalStore(pointerFollow.subscribe, pointerFollow.get);
+  useSyncExternalStore(openSessions.subscribe, openSessions.get);
+  void all;
+  const { sid, live } = handTarget(canvasId);
+  return { sid, many: live.length > 1, name: sid ? agentName(ag.bindings[sid]?.agent) : undefined };
+}
 
 export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
   t: Thread;
@@ -31,6 +44,8 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
   const full = mode === "full";
   const [first, ...rest] = t.messages;
   const running = t.agent === "running";
+  const to = useHandTarget(store.canvasId);
+  const lastId = t.messages.at(-1)?.id;
   return (
     <motion.div
       layout
@@ -57,8 +72,9 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
           </span>
           <span className="tcard-actions">
             {!t.resolved && !GUEST && (
-              <button className="btn sm primary tagent" disabled={running || st.status === "lost"} onClick={() => void handToSession(api, store, t.id)} title="交给这块画布上最近活动的会话">
+              <button className="btn sm primary tagent" disabled={running || st.status === "lost"} onClick={() => void handToSession(api, store, t.id)} title={to.sid ? `交给 ${to.name}（你正看着的会话，否则这块画布上最近活动、还能收消息的那个）` : "这块画布还没有能收消息的会话：点开后选一个 agent"}>
                 <IconSend size={14} />{running ? "处理中" : "交给 Agent"}
+                {!running && to.many && <small className="tagent-to">交给 {to.name}</small>}
               </button>
             )}
             {!GUEST && (
@@ -89,7 +105,7 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
           {full &&
             rest.map((m) => (
               <Reveal key={m.id}>
-                <Row m={m} tools={{ store, threadId: t.id }} onUndo={GUEST ? undefined : () => undoAgent(api, store, t.id, m.id)} />
+                <Row m={m} tools={{ store, threadId: t.id }} onUndo={GUEST ? undefined : () => undoAgent(api, store, t.id, m.id)} onSwitch={!GUEST && m.action && m.id === lastId && !running ? () => void handToSession(api, store, t.id, { choose: true }) : undefined} />
               </Reveal>
             ))}
           {full && running && (
@@ -125,7 +141,7 @@ function Reveal({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Row({ m, first, onUndo, tools }: { m: Message; first?: boolean; onUndo?: () => void; tools?: { store: ThreadStore; threadId: string } }) {
+function Row({ m, first, onUndo, onSwitch, tools }: { m: Message; first?: boolean; onUndo?: () => void; onSwitch?: () => void; tools?: { store: ThreadStore; threadId: string } }) {
   const [editing, setEditing] = useState(false);
   // Eval replies are the session turn itself; native-session replies carry the agent's own
   // text and point at their last canvas change (for undo) and the session.
@@ -166,6 +182,7 @@ function Row({ m, first, onUndo, tools }: { m: Message; first?: boolean; onUndo?
         ) : (
           <p className="trow-text">{reply?.text ?? m.text}</p>
         )}
+        {onSwitch && <button className="btn sm tswitch" onClick={onSwitch}><IconRetry size={14} />换一个会话</button>}
         {reply?.undoError && <p className="trow-text" data-warn>{reply.undoError}</p>}
         {reply?.changes && (
           <div className="tchanges" data-undone={!!reply.undone}>

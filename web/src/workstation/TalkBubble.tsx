@@ -1,17 +1,19 @@
-// 对小人说话 (web/docs/workstation.md「新想法」): click a figure and a small input opens just under it;
+// 对小人说话 (web/docs/workstation.md §12): click a figure and a small input opens just under it;
 // Enter sends the words to that agent's session (`agents.send`), Esc closes it. A sub-agent has no
 // session of its own: the box says so and sends to the session that dispatched it instead, naming the
-// sub-agent. Once sent, `talk` tells the figure that got it to turn to you and nod. Mount it in the
+// sub-agent. After Enter the box says who got it — 已发给 Claude Code — and, when a turn is running, that it
+// 会在这一轮结束后送达 (panel messages wait for the turn to end); the figure turns and nods when the message
+// really shows up in the session, not when it is sent (./talk.ts `watchDelivery`). Mount it in the
 // overlay's layer (screen coordinates of the canvas pane); it follows the selected figure's feet in
 // the one frame loop. `data-esc-local`: the app's global Esc leaves it alone.
 import { useEffect, useRef, useState } from "react";
 import { viewport } from "../canvas/viewport";
-import { agents } from "../session/agents";
+import { agentName, agents } from "../session/agents";
 import { figurePositions, useFocus } from "./focus";
 import { frame } from "./frame";
 import { useRuns } from "./runs/store";
 import type { FlatRun } from "./runs/types";
-import { talk } from "./talk";
+import { deliveryNote, sendState, talk, watchDelivery, type SendState } from "./talk";
 import "./TalkBubble.css";
 
 export function TalkBubble({ canvasId }: { canvasId: string }) {
@@ -27,6 +29,9 @@ function Talk({ f, canvasId }: { f: FlatRun; canvasId: string }) {
   const [text, setText] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState<{ agent: string; state: SendState } | null>(null);
+  const stop = useRef<() => void>(() => {});
+  useEffect(() => () => stop.current(), []);
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const id = f.run.id;
@@ -58,9 +63,17 @@ function Talk({ f, canvasId }: { f: FlatRun; canvasId: string }) {
     setBusy(true);
     setErr(null);
     try {
-      await agents.send(to.sessionId, sub ? `关于子代理 ${f.run.name}${f.run.task ? `（${f.run.task}）` : ""}：${words}` : words, { canvasId });
-      talk.said(to.id);
-      setShut(true);
+      const sid = to.sessionId;
+      const state = sendState(sid); // before the send: is a turn running now?
+      const sentAt = Date.now() - 1500; // the log's clock and the page's are one machine's; a little slack
+      await agents.send(sid, sub ? `关于子代理 ${f.run.name}${f.run.task ? `（${f.run.task}）` : ""}：${words}` : words, { canvasId });
+      const agent = agentName(agents.get().bindings[sid]?.agent);
+      setSent({ agent, state });
+      stop.current = watchDelivery(sid, words, sentAt, () => {
+        setSent({ agent, state: "delivered" });
+        talk.said(to.id);
+        setTimeout(() => setShut(true), 4000);
+      });
     } catch (e) {
       setErr(`没发出去：${(e as Error).message}`);
     } finally {
@@ -69,6 +82,9 @@ function Talk({ f, canvasId }: { f: FlatRun; canvasId: string }) {
   };
   return (
     <div className="ws-talk" ref={box} style={{ visibility: "hidden" }} data-esc-local onPointerDown={(e) => e.stopPropagation()}>
+      {sent ? (
+        <p className="ws-talk-note" role="status" data-state={sent.state}>{deliveryNote(sent.agent, sent.state)}</p>
+      ) : (
       <input
         ref={input}
         value={text}
@@ -85,7 +101,8 @@ function Talk({ f, canvasId }: { f: FlatRun; canvasId: string }) {
           }
         }}
       />
-      {sub && (
+      )}
+      {sub && !sent && (
         <p className="ws-talk-sub">
           子代理不能直接对话，发给派它的 {to.name}？
           <button disabled={busy || !text.trim()} onClick={() => void send()}>改发给 {to.name}</button>

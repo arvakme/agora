@@ -171,6 +171,9 @@
 - **效果**（`CommentWork.tsx`，挂在评论层里）：评论轮进行中，钉和小人头部之间一条 1.2 px 的紫色虚线（向上微弯，越过中间别人的头），随小人淡入淡出；这一轮结束、答复贴回线程时，钉上弹出一个紫底对勾（约 600 ms：弹出、停留、淡出，外圈一道扩散的细环）。回放按转录里的结束时刻；实时下数据晚到几秒也补放一次。减少动效：线和对勾只出现、消失，不做动画。`RunState.answered` 在答复后 1 秒内给出，小人在答复那一刻（`answeredAt`，时间线时间）点一次头（`gestures.ts`，约 0.7 秒；减少动效时不点）。`?mock=runs` 在 58–66 秒有一段：Pi 处理 Redis 上的评论 #3「缓存过期时间是不是太短？」（钉只在 mock 里显示，不保存、不可点开）。
 - **进出子图**（`Ctx.door`）：文件在某节点的子图里时，小人走到这个节点，在节点上沿缩小到一半并淡出（400 ms，`portalPhase: "in"`、`portalScale`、`fade`），之后不在这块画布上（`present: false`，入口处由子视图的头像表示）；做完出来时反过来，先在原处淡入放大，再走向下一个节点。子画布上入口是离左上最近的节点：不在这块画布上的文件都在入口后面，小人从入口淡入放大出现再走过去，离开时走回入口进门。一段工作从子图里开始时，一开始就在里面。派出的子代理跟着派它的人在门里门外；交回给在门里的人时走到门口进去，不在外面交接。减少动效时只淡入淡出，不缩放。没有 `door` 的上下文（子视图、追踪的计算）照旧站在节点上、气泡写「↘ 子图」。
 
+- **「交给 Agent」发给谁**（`session/pickSession.ts`、`ops/agent.ts` 的 `handTarget` / `handToSession`）：按顺序取——① 窗口管理器里此刻开着（`SessionPane` 挂载即登记进 `ui.ts` 的 `openSessions`）、关联这块画布、且是最后聚焦的会话（`pointerFollow`，人正看着的那个）；② 其他开着的关联会话，最近活动的在前；③ 这块画布上最近活动的关联会话；都没有就打开选择器（`ui.chooseAgent`）让人选。**「还能收消息」不猜**，直接读服务端推来的状态（`sendable`，与 `sessions.send` 的判断一致）：没绑定、是 `cp -r` 带来的副本（`status.copy`）、原生会话目录没了（`status.native.blocking`：missing / ambiguous / elsewhere，除非终端里还有活的窗格握着它）都不选；还没有状态的当作可以，让服务端来拒。`agents.forCanvas`（子图入口等也用）同样跳过失效的会话。有多个可选时，「交给 Agent」旁边用小字写「交给 Claude Code」；只有一个时不写，悬停的 title 里写。发送失败时线程里留一句「没有交出去：…」和一个「换一个会话」按钮（`Message.action: "switch-session"`，只在线程最后一条、且没在处理时出现）：点它打开选择器，选完直接把这条评论重发给选中的会话。
+- **对小人说话**（`TalkBubble.tsx` `.css` `talk.ts`）：点一个小人，它脚下出一个小输入框（尾巴朝上指着它），回车发到它的会话（`agents.send`），Esc 只关框、不取消选中（`data-esc-local`，应用的全局 Esc 不管它）。子代理没有会话：框里写「子代理不能直接对话，发给派它的 Pi？」，回车或「改发给 Pi」发给派它的会话，正文前加「关于子代理 Codex（任务）：」。发出后输入框换成一行说明：「已发给 Claude Code」；发之前那个会话正在跑一轮（`running` / `busy` / 有排队）就写「已发给 Claude Code · 会在这一轮结束后送达」（从面板发的消息要等这一轮结束）。**小人点头等消息真的送达**：`watchDelivery` 盯着会话转录，出现一条时间在发送之后、正文含这句话的用户条目才 `talk.said(收到的运行)` 并把说明改成「· 已送达」（约 4 秒后关框），动画那边读 `talk.get()`（`{ runId, at }`，墙上时钟）让那个小人转身点头。这条消息在会话面板里就是一条「来自 Agora」的用户消息（`TrajectoryView`）。挂载：`Overlay.tsx` 的 `.ws-layer` 里（和气泡同层）`<TalkBubble canvasId={view.id} />`。
+
 ## 13. 新想法（试验）
 
 每项独立，先挂上看效果，不要就整项删掉（文件 + 下面写明的挂载行 / 开关）。全部从运行数据算，不另存状态。挂载的几行已接进叠层、时间线和 App；证据在 round-01 的 `evidence/ideas/`、`evidence/p10/`。
@@ -179,7 +182,7 @@
 
 **2. 今日小结**（`summary.ts` `DaySummary.tsx` `.css`）：今天 0 点到现在（回放时到播放头）：几个 agent（其中几个子代理）、走了几步（从一个节点走到另一个，交回时走回派它的人也算）、改了几个文件（写过的不同文件）、跑了几次命令、等了你多久（两个人同时等只算一次）、最忙的节点（站着干活最久）。线条卡片，紫色图标，等你的时长用暖色。挂载（`Timeline.tsx` 细条右边的计数）：`const [dayAt, setDayAt] = useState<HTMLElement | null>(null);`，`<span className="ws-cnt" onPointerEnter={(e) => setDayAt(e.currentTarget)} onPointerLeave={() => setDayAt(null)} …>`，再加 `{dayAt && canvasId && <DaySummary canvasId={canvasId} anchor={dayAt} />}`（卡片自己用 portal 摆在它上方、右对齐，不接指针）。
 
-**3. 对小人说话**（`TalkBubble.tsx` `.css` `talk.ts`）：点一个小人，它脚下出一个小输入框（尾巴朝上指着它），回车发到它的会话（`agents.send`），Esc 只关框、不取消选中（`data-esc-local`，应用的全局 Esc 不管它）。子代理没有会话：框里写「子代理不能直接对话，发给派它的 Pi？」，回车或「改发给 Pi」发给派它的会话，正文前加「关于子代理 Codex（任务）：」。发出后 `talk.said(收到的运行)`：动画那边读 `talk.get()`（`{ runId, at }`，墙上时钟），让那个小人转身点头。挂载：`Overlay.tsx` 的 `.ws-layer` 里（和气泡同层）`<TalkBubble canvasId={view.id} />`。
+**3. 对小人说话**：已转正，见 §12。
 
 **4. 延时片段**（`web/scripts/clip.ts`）：`node scripts/clip.ts <url> <out.mp4|out.gif> [--from <t>] [--to <t>] [--speed 8] [--dark]`。`<t>` 可以是第一次活动之后的秒数、当天的 `HH:MM[:SS]` 或 ISO 时间；默认从第一次活动到现在，`--to` 还没到就等（`?mock=runs` 的脚本从打开页面起实时演 46 秒）。做法：Playwright 打开页面，在细条上按空格进时间线自己的回放（带它的空闲段），再让页面自己的 `clock` 按倍速播这一段——空闲照样跳过；录整页，ffmpeg 切出这一段、裁到画布、出 MP4 或 GIF。录的时候不热更新（按住 Vite 的 HMR 连接），也不写项目（除 GET 之外的 `/api` 请求一律拒绝，页面自己的 workspace 自动保存也不例外）。要开发服务器（要拿到页面的 clock 模块）。
 

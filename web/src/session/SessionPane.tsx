@@ -27,13 +27,15 @@ import { effortGroups, modelGroups } from "./pickerModel";
 import { TerminalAppIcon } from "../app/terminals/TerminalAppIcon";
 import { undoTurn } from "./runTurn";
 import { sessions, useSessions, type Turn } from "./store";
-import { agentChoice, canvases, draftText, highlight, ui } from "./ui";
+import { agentChoice, canvases, draftText, highlight, openSessions, ui } from "./ui";
 import "./session.css";
 
 const fmt = (ms: number) => (ms < 10000 ? `${(ms / 1000).toFixed(1)}s` : ms < 60000 ? `${Math.round(ms / 1000)}s` : `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`);
 const clock = (at: number) => new Date(at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
 
 export function SessionPane({ sessionId, canvasTitles }: { sessionId: string; canvasTitles: Record<string, string> }) {
+  // a session with an open tab: "交给 Agent" starts from the ones the person has open
+  useEffect(() => (openSessions.mount(sessionId), () => void openSessions.unmount(sessionId)), [sessionId]);
   const { sessions: all } = useSessions();
   const ag = useAgents();
   const session = all[sessionId];

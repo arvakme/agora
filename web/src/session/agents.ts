@@ -3,6 +3,7 @@
 // /api/agent/events — the binding (agent, model, effort, native id; fixed once chosen),
 // the transcript read from the CLI's own log, and live status — and sends messages.
 // Canvas bridge requests from `agora canvas …` are executed by ./agentBridge.ts.
+import { sendable } from "./pickSession";
 import { useSyncExternalStore } from "react";
 import type { Origin } from "../persist";
 
@@ -425,9 +426,9 @@ export const agents = {
     return b;
   },
 
-  /** The session a canvas's comments go to: the most recently active agent session on it. */
+  /** The session a canvas's comments go to: the most recently active agent session on it that can still take a message. */
   forCanvas(sessionIds: string[]): string | undefined {
-    const bound = sessionIds.filter((id) => state.bindings[id]);
+    const bound = sessionIds.filter((id) => sendable(state.bindings[id], state.status[id]));
     return bound.sort((a, b) => (state.activeAt[b] ?? state.bindings[b].createdAt) - (state.activeAt[a] ?? state.bindings[a].createdAt))[0];
   },
 };
