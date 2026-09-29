@@ -35,6 +35,7 @@ import {
   type TrajTurn,
   type UsageSum,
 } from "./trajectoryModel";
+import { JumpPill, useJumpToBottom } from "./JumpPill";
 import "./trajectory.css";
 
 const clock = (at: number) => new Date(at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -201,14 +202,13 @@ export function ProcessFold({ sessionId, turn, children }: { sessionId: string; 
 }
 
 // ——— trajectory view ———
-export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, cutoff = null }: { sessionId: string; turns: TrajTurn[]; focusTurn?: { n: number; key: number } | null; /** A stop on the canvas was clicked: scroll to this step and flash it. */ focusItem?: { id: string; n?: number; key: number } | null; agent?: AgentKind; /** Replay: records after this moment are greyed out (they happened later). */ cutoff?: number | null }) {
+export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, cutoff = null, working = false }: { sessionId: string; turns: TrajTurn[]; focusTurn?: { n: number; key: number } | null; /** A stop on the canvas was clicked: scroll to this step and flash it. */ focusItem?: { id: string; n?: number; key: number } | null; agent?: AgentKind; /** Replay: records after this moment are greyed out (they happened later). */ cutoff?: number | null; /** A turn is running (the 「回到最新」 pill shows a dot). */ working?: boolean }) {
   const [mode, setMode] = useState<TimelineMode>("sequence");
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
   const [range, setRange] = useState<[number, number] | null>(null);
   const [query, setQuery] = useState("");
   const scroll = useRef<HTMLDivElement>(null);
-  const follow = useRef(true);
   const model = useMemo(() => deriveTimeline(turns, mode), [turns, mode]);
   const focus = useMemo(() => (model && range ? focusIndexes(model, range[0], range[1]) : null), [model, range]);
   const q = query.trim().toLowerCase();
@@ -216,11 +216,8 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
   const records = turns.reduce((n, t) => n + t.steps.reduce((m, s) => m + s.records.length, 0), 0);
   const calls = turns.reduce((n, t) => n + t.toolCount, 0);
 
-  // Stay at the tail while new records arrive, until the person scrolls up (DSH ledger).
-  useEffect(() => {
-    const el = scroll.current;
-    if (el && follow.current && !focusTurn) el.scrollTop = el.scrollHeight;
-  }, [records]);
+  // Stay at the tail while new records arrive, until the person scrolls up; then 「回到最新」 says what came (./JumpPill.tsx).
+  const jump = useJumpToBottom(scroll, records, !!focusTurn);
   useEffect(() => {
     if (!focusTurn) return;
     setCollapsed((c) => {
@@ -306,10 +303,6 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
       <div
         className="ds-ledger"
         ref={scroll}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-        }}
       >
         {turns.map((t) => {
           const steps = t.steps.map((s) => ({ ...s, records: s.records.filter(visible) })).filter((s) => s.records.length);
@@ -327,6 +320,7 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
           );
         })}
       </div>
+      <JumpPill show={jump.show} unread={jump.unread} running={working} onJump={jump.jump} />
     </div>
   );
 }

@@ -29,6 +29,7 @@ import { TerminalAppIcon } from "../app/terminals/TerminalAppIcon";
 import { undoTurn } from "./runTurn";
 import { sessions, useSessions, type Turn } from "./store";
 import { agentChoice, canvases, draftText, highlight, openSessions, ui } from "./ui";
+import { JumpPill, useJumpToBottom } from "./JumpPill";
 import "./session.css";
 
 const fmt = (ms: number) => (ms < 10000 ? `${(ms / 1000).toFixed(1)}s` : ms < 60000 ? `${Math.round(ms / 1000)}s` : `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`);
@@ -256,9 +257,8 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   const total = useMemo(() => sumUsage(turns), [turns]);
   const changes = session.turnIds.map((id) => canvasTurns[id]).filter(Boolean);
 
-  useEffect(() => {
-    if (view === "chat") scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: "smooth" });
-  }, [items.length, changes.length, view]);
+  // 「回到最新」: at the end the chat follows new messages; scrolled up it does not, and the pill says how many came (./JumpPill.tsx)
+  const jump = useJumpToBottom(scroll, items.length + changes.length, false, view);
   useEffect(() => {
     const on = (e: Event) => {
       const id = (e as CustomEvent<string>).detail;
@@ -478,9 +478,10 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
       {replay && view === "trajectory" && <p className="sp-replay-note">回放到 {hhmmss(replayAt!)}：灰色的是之后发生的。拖时间线，或在细条上点 ▶ 回放。</p>}
       {view === "trajectory" ? (
         <div className="sp-traj">
-          <TrajectoryView sessionId={sessionId} turns={turns} focusTurn={focusTurn} focusItem={focusItem} agent={binding.agent} cutoff={replay ? replayAt : null} />
+          <TrajectoryView sessionId={sessionId} turns={turns} focusTurn={focusTurn} focusItem={focusItem} agent={binding.agent} cutoff={replay ? replayAt : null} working={working} />
         </div>
       ) : (
+        <div className="sp-stage">
         <div className="sp-scroll" ref={scroll}>
           {!turns.length && !changes.length && (
             <div className="sp-hello">
@@ -494,6 +495,8 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           )}
           <Conversation sessionId={sessionId} turns={turns} changes={changes} canvasTitles={canvasTitles} flash={flash} onTrajectory={(n) => (setView("trajectory"), setFocusTurn({ n, key: Date.now() }))} />
           {working && <LiveLine sessionId={sessionId} />}
+        </div>
+        <JumpPill show={jump.show} unread={jump.unread} running={working} onJump={jump.jump} />
         </div>
       )}
       {line && !(status?.running && !status?.held) && (
