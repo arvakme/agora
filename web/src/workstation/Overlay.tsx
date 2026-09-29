@@ -1063,9 +1063,14 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   if (sp) extra.push({ place: sp, tone: "sel", ids: [] });
   if (rp && rp !== hp) extra.push({ place: rp, tone: "hover", ids: [] });
   const rings = useExiting([...snap.rings, ...extra].map((r) => ({ ...r, key: `${r.place}|${r.tone === "sel" || r.tone === "hover" ? r.tone : "busy"}` })), RING_EXIT_MS);
-  // Clicking a figure (or its bubble) selects it (its action row and the talk box show); clicking it again lets go. It does
-  // not trace: a route belongs to a played turn.
-  const pick = (id: string) => focus.select(fo.selected === id ? null : id);
+  // Clicking a figure (or its bubble) selects it (its action row and the talk box show) and has the camera follow it — the one
+  // who is looked at is the one followed; clicking it again lets go of the selection (the camera keeps to it). It does not trace:
+  // a route belongs to a played turn.
+  const pick = (id: string) => {
+    const on = fo.selected === id;
+    focus.select(on ? null : id);
+    if (!on) liveFollow.follow(id);
+  };
   // The trace's marks: each stop's number at its node's top-left corner (a later visit to the same node
   // below the earlier one, down its left edge); beside the first, just inside the node, the sub-diagram
   // nodes it went to through that node's entry; each sub-agent's avatar halfway out on its errand.
