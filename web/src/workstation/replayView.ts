@@ -2,22 +2,27 @@
 // figure — it goes into a sub-diagram when the figure goes in at a node's door, exactly as a click into the
 // sub-diagram does (`nav.go`: the breadcrumb leads back), fits it to the pane, and returns to the parent
 // when the figure comes out, and to the whole diagram for the summary and before each PR of a 连播. Leaving
-// the replay puts back the canvas and the view it was entered from. A short fade covers each switch
-// (~400 ms in all); with reduced motion it is a cut. Imperative, no React: it outlives the canvases it switches.
+// the replay puts back the canvas and the view it was entered from. Each switch is a cross-fade of the old
+// picture into the new one (a view transition, ~400 ms with the mount; never through a blank frame); with
+// reduced motion, or where the browser has no view transitions, it is a cut. Imperative, no React: it outlives the canvases it switches.
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { El } from "../canvas/scene";
-import { viewport, type Viewport } from "../canvas/viewport";
+import { firstView, viewport, type Viewport } from "../canvas/viewport";
 import { nav, nested } from "../nested/store";
 import { canvases } from "../session/ui";
 import { clock, prefersReducedMotion } from "./clock";
 import { buildGeometry } from "./geometry";
 import { stateAt, type Ctx } from "./place";
 import { cameraCanvas } from "./replayCamera";
+import { occupiedOf, excalidrawEl } from "./replayDom";
+import { fitView, type Box } from "./replayFit";
 import { replacingPush, withoutReplayParam } from "./replayHistory";
 import { scenePlaces } from "./scenePlaces";
 import type { WorkRun } from "./runs/types";
 
-const FADE_OUT_MS = 150;
-const FADE_IN_MS = 200;
+/** Room over the top nodes for the figure standing there and its bubble (px), and the margin round the rest. */
+const FIGURE_ROOM = 100;
+const MARGIN = 28;
 
 const ctxs = new Map<string, { scenes: unknown; reduced: boolean; ctx: Ctx }>();
 /** A canvas's own picture for the figure's state on it (as its overlay builds it), from the scene store: any canvas, open or not. */
@@ -35,27 +40,6 @@ export function ctxFor(id: string): Ctx | null {
   return ctx;
 }
 
-let curtain: HTMLElement | null = null;
-/** A veil over the canvas pane: opacity `to` over `ms` (resolves when done). */
-function veil(to: 0 | 1, ms: number): Promise<void> {
-  if (!curtain) {
-    curtain = document.createElement("div");
-    curtain.className = "ws-pr-curtain";
-    curtain.style.opacity = "0";
-    document.body.appendChild(curtain);
-  }
-  const pane = document.querySelector<HTMLElement>('[data-pane]:not([data-hidden="true"]) .canvas-view') ?? document.querySelector<HTMLElement>(".canvas-view");
-  const r = pane?.getBoundingClientRect();
-  if (r) Object.assign(curtain.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
-  const el = curtain;
-  if (!ms || prefersReducedMotion() || !el.animate) {
-    el.style.opacity = String(to);
-    return Promise.resolve();
-  }
-  const a = el.animate([{ opacity: to ? 0 : 1 }, { opacity: to }], { duration: ms, fill: "forwards", easing: "ease-in-out" });
-  return a.finished.then(() => void (el.style.opacity = String(to)), () => {});
-}
-
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export type CameraEvent = { at: number; t: number; from: string; to: string; title: string };
@@ -70,33 +54,68 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
   let homeView: Viewport | null = null;
   let shown: string | null = null;
   let busy = false;
+  /** How far down the replay bar reaches from the top of the canvas (px), measured on whichever canvas showed it. */
+  let barCovers = 0;
+  const measureBar = () => {
+    const ex = excalidrawEl();
+    const bar = ex?.closest("[data-pane]")?.querySelector<HTMLElement>(".ws-pr-bar");
+    if (ex && bar && bar.offsetWidth) barCovers = Math.max(0, bar.getBoundingClientRect().bottom - ex.getBoundingClientRect().top);
+  };
   /** The address and history state the replay was entered with: put back on leaving (minus ?replay=). */
   let entry: { state: unknown; href: string } | null = null;
   const log: CameraEvent[] = [];
-  if (typeof window !== "undefined") Object.assign(window, { __wsCamera: log });
+  /** Each fit, for the evidence (window.__wsFits). */
+  const fits: unknown[] = [];
+  if (typeof window !== "undefined") Object.assign(window, { __wsCamera: log, __wsFits: fits });
 
-  /** The canvas's pane, once the switch has mounted it: fit a sub-diagram to it, put the entry view back on the canvas we came from. */
-  async function arrive(id: string) {
-    for (let i = 0; i < 40 && !(canvases.get(id) && (viewport.get(id)?.width ?? 0) > 0); i++) await wait(40);
-    const api = canvases.get(id)?.api;
-    if (!api) return;
-    if (id === home && homeView) api.updateScene({ appState: { scrollX: homeView.scrollX, scrollY: homeView.scrollY, zoom: { value: homeView.zoom } } as never });
-    else api.scrollToContent(api.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.9, animate: false });
-    await wait(60);
+  /** The view that fits `api`'s canvas to what the toolbar and the bar leave free of it. */
+  function fitOf(api: ExcalidrawImperativeAPI) {
+    const els = api.getSceneElements();
+    if (!els.length) return null;
+    const x0 = Math.min(...els.map((e) => e.x));
+    const y0 = Math.min(...els.map((e) => e.y));
+    const bounds: Box = { x: x0, y: y0, w: Math.max(...els.map((e) => e.x + e.width)) - x0, h: Math.max(...els.map((e) => e.y + e.height)) - y0 };
+    const st = api.getAppState();
+    // the replay bar reaches a new canvas's overlay a little after it mounts: what it covers is what it covered on the canvas before (the same bar, the same place)
+    const ex = excalidrawEl();
+    const occ = ex ? occupiedOf(ex) : { top: 0, right: 0, bottom: 0, left: 0 };
+    occ.top = Math.max(occ.top, barCovers);
+    const view = fitView({ pane: { w: st.width, h: st.height }, occupied: occ, margin: MARGIN, above: FIGURE_ROOM, maxZoom: 1, bounds });
+    fits.push({ occupied: occ, pane: { w: st.width, h: st.height }, bounds, view, at: Date.now() });
+    return view;
   }
+  const setView = (api: ExcalidrawImperativeAPI, v: { scrollX: number; scrollY: number; zoom: number }) => api.updateScene({ appState: { scrollX: v.scrollX, scrollY: v.scrollY, zoom: { value: v.zoom } } as never });
+  /** The view a canvas gets when it is shown: the one it was entered with (leaving the replay), else fitted. */
+  const viewFor = (id: string, restore: boolean) => (api: ExcalidrawImperativeAPI) => {
+    const v = restore && id === home ? homeView : fitOf(api);
+    if (v) setView(api, v);
+  };
 
-  async function go(to: string) {
+  async function go(to: string, restore = false) {
     const from = shown!;
     busy = true;
+    measureBar();
     try {
-      await veil(1, FADE_OUT_MS);
-      // the app's navigation pushes a history entry: during a replay it replaces the current one
-      replacingPush(() => nav.go(from, to));
-      shown = to;
-      log.push({ at: Date.now(), t: clock.time(), from, to, title: nested.get().titles[to] ?? "" });
-      await arrive(to);
-      await veil(0, FADE_IN_MS);
+      const swap = async () => {
+        // a canvas that is not mounted yet takes its view as it mounts (CanvasView's own fit would come after ours, once the page paints again)
+        const mounted = !!canvases.get(to);
+        if (!mounted) firstView.set(to, viewFor(to, restore));
+        // the app's navigation pushes a history entry: during a replay it replaces the current one
+        replacingPush(() => nav.go(from, to));
+        shown = to;
+        log.push({ at: Date.now(), t: clock.time(), from, to, title: nested.get().titles[to] ?? "" });
+        for (let i = 0; i < 60 && !(canvases.get(to) && (viewport.get(to)?.width ?? 0) > 0); i++) await wait(40);
+        if (mounted) {
+          const api = canvases.get(to)?.api;
+          if (api) viewFor(to, restore)(api);
+        }
+        await wait(60);
+      };
+      const vt = (document as Document & { startViewTransition?: (f: () => Promise<void>) => { finished: Promise<unknown> } }).startViewTransition;
+      if (prefersReducedMotion() || !vt) await swap();
+      else await vt.call(document, swap).finished.catch(() => {});
     } finally {
+      firstView.drop(to);
       busy = false;
     }
   }
@@ -106,11 +125,16 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     tick() {
       const o = origin();
       if (!o || busy) return;
+      measureBar();
       if (home !== o) {
         home = o;
         shown = o;
         homeView = viewport.get(o) ?? null;
         entry = { state: history.state, href: location.href };
+        // the canvas it starts on is fitted too (the bar and the toolbar cover its top)
+        const api = canvases.get(o)?.api;
+        if (api) viewFor(o, false)(api);
+        return;
       }
       const r = run();
       let want = o;
@@ -130,8 +154,11 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     },
     async exit() {
       while (busy) await wait(30);
-      if (home && shown && shown !== home) await go(home);
-      else if (home && homeView) await arrive(home);
+      if (home && shown && shown !== home) await go(home, true);
+      else if (home && homeView) {
+        const api = canvases.get(home)?.api;
+        if (api) viewFor(home, true)(api);
+      }
       // the history is what it was: this entry, with the address it had (the replay's own ?replay= left out)
       if (entry) history.replaceState(entry.state, "", withoutReplayParam(entry.href));
       entry = null;

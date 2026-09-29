@@ -21,7 +21,7 @@ import { nav } from "../nested/store";
 import { WorkstationOverlay } from "../workstation/Overlay";
 import { Timeline, timelineResize } from "../workstation/Timeline";
 import { useWorkstation } from "../workstation/clock";
-import { viewport } from "./viewport";
+import { firstView, viewport } from "./viewport";
 import { BENCH_BARE } from "../bench/bench";
 import { figurePositions } from "../workstation/focus";
 import { prefersReducedMotion } from "../workstation/clock";
@@ -150,7 +150,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onGone, o
       if (!fitted.current && p.appState.width > 0) {
         fitted.current = true;
         lastSize.current = { w: p.appState.width, h: p.appState.height };
-        fit(api);
+        (firstView.take(doc.id) ?? fit)(api);
         return;
       }
       const a = p.appState;

@@ -15,3 +15,19 @@ export const viewport = {
 };
 /** Scene → screen (the canvas pane's own coordinates). */
 export const toScreen = (v: Viewport, x: number, y: number) => ({ x: (x + v.scrollX) * v.zoom, y: (y + v.scrollY) * v.zoom });
+
+/**
+ * A view for a canvas's first mount, in place of the one it fits itself to (CanvasView): the PR replay's
+ * camera (workstation/replayView.ts) puts it there before switching to a sub-diagram, so the picture that
+ * fades in is already the right one and the canvas's own fit cannot come after it. Taken once.
+ */
+const first = new Map<string, (api: import("@excalidraw/excalidraw/types").ExcalidrawImperativeAPI) => void>();
+export const firstView = {
+  set: (canvasId: string, f: (api: import("@excalidraw/excalidraw/types").ExcalidrawImperativeAPI) => void) => void first.set(canvasId, f),
+  take(canvasId: string) {
+    const f = first.get(canvasId);
+    first.delete(canvasId);
+    return f;
+  },
+  drop: (canvasId: string) => void first.delete(canvasId),
+};
