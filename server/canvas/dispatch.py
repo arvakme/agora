@@ -190,7 +190,7 @@ class Dispatches:
         if not task.strip():
             raise DispatchError("empty task")
         if bool(to) == bool(new):
-            raise DispatchError("give exactly one of --to <session> and --new <claude|codex|pi>")
+            raise DispatchError(f"give exactly one of --to <session> and --new <{'|'.join(agents.KINDS)}>")
         src_sid = source.get("sessionId")
         if src_sid and self.store.read_binding(src_sid) is None:
             raise DispatchError(f"source session {src_sid} has no agent")
