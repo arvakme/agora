@@ -1,6 +1,5 @@
 // The live camera (web/docs/workstation.md §10 默认跟随): the "▶ 放一轮" camera, generalised to live mode. It follows the
-// main agent by default. Pure decisions live here: whom to follow, when the person's own doing pauses it, and
-// whether the follow tab should still open for an agent the camera is already taking us to.
+// main agent by default. Pure decisions live here: whom to follow and when the person's own doing pauses it.
 
 export type Top = {
   id: string;
@@ -10,26 +9,26 @@ export type Top = {
   lastWorkAt: number;
 };
 
-export type Pick = { run: string; why: "play" | "trace" | "main" };
+export type Pick = { run: string; why: "play" | "chosen" | "main" };
 
 export type PickIn = {
   /** The per-browser switch "镜头跟随主 agent". */
   on: boolean;
   /** The run of the turn being played (放一轮), if any. */
   playing: string | null;
-  /** The traced agent's run (any agent: a sub-agent too), if tracing and it is there. */
-  traced: string | null;
+  /** The run the person chose to follow (any agent: a sub-agent too), while the choice holds (./followChoice.ts). */
+  chosen: string | null;
   /** The session the person is conversing with, if any. */
   focusedSession: string | null;
   /** Top-level runs on the page. */
   tops: Top[];
 };
 
-/** Priority: a played turn > the traced agent > the main agent. The switch only turns off the last two: a played turn is asked for. */
+/** Priority: a played turn > the person's choice > the main agent. The switch only turns off the last two: a played turn is asked for. */
 export function pickFollow(i: PickIn): Pick | null {
   if (i.playing) return { run: i.playing, why: "play" };
   if (!i.on) return null;
-  if (i.traced) return { run: i.traced, why: "trace" };
+  if (i.chosen) return { run: i.chosen, why: "chosen" };
   const focused = i.focusedSession ? i.tops.find((t) => t.sessionId === i.focusedSession) : undefined;
   if (focused) return { run: focused.id, why: "main" };
   let best: Top | undefined;
@@ -46,11 +45,6 @@ export function nextPaused(paused: boolean, ev: PauseEvent): boolean {
   if (ev === "resume") return false;
   if (ev === "agent-moves") return paused;
   return true;
-}
-
-/** The follow tab opens for the main agent only when the camera is not already taking us there. */
-export function mayOpenFollowTab(run: string, isTop: boolean, cam: { on: boolean; paused: boolean; run: string | null }): boolean {
-  return !(isTop && cam.on && !cam.paused && cam.run === run);
 }
 
 // ── only work on the diagram is followed; done, it goes home ──
@@ -155,13 +149,4 @@ export function liveStep(m: LiveMachine, i: LiveIn): LiveAct {
     return { type: "go", to: i.want };
   }
   return { type: "none" };
-}
-
-/**
- * 「继续跟随 <agent>」: only while there is something to follow. The camera has been taken by the person, the followed
- * turn is at work (`isWorking`, the camera's own standard) and its figure is on this canvas (or in its tray). An idle or
- * departed agent has nowhere to be followed to; when it starts working again the button comes back if still paused.
- */
-export function showResume(o: { paused: boolean; run: { running: boolean; segs: readonly { start: number; end: number }[] } | null; now: number; drawn: boolean }): boolean {
-  return o.paused && o.drawn && !!o.run && isWorking(o.run, o.now);
 }

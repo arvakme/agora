@@ -167,6 +167,11 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .wm-tab[data-active="true"] { color: var(--fg); }
 .wm-tab > .wm-tab-ind { position: absolute; left: 6px; right: 6px; bottom: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--line-strong); }
 .wm-group[data-focused="true"] .wm-tab-ind { background: var(--accent); }
+/* ⋯ › 恢复默认布局 */
+.vm-restore { display: block; width: 100%; margin-top: var(--space-2); padding: 6px var(--space-4); border-radius: var(--r-sm); text-align: left; color: var(--fg); font-size: var(--text-sm); }
+.vm-restore:hover { background: var(--raised); }
+/* with more than one column, the one that has the focus wears a bar of the theme colour on top, so the focus is easy to find */
+.ws[data-multi="true"] .wm-group[data-focused="true"]::before { content: ""; position: absolute; z-index: 3; left: 0; right: 0; top: 0; height: 3px; background: var(--accent); pointer-events: none; }
 .wm-tab[data-dragging="true"] { opacity: 0.35; }
 /* kind mark: square = canvas, round = session */
 .wm-tab-dot { width: 7px; height: 7px; flex: none; border-radius: 1.5px; background: var(--fg-faint); }
@@ -646,9 +651,5 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .empty-cv { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; pointer-events: none; }
 .empty-cv-box { display: flex; flex-direction: column; align-items: center; gap: var(--space-5); max-width: 540px; padding: 0 var(--space-6); text-align: center; }
 .empty-cv-box .dither-field { width: 220px; height: 110px; }
-.empty-cv h3 { margin: 0; font-size: var(--text-lg); font-weight: var(--weight-strong); }
-.empty-cv ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); margin: 0; padding: 0; list-style: none; text-align: left; }
-.empty-cv li { padding: 10px 12px; border-radius: var(--r-lg); box-shadow: var(--box); background: var(--bg); color: var(--fg-muted); font-size: var(--text-sm); line-height: 1.5; }
-.empty-cv li b { display: block; margin-bottom: 2px; color: var(--fg); font-weight: var(--weight-strong); }
-.empty-cv li i { display: block; color: var(--accent); font-style: normal; font-weight: var(--weight-strong); }
+.empty-cv p { margin: 0; color: var(--fg-muted); font-size: var(--text-md); line-height: var(--leading-read); }
 .empty-cv button { pointer-events: auto; }

@@ -1,18 +1,21 @@
-// Trellis-style window manager (own implementation, MIT with this repo): tab groups in a
-// split tree, drag tabs between groups or onto an edge to split, drag sashes to resize.
+// Trellis-style window manager (own implementation, MIT with this repo): tab groups in a split tree, two columns
+// by default (./twoColumns.ts). Drag a tab into a column to make it a tab there (no drop ever cuts a new column),
+// drag sashes to resize.
 // Canvases live in one flat layer keyed by id, so moving a tab never remounts Excalidraw;
 // they glide to their new rect via CSS transitions.
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { SPRING } from "../comments/motion";
 import { IconClose, IconFolder, IconLayers, IconMessage, IconPencil, IconPlus, IconTrash } from "../app/icons";
-import { activate, equalize, groupOf, groups, layout, moveTab, resize, type Node, type Rect, type Sash, type Zone } from "./layout";
+import { activate, equalize, groupOf, groups, layout, resize, type Node, type Rect, type Sash } from "./layout";
+import { dropTab } from "./twoColumns";
 import { groupKind, plusMenu, type NewWhat } from "./model";
 
 // Panes are flush: a 1px gap over the hairline-coloured workspace is the divider (D13).
 const GAP = 1, PAD = 0, HEADER = 36, MIN_PANE = 220;
 
-type Target = { groupId: string; zone: Zone; index?: number; preview: Rect };
+/** A drop always lands in an existing column (./twoColumns.ts): over the tab bar between its tabs, over the body as its last tab. */
+type Target = { groupId: string; index?: number; preview: Rect };
 type Drag = { tab: string; x: number; y: number; ox: number; oy: number; active: boolean; target: Target | null };
 
 const ITEMS: Record<NewWhat, { icon: ReactNode; label: string }> = {
@@ -27,8 +30,8 @@ type Props = {
   titles: Record<string, string>;
   /** Secondary text after a tab's title (a session's linked canvas). */
   subtitles?: Record<string, string>;
-  /** Pane kind per tab: the tab's mark, and what a group's「+」creates. `follow`: the follow view (./followTab.ts), a tab that is not a document — no renaming, no deleting. */
-  kinds?: Record<string, "canvas" | "session" | "follow">;
+  /** Pane kind per tab: the tab's mark, and what a group's「+」creates. */
+  kinds?: Record<string, "canvas" | "session">;
   /** A tab's own mark in place of the dot (a session's agent avatar). */
   marks?: Record<string, ReactNode>;
   focused: string;
@@ -71,7 +74,7 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
   const { rects, sashes } = layout(root, { x: PAD, y: PAD, w: size.w - PAD * 2, h: size.h - PAD * 2 }, GAP);
   const all = groups(root);
   const focusedGroup = groupOf(root, focused)?.id;
-  const kindOf = (t: string) => (kinds[t] === "follow" ? undefined : kinds[t]);
+  const kindOf = (t: string) => kinds[t];
   /** 「+」 or a double-click on the tab bar: a session group gets a new session; canvas and mixed groups a small menu (the one place to create or open canvases). */
   const plus = (groupId: string, anchor: HTMLElement) => {
     const g = all.find((g) => g.id === groupId)!;
@@ -82,7 +85,7 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
   };
   const plusLabel = (tabs: string[]) => ({ canvas: "新建或打开画布", session: "新建会话", mixed: "新建…" })[groupKind(tabs, kindOf)];
 
-  const targetAt = (x: number, y: number, tab: string): Target | null => {
+  const targetAt = (x: number, y: number): Target | null => {
     const g = all.find((g) => within(rects.get(g.id)!, x, y));
     if (!g) return null;
     const r = rects.get(g.id)!;
@@ -90,15 +93,9 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
       const tabs = [...ref.current!.querySelectorAll<HTMLElement>(`[data-group="${g.id}"] .wm-tab`)];
       const box = ref.current!.getBoundingClientRect();
       const index = tabs.filter((el) => { const b = el.getBoundingClientRect(); return b.left - box.left + b.width / 2 < x; }).length;
-      return { groupId: g.id, zone: "center", index, preview: r };
+      return { groupId: g.id, index, preview: r };
     }
-    const rx = (x - r.x) / r.w, ry = (y - r.y) / r.h;
-    const edges: [Zone, number][] = [["left", rx], ["right", 1 - rx], ["top", ry], ["bottom", 1 - ry]];
-    const [zone, d] = edges.sort((a, b) => a[1] - b[1])[0];
-    const source = groupOf(root, tab)!;
-    if (d > 0.28 || (source.id === g.id && source.tabs.length === 1)) return { groupId: g.id, zone: "center", preview: r };
-    const half = { left: { ...r, w: r.w / 2 }, right: { ...r, x: r.x + r.w / 2, w: r.w / 2 }, top: { ...r, h: r.h / 2 }, bottom: { ...r, y: r.y + r.h / 2, h: r.h / 2 } }[zone as Exclude<Zone, "center">];
-    return { groupId: g.id, zone, preview: half };
+    return { groupId: g.id, preview: r };
   };
 
   const onTabDown = (e: React.PointerEvent, tab: string) => {
@@ -113,13 +110,13 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
     const box = ref.current!.getBoundingClientRect();
     const x = e.clientX - box.left, y = e.clientY - box.top;
     const active = drag.active || Math.hypot(x - drag.x, y - drag.y) > 5;
-    setDrag({ ...drag, x, y, active, target: active ? targetAt(x, y, drag.tab) : null });
+    setDrag({ ...drag, x, y, active, target: active ? targetAt(x, y) : null });
   };
   const onTabUp = () => {
     if (!drag) return;
     const g = groupOf(root, drag.tab)!;
     if (!drag.active) setRoot(activate(root, g.id, drag.tab));
-    else if (drag.target) setRoot(moveTab(root, drag.tab, drag.target.groupId, drag.target.zone, drag.target.index));
+    else if (drag.target) setRoot(dropTab(root, drag.tab, drag.target.groupId, drag.target.index));
     onFocus(drag.tab);
     setDrag(null);
   };
@@ -185,7 +182,7 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
                     onPointerMove={onTabMove}
                     onPointerUp={onTabUp}
                     onPointerCancel={() => setDrag(null)}
-                    onDoubleClick={() => kinds[t] !== "follow" && setEditing(t)}
+                    onDoubleClick={() => setEditing(t)}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       const box = ref.current!.getBoundingClientRect();
@@ -196,12 +193,12 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
                     {editing === t ? (
                       <TitleInput value={titles[t]} label={kinds[t] === "session" ? "会话名称" : "画布名称"} onDone={(v) => (v !== null && onRename(t, v), setEditing(null))} />
                     ) : (
-                      <span className="wm-tab-title" title={subtitles[t] ? `${titles[t]} · 关联画布：${subtitles[t]}（双击重命名）` : kinds[t] === "follow" ? "跟随视图：只读，关掉就是停止跟随" : "双击重命名"}>
+                      <span className="wm-tab-title" title={subtitles[t] ? `${titles[t]} · 关联画布：${subtitles[t]}（双击重命名）` : "双击重命名"}>
                         {titles[t]}
                         {subtitles[t] && <span className="wm-tab-sub">{subtitles[t]}</span>}
                       </span>
                     )}
-                    <button className="wm-tab-close" aria-label={`关闭 ${titles[t]}`} title={kinds[t] === "follow" ? "停止跟随" : "关闭（不会删除）"} onClick={() => onClose(t)}><IconClose size={14} /></button>
+                    <button className="wm-tab-close" aria-label={`关闭 ${titles[t]}`} title="关闭（不会删除）" onClick={() => onClose(t)}><IconClose size={14} /></button>
                     {g.active === t && <motion.span layoutId={`tab-ind-${g.id}`} className="wm-tab-ind" transition={SPRING} />}
                   </motion.div>
                 ))}
@@ -263,9 +260,9 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
               </>
             ) : (
               <>
-                {kinds[menu.tab] !== "follow" && <button role="menuitem" onClick={() => (setEditing(menu.tab), setMenu(null))}><IconPencil size={14} />重命名<kbd>双击</kbd></button>}
-                <button role="menuitem" onClick={() => (onClose(menu.tab), setMenu(null))}><IconClose size={14} />{kinds[menu.tab] === "follow" ? "停止跟随" : "关闭"}</button>
-                {kinds[menu.tab] !== "follow" && <button role="menuitem" className="danger" onClick={() => (onDelete(menu.tab), setMenu(null))}><IconTrash size={14} />删除…</button>}
+                <button role="menuitem" onClick={() => (setEditing(menu.tab), setMenu(null))}><IconPencil size={14} />重命名<kbd>双击</kbd></button>
+                <button role="menuitem" onClick={() => (onClose(menu.tab), setMenu(null))}><IconClose size={14} />关闭</button>
+                <button role="menuitem" className="danger" onClick={() => (onDelete(menu.tab), setMenu(null))}><IconTrash size={14} />删除…</button>
               </>
             )}
           </motion.div>
@@ -274,7 +271,7 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
       {menu && <div className="menu-scrim" onPointerDown={() => setMenu(null)} onContextMenu={(e) => (e.preventDefault(), setMenu(null))} />}
       {drag?.active && (
         <>
-          {drag.target && <div className="wm-drop" data-zone={drag.target.zone} style={box(drag.target.preview)} />}
+          {drag.target && <div className="wm-drop" style={box(drag.target.preview)} />}
           <div className="wm-ghost" style={{ transform: `translate3d(${drag.x - drag.ox}px, ${drag.y - drag.oy}px, 0)` }}>
             <span className="wm-tab-dot" /> {titles[drag.tab]}
             <span className="wm-ghost-body" />

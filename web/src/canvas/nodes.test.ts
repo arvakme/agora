@@ -1,11 +1,11 @@
 // A grouped node (an inserted library icon, or shapes the person grouped) is one node: selecting
-// any of it, double-clicking anywhere on it, and naming it with --node all reach the element that
+// any of it, and naming it with --node all reach the element that
 // carries its code paths and its child link — the id the model view lists.
 import { describe, expect, it } from "vitest";
 import { ancestry, childOf, effectiveLinks, withChildLink } from "../nested/graph.ts";
 import { blankChild, nested } from "../nested/store.ts";
 import type { El } from "./scene.ts";
-import { childNodeAt, nodeBox, nodeOf, resolveNode, selectedNode } from "./nodes.ts";
+import { nodeBox, nodeOf, resolveNode, selectedNode } from "./nodes.ts";
 
 let n = 0;
 const el = (id: string, type: string, x: number, y: number, w: number, h: number, extra: Record<string, unknown> = {}) =>
@@ -96,20 +96,12 @@ describe("the child link lives where the code paths are", () => {
   });
 });
 
-describe("entry marker and double-click cover the whole icon", () => {
+describe("the entry mark sits at the whole icon's bottom-right", () => {
   it("the node box spans the icon and its label (marker goes to its bottom-right)", () => {
     const { s, map } = setup();
     const b = nodeBox(map.get("api")!, map, s);
     expect(b.x).toBe(360);
     expect(b.y + b.h).toBe(334); // the lowest part (a stroke at 273+61), below the label (333) and the root rectangle (311)
-  });
-  it("double-click on the icon's label or a gap inside it enters; outside does not", () => {
-    const s = withChildLink(scene(), "api", "c-api")!;
-    const map = new Map(s.map((e) => [e.id, e]));
-    expect(childNodeAt(s, map, 400, 325, childOf)?.child).toBe("c-api"); // on the label
-    expect(childNodeAt(s, map, 362, 212, childOf)?.child).toBe("c-api"); // transparent corner
-    expect(childNodeAt(s, map, 470, 325, childOf)).toBeNull();
-    expect(childNodeAt(scene(), map, 400, 325, childOf)).toBeNull(); // no child: nothing to enter
   });
 });
 
@@ -156,5 +148,16 @@ describe("新建空白子图 keeps the link", () => {
     const st = nested.get();
     expect(st.index.get("c-new")).toEqual({ canvasId: "c1", elementId: "api" });
     expect(ancestry("c-new", st.index)).toEqual(["c1", "c-new"]); // the breadcrumb: 总架构 › API 服务
+  });
+});
+
+describe("a junction dot", () => {
+  it("is where lines meet, not a node: selecting it gives no node bar", () => {
+    const dot = el("j1", "ellipse", 100, 100, 10, 10, { customData: { junction: true } });
+    const s = [dot, ...scene()];
+    const map = new Map(s.map((e) => [e.id, e]));
+    expect(selectedNode(["j1"], map, s)).toBeUndefined();
+    expect(nodeOf(dot, map, s)).toBeUndefined();
+    expect(selectedNode(["box"], map, s)?.id).toBe("box"); // a plain box still is one
   });
 });

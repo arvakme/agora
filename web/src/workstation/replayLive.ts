@@ -1,16 +1,17 @@
 // The live camera (web/docs/workstation.md §10 默认跟随): the follow camera of a played turn (./replayView.ts), in everyday use.
-// By default the main view follows the main agent — the top-level run of the session the person is
-// conversing with, else the one most recently at work — close up, into and out of sub-diagrams, and
-// stands still while it is idle. The person's own doing pauses it (a button 「跟随 <agent>」 hands it back);
-// the switch 「镜头跟随主 agent」 in ⋯ (app/prefs.ts) turns it off. A played turn (./replayMode.ts) has the
-// camera before it, and a traced agent before the main agent (./liveCamera.ts). Where the camera takes the
-// canvas by itself nothing is saved and no history is made (./replayQuiet.ts, ./replayHistory.ts).
+// One canvas, one camera, one agent followed at a time. By default the main view follows the main agent — the
+// top-level run of the session the person is conversing with, else the one most recently at work — close up, into
+// and out of sub-diagrams, and stands still while it is idle. The person can choose another (`liveFollow.follow`:
+// 「跟随」 in a figure's bubble, the avatar on a sub-diagram's entrance; ./followChoice.ts). The person's own doing
+// pauses it (the status above the canvas has 「继续」); the switch 「镜头跟随主 agent」 in ⋯ (app/prefs.ts) turns it
+// off. A played turn (./replayMode.ts) has the camera before everything (./liveCamera.ts). Where the camera takes
+// the canvas by itself nothing is saved and no history is made (./replayQuiet.ts, ./replayHistory.ts).
 import { useSyncExternalStore } from "react";
 import { prefs } from "../app/prefs";
 import { pointerFollow } from "../pointer/follow";
 import { openSessions } from "../session/ui";
 import { clock } from "./clock";
-import { focus } from "./focus";
+import { choose, chosenRun, NONE, type Choice } from "./followChoice";
 import { followsWhere, isWorking, lastWorkStart, pickFollow, whereOf, type Pick } from "./liveCamera";
 import { canvasWhere, OUTSIDE, stateAt } from "./place";
 import { beforePlay, plays } from "./replayMode";
@@ -37,10 +38,12 @@ const set = (p: Partial<Live>) => {
   ls.forEach((l) => l());
 };
 
+/** The person's choice of whom to follow (./followChoice.ts): replaced by the next one, ended by turning to another session. */
+let choice: Choice = NONE;
 /** The live camera has no window: it is "now". */
 const NOW = { start: 0, end: null };
 const runOf = (): WorkRun | null => (state.run ? (runs.get().byId.get(state.run) ?? null) : null);
-/** The canvas the person has in front of them: the first visible canvas pane (panes stay mounted when hidden; a follow tab's is not one). */
+/** The canvas the person has in front of them: the first visible canvas pane (panes stay mounted when hidden). */
 const currentCanvas = () => {
   for (const el of document.querySelectorAll<HTMLElement>('[data-pane]:not([data-hidden="true"])')) {
     const id = el.dataset.pane;
@@ -85,13 +88,13 @@ const camera = createCamera(() => null, runOf, () => (state.run ? NOW : null), {
 function pick(): Pick | null {
   if (!clock.enabled() || clock.get()) return null;
   const r = runs.get();
-  const traced = focus.get().traced;
   const focused = pointerFollow.get();
+  const focusedSession = focused && openSessions.get().has(focused) ? focused : null;
   const p = pickFollow({
     on: prefs.get().followCamera,
     playing: plays.get().play?.runId ?? null,
-    traced: traced && r.byId.has(traced) ? traced : null,
-    focusedSession: focused && openSessions.get().has(focused) ? focused : null,
+    chosen: chosenRun(choice, { focusedSession, exists: (id) => r.byId.has(id) }),
+    focusedSession,
     tops: r.roots.map((x) => ({ id: x.id, sessionId: x.sessionId ?? null, working: x.running, lastWorkAt: x.lastAt })),
   });
   return p?.why === "play" ? null : p;
@@ -100,8 +103,16 @@ function pick(): Pick | null {
 export const liveFollow = {
   get: () => state,
   subscribe: (l: () => void) => (ls.add(l), () => void ls.delete(l)),
-  /** 「跟随 <agent>」: the camera is handed back. */
+  /** 「继续」: the camera is handed back. */
   resume: () => camera.resume(),
+  /** Follow `run` now (and only it): the camera is handed back too. */
+  follow(run: string) {
+    const focused = pointerFollow.get();
+    choice = choose(choice, run, focused && openSessions.get().has(focused) ? focused : null);
+    camera.resume();
+    const r = runs.get().byId.get(run);
+    set({ run: r ? run : null, name: r?.name ?? "", why: r ? "chosen" : null });
+  },
   /** Follows an agent now and the person has not taken it. */
   following: () => !!state.run && !state.paused,
 };

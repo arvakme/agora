@@ -1,3 +1,4 @@
+import { buildReplay } from "../buildreplay/store";
 import { dockBottom, isCompact } from "../canvas/dockPlace";
 import { MotionConfig, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -6,6 +7,7 @@ import { CanvasView, type CanvasHandle } from "../canvas/CanvasView";
 import { SPRING } from "../comments/motion";
 import { replayEval, runEval, TASKS, type EvalProgress, type EvalRow } from "../eval/eval";
 import { buildFixture } from "../eval/fixture";
+import { sampleRequests } from "../session/firstDraw";
 import { IconClose, IconComment, IconHint, IconList, IconPlus, IconPointer, IconWorkspace } from "./icons";
 import { ViewMenu } from "./ViewMenu";
 import { ackChange, adoptCanvas, adoptSession, dropCanvas, flushSaves, loadCanvas, onCanvasRefused, PERSIST, project, reloadFromDisk, save, slotFile, type LocalChange } from "../persist";
@@ -23,7 +25,9 @@ import { SessionMark } from "../session/AgentAvatar";
 import { pointerFollow } from "../pointer/follow";
 import { createThreadStore, threadStores, useThreads, type ThreadSnapshot, type ThreadStore } from "../comments/threads";
 import { AllDocs } from "../workspace/AllDocs";
-import { ancestry, descendants, openThreads, parentIndex } from "../nested/graph";
+import { ancestry, childOf, descendants, openThreads, parentIndex } from "../nested/graph";
+import { enterOnKey } from "../nested/enter";
+import { selectedNode } from "../canvas/nodes";
 import { canvasFromUrl, nav, nested, urlFor } from "../nested/store";
 import { isEditableTarget, markBackHintSeen, upOnKey } from "../nested/up";
 import { threadSessionTitles } from "../comments/sessionTitles";
@@ -32,14 +36,13 @@ import { setRunsRoot } from "../workstation/runs/store";
 import { AgentTags } from "../session/AgentTagRow";
 import { WorkerDefs } from "../workstation/RunAvatar";
 import { WaitNotifier } from "../workstation/WaitNotifier";
-import { FollowMark, FollowPane, FollowView, useFollowTitle } from "../workstation/FollowPane";
-import { FOLLOW_TAB } from "../workspace/followTab";
 import { focus as figureFocus } from "../workstation/focus";
-import { follow } from "../workstation/follow";
+import { liveFollow } from "../workstation/replayLive";
 import { BENCH, installBench } from "../bench/bench";
 import { ShareButton } from "../share/SharePanel";
 import { Workspace } from "../workspace/Workspace";
 import { activate, groupOf, groups, moveTab, preset, type Node, type Preset } from "../workspace/layout";
+import { defaultLayout } from "../workspace/twoColumns";
 import {
   canvasTree,
   closeTab,
@@ -74,7 +77,7 @@ const EVAL_ONLY = params.get("task")?.split(",").map((t) => TASKS[Number(t.repla
 const EVAL_RUNS = Number(params.get("runs")) || 3;
 
 export type { Doc } from "../workspace/model";
-import type { Boot } from "./boot";
+import { FIRST_SCENE, type Boot } from "./boot";
 export { prepareBoot, type Boot, type WorkspaceState } from "./boot";
 
 let benched = false;
@@ -130,7 +133,7 @@ export function App({ boot }: { boot: Boot }) {
   const stores = useRef(new Map<string, ThreadStore>());
   // Latest scene per canvas, open or closed: a reopened canvas mounts from here.
   const scenes = useRef(
-    new Map<string, readonly El[]>([...Object.entries(boot.canvases).map(([k, v]) => [k, v.elements] as const), ...(firstRun ? [["c1", buildFixture()] as const] : [])]),
+    new Map<string, readonly El[]>([...Object.entries(boot.canvases).map(([k, v]) => [k, v.elements] as const), ...(firstRun ? [["c1", FIRST_SCENE] as const] : [])]),
   );
   // Nesting reads every canvas's scene, open or not (docs/nested-canvas.md).
   const nestedBooted = useRef(false);
@@ -215,7 +218,6 @@ export function App({ boot }: { boot: Boot }) {
   useSyncExternalStore(agents.subscribe, bindingKey);
   const agentLabel = useAgentName(); // a session tab is named after its agent: it follows the adapter list
   const bindings = agents.get().bindings;
-  const followTitle = useFollowTitle();
   const names: Record<string, string> = {
     ...Object.fromEntries(docs.map((d) => [d.id, d.title])),
     ...sessionTitles(docs, (sid, d) => {
@@ -352,8 +354,7 @@ export function App({ boot }: { boot: Boot }) {
   lastCanvasRef.current = lastCanvas;
 
   const focus = (id: string) => {
-    // the follow tab is a view, not a document: it never takes the focus (the canvas in use stays the one)
-    if (id === focused || id === FOLLOW_TAB) return;
+    if (id === focused) return;
     setFocused(id);
     if (kindOf(id) === "canvas") setLastCanvas(id);
     setMode("browse");
@@ -397,6 +398,10 @@ export function App({ boot }: { boot: Boot }) {
     openDoc(sessionDocId(s.id), { groupId: opts.groupId, kind: "session", linkedCanvas: canvasId });
   };
   /** 「+」: a session group's own session stays in it; from a canvas or mixed group a session is placed like any new one (into the session column, or one split off the canvas's right). */
+  // 「看一个示例」 on the empty canvas: the sample opens as another canvas, the one on screen stays as it is.
+  const addCanvasRef = useRef(addCanvas);
+  addCanvasRef.current = addCanvas;
+  useEffect(() => sampleRequests.subscribe(() => addCanvasRef.current({ sample: true })), []);
   const onNew = (groupId: string | undefined, what: NewWhat, at?: DOMRect) => {
     if (what === "open") return setListOpen({ at: at ? { x: at.left, y: at.bottom } : undefined });
     if (what !== "session") return addCanvas({ groupId, sample: what === "sample" });
@@ -416,7 +421,6 @@ export function App({ boot }: { boot: Boot }) {
    * except a draft session (no agent chosen, never saved), which closing discards.
    */
   const close = (id: string) => {
-    if (id === FOLLOW_TAB) return follow.stop();
     const doc = docOf(id);
     if (doc?.kind === "session" && sessions.isDraft(doc.sessionId)) {
       setDocs((ds) => ds.filter((d) => d.id !== id));
@@ -569,6 +573,8 @@ export function App({ boot }: { boot: Boot }) {
     const ids = openIds(root);
     if (ids.length) setRoot(preset(ids, p, focused || ids[0]));
   };
+  // 恢复默认布局: two columns, canvases left and sessions right (an older layout with more columns opens as it was saved).
+  const restoreLayout = () => setRoot(defaultLayout(root, kindOf));
 
   /**
    * Nested canvases: show `to` in the tab where `from` is (entering a child, going back up), and
@@ -626,13 +632,23 @@ export function App({ boot }: { boot: Boot }) {
       else openRef.current(to, { kind: "canvas" });
     };
     addEventListener("popstate", onPop);
-    // ⌘↑ / Ctrl+↑: up one level from the child canvas in use (nested/up.ts decides when it is ours).
+    // ⌘↑ / Ctrl+↑: up one level from the child canvas in use (nested/up.ts decides when it is ours); ⇧↵: into the selected node.
     const onKey = (e: KeyboardEvent) => {
       const id = docsRef.current.some((d) => d.id === focusedRef.current && d.kind === "canvas") ? focusedRef.current : lastCanvasRef.current;
       const api = canvases.get(id)?.api;
       const map = api ? byId(api.getSceneElements() as readonly El[]) : new Map<string, El>();
       const selected = api ? Object.keys(api.getAppState().selectedElementIds ?? {}).flatMap((k) => map.get(k) ?? []) : [];
-      const up = upOnKey({ key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey, editable: isEditableTarget(e.target) }, id, nested.get().index, selected);
+      const keys = { key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey, editable: isEditableTarget(e.target) };
+      // Shift+Enter: into the sub-diagram of the selected node (nested/enter.ts) — the keyboard's way in; a double-click is Excalidraw's own.
+      const node = api && selected.length ? selectedNode(selected.map((s) => s.id), map, api.getSceneElements() as readonly El[]) : undefined;
+      const into = enterOnKey(keys, node, (n) => childOf(n), (c) => nested.get().scenes.has(c));
+      if (into) {
+        e.preventDefault();
+        e.stopPropagation();
+        goRef.current(id, into);
+        return;
+      }
+      const up = upOnKey(keys, id, nested.get().index, selected);
       if (!up) return;
       e.preventDefault();
       e.stopPropagation();
@@ -671,6 +687,14 @@ export function App({ boot }: { boot: Boot }) {
   addSessionRef.current = addSession;
   const openRef = useRef(openDoc);
   openRef.current = openDoc;
+  // a comment made while watching the build replay is a comment on the whole canvas, noting the step (comments/WholeCanvas.tsx)
+  useEffect(() => {
+    buildReplay.setCommenter((text, step) => {
+      const root = buildReplay.get();
+      if (root) void ui.ensureCanvas(root).then(() => handles.current.get(root)?.store.create(null, text, { step }));
+    });
+    return () => buildReplay.setCommenter(null);
+  }, []);
   useEffect(() => {
     ui.focusPane = (id) => {
       if (!docsRef.current.some((d) => d.id === id)) return;
@@ -690,8 +714,10 @@ export function App({ boot }: { boot: Boot }) {
         const t = h?.store.thread(threadId);
         if (!h || !t) return;
         const a = h.api.getAppState();
-        const p = resolveAnchor(t.anchor, byId(h.api.getSceneElementsIncludingDeleted())).point;
-        h.api.updateScene({ appState: { scrollX: a.width / 2 / a.zoom.value - p.x, scrollY: a.height / 2 / a.zoom.value - p.y } });
+        if (t.anchor) {
+          const p = resolveAnchor(t.anchor, byId(h.api.getSceneElementsIncludingDeleted())).point;
+          h.api.updateScene({ appState: { scrollX: a.width / 2 / a.zoom.value - p.x, scrollY: a.height / 2 / a.zoom.value - p.y } });
+        }
         setTimeout(() => h.store.open(threadId), 120);
       });
     };
@@ -747,7 +773,7 @@ export function App({ boot }: { boot: Boot }) {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   });
-  // The 工位视图's keys (docs/workstation.md §10): Esc leaves the trace, then the follow pane, then
+  // The 工位视图's keys (docs/workstation.md §10): Esc closes the route of a played turn, then drops
   // the figure's selection; F follows the selected figure. Not while typing or in the timeline.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -758,7 +784,7 @@ export function App({ boot }: { boot: Boot }) {
       else if (e.key.toLowerCase() === "f" && !e.shiftKey && selected) {
         e.preventDefault();
         e.stopPropagation(); // Excalidraw's F is its frame tool
-        follow.start(selected);
+        liveFollow.follow(selected);
       }
     };
     addEventListener("keydown", onKey, true);
@@ -807,7 +833,7 @@ export function App({ boot }: { boot: Boot }) {
           <span className="topbar-gap" />
           <AgentTags />
           {PERSIST && <ShareButton canvases={canvasDocs.map((d) => ({ id: d.id, title: d.title }))} current={canvasDoc?.id ?? lastCanvas} />}
-          <ViewMenu onLayout={applyPreset} layouts={open.size >= 2} />
+          <ViewMenu onLayout={applyPreset} onRestore={restoreLayout} layouts={open.size >= 2} />
         </header>
         {listOpen && (
           // 所有画布 opens from a canvas tab bar's「+」→「打开画布」(or a delete confirmation), where it was asked for.
@@ -857,10 +883,10 @@ export function App({ boot }: { boot: Boot }) {
         <Workspace
           root={root}
           setRoot={setRoot}
-          titles={{ ...names, [FOLLOW_TAB]: followTitle }}
+          titles={names}
           subtitles={Object.fromEntries(docs.flatMap((d) => (d.kind === "session" ? [[d.id, sessionSubtitle(d)]] : [])))}
-          kinds={{ ...Object.fromEntries(docs.map((d) => [d.id, d.kind])), [FOLLOW_TAB]: "follow" }}
-          marks={{ ...Object.fromEntries(docs.flatMap((d) => (d.kind === "session" ? [[d.id, <SessionMark key={d.id} sessionId={d.sessionId} fallback={d.agent} />]] : []))), [FOLLOW_TAB]: <FollowMark key="follow" /> }}
+          kinds={Object.fromEntries(docs.map((d) => [d.id, d.kind]))}
+          marks={Object.fromEntries(docs.flatMap((d) => (d.kind === "session" ? [[d.id, <SessionMark key={d.id} sessionId={d.sessionId} fallback={d.agent} />]] : [])))}
           focused={focused}
           onFocus={focus}
           onNew={onNew}
@@ -883,7 +909,6 @@ export function App({ boot }: { boot: Boot }) {
           )}
           onSettled={onSettled}
           renderCanvas={(id) => {
-            if (id === FOLLOW_TAB) return canvasDoc ? <FollowView main={canvasDoc.id} /> : null;
             const doc = docs.find((d) => d.id === id);
             if (!doc || !synced) return null;
             if (doc.kind === "session") return <SessionPane sessionId={doc.sessionId} canvasTitles={canvasTitles} />;
@@ -929,7 +954,6 @@ export function App({ boot }: { boot: Boot }) {
             ) : null
           }
         />
-        <FollowPane main={canvasDoc.id} root={root} setRoot={setRoot} isSession={(t) => docsRef.current.find((d) => d.id === t)?.kind === "session"} />
         {mode === "comment" && (
           <motion.div className="mode-hint" style={dockAt ? { left: dockAt.x, bottom: dockAt.bottom + 50 } : undefined} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
             <IconComment size={14} />在「<b>{canvasDoc.title}</b>」上点一个元素钉评论 · Esc 退出

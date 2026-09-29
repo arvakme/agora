@@ -2,7 +2,7 @@
 
 架构图上的一个节点可以「打开」一张子画布：总架构 › 后端 › 订单模块 › 下单流程。每一层都是一张普通画布（`.agora/canvases/<id>.excalidraw`，有自己的评论、分享、会话关联），只是被父节点指着。
 
-实现：`web/src/nested/`（`graph.ts` 纯函数：父子索引、面包屑、代码路径汇总、过时判断、写链接；`store.ts` 所有画布的场景与导航动作；`up.ts` 返回上一级的快捷键与一次性提示；`NestedLayer.tsx` 进入标记、面包屑、「子图」菜单；`writeChild.ts` 写链接），`web/src/canvas/nodes.ts`（什么算一个节点：选区、双击、`--node` 都经过它），`web/src/canvas/NodeBar.tsx`（选中节点旁的操作条），`web/src/app/App.tsx`（在原 tab 里切换层级、地址栏、前进后退），`web/src/session/agentBridge.ts` 的 `childFromAgent`；服务端 `server/canvas/nested.py`，`agora canvas child`（`agora_cli/canvas.py` → `/api/agent/canvas/child`），分享网关 `server/canvas/share_gateway.py`。
+实现：`web/src/nested/`（`graph.ts` 纯函数：父子索引、面包屑、代码路径汇总、过时判断、写链接；`store.ts` 所有画布的场景与导航动作；`up.ts` 返回上一级的快捷键与一次性提示；`enter.ts` 进入选中节点的快捷键（⇧↵）和进入标记的点击区；`NestedLayer.tsx` 进入标记、面包屑、「子图」菜单；`writeChild.ts` 写链接），`web/src/canvas/nodes.ts`（什么算一个节点：选区、`--node` 都经过它），`web/src/canvas/NodeBar.tsx`（选中节点旁的操作条），`web/src/app/App.tsx`（在原 tab 里切换层级、地址栏、前进后退），`web/src/session/agentBridge.ts` 的 `childFromAgent`；服务端 `server/canvas/nested.py`，`agora canvas child`（`agora_cli/canvas.py` → `/api/agent/canvas/child`），分享网关 `server/canvas/share_gateway.py`。
 
 ## 1. 数据：链接只在父节点上
 
@@ -19,7 +19,7 @@
 
 ## 2. 进入与返回
 
-- **进入标记**：有子图的节点右下角一个小胶囊（进入图标，子图及其下层未解决评论数，可能过时时带一个提示色小点）；编组节点按整个图标连同标签的外框算右下角。点它或**双击节点**进入（图标上任何位置，包括标签和透明空隙）。双击因此不再编辑这种节点的文字，改文字用选中后按 Enter。
+- **进入标记**：有子图的节点右下角一个小胶囊（进入图标，子图及其下层未解决评论数，可能过时时带一个提示色小点）；编组节点按整个图标连同标签的外框算右下角。点它进入：点击区 26×26 px，常驻但安静（半透明，悬停变实），悬停写「进入子图「名」…」。**不再有双击进入**：双击回到 Excalidraw 自己的行为（编辑节点文字、在空白处加文字）。进入子图只有明确的入口：这个标记、面包屑、`?canvas=` 链接、子图入口胶囊（工位视图）、右键菜单里的「进入子图」，以及键盘上选中节点后按 **⇧↵**（`nested/enter.ts` 的 `enterOnKey`，写在「⋯」里的快捷键说明；在文字框里 ⇧↵ 是换行，不接）。
 - **原地切换**：进入时子画布替换当前 tab（同一分组、同一位置），父画布被「关闭」——关闭不是删除，它仍在「所有画布」里。子画布已经在别的分组打开时，直接切过去，不动当前 tab。
 - **返回上一级**：子画布上方一条栏，最前面是「← 返回 <父画布名>」按钮，后面是面包屑 `总架构 › 后端 API › 订单服务`（父级悬停时像链接，点任意一级原地回去）。快捷键 **⌘↑**（Mac）/ **Ctrl+↑**（其他）；正在输入文字，或恰好选中一个方框 / 椭圆 / 菱形时不接管（那是 Excalidraw 的「按住 Cmd 加方向键画流程图」）。不用 Backspace / Esc（Excalidraw 在用）。第一次进到子图时按钮下面提示一次「在子图里。点左上角返回，或按 ⌘↑」，点「知道了」或用任何方式返回过一次后，这个浏览器不再提示（`localStorage` `agora.nested.backHint`）。顶层画布没有这条栏。
 - **离开时先存**：进入 / 返回替换 tab 之前，先把要离开的画布此刻的场景写进场景表、层级索引并存盘（`App.tsx` `go`）。画布视图把场景变化晚一帧才报上来，不这样做的话「新建空白子图」刚写进节点的链接会随视图卸载丢掉（2026-09-28 修过：子画布建出来了，父节点上却没有链接，也就没有面包屑）。
@@ -100,7 +100,7 @@ agora canvas child list   [--parent <画布>]
 2026-09-28 在 `/tmp/agora-nested-e2e`（web / server{orders,users,payments} / db）实测，截图在 `web/evidence/nested/`：
 
 1. 选中「后端 API」→「子图」菜单（`01`）。Claude Code（haiku）收到「让 AI 展开」后 `child create` 成功，但画图时两次用了带 `cd … &&` 的复合命令被无头权限拦下，没画成（记录在会话里）；Codex（gpt-6-luna · low）接手「让 AI 画子图」（`02`），读代码后画出 7 个模块并关联了 7 条更细的代码路径（`04`）。
-2. 总架构上节点右下角出现进入标记（`03`）；双击进入，原 tab 变成子画布，地址栏 `?canvas=c-t61t6b`，面包屑「总架构 › 后端 API」；点面包屑回去，浏览器后退 / 前进在两层间切换（记录见交付报告）。
+2. 总架构上节点右下角出现进入标记（`03`）；点进入标记进入，原 tab 变成子画布，地址栏 `?canvas=c-t61t6b`，面包屑「总架构 › 后端 API」；点面包屑回去，浏览器后退 / 前进在两层间切换（记录见交付报告）。
 3. 两个会话改了 `server/orders/*.py` 之后：子画布里「订单服务」「订单存储」各自亮，面包屑栏名字旁出现小点，悬停后写「可能过时：子图画好之后改过 2 个文件」（`05`）。
 4. 让 Codex 在子画布里把「订单服务」再展开一层（调用流程）；再让 Claude 改 `service.py`：第一层「后端 API」、第二层「订单服务」、第三层 `place(...)` 逐层亮（`09`–`11`）。
 5. 删掉总架构上的「后端 API」节点：底部提示子图保留，「所有画布」里子图回到顶层；⌘Z 后链接和标记恢复（`12`、`13`）。

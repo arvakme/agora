@@ -19,6 +19,9 @@ const split = (dir: Dir, children: Node[], sizes = children.map(() => 1 / childr
   children,
 });
 
+/** Two groups side by side, sharing the width as `sizes` says. */
+export const columns = (left: Group, right: Group, sizes: [number, number]): Node => split("row", [left, right], sizes);
+
 export function groups(n: Node): Group[] {
   return n.kind === "group" ? [n] : n.children.flatMap(groups);
 }

@@ -20,7 +20,7 @@
 // ladders it walks are drawn while it walks them (fading in over 200 ms, out 300 ms after it gets
 // there; a scaffold's fainter and dashed; the selected figure's in purple), built with the snapshot
 // and faded by the frame job. A short read is a glance: a purple dashed line from the head to the node.
-// Trace (追踪, §11): clicking a figure (or a lane name) traces that agent — everyone else, and their
+// Trace (追踪, §11): a played turn (▶ 回放这一轮) traces its agent, and the route stays on the canvas after the play until it is closed — everyone else, and their
 // bubbles, dims to 30% and stops taking clicks; the nodes it went to get numbered circles at their
 // top-left corner (filled once reached, hollow for what comes later in a replay); the way it went is a
 // thin purple line along the same bridges and ladders it walked (./trace.ts), growing with the walker
@@ -43,7 +43,9 @@ import { EntryMarks } from "./EntryMarks";
 import { FigureNode, PeekNode } from "./figureNode";
 import { FootprintLayer } from "./FootprintLayer";
 import { figurePositions, focus, useFocus } from "./focus";
-import { canvasOfView, follow, useFollow } from "./follow";
+import { bubbleActions } from "./bubbleActions";
+import { followStatus } from "./followChoice";
+import { isWorking } from "./liveCamera";
 import { frame } from "./frame";
 import { gestureFor } from "./gestures";
 import { buildGeometry, type Geometry } from "./geometry";
@@ -55,7 +57,6 @@ import { ReplayBar, TraceBar } from "./ReplayBar";
 import { stopEntryText } from "./traceText";
 import { ReplayMarks } from "./ReplayMarks";
 import { shortAgentName } from "./stripRules";
-import { showResume } from "./liveCamera";
 import { liveFollow, useLiveFollow } from "./replayLive";
 import { plays, usePlay } from "./replayMode";
 import { RunAvatar } from "./RunAvatar";
@@ -162,7 +163,7 @@ const tripAlpha = (p: Trip, t: number) => Math.max(0, Math.min(1, (t - p.t0) / T
  * Structure at time t: who is on the canvas, where, who gets a bubble, which nodes get a stroke. Pure.
  * `traced`: the run being traced (it keeps a bubble; its way is worked out here unless `route` is
  * false; `now`: what has happened by — in a replay the stops after t up to now show, not yet reached).
- * `only`: draw just these runs (the follow pane: those in its sub-diagram).
+ * `only`: draw just these runs (../buildreplay).
  */
 export function snapshot(runs: Runs, t: number, ctx: Ctx, conflicts: WriteConflict[], figuresOn: boolean, selected: string | null, o: { traced?: string | null; followed?: string | null; turn?: TurnWindow | null; only?: (runId: string) => boolean; route?: boolean; now?: number } = {}): Snap {
   const states = new Map<string, RunState>();
@@ -224,7 +225,7 @@ export function snapshot(runs: Runs, t: number, ctx: Ctx, conflicts: WriteConfli
   const trace = tr ? traceAt(tr.run, t, ctx, o.now ?? Infinity, win ? spanOf(win, o.now ?? Date.now()) : undefined) : null;
   // the tray shows while someone stands there or looks at it, and for a traced way through it
   const tray = figs.some((x) => x.place === OUTSIDE || states.get(x.f.run.id)!.glance?.place === OUTSIDE) || !!trace?.stops.some((s) => s.place === OUTSIDE) || !!trace?.subs.some((s) => s.stops.some((x) => x.done && x.place === OUTSIDE));
-  // the ladders at doors, and the head that looks out of each hole (only those drawn on this canvas: depth ≤ 1, and the pane's own)
+  // the ladders at doors, and the head that looks out of each hole (only those drawn on this canvas: depth ≤ 1)
   const { hatches, peeks } = hatchesAt(runs.flat.filter((f) => f.depth < 2 && (!o.only || o.only(f.run.id))).map((f) => f.run.id), (id, u) => stateAt(byId.get(id)!.run, u, ctx), t, { traced: o.traced, followed: o.followed });
   return { t, figs, bubbles, rings: ringsOf(present, states, conflicts, t), tethers, chips: [], states, byId, folded, tray, trips, trace, hatches, peeks };
 }
@@ -324,7 +325,7 @@ function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflic
   const icon = Ic ? <Ic size={14} /> : null;
   let body: ReactNode;
   if (kind === "walk" && back) body = <>{icon}<span className="v">走回</span><span>{par!.name}</span><span className="el">交结果</span></>;
-  else if (kind === "walk") body = <>{icon}<span className="v">走去</span><span>{place(st.at)}</span>{g?.path && <span className="el">要{g.kind === "write" ? "写" : g.kind === "exec" ? "跑" : "读"} {base(g.path)}</span>}</>;
+  else if (kind === "walk") body = <>{icon}<span className="v">走去</span><span>{place(st.at)}</span>{g?.say ? <span className="el">要{g.say}</span> : g?.path && <span className="el">要{g.kind === "write" ? "写" : g.kind === "exec" ? "跑" : "读"} {base(g.path)}</span>}</>;
   else if (kind === "handoff") body = <>{icon}<span className="v">交给 {par?.name}</span><span className="el">结果回到父会话</span></>;
   else if (kind === "unknown") body = <span className="el">只有回执，看不到它在做什么</span>;
   else if (kind === "idle" && par && st.receipt && st.receipt !== "returned" && st.receipt !== "accepted") body = <span className="v">{receiptText(run, st.receipt)}</span>; // stopped without handing back, cut off, failed: no tick, it did not finish well
@@ -339,6 +340,7 @@ function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflic
         <button className="reply" onClick={(e) => (e.stopPropagation(), openRun(f))}>去回复</button>
       </>
     );
+  else if (g?.say && (kind === "write" || kind === "think")) body = <>{icon}<span className="f">{g.say}</span></>; // a stretch with its own words (the build replay, ../buildreplay/plan.ts)
   else if (kind === "think") body = <>{icon}<span className="v">{par && !g && st.receipt === "dispatched" ? `等 ${run.name} 接手` : "思考"}</span>{el}</>;
   else if (kind === "delegate") {
     const c = g?.child ? byId.get(g.child)?.run : undefined;
@@ -400,7 +402,7 @@ function useExiting<T extends { key: string }>(items: T[], ms: number): (T & { e
   return [...items, ...[...gone.current.values()].map((g) => ({ ...g.item, exiting: true }))];
 }
 
-/** `only`: draw just the runs it accepts (the follow pane: those in its sub-diagram, and the one it follows). */
+/** `only`: draw just the runs it accepts (the build replay draws its own world, ../buildreplay). */
 type Props = { view: CanvasViewState; chrome: Box[]; figuresOn: boolean; only?: (runId: string) => boolean };
 
 /** The canvas's doors, timed with the canvases on either side of them (./place.ts `doorTiming`). */
@@ -416,16 +418,13 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const playing = !!playState.play;
   const camFollow = useLiveFollow();
   const fo = useFocus();
-  const fl = useFollow();
   const reduced = prefersReducedMotion();
-  // A follow pane's picture of a canvas dims for a trace too, but the way is drawn on the canvas itself.
-  const pane = canvasOfView(view.id) !== view.id;
   const keep = useMemo(() => keepOf(runs, fo.traced), [runs, fo.traced]);
   const keepRef = useRef(keep);
   keepRef.current = keep;
   const geom = useMemo(() => buildGeometry(view.id, view.elements, view.map, nst.scenes, (id) => nst.titles[id]), [view.id, view.version, nst.scenes, nst.titles]);
   const stay = useMemo(() => new Set(fo.traced ? [fo.traced] : []), [fo.traced]); // a route on the canvas keeps its figure
-  const ctx = useMemo<Ctx>(() => ({ stay, locate: geom.locate, dock: geom.dock, route: geom.route, ...withDoorTiming(scenePlaces(geom.boxes, view.map, nst.index.has(canvasOfView(view.id))), canvasOfView(view.id), nst.index), reduced, run: (id) => runs.byId.get(id) }), [geom, runs, reduced, view.map, nst.index, view.id, stay]);
+  const ctx = useMemo<Ctx>(() => ({ stay, locate: geom.locate, dock: geom.dock, route: geom.route, ...withDoorTiming(scenePlaces(geom.boxes, view.map, nst.index.has(view.id)), view.id, nst.index), reduced, run: (id) => runs.byId.get(id) }), [geom, runs, reduced, view.map, nst.index, view.id, stay]);
   const conflicts = useMemo(() => writeConflicts(runs.flat.map((f) => f.run)), [runs]);
   // A canvas with nothing on it shows its own guide (「一张空白画布」): the layer gives way (no figures, bubbles, tray), the strip says so.
   const empty = useMemo(() => !view.elements.some((e) => !e.isDeleted), [view.elements, view.version]);
@@ -437,8 +436,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const clip = useMemo(() => clipPath({ x: 0, y: 0, w: a.width, h: a.height }, chrome), [a.width, a.height, chrome]);
 
   // ── structure: a few times a second at most ──
-  const inputs = useRef({ runs, ctx, conflicts, figuresOn, fo, fl, only, pane });
-  inputs.current = { runs, ctx, conflicts, figuresOn, fo, fl, only, pane };
+  const inputs = useRef({ runs, ctx, conflicts, figuresOn, fo, followed: camFollow.run, only });
+  inputs.current = { runs, ctx, conflicts, figuresOn, fo, followed: camFollow.run, only };
   const rebuild = useRef(() => {});
   useEffect(() => {
     let last = 0;
@@ -447,7 +446,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
       last = performance.now();
       pending = 0;
       const i = inputs.current;
-      setSnap(snapshot(i.runs, clock.time(), i.ctx, i.conflicts, i.figuresOn, i.fo.selected, { traced: i.fo.traced, followed: i.fl.run, turn: i.fo.turn, only: i.only, route: !i.pane, now: Date.now() }));
+      setSnap(snapshot(i.runs, clock.time(), i.ctx, i.conflicts, i.figuresOn, i.fo.selected, { traced: i.fo.traced, followed: i.followed, turn: i.fo.turn, only: i.only, now: Date.now() }));
     };
     const kick = () => {
       if (pending) return;
@@ -460,7 +459,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
     return () => (clearInterval(timer), clearTimeout(pending), offC());
   }, []);
   // data or settings changed: rebuild (same rate limit)
-  useEffect(() => rebuild.current(), [runs, ctx, conflicts, figuresOn, fo.selected, fo.traced, fo.turn, fl.run]);
+  useEffect(() => rebuild.current(), [runs, ctx, conflicts, figuresOn, fo.selected, fo.traced, fo.turn, camFollow.run]);
 
   // ── imperative nodes: figures and tethers, created per snapshot, moved per frame ──
   const rootEl = useRef<HTMLDivElement>(null);
@@ -586,7 +585,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
       const f = snap.byId.get(id);
       if (!f || peekNodes.current.has(place)) continue;
       const where = snap.states.get(id)?.portal?.label;
-      const node = new PeekNode(id, f.run.agent, `${f.run.name} 在子图${where ? `「${where}」` : ""}里 · 点一下跟随`, (rid) => follow.start(rid));
+      const node = new PeekNode(id, f.run.agent, `${f.run.name} 在子图${where ? `「${where}」` : ""}里 · 点一下跟随`, (rid) => liveFollow.follow(rid));
       layer.appendChild(node.g);
       peekNodes.current.set(place, { id, node });
     }
@@ -1064,12 +1063,9 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   if (sp) extra.push({ place: sp, tone: "sel", ids: [] });
   if (rp && rp !== hp) extra.push({ place: rp, tone: "hover", ids: [] });
   const rings = useExiting([...snap.rings, ...extra].map((r) => ({ ...r, key: `${r.place}|${r.tone === "sel" || r.tone === "hover" ? r.tone : "busy"}` })), RING_EXIT_MS);
-  // 追踪: clicking a figure (or its bubble) selects and traces it; clicking it again lets go of both.
-  const pick = (id: string) => {
-    const on = fo.selected === id && fo.traced === id;
-    focus.select(on ? null : id);
-    focus.trace(on ? null : id);
-  };
+  // Clicking a figure (or its bubble) selects it (its action row and the talk box show); clicking it again lets go. It does
+  // not trace: a route belongs to a played turn.
+  const pick = (id: string) => focus.select(fo.selected === id ? null : id);
   // The trace's marks: each stop's number at its node's top-left corner (a later visit to the same node
   // below the earlier one, down its left edge); beside the first, just inside the node, the sub-diagram
   // nodes it went to through that node's entry; each sub-agent's avatar halfway out on its errand.
@@ -1091,6 +1087,9 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   // 按轮追踪: the stop whose calls include the trajectory row under the pointer lights up
   const hot = trv && fo.itemHover ? stopForItem(trv, fo.itemHover) : null;
   const tracedRun = fo.traced ? runs.byId.get(fo.traced) : undefined;
+  // The one status above the canvas: who the camera follows, paused or not; nothing while that agent is idle or not on this canvas.
+  const followedRun = camFollow.run ? snap.byId.get(camFollow.run)?.run : undefined;
+  const followLine = followStatus({ name: shortAgentName(camFollow.name), paused: camFollow.paused, working: !!followedRun && isWorking(followedRun, snap.t), drawn: !!camFollow.run && snap.figs.some((x) => x.f.run.id === camFollow.run) });
   /** A stop clicked: the session's trajectory scrolls to the step it stands for (the turn's head when it has none). */
   const jumpToStop = (i: number) => {
     const sid = tracedRun?.sessionId;
@@ -1103,7 +1102,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   useEffect(() => {
     const p = fo.pan;
     const api = canvases.get(view.id)?.api;
-    if (!p || !api || pane) return;
+    if (!p || !api) return;
     const place = placeOfItem(p.item);
     const b = place ? geom.boxOf(place) : undefined;
     if (b) glideTo(api, { x: b.x + b.w / 2, y: b.y + b.h / 2 });
@@ -1266,7 +1265,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         const f = snap.byId.get(id);
         if (!b) return null;
         const sel = fo.selected === id;
-        const following = fl.run === id;
+        const following = camFollow.run === id;
         return (
           <div
             key={id}
@@ -1294,11 +1293,13 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
               <span className="ws-bub-chip" key={`c${b.key}`}>{b.chip}</span>
               {sel && f && !exiting && (
                 <span className="ws-acts" data-open>
-                  {f.root.sessionId && <button onClick={(e) => (e.stopPropagation(), openRun(f))}>打开会话</button>}
-                  <button data-on={following || undefined} aria-pressed={following} title={following ? "停止跟随" : "在右侧窗口里跟着它（F）"} onClick={(e) => (e.stopPropagation(), following ? follow.stop() : follow.start(id))}>
-                    跟随
-                  </button>
-                  {fo.traced === id ? <button onClick={(e) => (e.stopPropagation(), focus.trace(null))} title="退出追踪（Esc）">退出追踪</button> : <button onClick={(e) => (e.stopPropagation(), focus.trace(id))}>追踪</button>}
+                  {bubbleActions(!!f.root.sessionId).map((act) =>
+                    act === "打开会话" ? (
+                      <button key={act} onClick={(e) => (e.stopPropagation(), openRun(f))}>{act}</button>
+                    ) : (
+                      <button key={act} data-on={following || undefined} aria-pressed={following} title={following ? "镜头正跟着它" : "让镜头跟着它（F）"} onClick={(e) => (e.stopPropagation(), liveFollow.follow(id))}>{act}</button>
+                    ),
+                  )}
                 </span>
               )}
             </div>
@@ -1334,9 +1335,10 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
       {playing && !only && <ReplayBar />}
       {!playing && !only && fo.traced && trv && trv.stops.length > 0 && <TraceBar turn={fo.turn?.n ?? (tracedRun ? latestTurnWindow(tracedRun)?.n ?? null : null)} />}
       {!playing && !only && playState.starting && <div className="ws-live-bar" role="status"><span className="btn sm">正在准备回放…（Esc 取消）</span></div>}
-      {!playing && !only && showResume({ paused: camFollow.paused, run: (camFollow.run && snap.byId.get(camFollow.run)?.run) || null, now: snap.t, drawn: !!camFollow.run && snap.figs.some((x) => x.f.run.id === camFollow.run) }) && (
-        <div className="ws-live-bar" role="status">
-          <button className="btn sm primary" onClick={() => liveFollow.resume()} title="你动了画布，镜头停下了；点一下继续跟着它走">继续跟随 {shortAgentName(camFollow.name)}</button>
+      {!playing && !only && followLine && (
+        <div className="ws-follow-status" role="status">
+          <span>{followLine.text}</span>
+          {followLine.resume && <button className="btn sm ghost" onClick={() => liveFollow.resume()} title="你动了画布，镜头停下了；点一下继续跟着它走">继续</button>}
         </div>
       )}
       {playing && <ReplayMarks view={view} ctx={ctx} />}

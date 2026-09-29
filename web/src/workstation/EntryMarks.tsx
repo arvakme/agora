@@ -1,8 +1,7 @@
 // 子图入口 on a canvas (web/docs/workstation.md §10 子视图跟随): while agents are in a node's sub-view,
-// that node shows their avatars at its bottom-left (three, then +N; a click follows that agent in the
-// follow pane), a pale purple ring while one of them writes in there, and the warm "waiting" mark
+// that node shows their avatars at its bottom-left (three, then +N; a click has the camera follow that agent), a pale purple ring while one of them writes in there, and the warm "waiting" mark
 // (a dot and a warm outline, 「等你回复 · name」 on hover) while one of them waits on you in there. Who is inside comes from
-// ./subview.ts, relative to this canvas, so it works on the pane's picture of a canvas too.
+// ./subview.ts, relative to this canvas.
 // The node's top edge shows the one who is in there in person (./hatch.ts: the hole, the ladder, a head looking out of it),
 // so where that head is the only one in there and nothing waits, this mark would say the same thing twice: it is left out.
 // Mounted inside the canvas overlay (./Overlay.tsx `.ws-layer`, which clips it); rebuilt ≤ 4 Hz,
@@ -14,19 +13,19 @@ import { nodeBox } from "../canvas/nodes";
 import { viewport } from "../canvas/viewport";
 import { useNested } from "../nested/store";
 import { clock, useReplay, useTick } from "./clock";
-import { canvasOfView, follow } from "./follow";
+import { liveFollow } from "./replayLive";
 import { frame } from "./frame";
 import { RunAvatar } from "./RunAvatar";
 import { useRuns } from "./runs/store";
 import { presenceAt, subviewCtx } from "./subview";
-import "./follow.css";
+import "./entry.css";
 
 const SHOWN = 3;
 type Door = { node: string; box: Box; title: string; ids: string[]; writing: boolean; waiting: string[]; /** its one agent shows itself at the hole: no mark */ quiet: boolean };
 
 /** `peeks`: node → whose head looks out of its hole (./Overlay.tsx). */
 export function EntryMarks({ view, peeks }: { view: CanvasViewState; peeks?: ReadonlyMap<string, string> }) {
-  const canvasId = canvasOfView(view.id);
+  const canvasId = view.id;
   const runs = useRuns();
   const nst = useNested();
   useReplay();
@@ -97,7 +96,7 @@ export function EntryMarks({ view, peeks }: { view: CanvasViewState; peeks?: Rea
           {d.ids.slice(0, SHOWN).map((id) => {
             const x = byId.get(id);
             return x ? (
-              <button key={id} onPointerDown={(e) => e.stopPropagation()} onClick={() => follow.start(id)} aria-label={`跟随 ${x.run.name}`}>
+              <button key={id} onPointerDown={(e) => e.stopPropagation()} onClick={() => liveFollow.follow(id)} aria-label={`跟随 ${x.run.name}`}>
                 <RunAvatar agent={x.run.agent} size={18} />
               </button>
             ) : null;

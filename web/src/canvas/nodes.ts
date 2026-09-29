@@ -1,4 +1,4 @@
-// What counts as one diagram node when a person selects or double-clicks something. A plain box
+// What counts as one diagram node when a person selects something. A plain box
 // is its own node; a group (an inserted library icon, or shapes the person grouped) is one node,
 // whatever part of it is selected; a bound label stands for its box. The node is the element that
 // carries the node's data (`customData.codePaths`, `customData.childCanvas`) and the id the model
@@ -6,10 +6,11 @@
 // shape. Pure (type-only imports), so it runs under vitest in node.
 import { labelOf } from "../nested/graph";
 import { footprint, type Box } from "./clearance";
+import { isJunction } from "./lines";
 import type { El } from "./scene";
 
 const live = (e: El | undefined): e is El => !!e && !e.isDeleted;
-const isNode = (e: El) => e.type === "rectangle" || e.type === "ellipse" || e.type === "diamond" || e.type === "frame";
+const isNode = (e: El) => (e.type === "rectangle" || e.type === "ellipse" || e.type === "diamond" || e.type === "frame") && !isJunction(e); // a junction dot is where lines meet, not a node
 const meta = (e: El | undefined) => (e?.customData as { agora?: { library?: string; group?: string } } | undefined)?.agora;
 const libGroup = (e: El | undefined) => (meta(e)?.library ? meta(e)?.group : undefined);
 const cd = (e: El) => (e.customData ?? {}) as { childCanvas?: unknown; codePaths?: unknown };
@@ -93,22 +94,6 @@ export function selectedNode(ids: Iterable<string>, map: ReadonlyMap<string, El>
 
 /** What the node looks like on the canvas: its box, label and every part of its group (scene units). */
 export const nodeBox = (node: El, map: Map<string, El>, all: readonly El[]): Box => footprint(node, map, all);
-
-/**
- * The child canvas of the node under a scene point (for double-click → enter): nodes that open a
- * child are hit anywhere inside their footprint (a library icon's label and transparent gaps
- * too); the topmost wins.
- */
-export function childNodeAt(all: readonly El[], map: Map<string, El>, x: number, y: number, childOf: (e: El) => string | null): { node: El; child: string } | null {
-  for (let i = all.length - 1; i >= 0; i--) {
-    const e = all[i];
-    const child = live(e) ? childOf(e) : null;
-    if (!child || !isNode(e)) continue;
-    const b = nodeBox(e, map, all);
-    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return { node: e, child };
-  }
-  return null;
-}
 
 /**
  * What an agent names with `--node` (agora canvas link / child): an element id — a library icon's

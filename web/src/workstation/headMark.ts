@@ -15,10 +15,13 @@ export const symbolId = (agent: string) => `ws-m-${agent}`;
 /** How wide each mark is drawn, in the head's `r` (the mark's own shape sets how much of it is ink: a badge or tile fills more of its box than a glyph). */
 const SCALE = { pi: 1, claude: 1.4, codex: 1.44, grok: 1.3, cursor: 1.3, devin: 1.15 } as const;
 
+/** The letters kinds that are not CLIs draw: a sub-agent known by its receipts, the person in the build replay (「你」 to the owner, 「作」 for the author to a guest). */
+export const LETTERS: Record<string, string> = { worker: "W", you: "你", author: "作" };
+
 /** The mark inside a head disc for a disc-sized `r`, centred on the origin. */
 export function headMark(agent: string, r: number): HeadMark {
   const kind = markFor(agent);
-  if (kind === "initial") return { kind: "letter", text: agent === "worker" ? "W" : (agent[0] ?? "?").toUpperCase(), y: r * 0.36, size: r };
+  if (kind === "initial") return { kind: "letter", text: LETTERS[agent] ?? (agent[0] ?? "?").toUpperCase(), y: r * 0.36, size: r };
   const w = r * SCALE[kind];
   const box = { x: -w / 2, y: -w / 2, w, h: w };
   return kind === "codex" || kind === "grok" ? { kind: "image", image: kind, ...box } : { kind: "symbol", id: symbolId(kind), ...box };

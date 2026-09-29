@@ -155,8 +155,6 @@ export function useReplayAt(): number | null {
 }
 
 // ── going into a replay is explicit ──
-/** The follow tab opens by itself only when the person turned that on (⋯, off by default) and live; during a replay only one the person opened stays. */
-export const autoFollowTabAllowed = (replaying: boolean, pref: boolean) => pref && !replaying;
 /** What moves the session panel between 对话 and 轨迹: its own toggle, a link to a turn, a link to the trajectory, a stop clicked on the canvas. Nothing else — entering a replay does not. */
 export type PanelEvent = "toggle" | "turn" | "trajectory" | "step";
 export type PanelView = "chat" | "trajectory";

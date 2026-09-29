@@ -38,6 +38,8 @@ export type RunSeg = {
   verifies?: string;
   /** Its turn works on a canvas comment (every segment of that turn carries it). */
   comment?: TurnComment;
+  /** What the bubble says for this stretch, in words (the build replay, ../../buildreplay/plan.ts: there is no file or command to name). */
+  say?: string;
   label: string;
 };
 

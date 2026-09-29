@@ -21,6 +21,7 @@ describe("headMark", () => {
   it("any other kind — a CLI added later, a worker known by its receipts — falls back to its initial", () => {
     expect(headMark("droid", R)).toMatchObject({ kind: "letter", text: "D" });
     expect(headMark("worker", R)).toMatchObject({ kind: "letter", text: "W" });
+    expect(headMark("you", R)).toMatchObject({ kind: "letter", text: "你" }); // the person, in the build replay
     expect(headMark("", R)).toMatchObject({ kind: "letter", text: "?" });
   });
 
