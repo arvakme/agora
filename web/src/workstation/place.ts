@@ -70,7 +70,15 @@ export type Ctx = {
    * on this canvas while it works in there; on a child canvas `entrance` is the node it comes in by, and
    * files not on it lie behind that. Without it the worker stands on the node (its bubble names the
    * sub-diagram) and files off the canvas go to the 图外 tray. */
-  door?: { entrance?: string };
+  door?: {
+    entrance?: string;
+    /** On a child canvas: when the worker is through the door on the canvas outside (its `doorsIn` + DOOR_MS) for the
+     * work starting at t0, seen at t; Infinity while it is not yet. It comes in by the entrance only then. */
+    enter?: (run: WorkRun, t0: number, t: number) => number;
+    /** On the canvas outside: when the worker is through the door at the entrance of child canvas `canvasId` (its way
+     * there walked) for the work starting at t0, seen at t; Infinity while it is not yet. It comes out only then. */
+    leave?: (run: WorkRun, canvasId: string | undefined, t0: number, t: number) => number;
+  };
   reduced: boolean;
   /** The dispatcher of a sub-agent, to find where it was and where to hand back. */
   run: (id: string) => WorkRun | undefined;
@@ -99,6 +107,8 @@ export type RunState = {
   receipt: ReceiptState | null;
   /** The file it works on lies in a child canvas of `at` (it stands at the parent node, or is in there). */
   portal?: Located["portal"];
+  /** When it starts going through each door into a node's sub-diagram (ms): its walk to the door is over then. */
+  doorsIn: number[];
   /** Going through a door at `at` (ctx.door): `in` — shrinking and fading into it; `behind` — in there,
    * not on this canvas (present false); `out` — coming back out. */
   portalPhase?: "in" | "behind" | "out";
@@ -155,7 +165,7 @@ const through = (s: Walk, t: number, into: boolean) => {
  * coming out, or still walking to the last place) is not taken yet: it waits for that. `ret`: a sub-agent's walk back to hand over (a
  * move even to the same place, as the handover needs one).
  */
-function step(ctx: Ctx, s: Walk, w: Here, t0: number, t: number, o: { sub?: boolean; ret?: boolean; next?: number } = {}): "moved" | "waiting" | "stayed" {
+function step(ctx: Ctx, s: Walk, w: Here, t0: number, t: number, o: { run?: WorkRun; sub?: boolean; ret?: boolean; next?: number } = {}): "moved" | "waiting" | "stayed" {
   // still on its way to a door when it has to go elsewhere: it never went in
   if (s.behind && t0 < s.inAt) {
     s.doors.pop();
@@ -168,10 +178,14 @@ function step(ctx: Ctx, s: Walk, w: Here, t0: number, t: number, o: { sub?: bool
   } else {
     let t1 = t0;
     if (s.behind) {
-      // coming out: what it works on now is not in there
-      through(s, t0, false);
+      // coming out: what it works on now is not in there. Not before the canvas on the other side of the door has it
+      // there (it walked to the door or to the entrance first): the two canvases show the same moment
+      const d = ctx.door;
+      const tOut = o.run && d ? Math.max(t0, (s.portal ? d.leave?.(o.run, s.portal.canvasId, t0, t) : d.enter?.(o.run, t0, t)) ?? t0) : t0;
+      if (tOut > t) return "waiting";
+      through(s, tOut, false);
       s.portal = undefined;
-      t1 = t0 + DOOR_MS;
+      t1 = tOut + DOOR_MS;
     }
     // still walking to the last place: it arrives first, then sets off (never cut short, never a jump) — unless that
     // would leave it CATCH_UP_MS behind: then it drops that stop and heads for this place from where it is
@@ -201,7 +215,7 @@ function step(ctx: Ctx, s: Walk, w: Here, t0: number, t: number, o: { sub?: bool
 
 /** From `from`, along a run's segments up to t: the moves to each new place (not for a glance), the doors
  * it goes through, where it is, and what it glances at, if anything, at t. */
-function follow(ctx: Ctx, segs: readonly RunSeg[], t: number, from: Here, sub: boolean): Walk {
+function follow(ctx: Ctx, run: WorkRun, segs: readonly RunSeg[], t: number, from: Here, sub: boolean): Walk {
   const s: Walk = { at: from.place, portal: from.portal, behind: !!from.behind, startBehind: !!from.behind, inAt: -Infinity, moves: [], doors: [] };
   for (let i = 0; i < segs.length; i++) {
     const g = segs[i];
@@ -221,7 +235,7 @@ function follow(ctx: Ctx, segs: readonly RunSeg[], t: number, from: Here, sub: b
         break;
       }
     }
-    step(ctx, s, w, g.start, t, { sub, next });
+    step(ctx, s, w, g.start, t, { run, sub, next });
   }
   return s;
 }
@@ -305,7 +319,7 @@ function compute(run: WorkRun, t: number, ctx: Ctx): RunState {
 
   if (parent) {
     // A sub-agent starts where its dispatcher was when it sent it (in its sub-diagram, if it was in one).
-    walk = follow(ctx, run.segs, t, run.spawnAt != null ? hereOf(stateAt(parent, run.spawnAt, ctx)) : { place: OUTSIDE }, true);
+    walk = follow(ctx, run, run.segs, t, run.spawnAt != null ? hereOf(stateAt(parent, run.spawnAt, ctx)) : { place: OUTSIDE }, true);
     if (run.spawnAt == null || t < run.spawnAt) present = false;
     else fade = Math.min(1, (t - run.spawnAt) / APPEAR_MS);
     if (run.doneAt != null && t >= run.doneAt) {
@@ -314,7 +328,7 @@ function compute(run: WorkRun, t: number, ctx: Ctx): RunState {
       if (!run.coarse) {
         // back to the dispatcher to hand over — into its sub-diagram, out of sight, if it is in one
         const to = hereOf(stateAt(parent, run.doneAt, ctx));
-        const r = step(ctx, walk, to, run.doneAt, t, { sub: true, ret: true });
+        const r = step(ctx, walk, to, run.doneAt, t, { run, sub: true, ret: true });
         const m = walk.moves[walk.moves.length - 1];
         arrive = r === "waiting" ? Infinity : r === "moved" ? (walkOn ? planFor(m, ctx).t1 : m.t) : run.doneAt;
         inside = !!to.behind;
@@ -332,13 +346,13 @@ function compute(run: WorkRun, t: number, ctx: Ctx): RunState {
     for (let i = 0; i < bs.length; i++) if (bs[i][0].start <= t) bi = i;
     if (bi < 0) {
       present = false;
-      walk = follow(ctx, [], t, { place: OUTSIDE }, false);
+      walk = follow(ctx, run, [], t, { place: OUTSIDE }, false);
     } else {
       const b = bs[bi];
       // It appears where this stretch's work first lands (else where the last one ended).
       const first = b.map((g) => where(ctx, g)).find(Boolean);
       const prev = bi > 0 ? [...bs[bi - 1]].reverse().map((g) => where(ctx, g)).find(Boolean) : null;
-      walk = follow(ctx, b, t, first ?? prev ?? { place: OUTSIDE }, false);
+      walk = follow(ctx, run, b, t, first ?? prev ?? { place: OUTSIDE }, false);
       const lastEnd = Math.max(...b.filter((g) => g.start <= t).map((g) => g.end));
       const idle = t - lastEnd;
       fade = Math.min(1, (t - b[0].start) / APPEAR_MS);
@@ -379,6 +393,7 @@ function compute(run: WorkRun, t: number, ctx: Ctx): RunState {
     since: seg ? t - seg.start : 0,
     receipt,
     ...(walk.portal ? { portal: walk.portal } : {}),
+    doorsIn: walk.doors.filter((d) => d.into).map((d) => d.t),
     ...(door.phase ? { portalPhase: door.phase } : {}),
     ...(door.phase !== "behind" && door.scale !== 1 ? { portalScale: door.scale } : {}),
     ...(comment ? { comment } : {}),
@@ -433,7 +448,50 @@ export function writeConflicts(runs: readonly WorkRun[]): WriteConflict[] {
 }
 export const conflictAt = (list: readonly WriteConflict[], runId: string, t: number) => list.find((c) => c.start <= t && t < c.end && c.runs.includes(runId)) ?? null;
 
+// The two canvases either side of a door show the same moment (the worker is through the door on one when it
+// comes out on the other). Each asks the other for its door times — the outside for `enter`, the inside for
+// `leave` — from a context without those two functions, so they never ask each other in circles.
+const bare = new WeakMap<Ctx, Ctx>();
+const untimed = (c: Ctx): Ctx => {
+  let b = bare.get(c);
+  if (!b) bare.set(c, (b = { ...c, door: c.door && { entrance: c.door.entrance } }));
+  return b;
+};
+const throughAt = (times: readonly number[], t0: number) => {
+  const d = times.find((x) => x >= t0 - 1);
+  return d == null ? Infinity : d + DOOR_MS;
+};
+/** `door.enter` for a child canvas: `outer` is the canvas outside its door (undefined: no delay). */
+export const enterAfter =
+  (outer: () => Ctx | undefined): NonNullable<Ctx["door"]>["enter"] =>
+  (run, t0, t) => {
+    const c = outer();
+    return c ? throughAt(stateAt(run, t, c).doorsIn, t0) : t0;
+  };
+/** `door.leave` for the canvas outside a child's door: `child` gives a child canvas's context by its id. */
+export const leaveAfter =
+  (child: (canvasId: string) => Ctx | undefined): NonNullable<Ctx["door"]>["leave"] =>
+  (run, canvasId, t0, t) => {
+    const c = canvasId ? child(canvasId) : undefined;
+    return c ? throughAt(stateAt(run, t, untimed(c)).doorsIn, t0) : t0;
+  };
+
 /** Each canvas's current context and place names, published by its overlay for the timeline
  * (walk bars, 「在 API 服务」 rows, the detail card) — read at ≤ 4 Hz, never per frame. */
 /** `empty`: the canvas has nothing drawn on it (its 「一张空白画布」 guide shows): the overlay draws no one, the strip says so. */
 export const canvasWhere = new Map<string, { ctx: Ctx; label: (place: string) => string; empty?: boolean }>();
+
+const contextOf = (id: string) => canvasWhere.get(id)?.ctx ?? canvasWhere.get(`follow:${id}`)?.ctx;
+/** The door timing of the canvas `canvasId` (a child canvas when `parents` has it), from the canvases the overlays have published:
+ * `enter` from the nearest published canvas outside it, `leave` from a child canvas by its id. */
+export function doorTiming(canvasId: string, parents: ReadonlyMap<string, { canvasId: string }>): Pick<NonNullable<Ctx["door"]>, "enter" | "leave"> {
+  const outer = () => {
+    let p = parents.get(canvasId)?.canvasId;
+    for (let n = 0; p && n < 16; n++, p = parents.get(p)?.canvasId) {
+      const c = contextOf(p);
+      if (c) return c;
+    }
+    return undefined;
+  };
+  return { ...(parents.has(canvasId) ? { enter: enterAfter(outer) } : {}), leave: leaveAfter(contextOf) };
+}

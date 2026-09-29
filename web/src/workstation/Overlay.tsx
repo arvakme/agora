@@ -47,7 +47,7 @@ import { canvasOfView, follow, useFollow } from "./follow";
 import { frame } from "./frame";
 import { gestureFor } from "./gestures";
 import { buildGeometry, type Geometry } from "./geometry";
-import { canvasWhere, conflictAt, OUTSIDE, outsideProject, stateAt, writeConflicts, type Ctx, type RunState, type WriteConflict } from "./place";
+import { canvasWhere, conflictAt, doorTiming, OUTSIDE, outsideProject, stateAt, writeConflicts, type Ctx, type RunState, type WriteConflict } from "./place";
 import { Glide, makeSprings, RIG, solve, SUB_SCALE, type Pt, type Springs, type Trip } from "./rig";
 import type { Leg } from "./route";
 import { ReplayBar } from "./ReplayBar";
@@ -361,6 +361,11 @@ function useExiting<T extends { key: string }>(items: T[], ms: number): (T & { e
 /** `only`: draw just the runs it accepts (the follow pane: those in its sub-diagram, and the one it follows). */
 type Props = { view: CanvasViewState; chrome: Box[]; figuresOn: boolean; only?: (runId: string) => boolean };
 
+/** The canvas's doors, timed with the canvases on either side of them (./place.ts `doorTiming`). */
+function withDoorTiming(sp: Pick<Ctx, "anchor" | "door">, canvasId: string, index: Parameters<typeof doorTiming>[1]): Pick<Ctx, "anchor" | "door"> {
+  return sp.door ? { ...sp, door: { ...sp.door, ...doorTiming(canvasId, index) } } : sp;
+}
+
 export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const runs = useRuns();
   const nst = useNested();
@@ -375,7 +380,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const keepRef = useRef(keep);
   keepRef.current = keep;
   const geom = useMemo(() => buildGeometry(view.id, view.elements, view.map, nst.scenes, (id) => nst.titles[id]), [view.id, view.version, nst.scenes, nst.titles]);
-  const ctx = useMemo<Ctx>(() => ({ locate: geom.locate, dock: geom.dock, route: geom.route, ...scenePlaces(geom.boxes, view.map, nst.index.has(canvasOfView(view.id))), reduced, run: (id) => runs.byId.get(id) }), [geom, runs, reduced, view.map, nst.index, view.id]);
+  const ctx = useMemo<Ctx>(() => ({ locate: geom.locate, dock: geom.dock, route: geom.route, ...withDoorTiming(scenePlaces(geom.boxes, view.map, nst.index.has(canvasOfView(view.id))), canvasOfView(view.id), nst.index), reduced, run: (id) => runs.byId.get(id) }), [geom, runs, reduced, view.map, nst.index, view.id]);
   const conflicts = useMemo(() => writeConflicts(runs.flat.map((f) => f.run)), [runs]);
   // A canvas with nothing on it shows its own guide (「一张空白画布」): the layer gives way (no figures, bubbles, tray), the strip says so.
   const empty = useMemo(() => !view.elements.some((e) => !e.isDeleted), [view.elements, view.version]);

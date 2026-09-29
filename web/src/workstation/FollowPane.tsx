@@ -55,7 +55,7 @@ export function FollowPane({ main }: { main: string }) {
   useTick(250);
   const t = clock.time();
   const reduced = prefersReducedMotion();
-  const ctx = useMemo(() => subviewCtx(main, nst.scenes, nst.titles, (id) => runs.byId.get(id)), [main, nst.scenes, nst.titles, runs]);
+  const ctx = useMemo(() => subviewCtx(main, nst.scenes, nst.titles, (id) => runs.byId.get(id), () => canvasWhere.get(main)?.ctx), [main, nst.scenes, nst.titles, runs]);
   const ps = new Map(runs.flat.map((x) => [x.run.id, presenceAt(x.run, t, ctx)] as const));
 
   // ── the pane's own choices, ≤ 4 Hz: open for a newcomer, move on when its agent leaves, say it ended ──
