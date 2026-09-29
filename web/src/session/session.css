@@ -230,3 +230,13 @@
 .sp-card-t span { color: var(--fg-muted); font-size: var(--text-xs); }
 .sp-choose-later { margin: var(--space-3) 0 0; color: var(--fg-subtle); font-size: var(--text-sm); }
 .sp-hello ol { margin: 0; padding-left: 1.4em; } .sp-hello li { margin: 0 0 var(--space-2); }
+
+/* 「回到最新」: the pane's scroll area and the pill over its bottom edge, just above the composer (JumpPill.tsx). */
+.sp-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.sp-stage > .sp-scroll { flex: 1; }
+.sp-jump { position: absolute; left: 50%; bottom: var(--space-4); z-index: 3; display: inline-flex; align-items: center; gap: var(--space-2); padding: 4px var(--space-5); border: 0; border-radius: 999px; background: var(--surface); color: var(--fg); font-size: var(--text-sm); box-shadow: var(--box); cursor: pointer; opacity: 0; transform: translate(-50%, 6px); pointer-events: none; transition: opacity 0.16s ease, transform 0.16s ease; }
+.sp-jump[data-show] { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.sp-jump:hover { background: var(--raised); }
+.sp-jump[data-new] { color: var(--accent, var(--fg)); font-weight: 500; }
+.sp-jump-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok, #2f9e6b); flex: none; }
+@media (prefers-reduced-motion: reduce) { .sp-jump { transition: none; } }
