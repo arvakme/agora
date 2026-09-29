@@ -1,5 +1,5 @@
 // 短读只看 (./place.ts stateAt; web/docs/workstation.md §2): a read of another node that is short —
-// with the reads right after it at that node, under GLANCE_MS, and no write or command there — is a
+// one read of a real length, under GLANCE_MS, with nothing else right after it at that node — is a
 // glance: the worker stays where it stands, in the read pose, looking over at that node. A longer
 // read, or one followed by writing or running something there, walks over as the read starts. Still
 // a pure function of the log and t.
@@ -30,16 +30,13 @@ describe("stateAt: a short read is a glance (短读只看)", () => {
     expect(after.glance).toBeUndefined();
   });
 
-  it("the reads right after it at that node count with it: 2.4 s in all is a glance, 2.5 s walks over as the first read starts", () => {
-    const short = run([WRITE_API, seg("read", 3, 4, "server/db/a.py"), seg("read", 4, 5.4, "server/db/b.py"), seg("think", 5.4, 8)]);
-    expect(at(short, 3.5)).toMatchObject({ at: "api", glance: { place: "db" }, moves: [] });
-    expect(at(short, 4.5)).toMatchObject({ at: "api", glance: { place: "db" }, moves: [] });
-    const long = run([WRITE_API, seg("read", 3, 4, "server/db/a.py"), seg("read", 4, 5.5, "server/db/b.py"), seg("think", 5.5, 8)]);
-    const s = at(long, 3.1);
+  it("several reads in a row at that node are work there, however short: the worker walks over as the first read starts", () => {
+    const two = run([WRITE_API, seg("read", 3, 4, "server/db/a.py"), seg("read", 4, 5.4, "server/db/b.py"), seg("think", 5.4, 8)]);
+    const s = at(two, 3.1);
     expect(s).toMatchObject({ at: "db", from: "api", pose: "walk" });
     expect(s.glance).toBeUndefined();
     expect(s.moves).toEqual([{ from: "api", to: "db", t: 3 * S, slot: 0 }]);
-    expect(at(long, 7)).toMatchObject({ at: "db", pose: "think", w: 1 });
+    expect(at(two, 7)).toMatchObject({ at: "db", pose: "think", w: 1 });
   });
 
   it("a read of GLANCE_MS or more walks over", () => {

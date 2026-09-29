@@ -145,12 +145,13 @@ function where(ctx: Ctx, s: RunSeg): Here | null {
   return s.path ? { place: OUTSIDE } : null;
 }
 
-/** Whether segs[i], at `place`, is a glance: it and the segments right after it at that place are all
- * reads, together shorter than GLANCE_MS. (A later write or command there, or a longer read, walks.) */
+/** Whether segs[i], at `place`, is a glance: one read of a real, short length (under GLANCE_MS) and nothing else right after it at that
+ * place. A read whose length was padded (`durationKnown: false`), several reads in a row there, a write or a command there, or a longer read
+ * is work at that node: the worker walks over. */
 function glanced(ctx: Ctx, segs: readonly RunSeg[], i: number, place: string): boolean {
   let j = i;
   while (j + 1 < segs.length && where(ctx, segs[j + 1])?.place === place) j++;
-  return segs.slice(i, j + 1).every((g) => g.kind === "read") && segs[j].end - segs[i].start < GLANCE_MS;
+  return j === i && segs[i].kind === "read" && segs[i].durationKnown !== false && segs[i].end - segs[i].start < GLANCE_MS;
 }
 
 const through = (s: Walk, t: number, into: boolean) => {
