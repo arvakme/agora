@@ -44,6 +44,7 @@ import { FigureNode, PeekNode } from "./figureNode";
 import { FootprintLayer } from "./FootprintLayer";
 import { figurePositions, focus, useFocus } from "./focus";
 import { bubbleActions } from "./bubbleActions";
+import { directorFrame, LOOKAHEAD_MS } from "./director";
 import { followStatus } from "./followChoice";
 import { isWorking } from "./liveCamera";
 import { frame } from "./frame";
@@ -446,7 +447,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
       last = performance.now();
       pending = 0;
       const i = inputs.current;
-      setSnap(snapshot(i.runs, clock.time(), i.ctx, i.conflicts, i.figuresOn, i.fo.selected, { traced: i.fo.traced, followed: i.followed, turn: i.fo.turn, only: i.only, now: Date.now() }));
+      setSnap(snapshot(i.runs, clock.figureTime(), i.ctx, i.conflicts, i.figuresOn, i.fo.selected, { traced: i.fo.traced, followed: i.followed, turn: i.fo.turn, only: i.only, now: Date.now() }));
     };
     const kick = () => {
       if (pending) return;
@@ -487,6 +488,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const markEls = useRef(new Map<string, { el: HTMLElement; x: number; y: number; dy: number; at: number | null; done: boolean | null }>());
   const marksMoved = useRef(true);
   /** Each drawn figure's head (world), its radius and whether a ! / ? mark sits over it, and its scale. */
+  /** The fading-out half of a figure being cut across (./director.ts), by run id. */
+  const ghosts = useRef(new Map<string, FigureNode>());
   const heads = useRef(new Map<string, { x: number; y: number; r: number; mark: boolean; k: number; sc: number; walking: boolean; root: { x: number; y: number } }>());
   const bubbleEls = useRef(new Map<string, HTMLElement>());
   /** Where each bubble should sit relative to its figure's head (decided ≤ 4 Hz)… */
@@ -539,6 +542,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
       if (!want.has(id)) {
         n.g.remove();
         nodes.current.delete(id);
+        ghosts.current.get(id)?.g.remove();
+        ghosts.current.delete(id);
         springs.current.delete(id);
         offs.current.delete(id);
         gazes.current.get(id)?.el.remove();
@@ -655,7 +660,10 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
       const c = ctxRef.current;
       if (!v) return;
       const still = c.reduced;
-      const t = clock.time(now);
+      // The director (./director.ts): what every figure shows at this moment — live, the world of LOOKAHEAD_MS ago; a replay, its own position.
+      const dir = directorFrame({ runs: s.figs.map((x) => x.f.run), now: clock.time(now), delay: clock.get() ? 0 : LOOKAHEAD_MS, ctx: c });
+      const dirOf = new Map(dir.figures.map((f) => [f.run, f]));
+      const t = dir.t;
       // A real jump in time (seek, scrub, back to live) or a long pause (background tab): reset
       // the springs to the exact pose. Otherwise everything blends on animation time.
       const dt = lastNow ? (now - lastNow) / 1000 : 0;
@@ -691,8 +699,11 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         const n = nodes.current.get(x.f.run.id);
         if (!n) continue;
         const run = x.f.run;
-        const st = stateAt(run, t, c);
+        const df = dirOf.get(run.id)!;
+        const st = df.state;
         if (!st.present) {
+          ghosts.current.get(run.id)?.g.remove();
+          ghosts.current.delete(run.id);
           n.place(0, 0, k, 0, false);
           n.cut(null);
           positions.delete(run.id); // not drawn in this view: the talk box is not hosted here
@@ -732,7 +743,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         let wy = (door ? here.y : 0) + j.root.y + dy;
         if (door) n.cut(door.dir === 1 ? "above" : "below", (here.y + cutLine(door.dir, kk) - wy) / kk);
         else n.cut(null);
-        let alpha = st.fade;
+        let alpha = st.fade * df.alpha;
         if (still) {
           const xf = crossfade(moving, run.id, wx, wy, anim);
           wx = xf.x;
@@ -742,6 +753,23 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         const dim = dimmed(run.id);
         n.place(wx, wy, kk, alpha, dim, st.pose === "idle");
         n.draw(j, anim, still);
+        // A cut (over CUT_DISTANCE): the same figure fades out where it was while it fades in where it goes (its pose, moved rigidly).
+        if (df.ghost) {
+          let gn = ghosts.current.get(run.id);
+          if (!gn) {
+            gn = new FigureNode(`${run.id}~was`, run.agent, { parentAgent: x.f.parent?.agent, label: run.name });
+            gn.g.style.pointerEvents = "none";
+            figLayer.current?.appendChild(gn.g);
+            ghosts.current.set(run.id, gn);
+          }
+          const was = g.dock(df.ghost.place);
+          gn.cut(null);
+          gn.place(wx + (was.x - here.x), wy + (was.y - here.y), kk, st.fade * df.ghost.alpha, dim, st.pose === "idle");
+          gn.draw(j, anim, still);
+        } else if (ghosts.current.has(run.id)) {
+          ghosts.current.get(run.id)!.g.remove();
+          ghosts.current.delete(run.id);
+        }
         // (its bubble stays at the hole while it climbs, not going down with it)
         heads.current.set(run.id, { x: wx + j.hx * kk, y: wy + j.hy * kk, r: RIG.head * kk, mark: !!j.mark, k: kk, sc: fsc, walking: j.walking && !door, root: door ? here : { x: wx, y: wy } });
         alphas.set(run.id, alpha / Math.max(0.001, st.fade));

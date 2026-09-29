@@ -1,12 +1,14 @@
 // Where a worker is and what it does at time t — a pure function of its run and t, so scrubbing
 // to a moment and playing up to it agree exactly (web/docs/workstation.md §回放).
 //
-//   - A top-level worker appears when its work starts, at the first node it will work on in that
-//     stretch, and walks to the node of each file it reads or writes (moves start as the call
-//     starts) — except a short read (a glance: under GLANCE_MS with the reads right after it at that
-//     node, no write or command there), which it looks over at from where it stands. After a minute
-//     with nothing going on it leaves the canvas (fades out); when work starts again it reappears
-//     where that work is. So it never stands at a stale place.
+//   - A top-level worker appears when its work starts: where that work is when its first call has a
+//     place, else where it stood (the tray the first time, where the last stretch ended after that) —
+//     never by a call that has not started yet, which a live session does not have. It walks to the node
+//     of each file it reads or writes (moves start as the call starts) — except a short read (a glance:
+//     under GLANCE_MS with the reads right after it at that node, no write or command there), which it
+//     looks over at from where it stands — or, over CUT_DISTANCE, is cut across (`RunState.cut`, drawn by
+//     ./director.ts: fading out where it was as it fades in where it goes). After a minute with nothing
+//     going on it leaves the canvas (fades out) — not while its turn is still running.
 //   - A turn that works on a canvas comment (its segments carry it: lanes.ts `commentOf`) is done at
 //     the comment: what it does without a file, it does at the node the comment is on (`ctx.anchor`);
 //     its files still take it to their nodes. When the turn ends its answer goes to the thread.
@@ -44,6 +46,15 @@ export const GLANCE_MS = 2500;
 export { DOOR_MS };
 /** A comment's turn has ended — its answer went to the thread — for this long: the pin's check, a nod. */
 export const ANSWER_MS = 1000;
+/** A call seen this long after it began (or more) is history — a page that opened with the log already there: it starts when it began. */
+export const SEEN_LAG_MAX_MS = 5000;
+/** When a segment's work starts as far as this page is concerned: when it began, or, for a live call that reached the page late, when it did. */
+export const startOf = (s: RunSeg): number => (s.seen != null && s.seen > s.start && s.seen - s.start < SEEN_LAG_MAX_MS ? s.seen : s.start);
+
+/** A stretch of work that starts more than this many world units from where it is is not walked to: the worker is cut across — it fades out where it was as it fades in
+ * where it goes, over CUT_MS (web/docs/workstation.md §导演层). Never a jump, never a long walk that takes the person's eye across the diagram. */
+export const CUT_DISTANCE = 650;
+export const CUT_MS = 300;
 
 /** A path outside the project: absolute (`/…`, or a Windows drive `C:\` / `C:/`). The server turns every file
  * of the repository, other worktrees included, into a relative path; what is still absolute lies elsewhere
@@ -99,6 +110,9 @@ export type RunState = {
   trip: Trip | null;
   /** 0 → 1 along the current trip; 1 once arrived. */
   w: number;
+  /** The last move is a cut (over CUT_DISTANCE): from the time it set off (`t`) for CUT_MS the worker is at `to` (this state's `at`) fading in while it
+   * fades out at `from` (./director.ts draws both); no trip is walked. */
+  cut?: { t: number; from: string; to: string };
   /** Reading a node it stays away from (a short read): it looks over there from where it stands. */
   glance?: { place: string };
   seg: RunSeg | null;
@@ -140,7 +154,10 @@ type Door = DoorRec;
 const sideOf = (ctx: Ctx, portal: Located["portal"]): Side => (ctx.door?.entrance && !portal ? "above" : "below");
 /** A walk so far: where it is (behind that place's door or not), whether it started behind one, when it
  * last went in, what it glances at, its moves and the doors it went through, in time order. */
-type Walk = { at: string; portal?: Located["portal"]; behind: boolean; startBehind: boolean; startSide: Side; inAt: number; glance?: { place: string }; moves: Move[]; doors: Door[] };
+type Walk = { /** It started this stretch at a place that is not where its work is (the tray, where the last stretch ended): its first move is a cut when far. */ appear?: boolean; at: string; portal?: Located["portal"]; behind: boolean; startBehind: boolean; startSide: Side; inAt: number; glance?: { place: string }; moves: Move[]; doors: Door[] };
+
+/** Where a segment's work is on this canvas (its file's node, the tray, a comment's node), or null: wherever the worker already is. */
+export const placeOfSeg = (ctx: Ctx, s: RunSeg): string | null => where(ctx, s)?.place ?? null;
 
 /** Where a segment's work happens on this canvas: its file's node (with doors, a file in a node's
  * sub-diagram lies behind that node's door and, on a child canvas, one not on it behind the entrance;
@@ -177,6 +194,21 @@ const through = (ctx: Ctx, s: Walk, t: number, into: boolean, place: string, por
   s.behind = into;
   if (into) s.inAt = t;
 };
+
+/** The moves that are cuts rather than walks. Only the first move of a stretch of work is ever one — a worker that starts (from the tray, or
+ * from where the last stretch ended) far from its first work is cut across instead of walking through the diagram; once it is at work it walks
+ * from node to node as it always did. Moves are made anew with every `stateAt`, so the set is by object. */
+const cutMoves = new WeakSet<Move>();
+export const isCut = (m: Move, _ctx?: unknown): boolean => cutMoves.has(m);
+/** Whether the move `m` about to be its stretch's first is over CUT_DISTANCE: not a trip taken over from one under way, not a sub-agent's walk back to its dispatcher (the handover needs the walk), and never with reduced motion (which walks nowhere at all). */
+const farStart = (m: Move, ctx: Pick<Ctx, "dock" | "reduced">, o: { ret?: boolean }): boolean => {
+  if (ctx.reduced || m.resume || o.ret) return false;
+  const a = ctx.dock(m.from);
+  const b = ctx.dock(m.to);
+  return Math.hypot(b.x - a.x, b.y - a.y) > CUT_DISTANCE;
+};
+/** When a move is over: a cut after CUT_MS, a walk when its trip ends. */
+export const arrivalOf = (m: Move, ctx: Pick<Ctx, "dock" | "route" | "reduced">): number => (isCut(m, ctx) ? m.t + CUT_MS : planFor(m, ctx).t1);
 
 /**
  * Take the walk to `w` at t0, as of t: out of the door it is behind, over to the place (as a move), and
@@ -219,20 +251,22 @@ function step(ctx: Ctx, s: Walk, w: Here, t0: number, t: number, o: { run?: Work
     const last = s.moves[s.moves.length - 1];
     let take: Pick<Move, "from" | "resume" | "boost"> = { from: s.at };
     if (last && !ctx.reduced) {
-      const lp = planFor(last, ctx);
-      if (lp.t1 - t1 > CATCH_UP_MS) {
+      const lp = isCut(last, ctx) ? null : planFor(last, ctx);
+      const lt1 = lp ? lp.t1 : last.t + CUT_MS;
+      if (lp && lt1 - t1 > CATCH_UP_MS) {
         const now = tripAt(lp, t1);
         const near = (p: string) => Math.hypot(ctx.dock(p).x - now.root.x, ctx.dock(p).y - now.root.y);
         take = { from: near(last.from) <= near(last.to) ? last.from : last.to, resume: { at: now.root, feet: now.feet.map((f) => ({ x: f.x, y: now.root.y, lift: 0 })) as [Foot, Foot] }, boost: BOOST };
-      } else t1 = Math.max(t1, lp.t1);
+      } else t1 = Math.max(t1, lt1);
       if (!take.boost && t1 - t0 > BOOST_AFTER_MS) take.boost = BOOST;
     }
     // a stop it would only set off for after newer work has begun is dropped: it never went (`next`: when that work began)
     if (o.next != null && !take.resume && t1 > o.next) return "waiting";
     if (t1 > t) return "waiting";
     const m: Move = { ...take, to: w.place, t: t1, slot: 0, ...(o.ret ? { ret: true } : {}), ...(o.sub ? { sub: true } : {}) };
+    if (s.appear && !s.moves.length && farStart(m, ctx, o)) cutMoves.add(m);
     s.moves.push(m);
-    if (behind) through(ctx, s, ctx.reduced ? t1 : planFor(m, ctx).t1, true, w.place, w.portal);
+    if (behind) through(ctx, s, ctx.reduced ? t1 : arrivalOf(m, ctx), true, w.place, w.portal);
     r = "moved";
   }
   s.at = w.place;
@@ -242,8 +276,8 @@ function step(ctx: Ctx, s: Walk, w: Here, t0: number, t: number, o: { run?: Work
 
 /** From `from`, along a run's segments up to t: the moves to each new place (not for a glance), the doors
  * it goes through, where it is, and what it glances at, if anything, at t. */
-function follow(ctx: Ctx, run: WorkRun, segs: readonly RunSeg[], t: number, from: Here, sub: boolean): Walk {
-  const s: Walk = { at: from.place, portal: from.portal, behind: !!from.behind, startBehind: !!from.behind, startSide: sideOf(ctx, from.portal), inAt: -Infinity, moves: [], doors: [] };
+function follow(ctx: Ctx, run: WorkRun, segs: readonly RunSeg[], t: number, from: Here, sub: boolean, appear = false): Walk {
+  const s: Walk = { appear, at: from.place, portal: from.portal, behind: !!from.behind, startBehind: !!from.behind, startSide: sideOf(ctx, from.portal), inAt: -Infinity, moves: [], doors: [] };
   for (let i = 0; i < segs.length; i++) {
     const g = segs[i];
     if (g.start > t) break;
@@ -262,7 +296,7 @@ function follow(ctx: Ctx, run: WorkRun, segs: readonly RunSeg[], t: number, from
         break;
       }
     }
-    step(ctx, s, w, g.start, t, { run, sub, next });
+    step(ctx, s, w, startOf(g), t, { run, sub, next });
   }
   return s;
 }
@@ -358,7 +392,7 @@ function compute(run: WorkRun, t: number, ctx: Ctx): RunState {
         const to = hereOf(stateAt(parent, run.doneAt, ctx));
         const r = step(ctx, walk, to, run.doneAt, t, { run, sub: true, ret: true });
         const m = walk.moves[walk.moves.length - 1];
-        arrive = r === "waiting" ? Infinity : r === "moved" ? (walkOn ? planFor(m, ctx).t1 : m.t) : run.doneAt;
+        arrive = r === "waiting" ? Infinity : r === "moved" ? (walkOn ? arrivalOf(m, ctx) : m.t) : run.doneAt;
         inside = !!to.behind;
         walk.portal = undefined;
       }
@@ -377,14 +411,21 @@ function compute(run: WorkRun, t: number, ctx: Ctx): RunState {
       walk = follow(ctx, run, [], t, { place: OUTSIDE }, false);
     } else {
       const b = bs[bi];
-      // It appears where this stretch's work first lands (else where the last one ended).
-      const first = b.map((g) => where(ctx, g)).find(Boolean);
+      // It appears where its work is when that work starts at once (its first call has a place); otherwise where it stood (the tray the
+      // first time, where the last stretch ended after that) and it walks to where the work lands as that work starts. Never by work
+      // that has not started at t: in a live session that is not known yet, and a start at "where the first file will be" jumped when
+      // the file came.
       const prev = bi > 0 ? [...bs[bi - 1]].reverse().map((g) => where(ctx, g)).find(Boolean) : null;
-      walk = follow(ctx, run, b, t, first ?? prev ?? { place: OUTSIDE }, false);
+      // (a child canvas is not where the work is until the worker comes in by the entrance: there the start is behind it)
+      const home: Here = ctx.door?.entrance ? { place: ctx.door.entrance, behind: true } : { place: OUTSIDE };
+      const head = where(ctx, b[0]);
+      walk = follow(ctx, run, b, t, head ?? prev ?? home, false, !head);
       const lastEnd = Math.max(...b.filter((g) => g.start <= t).map((g) => g.end));
       const idle = t - lastEnd;
       fade = Math.min(1, (t - b[0].start) / APPEAR_MS);
-      if (idle > IDLE_LEAVE_MS && !ctx.stay?.has(run.id)) {
+      // a turn that is still running does not go home however long it has gone without a call (it is thinking, or waiting on a command)
+      const going = run.running && bi === bs.length - 1;
+      if (idle > IDLE_LEAVE_MS && !ctx.stay?.has(run.id) && !going) {
         fade = Math.min(fade, Math.max(0, 1 - (idle - IDLE_LEAVE_MS) / FADE_MS));
         if (fade <= 0) present = false;
       }
@@ -398,9 +439,16 @@ function compute(run: WorkRun, t: number, ctx: Ctx): RunState {
   const moves = walk.moves;
   let trip: Trip | null = null;
   let w = 1;
+  let cut: RunState["cut"];
   if (walkOn && moves.length) {
-    trip = planFor(moves[moves.length - 1], ctx);
-    w = t >= trip.t1 ? 1 : Math.min(0.999, Math.max(0, (t - trip.t0) / (trip.t1 - trip.t0)));
+    const lastMove = moves[moves.length - 1];
+    if (isCut(lastMove, ctx)) {
+      // over CUT_DISTANCE: no walk; the state is at the new place from the moment it sets off, and says it is a cut for CUT_MS
+      if (t >= lastMove.t && t < lastMove.t + CUT_MS) cut = { t: lastMove.t, from: lastMove.from, to: lastMove.to };
+    } else {
+      trip = planFor(lastMove, ctx);
+      w = t >= trip.t1 ? 1 : Math.min(0.999, Math.max(0, (t - trip.t0) / (trip.t1 - trip.t0)));
+    }
   }
   let pose: Pose = w < 1 ? "walk" : seg ? seg.kind : "idle";
   if (handoff) pose = "handoff";
@@ -415,6 +463,7 @@ function compute(run: WorkRun, t: number, ctx: Ctx): RunState {
     from: moves.length ? moves[moves.length - 1].from : walk.at,
     trip,
     w,
+    ...(cut ? { cut } : {}),
     ...(walk.glance && w >= 1 ? { glance: walk.glance } : {}),
     seg,
     pose,

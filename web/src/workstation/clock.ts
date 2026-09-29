@@ -8,6 +8,7 @@
 // loop (./frame.ts); components that show a time use `useTick` (a coarse timer).
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { advance } from "./axis";
+import { LOOKAHEAD_MS } from "./director";
 
 export type Replay = { at: number; playing: boolean; speed: number; since: number; until: number; gaps?: readonly { a: number; b: number }[] };
 
@@ -34,8 +35,10 @@ let on = readOn();
 export const clock = {
   get: () => replay,
   subscribe: (l: () => void) => (ls.add(l), () => void ls.delete(l)),
-  /** The time to draw: the replay position, or now. */
+  /** The time of the world: the replay position, or now. */
   time: (now = Date.now()) => (replay ? replayTime(replay, now) : now),
+  /** The time the figures are drawn at (./director.ts): the replay position (it knows all its future), or, live, LOOKAHEAD_MS behind now — so what the figures do next is known before it is shown. */
+  figureTime: (now = Date.now()) => (replay ? replayTime(replay, now) : now - LOOKAHEAD_MS),
   /** Changes on every jump in time (see `gen`). */
   gen: () => gen,
   /** How fast the figures' own motion runs against the wall clock: a replay slower than 1× slows

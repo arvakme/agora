@@ -58,8 +58,8 @@ const w3 = run("w3", [], { parentId: "pi", coarse: true, spawnAt: 20.5 * S, done
 const pi = run(
   "pi",
   [
-    seg("think", 0, 3),
-    seg("read", 3, 6.5, "server/app.py"),
+    // (a stretch that starts with a call that has a place appears there; one that starts with a thought starts at the tray — ./director.test.ts)
+    seg("read", 0, 6.5, "server/app.py"),
     seg("read", 6.5, 9.5, "server/db/models.py"),
     seg("read", 9.5, 10.5, "server/app.py"),
     seg("think", 10.5, 12),

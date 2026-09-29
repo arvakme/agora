@@ -89,10 +89,9 @@ describe("presenceAt: where an agent is below the main canvas at t, and since wh
     seg("write", 20, 24, "server/auth/token.py"),
   ]);
 
-  it("before its first file it already stands where that file is (below), but has not come to work there yet", () => {
+  it("before its first file it stands where it was (the tray, the first time): not below the main canvas, and has not come to work there yet", () => {
     expect(at(pi, -1)).toBeNull();
-    expect(at(pi, 2)).toMatchObject({ entered: null, ended: false });
-    expect(hops(at(pi, 2)!.levels)).toEqual(["c1/api", "c-api/app"]);
+    expect(at(pi, 2)).toMatchObject({ entered: null, ended: false, levels: null });
   });
 
   it("working on a file below the main canvas: entered = when that work started", () => {

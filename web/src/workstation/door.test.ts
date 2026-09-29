@@ -78,12 +78,15 @@ describe("going into a node's sub-diagram (the main canvas)", () => {
     expect(walk.portalPhase).toBeUndefined();
   });
 
-  it("before its first file a worker is where that file is: a stretch that starts in a sub-diagram starts in there", () => {
+  it("a stretch that starts in a sub-diagram (its first call has a file there) starts in there; one that starts with a thought starts at the tray and walks to the node, then goes in", () => {
+    const direct = run([seg("read", 0, 3, "server/app.py"), seg("read", 3, 6, "server/db/a.py")]);
+    const cd = main([direct]);
+    expect(stateAt(direct, 1 * S, cd)).toMatchObject({ present: false, at: "api", portalPhase: "behind" });
+    expect(stateAt(direct, 2 * S, cd)).toMatchObject({ present: false, portalPhase: "behind", portal: { label: "应用入口" } });
+    expect(stateAt(direct, 3 * S + DOOR_MS / 2, cd)).toMatchObject({ present: true, at: "api", portalPhase: "out" });
     const r = run([seg("think", 0, 2), seg("read", 2, 5, "server/app.py"), seg("read", 5, 8, "server/db/a.py")]);
     const c = main([r]);
-    expect(stateAt(r, 1 * S, c)).toMatchObject({ present: false, at: "api", portalPhase: "behind" });
-    expect(stateAt(r, 3 * S, c)).toMatchObject({ present: false, portalPhase: "behind", portal: { label: "应用入口" } });
-    expect(stateAt(r, 5 * S + DOOR_MS / 2, c)).toMatchObject({ present: true, at: "api", portalPhase: "out" });
+    expect(stateAt(r, 1 * S, c)).toMatchObject({ present: true, at: OUTSIDE, pose: "think" });
   });
 
   it("a comment on the main canvas brings it out and over to the comment", () => {

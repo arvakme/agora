@@ -130,9 +130,9 @@ describe("a comment's turn, from the transcript", () => {
 
   it("the worker walks to the commented node as the turn starts and thinks there", () => {
     const c = ctx([run]);
-    expect(stateAt(run, 5 * S, c)).toMatchObject({ at: "api", pose: "idle" });
+    expect(stateAt(run, 5 * S, c)).toMatchObject({ at: OUTSIDE, pose: "idle" }); // its first turn only glanced at a file: it never left the tray
     const s = stateAt(run, 10.1 * S, c);
-    expect(s).toMatchObject({ present: true, at: "redis", from: "api", pose: "walk", comment: { n: 3, anchor: ["redis"], start: 10 * S, end: 22 * S } });
+    expect(s).toMatchObject({ present: true, at: "redis", from: OUTSIDE, pose: "walk", comment: { n: 3, anchor: ["redis"], start: 10 * S, end: 22 * S } });
     expect(stateAt(run, s.trip!.t1 + 1, c)).toMatchObject({ at: "redis", pose: "think", w: 1 });
   });
 
@@ -169,7 +169,7 @@ describe("a comment's turn, from the transcript", () => {
     const seg = (kind: RunSeg["kind"], s: number, e: number, path?: string): RunSeg => ({ kind, start: s * S, end: e * S, label: kind, comment: c3, ...(path ? { path } : {}) });
     const r: WorkRun = { id: "r", agent: "pi", name: "Pi", segs: [seg("think", 0, 3), seg("read", 3, 4.5, "server/app.py"), seg("think", 4.5, 7)], receipts: [], running: false, lastAt: 0, children: [] };
     expect(stateAt(r, 3.5 * S, ctx([r]))).toMatchObject({ at: "redis", pose: "read", glance: { place: "api" }, moves: [] });
-    expect(stateAt(run, 11 * S, ctx([run], { anchor: undefined }))).toMatchObject({ at: "api", pose: "think" });
+    expect(stateAt(run, 11 * S, ctx([run], { anchor: undefined }))).toMatchObject({ at: OUTSIDE, pose: "think" });
   });
 
   it("is a pure function of the log and t: jumping to a time and stepping there agree", () => {
