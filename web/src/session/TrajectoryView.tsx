@@ -17,6 +17,8 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
 import { IconChevron, IconCopy, IconSearch } from "../app/icons";
 import { agents, type AgentKind, type Item } from "./agents";
+import { focus, useFocus } from "../workstation/focus";
+import { TraceTurn } from "./TraceTurn";
 import { AgentAvatar } from "./AgentAvatar";
 import {
   ACTIVITY_NOW,
@@ -199,7 +201,7 @@ export function ProcessFold({ sessionId, turn, children }: { sessionId: string; 
 }
 
 // ——— trajectory view ———
-export function TrajectoryView({ sessionId, turns, focusTurn, agent, cutoff = null }: { sessionId: string; turns: TrajTurn[]; focusTurn?: { n: number; key: number } | null; agent?: AgentKind; /** Replay: records after this moment are greyed out (they happened later). */ cutoff?: number | null }) {
+export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, cutoff = null }: { sessionId: string; turns: TrajTurn[]; focusTurn?: { n: number; key: number } | null; /** A stop on the canvas was clicked: scroll to this step and flash it. */ focusItem?: { id: string; n?: number; key: number } | null; agent?: AgentKind; /** Replay: records after this moment are greyed out (they happened later). */ cutoff?: number | null }) {
   const [mode, setMode] = useState<TimelineMode>("sequence");
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
@@ -228,6 +230,28 @@ export function TrajectoryView({ sessionId, turns, focusTurn, agent, cutoff = nu
     });
     setTimeout(() => scroll.current?.querySelector(`[data-traj-turn="${focusTurn.n}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" }), 60);
   }, [focusTurn?.key]);
+
+  const [flash, setFlash] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focusItem) return;
+    const turn = turns.find((t) => t.steps.some((s) => s.records.some((r) => r.id === focusItem.id)))?.n ?? focusItem.n;
+    if (turn != null)
+      setCollapsed((c) => {
+        const next = new Set(c);
+        next.delete(turn);
+        return next;
+      });
+    setQuery("");
+    setRange(null);
+    const go = setTimeout(() => {
+      scroll.current?.querySelector(`[data-rec-id="${CSS.escape(focusItem.id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+      setFlash(focusItem.id);
+    }, 80);
+    const off = setTimeout(() => setFlash(null), 1900);
+    return () => (clearTimeout(go), clearTimeout(off));
+  }, [focusItem?.key]);
+  // a row under the pointer lights its node and stop on the canvas; the trace's stop hovered there lights the row
+  const hovered = useFocus().itemHover;
 
   // Replay: keep the step the canvas shows in view (the last one before the replay moment).
   const cutKey = cutoff == null ? null : Math.floor(cutoff / 500);
@@ -280,11 +304,11 @@ export function TrajectoryView({ sessionId, turns, focusTurn, agent, cutoff = nu
           const steps = t.steps.map((s) => ({ ...s, records: s.records.filter(visible) })).filter((s) => s.records.length);
           if ((focus || q) && !steps.length) return null;
           return (
-            <TurnSection key={t.n} turn={t} open={!collapsed.has(t.n)} onToggle={() => setCollapsed((c) => (c.has(t.n) ? (c.delete(t.n), new Set(c)) : new Set(c).add(t.n)))}>
+            <TurnSection key={t.n} sessionId={sessionId} turn={t} open={!collapsed.has(t.n)} onToggle={() => setCollapsed((c) => (c.has(t.n) ? (c.delete(t.n), new Set(c)) : new Set(c).add(t.n)))}>
               {steps.map((s) => (
                 <StepGroup key={s.n} step={s}>
                   {s.records.map((r) => (
-                    <RecordRow key={r.id} sessionId={sessionId} r={r} selected={selected === r.id} onSelect={() => setSelected(selected === r.id ? null : r.id)} agent={agent} future={cutoff != null && r.at > cutoff} />
+                    <RecordRow key={r.id} sessionId={sessionId} r={r} selected={selected === r.id} onSelect={() => setSelected(selected === r.id ? null : r.id)} agent={agent} future={cutoff != null && r.at > cutoff} flash={flash === r.id} hot={hovered === r.id} />
                   ))}
                 </StepGroup>
               ))}
@@ -298,9 +322,10 @@ export function TrajectoryView({ sessionId, turns, focusTurn, agent, cutoff = nu
 
 const recordId = (turns: TrajTurn[], index: number) => turns.flatMap((t) => t.steps.flatMap((s) => s.records)).find((r) => r.index === index)?.id ?? null;
 
-function TurnSection({ turn, open, onToggle, children }: { turn: TrajTurn; open: boolean; onToggle: () => void; children: React.ReactNode }) {
+function TurnSection({ sessionId, turn, open, onToggle, children }: { sessionId: string; turn: TrajTurn; open: boolean; onToggle: () => void; children: React.ReactNode }) {
   return (
     <section className="ds-turn" data-traj-turn={turn.n} data-running={turn.running}>
+      <div className="ds-turn-headrow">
       <button className="ds-turn-head" onClick={onToggle} aria-expanded={open}>
         <IconChevron open={open} />
         <b>第 {turn.n} 轮</b>
@@ -310,6 +335,8 @@ function TurnSection({ turn, open, onToggle, children }: { turn: TrajTurn; open:
         <time>{clock(turn.startedAt)}</time>
         <UsageMeta model={turn.model} effort={turn.effort} usage={turn.usage} durationMs={turn.durationMs} compact />
       </button>
+      <TraceTurn sessionId={sessionId} turn={turn} />
+      </div>
       {open && <div className="ds-turn-body">{children}</div>}
     </section>
   );
@@ -327,10 +354,17 @@ function StepGroup({ step, children }: { step: TrajStep; children: React.ReactNo
   );
 }
 
-function RecordRow({ sessionId, r, selected, onSelect, agent, future }: { sessionId: string; r: TrajRecord; selected: boolean; onSelect: () => void; agent?: AgentKind; future?: boolean }) {
+function RecordRow({ sessionId, r, selected, onSelect, agent, future, flash, hot }: { sessionId: string; r: TrajRecord; selected: boolean; onSelect: () => void; agent?: AgentKind; future?: boolean; flash?: boolean; hot?: boolean }) {
   return (
-    <div className="ds-rec" data-selected={selected} data-kind={r.kind} data-error={r.isError} data-future={future || undefined}>
-      <button className="ds-rec-line" onClick={onSelect} aria-expanded={selected}>
+    <div className="ds-rec" data-rec-id={r.id} data-selected={selected} data-kind={r.kind} data-error={r.isError} data-future={future || undefined} data-flash={flash || undefined} data-hot={hot || undefined} onPointerEnter={() => r.kind === "tool" && focus.hoverItem(r.id)} onPointerLeave={() => focus.hoverItem(null)}>
+      <button
+        className="ds-rec-line"
+        onClick={() => {
+          onSelect();
+          if (r.kind === "tool") focus.panToItem(r.id); // its node on the canvas, once
+        }}
+        aria-expanded={selected}
+      >
         <span className="ds-rec-i">#{r.index}</span>
         <span className="ds-rec-kind">{r.kind === "message" && agent && <AgentAvatar kind={agent} size={16} />}{KIND[r.kind]}</span>
         <span className="ds-rec-text">{r.kind === "tool" ? <span className="ds-mono">{r.text}</span> : r.text || "（空）"}</span>
