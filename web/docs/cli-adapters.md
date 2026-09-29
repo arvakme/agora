@@ -8,11 +8,11 @@
 
 | 档 | 名字 | 需要的能力 | Agora 里能得到什么 | 现在是谁 |
 |---|---|---|---|---|
-| **T1** | 会话 agent | T2 全部 + `Headless`、`Interactive`、`Catalog`、`Binding` | 选择器、面板发消息、在终端打开、双向同步、花费 | Pi、Claude Code、Codex（用户定：只有这三家） |
-| **T2** | 被观察的 agent | `Locator`、`Projector`、`ToolVocab`（可选 `Subagents`） | 只读轨迹、进度指针、工位小人 | Grok、Cursor（cursor-agent）、Devin（2026-09-29 起默认注册）；T1 的原生子 agent |
+| **T1** | 会话 agent | T2 全部 + `Headless`、`Interactive`、`Catalog`、`Binding` | 选择器、面板发消息、在终端打开、双向同步、花费 | Pi、Claude Code、Codex；Grok（2026-09-29 用户改定升为 T1，见 §3 Grok 一节） |
+| **T2** | 被观察的 agent | `Locator`、`Projector`、`ToolVocab`（可选 `Subagents`） | 只读轨迹、进度指针、工位小人 | Cursor（cursor-agent）、Devin（2026-09-29 起默认注册）；T1 的原生子 agent |
 | **T0** | 推断 | 无 | 文件事件按 cwd、时间窗归属，一律标「推断」 | v2，未开始 |
 
-- 档位 = 实现了的能力（`isinstance(a, Locator)` 等，`base.py` 的 runtime-checkable protocol），再被适配器的 `max_tier` 封顶（Devin、Cursor、Grok、Droid 写死 T2）。
+- 档位 = 实现了的能力（`isinstance(a, Locator)` 等，`base.py` 的 runtime-checkable protocol），再被适配器的 `max_tier` 封顶（Devin、Cursor、Droid 写死 T2；Grok 是 T1）。
 - `session_kinds()`（= `agents.KINDS` = `project.AGENT_KINDS`）只返回 T1：选择器、绑定、会话历史都只认它们。
 - 一个 run 的 `tier` 说的是 Agora 能对**这个 run** 做什么：Agora 会话是 T1；原生子 agent 即使是 Claude 的，也只能观察（T2）。
 
@@ -220,7 +220,7 @@ trust_untested = true
 
 ## 8. 用户已定
 
-- T1 会话 agent 只有 Pi、Claude Code、Codex；Devin、Cursor（cursor-agent）、Grok、Droid 只做子 agent（T2/T0）。
+- T1 会话 agent：Pi、Claude Code、Codex，以及 2026-09-29 起的 Grok；Devin、Cursor（cursor-agent）、Droid 只做子 agent（T2/T0）。
 - 常规用法是一个主 agent 编排多个子 agent（原生子 agent）；两个顶层 agent 同时改一个项目很少见，之后会被禁止。所以 run 树以主会话为根。
 - Devin 的 `sessions.db` 可以只读查询，契约测试兜底；Cursor 只读 agent-transcripts，不碰 `store.db`。
 - T0 只在有未归属 pane 活跃时开启，一律标「推断」。
@@ -243,3 +243,14 @@ v1 = 上面 §1–§7（步骤 0–6 与 8：适配层、工具事实、漂移�
 8. **已知缺口**：
    - Codex 0.149 以前的旧格式（`event_msg/user_message`、`agent_message`、`exec_command_end`、`patch_apply_end`…）只投影出回合边界，没有消息和工具调用：老会话的轨迹不全（`gap_types`，doctor 会报）。
    - Codex 的 `world_state`（0.144 起，每轮的上下文快照）有意不投影（`ignored_types`；模型与强度仍从 `turn_context` 来）。
+
+
+## Grok 作为 T1 会话 agent（2026-09-29，grok 1.0.41 实测）
+
+实测记录：round-04 `evidence/T1-grok/spike.md`。结论：
+- **无头**：`grok --prompt-json '[{"type":"text","text":"…"}]' --output-format streaming-json --always-approve [-s <uuid> | -r <uuid>] [-m <模型>] [--effort <档>]`。提示词走 JSON 内容块（普通参数以「-」开头会被当成开关）；Agora 自己给新会话 uuid（`-s`，`assigns_id = "agora"`），续接用 `-r`。stdout 是一行一个 ACP 更新的 NDJSON（`text` / `thought` / `tool_call` / `tool_call_update` / `usage` / `end`），`end.stopReason` 是一轮的结束；`GrokStream` 把它映射成 Agora 的事件。权限用 `--always-approve`（用户定「默认不加边界」），会话头部照实显示。
+- **中断**：无终端时 SIGINT 被忽略，只能 SIGTERM；被杀的一轮**没有 `end` 事件，Grok 的日志里也没有结束标记**——面板里那一轮会一直显示「运行中」，它开的子命令（例如 `sleep`）也可能成为孤儿进程。终态**不确定**，未修。
+- **交互**：`grok [-s|-r <id>] [-m] [--effort] --always-approve`；tmux 粘贴（bracketed）+ 回车能送达；进程一直打开 `~/.grok/sessions/<编码目录>/<id>/events.jsonl`，据此认会话（`claims_by_open_file`）。首次信任对话框未在未信任目录实测。
+- **模型目录**：`~/.grok/models_cache.json`（每个模型的 `reasoning_efforts`）+ `config.toml` 的 `[models]`，不调 CLI。
+- **派发**：`agora dispatch --new grok` 需要 `dispatch.py` 的 `ADAPTER` / `PERMISSION` 表里有 grok（否则 KeyError），`native_protocol.py` 的 `AdapterKind` 也加了 `"grok"`。
+- 项目级技能目录按 Codex 的 `.agents/skills`，Grok 是否读它没有确认；`agora` CLI 在 PATH 上，不依赖技能。

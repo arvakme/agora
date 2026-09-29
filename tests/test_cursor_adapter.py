@@ -34,9 +34,9 @@ def cursor():
     return adapters.need("cursor")
 
 
-def test_cursor_is_observed_only():
+def test_cursor_is_a_session_agent_that_is_also_observed():
     a = cursor()
-    assert adapters.implemented_tier(a) == "T2" and a.max_tier == "T2" and "cursor" not in adapters.session_kinds()
+    assert adapters.implemented_tier(a) == "T1" and a.max_tier == "T1" and "cursor" in adapters.session_kinds()  # T1 since 2026-09-29 (tests/test_cursor_t1.py)
     assert a.times_inferred is True
 
 

@@ -150,6 +150,8 @@ export type Item = {
   text?: string;
   at: number;
   endAt?: number;
+  /** `endAt` is a guess (a log without times, e.g. Cursor's): the call has no real length. */
+  durationInferred?: boolean;
   startAt?: number;
   /** Model message this text / tool call belongs to (one request = one trajectory step). */
   msg?: string;
