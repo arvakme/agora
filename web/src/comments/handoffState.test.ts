@@ -2,7 +2,7 @@
 // answered (until the person closes the thread with ✓), and a hand-off that failed earlier does not sit beside
 // the answer that came later. Pure functions; the messages below are thread #1 of the 圆桌 AI copy as it was.
 import { describe, expect, it } from "vitest";
-import { collapseSuperseded, handLabel, PIN_LABEL, pinState, type Folded } from "./handoffState.ts";
+import { collapseSuperseded, handLabel, PIN_LABEL, pinState, runningThreads, type Folded } from "./handoffState.ts";
 import type { Message } from "./threads.ts";
 
 const you: Message = { id: "m1", author: "you", text: "这里的限流是按用户还是按 IP？看代码回答，一两句话", at: 1 };
@@ -79,5 +79,21 @@ describe("collapseSuperseded: an old failed hand-off next to the answer that cam
     const later: Message = { ...failed, id: "m9", at: 10 };
     const out = collapseSuperseded([you, failed, answer, later]);
     expect(out.map((m) => m.id)).toEqual(["m1", "folded-m2", "m3", "m9"]);
+  });
+});
+
+describe("runningThreads", () => {
+  const over = new Set(["done", "failed", "blocked", "idle_no_reply", "interrupted"]);
+  const d = (id: string, state: string, source: Record<string, unknown>) => ({ id, state, source }) as never;
+  it("names the threads of this canvas whose comment hand-off is not over, from the dispatch records", () => {
+    const ds = [
+      d("d1", "running", { kind: "comment", canvasId: "c1", threadId: "t-1" }),
+      d("d2", "done", { kind: "comment", canvasId: "c1", threadId: "t-2" }), // finished: the answer is in the thread
+      d("d3", "running", { kind: "comment", canvasId: "c2", threadId: "t-3" }), // another canvas
+      d("d4", "running", { kind: "session", sessionId: "s-a" }), // a session's task, not a comment
+      d("d5", "dispatched", { kind: "comment", canvasId: "c1", threadId: "t-5" }),
+      d("d6", "running", { kind: "comment", canvasId: "c1" }), // no thread named
+    ];
+    expect(runningThreads(ds, "c1", over)).toEqual([{ threadId: "t-1", dispatchId: "d1" }, { threadId: "t-5", dispatchId: "d5" }]);
   });
 });
