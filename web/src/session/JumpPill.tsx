@@ -100,11 +100,13 @@ export function useJumpToBottom(el: RefObject<HTMLElement | null>, count: number
   return { ...seen, jump };
 }
 
-export function JumpPill({ show, unread, running, onJump }: { show: boolean; unread: number; running?: boolean; onJump: () => void }) {
+/** `label`: the words when the pill is not about the end (「回到当前步」 while a turn plays). */
+export function JumpPill({ show, unread, running, onJump, label }: { show: boolean; unread: number; running?: boolean; onJump: () => void; label?: string }) {
+  const text = label ?? jumpLabel(unread, !!running);
   return (
-    <button className="sp-jump" data-show={show || undefined} data-new={unread > 0 || undefined} onClick={onJump} tabIndex={show ? 0 : -1} aria-hidden={!show} aria-label={jumpLabel(unread, !!running)} title="滚到最新（End）">
+    <button className="sp-jump" data-show={show || undefined} data-new={unread > 0 || undefined} onClick={onJump} tabIndex={show ? 0 : -1} aria-hidden={!show} aria-label={text} title={label ? undefined : "滚到最新（End）"}>
       {running && <i className="sp-jump-dot" />}
-      <span>{jumpLabel(unread, !!running)}</span>
+      <span>{text}</span>
     </button>
   );
 }

@@ -28,6 +28,7 @@ import { canvasFromUrl, nav, nested, urlFor } from "../nested/store";
 import { isEditableTarget, markBackHintSeen, upOnKey } from "../nested/up";
 import { sessionNames } from "../multi/writes";
 import { setRunsRoot } from "../workstation/runs/store";
+import { AgentTags } from "../session/AgentTagRow";
 import { WorkerDefs } from "../workstation/RunAvatar";
 import { WaitNotifier } from "../workstation/WaitNotifier";
 import { FollowMark, FollowPane, FollowView, useFollowTitle } from "../workstation/FollowPane";
@@ -738,7 +739,7 @@ export function App({ boot }: { boot: Boot }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
-      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable], [data-esc-local], .ws-tl")) return;
+      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable], [data-esc-local]")) return;
       const selected = figureFocus.get().selected;
       if (e.key === "Escape") figureFocus.escape();
       else if (e.key.toLowerCase() === "f" && !e.shiftKey && selected) {
@@ -791,6 +792,7 @@ export function App({ boot }: { boot: Boot }) {
           <span className="brand"><IconWorkspace size={18} />Agora</span>
           {boot.project && <span className="project-name" title={boot.project.root}>{boot.project.name}</span>}
           <span className="topbar-gap" />
+          <AgentTags />
           {PERSIST && <ShareButton canvases={canvasDocs.map((d) => ({ id: d.id, title: d.title }))} current={canvasDoc?.id ?? lastCanvas} />}
           <ViewMenu onLayout={applyPreset} layouts={open.size >= 2} />
         </header>
