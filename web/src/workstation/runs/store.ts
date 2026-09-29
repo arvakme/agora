@@ -39,15 +39,28 @@ export function runName(sessionId: string, bound: Record<string, { agent: AgentK
   return twins && names[sessionId] ? names[sessionId] : agent;
 }
 
-/** When this page first had each call of a session (item id → wall clock): a live call arrives a moment after it began (WorkRun `seen`). */
-const seenAt = new Map<string, number>();
+/**
+ * When this page first had each call of a session (session → item id → wall clock): a live call arrives a moment after it began (WorkRun `seen`).
+ * Held per session: a session that leaves the page's bindings, or the store stopping, lets its stamps go; a session still there keeps every one.
+ */
+const seenAt = new Map<string, Map<string, number>>();
+export const seen = {
+  size: () => [...seenAt.values()].reduce((n, m) => n + m.size, 0),
+  /** Keep the stamps of these sessions only. */
+  keep(sessions: Iterable<string>) {
+    const live = new Set(sessions);
+    for (const sid of seenAt.keys()) if (!live.has(sid)) seenAt.delete(sid);
+  },
+  clear: () => seenAt.clear(),
+};
 function stampSeen(sid: string, run: WorkRun): WorkRun {
   const now = Date.now();
+  let mine = seenAt.get(sid);
+  if (!mine) seenAt.set(sid, (mine = new Map()));
   return { ...run, segs: run.segs.map((g) => {
     if (!g.itemId) return g;
-    const k = `${sid}|${g.itemId}`;
-    let at = seenAt.get(k);
-    if (at === undefined) seenAt.set(k, (at = now));
+    let at = mine.get(g.itemId);
+    if (at === undefined) mine.set(g.itemId, (at = now));
     return { ...g, seen: at };
   }) };
 }
@@ -60,6 +73,7 @@ function compute(): Runs {
   }
   const st = agents.get();
   const names = sessionNames.get();
+  seen.keep(Object.keys(st.bindings));
   const roots: WorkRun[] = [];
   const sec = Math.floor(now / 1000);
   for (const [sid, b] of Object.entries(st.bindings)) {
@@ -142,7 +156,7 @@ function start() {
     if (MOCK || value.flat.some((f) => f.run.running)) refresh();
   }, 1000);
   value = compute();
-  stop = () => (offA(), offN(), offL(), clearInterval(timer), (timer = 0));
+  stop = () => (offA(), offN(), offL(), clearInterval(timer), (timer = 0), seen.clear());
 }
 let stop = () => {};
 

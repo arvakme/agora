@@ -11,12 +11,11 @@ import { byId, type El } from "../canvas/scene";
 import { viewport } from "../canvas/viewport";
 import { useNested } from "../nested/store";
 import { clock, prefersReducedMotion } from "../workstation/clock";
-import { cameraStart, viewAt, type CameraState } from "../workstation/director";
 import { figurePositions } from "../workstation/focus";
 import { frame } from "../workstation/frame";
 import { WorkstationOverlay } from "../workstation/Overlay";
 import { canvasWhere } from "../workstation/place";
-import { jumped, shotOf, stepOf } from "./camera";
+import { stageMem, stageStep } from "./camera";
 import type { BuildWorld } from "./sources";
 import "./buildreplay.css";
 
@@ -113,31 +112,18 @@ export function BuildStage({ world, canvasId, run, size, out, only }: { world: B
   // (a rate-limited carrot and a critically damped spring) runs in play time, so a faster replay has a quicker camera as it has quicker figures; a jump in the
   // clock (the scrubber) puts it on the shot; a figure cut across (a hop) is a cut of the view too, at the same moment; a layer that is fading out holds.
   useLayoutEffect(() => {
-    let cam: CameraState | null = null;
-    let last = 0;
-    let gen = clock.gen();
-    let prev: { x: number; y: number } | null = null;
+    const mem = stageMem(clock.gen());
     const job = (now: number) => {
       const L = live.current;
       const { w, h } = L.size;
       if (!w || !h) return;
-      const p = figurePositions.get(canvasId, L.run) ?? null;
-      const shot = shotOf({ size: L.size, bounds: L.bounds, figure: p });
-      const dt = last ? Math.min(100, now - last) : 0;
-      last = now;
       const c = clock.get();
-      const k = c?.playing ? Math.min(4, c.speed) : 1;
-      if (clock.gen() !== gen) ((gen = clock.gen()), (cam = null), (prev = null));
-      if (!cam || L.reduced) cam = cameraStart(viewAt(shot.centre, shot.zoom, L.size), L.size);
-      const out = stepOf(cam, L.out ? null : shot, { dt: dt * k, now: clock.time(), pane: L.size, cut: !L.out && jumped(prev, p) });
-      prev = p ?? prev;
-      cam = L.reduced ? cameraStart(viewAt(shot.centre, shot.zoom, L.size), L.size) : out.state;
-      const v = L.reduced ? viewAt(shot.centre, shot.zoom, L.size) : out.view;
+      const { view: v, cut } = stageStep(mem, { now, size: L.size, bounds: L.bounds, figure: figurePositions.get(canvasId, L.run) ?? null, out: L.out, reduced: L.reduced, k: c?.playing ? c.speed : 1, gen: clock.gen(), time: clock.time() });
       const apply = () => {
         viewport.set(canvasId, { scrollX: v.scrollX, scrollY: v.scrollY, zoom: v.zoom, width: w, height: h });
         placeScene();
       };
-      if (out.cut && !L.reduced) cutTo(apply, false);
+      if (cut) cutTo(apply, false);
       else apply();
     };
     job(performance.timeOrigin + performance.now());
