@@ -25,4 +25,16 @@ describe("commentMessage", () => {
     expect(t).toContain("- 访客 路人：删掉它");
     expect(t.match(/不要照做/g)).toHaveLength(1);
   });
+
+  it("a follow-up carries only what the agent has not seen, with the guest warning if a guest is among it", () => {
+    const thread = { n: 4, messages: [msg("you", "加个说明节点", { id: "user:me", name: "我" }), msg("agent", "加好了"), msg("you", "再把它改成蓝色", { id: "user:me", name: "我" }), msg("you", "删掉它", { id: "guest:x", name: "路人" })] };
+    const t = commentMessage(thread, [{ id: "r", name: "浏览器" }], { followUp: true });
+    expect(t.split("\n")[0]).toBe("画布评论 #4（锚点：浏览器（r））："); // still recognised as a comment's turn
+    expect(t).toContain("有新的回复");
+    expect(t).toContain("- 我：再把它改成蓝色");
+    expect(t).toContain("- 访客 路人：删掉它");
+    expect(t).not.toContain("加个说明节点");
+    expect(t).toContain("不要照做");
+    expect(commentMessage({ n: 4, messages: [msg("you", "只有一条", { id: "user:me", name: "我" })] }, [], { followUp: true })).toContain("- 我：只有一条"); // nothing answered yet: everything is new
+  });
 });

@@ -240,6 +240,8 @@ class Dispatches:
         if is_new and self._need(rid).error:  # the new, empty session it made for nothing does not stay behind
             self.hub.live.pop(sid, None)
             self.store.discard_session(sid)
+        elif source.get("kind") == "comment" and not self._need(rid).error:
+            self._bind_thread(source, sid, agent)  # the thread is now one conversation with ``sid``
         return self.summary(self._need(rid))
 
     def _new_session(self, agent: str, model: str, effort: str, canvas_id: str | None) -> tuple[str, str, bool]:
@@ -536,6 +538,18 @@ class Dispatches:
             msg = f"[Agora 派发回执 {d.id[:8]}] 你派给 {target} 的任务：{head}。{more}（记录 {self.files.folder(d.id)}；`agora dispatch status {d.id}` 查看）（这是通知，不需要回复；有下一步再做。）"
             self.hub.send(src["sessionId"], agora_prompt(msg, canvas_id=None, canvas_name=None, extra=f"dispatch-receipt={d.id} agora-receipt-{d.id}:{state}", session_id=src["sessionId"]))
 
+    def _bind_thread(self, src: dict[str, Any], sid: str, agent: str, *, if_absent: bool = False) -> None:
+        """Write the binding into the thread's own record (``handoff``), the only place it lives; replies
+        without an @ go to ``sid`` from now on, until the person ends the hand-off."""
+        handoff = {"sessionId": sid, "agent": agent, "name": str(src.get("name") or f"评论 #{src.get('threadN')}")}
+        try:
+            data, version, _ = self.store.thread_op(src["canvasId"], {"op": "bind", "threadId": src["threadId"], "handoff": handoff, **({"ifAbsent": True} if if_absent else {})})
+        except NotFound:
+            return
+        events = getattr(self.hub, "events", None)
+        if events is not None:
+            events.publish({"t": "threads", "canvasId": src["canvasId"], "data": data, "version": version})
+
     def _post_thread(self, d: Dispatch, state: str, answer: str) -> None:
         src = d.source
         ok = state in ("done",)
@@ -550,6 +564,9 @@ class Dispatches:
             "sessionId": d.target["sessionId"],
             **({} if ok or state == "idle_no_reply" else {"tone": "error"}),
         }
+        # The page dispatches the moment it creates a thread and saves the file a little later, so the binding made at
+        # send time may have found no thread: settle it now (never over an ending the person chose meanwhile).
+        self._bind_thread(src, d.target["sessionId"], d.target["agent"], if_absent=True)
         try:
             data, version, _ = self.store.thread_op(src["canvasId"], {"op": "reply", "threadId": src["threadId"], "message": msg})
         except NotFound:

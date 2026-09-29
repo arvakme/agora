@@ -17,7 +17,9 @@ import { Aim, snap } from "./Aim";
 import { dismissUndo, runUndo, useUndo } from "./undo";
 import { SPRING } from "./motion";
 import { CommentWork, useMockThreads } from "../workstation/CommentWork";
-import { resumeRunning } from "../ops/agent";
+import { handOff, resumeRunning } from "../ops/agent";
+import { routeMessage } from "./mention";
+import { GUEST } from "../guest/mode";
 
 /** An unsent comment: where it is pinned and what has been typed so far. */
 export type Draft = { anchor: Anchor; text: string };
@@ -165,8 +167,10 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
             text={draft.text}
             onText={(text) => setDraft({ ...draft, text })}
             onCancel={() => setDraft(null)}
-            onSubmit={(text) => {
-              store.create(draft.anchor, text);
+            onSubmit={(text, mention) => {
+              const t = store.create(draft.anchor, text);
+              const route = routeMessage({ guest: GUEST, mention, handoff: undefined });
+              if (route.kind === "hand") void handOff(api, store, t.id, route.to, mention?.type === "session" ? { bound: false, name: mention.label } : { bound: false });
               setDraft(null);
               onCreated();
             }}

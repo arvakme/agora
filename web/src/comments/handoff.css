@@ -13,3 +13,21 @@
 /* The thread's state word under the messages: 未答复 / 处理中 / 已答复 / 已解决. */
 .tstate { padding: 2px 12px 6px 46px; font-size: var(--text-xs); color: var(--text-muted, #8a8a8a); }
 .tstate[data-state="answered"] { color: var(--ok, #2f9e6b); }
+
+/* 「钉在：」 stays whole, only the element's name is cut (the full name is the tooltip) */
+.anchor-tag-lead { flex: none; }
+.anchor-tag-text { min-width: 0; }
+
+/* the conversation a thread is bound to */
+.thandoff { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-3) var(--space-5); font-size: var(--text-xs); color: var(--fg-muted); }
+.thandoff-line { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thandoff[data-gone="true"] { color: var(--caution); }
+
+/* the @ list of the comment box */
+.mention-wrap { position: relative; flex: 1; min-width: 0; display: flex; }
+.mention-wrap textarea { flex: 1; min-width: 0; }
+.mention-list { position: fixed; z-index: 70; margin: 0; padding: var(--space-2); list-style: none; max-height: 220px; overflow-y: auto; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--frame); }
+.mention-list li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) var(--space-4); border-radius: var(--r-sm); font-size: var(--text-sm); cursor: pointer; }
+.mention-list li[aria-selected="true"] { background: var(--accent-tint); }
+.mention-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mention-kind { flex: none; color: var(--fg-subtle); font-size: var(--text-xs); }

@@ -529,3 +529,95 @@ async def test_a_paste_whose_enter_failed_is_not_run_again_by_the_headless_path(
         assert len(terms.pastes) == 1
     finally:
         await hub.close()
+
+
+# ——— a comment thread is one conversation (web/docs/workstation.md §12) ———
+def _thread(store, n=1):
+    t = {"id": "t1", "n": n, "anchor": {"ids": ["r"], "rel": {"x": 0.5, "y": 0.5}, "last": {"x": 0, "y": 0}}, "resolved": False, "messages": [{"id": "m0", "author": "you", "text": "加个说明节点", "at": 1}], "createdAt": 1}
+    store.thread_op("c1", {"op": "create", "thread": t})
+
+
+def _handoff(store):
+    return json.loads((store.dir / "threads" / "c1.json").read_text())["threads"][0].get("handoff")
+
+
+COMMENT = {"kind": "comment", "canvasId": "c1", "threadId": "t1", "threadN": 1, "name": "评论 #1 · r"}
+
+
+async def test_the_first_at_opens_a_new_conversation_and_binds_the_thread_to_it(rig, store, monkeypatch):
+    monkeypatch.setattr(rig.hub, "send", lambda sid, prompt: {"sendId": "m-1", "route": "headless"})
+    _thread(store)
+    s = await rig.dp.dispatch(source=COMMENT, task="画布评论 #1", new="codex", inline=True, expects_reply=False, canvas_id="c1")
+    sid = s["target"]["sessionId"]
+    assert s["target"]["new"] is True
+    assert _handoff(store) == {"sessionId": sid, "agent": "codex", "name": "评论 #1 · r"}  # the record of the thread is the binding
+
+
+async def test_later_messages_go_to_the_bound_conversation_and_keep_the_binding(rig, store, monkeypatch):
+    monkeypatch.setattr(rig.hub, "send", lambda sid, prompt: {"sendId": f"m-{sid}", "route": "headless"})
+    _thread(store)
+    first = await rig.dp.dispatch(source=COMMENT, task="一", new="codex", inline=True, expects_reply=False, canvas_id="c1")
+    sid = first["target"]["sessionId"]
+    again = await rig.dp.dispatch(source=COMMENT, task="二", to=sid, inline=True, expects_reply=False, canvas_id="c1")
+    assert again["target"] == {"sessionId": sid, "agent": "codex", "new": False}  # the same conversation, not a second one
+    assert _handoff(store)["sessionId"] == sid
+    assert len([b for b in store.bindings() if b not in ("s-a", "s-b")]) == 1
+
+
+async def test_an_at_on_an_existing_conversation_binds_the_thread_to_that_one(rig, store, monkeypatch):
+    monkeypatch.setattr(rig.hub, "send", lambda sid, prompt: {"sendId": "m-1", "route": "headless"})
+    _thread(store)
+    await rig.dp.dispatch(source={**COMMENT, "name": "主对话"}, task="x", to="s-b", inline=True, expects_reply=False, canvas_id="c1")
+    assert _handoff(store) == {"sessionId": "s-b", "agent": "codex", "name": "主对话"}
+
+
+async def test_a_bound_conversation_that_is_gone_is_refused_and_the_binding_stays_for_the_page_to_end(rig, store, monkeypatch):
+    monkeypatch.setattr(rig.hub, "send", lambda sid, prompt: {"sendId": "m-1", "route": "headless"})
+    _thread(store)
+    await rig.dp.dispatch(source=COMMENT, task="一", to="s-b", inline=True, expects_reply=False, canvas_id="c1")
+    store.delete_session("s-b") if hasattr(store, "delete_session") else store.discard_session("s-b")
+    with pytest.raises(DispatchError, match="no agent"):
+        await rig.dp.dispatch(source=COMMENT, task="二", to="s-b", inline=True, expects_reply=False, canvas_id="c1")
+    assert _handoff(store)["sessionId"] == "s-b"  # the page tells the person and ends the hand-off
+
+
+async def test_a_comment_that_could_not_be_sent_binds_nothing(rig, store, monkeypatch):
+    def refuse(sid, prompt):
+        raise agents.NativeMissing("codex", NID_B, agents.LogLookup("missing"))
+
+    monkeypatch.setattr(rig.hub, "send", refuse)
+    _thread(store)
+    s = await rig.dp.dispatch(source=COMMENT, task="x", to="s-b", inline=True, expects_reply=False, canvas_id="c1")
+    assert s["error"] and _handoff(store) is None
+
+
+def test_ending_a_hand_off_is_a_thread_op_that_wins_over_an_older_copy(store):
+    from server.canvas.project import merge_thread_files
+
+    _thread(store)
+    store.thread_op("c1", {"op": "bind", "threadId": "t1", "handoff": {"sessionId": "s-b", "agent": "codex", "name": "n"}, "at": 100})
+    data, _, t = store.thread_op("c1", {"op": "unbind", "threadId": "t1", "at": 200})
+    assert t["handoff"] is None and t["updatedAt"] == 200
+    older = {"seq": 1, "threads": [{**t, "handoff": {"sessionId": "s-b", "agent": "codex", "name": "n"}, "updatedAt": 100}]}
+    merged = merge_thread_files(data, older)  # a page that still had the binding saves: the later unbinding stays
+    assert merged["threads"][0]["handoff"] is None
+
+
+async def test_a_thread_the_page_has_not_saved_yet_is_bound_when_the_answer_arrives(rig, store):
+    """The page creates the thread and dispatches at once; its file is saved a moment later."""
+    s = await rig.dp.dispatch(source=COMMENT, task="x", to="s-b", inline=True, expects_reply=False, canvas_id="c1")  # no thread file yet: nothing to bind
+    _thread(store)  # ... the page's save arrives
+    await rig.deliver(s["id"])
+    rig.show("s-b", rig.user("s-b", "u1", s["id"]), {"id": "a1", "kind": "assistant", "text": "好了", "at": 1100}, {"id": "end-u1", "kind": "end", "at": 1200, "turn": "u1"})
+    await asyncio.sleep(0.3)
+    assert _handoff(store) == {"sessionId": "s-b", "agent": "codex", "name": "评论 #1 · r"}
+
+
+async def test_an_answer_does_not_bind_again_a_thread_whose_hand_off_the_person_ended(rig, store):
+    _thread(store)
+    s = await rig.dp.dispatch(source=COMMENT, task="x", to="s-b", inline=True, expects_reply=False, canvas_id="c1")
+    store.thread_op("c1", {"op": "unbind", "threadId": "t1"})  # 「结束交接」 while the agent is still working
+    await rig.deliver(s["id"])
+    rig.show("s-b", rig.user("s-b", "u1", s["id"]), {"id": "a1", "kind": "assistant", "text": "好了", "at": 1100}, {"id": "end-u1", "kind": "end", "at": 1200, "turn": "u1"})
+    await asyncio.sleep(0.3)
+    assert _handoff(store) is None  # the answer is posted, the thread stays ordinary

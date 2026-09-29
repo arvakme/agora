@@ -53,6 +53,11 @@ export type Thread = {
   resolvedBy?: Person;
   /** Tombstone: the owner deleted the whole thread; its number is not reused. */
   deleted?: boolean;
+  /**
+   * The conversation this thread is bound to: replies go there, without another @, until 「结束交接」 (null).
+   * The server writes it when the hand-off is sent (dispatch.py); this file is where it lives.
+   */
+  handoff?: { sessionId: string; agent: string; name: string } | null;
 };
 
 type State = { threads: Thread[]; activeId: string | null };
@@ -211,7 +216,7 @@ export function createThreadStore(canvasId: string, initial?: ThreadSnapshot, re
           return { ...s, anchor: s.anchor ?? t.anchor, agent: "idle" as const };
         }
         if (t.deleted && stamp(s) <= stamp(t)) return t; // an older copy doesn't bring a deleted thread back
-        const base = stamp(s) > stamp(t) ? { ...t, resolved: s.resolved, deleted: s.deleted, updatedAt: s.updatedAt, anchor: s.anchor ?? t.anchor, resolvedAt: s.resolvedAt, resolvedBy: s.resolvedBy } : t;
+        const base = stamp(s) > stamp(t) ? { ...t, resolved: s.resolved, deleted: s.deleted, updatedAt: s.updatedAt, anchor: s.anchor ?? t.anchor, resolvedAt: s.resolvedAt, resolvedBy: s.resolvedBy, handoff: s.handoff } : t;
         const theirs = new Map(s.messages.map((m) => [m.id, m]));
         let msgChanged = false;
         const messages = t.messages.map((m) => {
@@ -255,6 +260,8 @@ export function createThreadStore(canvasId: string, initial?: ThreadSnapshot, re
     /** Pin a thread whose element is gone to another element (「重新钉到…」). */
     reanchor: (id: string, anchor: Anchor) => patch(id, (t) => ({ ...t, anchor, updatedAt: Date.now() })),
     setAgent: (id: string, agent: Thread["agent"]) => patch(id, (t) => ({ ...t, agent })),
+    /** 「结束交接」: replies are ordinary comments again (null is kept, so the unbinding survives a merge with an older copy). */
+    endHandoff: (id: string) => patch(id, (t) => ({ ...t, handoff: null, updatedAt: Date.now() })),
     /** Point a message at the session turn that made its change (the server posted the answer; this page knows the turn). */
     linkTurn: (id: string, msgId: string, turnId: string) => setMsg(id, msgId, (m) => ({ ...m, turnId, updatedAt: Date.now() })),
     /** Opens a thread (idempotent — never toggles). */

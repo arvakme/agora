@@ -26,6 +26,7 @@ import { AllDocs } from "../workspace/AllDocs";
 import { ancestry, descendants, openThreads, parentIndex } from "../nested/graph";
 import { canvasFromUrl, nav, nested, urlFor } from "../nested/store";
 import { isEditableTarget, markBackHintSeen, upOnKey } from "../nested/up";
+import { threadSessionTitles } from "../comments/sessionTitles";
 import { sessionNames } from "../multi/writes";
 import { setRunsRoot } from "../workstation/runs/store";
 import { AgentTags } from "../session/AgentTagRow";
@@ -286,11 +287,22 @@ export function App({ boot }: { boot: Boot }) {
         const missing = Object.values(sessions.get().sessions).filter((s) => !ds.some((d) => d.kind === "session" && d.sessionId === s.id));
         if (!missing.length) return ds;
         const next = [...ds];
-        for (const s of missing) next.push({ id: sessionDocId(s.id), kind: "session", sessionId: s.id, title: "" });
+        for (const s of missing) next.push({ id: sessionDocId(s.id), kind: "session", sessionId: s.id, title: threadSessionTitles.get(s.id) ?? "" });
         return next;
       });
     sync();
     return sessions.subscribe(sync);
+  }, []);
+  // A conversation opened from a comment thread is named after it (comments/sessionTitles.ts): the name is known
+  // when the hand-off is sent, and may arrive after the session's doc already exists.
+  useEffect(() => {
+    const apply = () =>
+      setDocs((ds) => {
+        const untitled = (d: Doc) => d.kind === "session" && !d.title && !!threadSessionTitles.get(d.sessionId);
+        return ds.some(untitled) ? ds.map((d) => (untitled(d) && d.kind === "session" ? { ...d, title: threadSessionTitles.get(d.sessionId)! } : d)) : ds;
+      });
+    apply();
+    return threadSessionTitles.subscribe(apply);
   }, []);
   useEffect(() => {
     for (const d of canvasDocs) {

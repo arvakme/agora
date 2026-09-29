@@ -446,14 +446,16 @@ export const agents = {
    * server posts the session's answer into the thread when the turn ends (this page only starts it and
    * shows it). `done` resolves when the dispatch is over.
    */
-  async dispatchComment(sessionId: string, text: string, opts: { canvasId: string; threadId: string; threadN: number; anchor: string }) {
+  async dispatchComment(to: string | { new: string }, text: string, opts: { canvasId: string; threadId: string; threadN: number; anchor: string; name?: string }) {
     const d = (await json(
       await fetch("/api/agent/dispatches", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ source: { kind: "comment", canvasId: opts.canvasId, threadId: opts.threadId, threadN: opts.threadN }, to: sessionId, task: text, inline: true, expectsReply: false, canvasId: opts.canvasId }),
+        // `name`: what the server writes into the thread as the conversation it is bound to (comments/mention.ts)
+        body: JSON.stringify({ source: { kind: "comment", canvasId: opts.canvasId, threadId: opts.threadId, threadN: opts.threadN, ...(opts.name && { name: opts.name }) }, ...(typeof to === "string" ? { to } : { new: to.new }), task: text, inline: true, expectsReply: false, canvasId: opts.canvasId }),
       }),
     )) as Dispatch;
+    const sessionId = d.target.sessionId; // a new conversation is only known once the server made it
     const inflight: Inflight = { sendId: d.id, sessionId, canvasId: opts.canvasId, turnIds: [], threadId: opts.threadId, threadN: opts.threadN, anchor: opts.anchor };
     set({ inflight: { ...state.inflight, [sessionId]: inflight }, activeAt: { ...state.activeAt, [sessionId]: Date.now() } });
     const done = agents.waitDispatch(d).then((r) => {
