@@ -124,7 +124,7 @@ const RESULT_MS = 1000;
 const NOD_MS = 700;
 
 /** How far forward (figure units) a hand swings out on its way from hanging to raised, at the middle of the way (weight 0.5 → sin = 1). */
-const ARC = 10;
+const ARC = 13;
 /** Loom's hand positions are for its arm (19.4 long): scaled to ours. */
 const ARM = (RIG.upper + RIG.fore) / 19.4;
 const L = (x: number, y: number): [number, number] => [x * ARM, y * ARM];

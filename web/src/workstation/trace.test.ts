@@ -128,10 +128,10 @@ describe("traceAt (追踪)", () => {
       expect(d).toBeGreaterThanOrEqual(prev - 1e-9);
       expect(d - prev).toBeLessThan(4);
       // a climber keeps 4 figure units (4.8 px) off the ladder, so round the ladder's foot the end of
-      // the line is off its feet by that much across and up: under 4.8·√2
+      // the line is off its feet by that much across and up: under 4.8·√2 — and the body rounds the corner there (rig.ts ROUND_MS, a few px inside it)
       const p = pointAt(w.legs, d);
       const feet = tripAt(w.trip!, t).root;
-      expect(Math.hypot(p.x - feet.x, p.y - feet.y), `t = ${t - w.t0} ms`).toBeLessThan(7);
+      expect(Math.hypot(p.x - feet.x, p.y - feet.y), `t = ${t - w.t0} ms`).toBeLessThan(10);
       prev = d;
     }
   });

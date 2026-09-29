@@ -5,7 +5,7 @@
 // body glides from the start spot to the end spot without a jump; the same move gives the same trip.
 import { describe, expect, it } from "vitest";
 import type { Box } from "../canvas/clearance";
-import { CLIMB_SPEED, planTrip, RAMP_MS, RIG, SET_OFF_MS, STEP_MAX, tripAt, TRIP_MIN_MS, WALK_SPEED, type Foot, type Trip } from "./rig.ts";
+import { ACCEL, CLIMB_SPEED, planTrip, RIG, SET_OFF_MS, STEP_MAX, tripAt, TRIP_MIN_MS, WALK_SPEED, type Foot, type Trip } from "./rig.ts";
 import { REF_K } from "./docks.ts";
 import { route, walkMap, type Leg, type WalkMap } from "./route.ts";
 
@@ -84,7 +84,7 @@ describe("planTrip / tripAt (剖面 trips)", () => {
     expect(plan(hall, H("hall", 100), H("hall", 126)).p.t1 - T0).toBe(TRIP_MIN_MS);
     for (const [len, k] of [[400, K], [1200, K], [2800, K], [1200, K * 0.8]]) {
       const pace = (WALK_SPEED * k) / REF_K; // world px/ms: a smaller figure walks proportionally slower
-      const want = SET_OFF_MS + len / pace + RAMP_MS;
+      const want = SET_OFF_MS + len / pace + WALK_SPEED / ACCEL; // from rest to the pace and back to rest at ACCEL: the ramps cost pace ÷ ACCEL in all
       const got = plan(hall, H("hall", 100), H("hall", 100 + len), k).p.t1 - T0;
       expect(Math.abs(got - want), `${len} px at k ${k}: ${got} ms, wanted ${want}`).toBeLessThan(1);
     }

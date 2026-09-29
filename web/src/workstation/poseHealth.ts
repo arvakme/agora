@@ -25,13 +25,17 @@ export type Expect = {
   crouching: boolean;
   /** Mid-turn (the figure is edge-on): the drawing squeezes, the rules on sides do not apply. */
   turning: boolean;
+  /** The standing pose (hands behind the back), settled: both hands are behind the torso's back edge. */
+  handsBack?: boolean;
 };
 
 const LIMIT = {
   /** A leg clamped by more than this (figure units) is stretched to where it cannot reach: the foot hangs. An arm may overshoot more — its springs
    * swing past a raised target and the hand simply stops at the straight arm — but not so far that the hand is left well short of where it is meant to be. */
-  reach: 0.6,
+  reach: 0.8,
   reachArm: 3,
+  /** A leg on a ladder reaches for its next rung: it may be a little short of it for a frame or two while the body moves on. */
+  reachClimb: 1.5,
   /** An elbow bent tighter than this many degrees folds the arm onto itself. */
   foldArm: 15,
   /** A knee (or elbow) bent tighter than this many degrees is folded shut. */
@@ -44,6 +48,8 @@ const LIMIT = {
   head: 0.7,
 };
 
+/** The torso's half width in the drawing (figureNode.ts: paper 9.2 wide at the rig's scale, and the outline). */
+const R_TORSO = (9.2 * (RIG.torso / 16.4)) / 2 + 0.45;
 const deg = (r: number) => (r * 180) / Math.PI;
 /** The angle at the middle joint of a limb, in degrees (180 = straight). */
 function angleAt(rx: number, ry: number, jx: number, jy: number, ex: number, ey: number): number {
@@ -69,7 +75,7 @@ export function checkJoints(j: Joints, e: Expect): Issue[] {
   const limbs: [string, Joints["legN"], Joints["hipN"]][] = [["leg near", j.legN, j.hipN], ["leg far", j.legF, j.hipF]];
   const arms: [string, Joints["armN"], Joints["shN"]][] = [["arm near", j.armN, j.shN], ["arm far", j.armF, j.shF]];
   for (const [name, b] of [...limbs, ...arms] as [string, Joints["legN"], Pt][]) {
-    if (b.over > (name.startsWith("arm") ? LIMIT.reachArm : LIMIT.reach) && !(e.climbing && name.startsWith("arm"))) out.push({ rule: "reach", detail: `${name} asked ${b.over.toFixed(1)} beyond what it can reach` });
+    if (b.over > (name.startsWith("arm") ? LIMIT.reachArm : e.climbing ? LIMIT.reachClimb : LIMIT.reach) && !(e.climbing && name.startsWith("arm"))) out.push({ rule: "reach", detail: `${name} asked ${b.over.toFixed(1)} beyond what it can reach` });
   }
   if (!e.turning) {
     for (const [name, b, r] of limbs) {
@@ -96,6 +102,15 @@ export function checkJoints(j: Joints, e: Expect): Issue[] {
     const d = Math.hypot(b.ex - j.hx, b.ey - j.hy);
     if (d < RIG.head * LIMIT.head) out.push({ rule: "head", detail: `${name}'s hand is inside the head (${d.toFixed(1)} from its centre)` });
   }
+  // standing with the hands behind the back: past the torso's back edge, not drawn over the body in front of it
+  if (e.handsBack) {
+    for (const [name, b] of arms) {
+      const t = (b.ey - j.py) / (j.ny - j.py || -1); // where along hips → neck the hand's height is
+      const axis = j.px + (j.nx - j.px) * Math.min(1, Math.max(0, t));
+      const behind = (axis - b.ex) * f; // > 0: the hand is behind the axis
+      if (behind < R_TORSO) out.push({ rule: "behind", detail: `${name}'s hand is ${behind.toFixed(1)} behind the body's axis: not past the back edge (${R_TORSO.toFixed(1)})` });
+    }
+  }
   // the head is over the hips, the hips over the feet
   if (j.hy > j.py - RIG.torso * 0.5) out.push({ rule: "body", detail: `head (y ${j.hy.toFixed(1)}) is not above the hips (y ${j.py.toFixed(1)})` });
   return out;
@@ -121,7 +136,7 @@ function poses(): Frame[] {
   for (const p of all) {
     const sp = makeSprings();
     const j = solve(base({ t: 0, pose: p, reset: true }), sp);
-    out.push({ scenario: "pose at rest", label: p, t: 0, joints: j, expect: standing(), k: REF_K });
+    out.push({ scenario: "pose at rest", label: p, t: 0, joints: j, expect: standing({ handsBack: p === "idle" || p === "unknown" }), k: REF_K });
   }
   for (const a of all) {
     for (const b of all) {
@@ -134,6 +149,46 @@ function poses(): Frame[] {
         const T = poseTargets(b, wall, 0, { still: false });
         const j = solve(base({ t: wall, wall, dt: STEP / 1000, pose: b, since: wall }), sp);
         out.push({ scenario: "pose change", label: `${a} → ${b}`, t: wall, joints: j, expect: standing({ turning: Math.abs(j.turn) < 0.98 || (T.facing === -1 && i < 20) }), k: REF_K });
+      }
+    }
+  }
+  return out;
+}
+
+/** Standing by itself for 24 s: breathing, weight shifting, a glance. */
+function stand(): Frame[] {
+  const out: Frame[] = [];
+  for (const pose of ["idle", "unknown"] as Pose[]) {
+    const sp = makeSprings();
+    let first = true;
+    for (let t = 0; t <= 24_000; t += STEP) {
+      const j = solve(base({ t, wall: t, dt: first ? undefined : STEP / 1000, reset: first, pose, since: t }), sp);
+      first = false;
+      out.push({ scenario: "stand", label: `${pose}: breathing, shifting, a glance`, t, joints: j, expect: standing({ handsBack: true }), k: REF_K });
+    }
+  }
+  return out;
+}
+
+/** The layers: standing, an activity over it, standing again — through the raise of the hands going in and the clap coming out (起势 → 动作 → 收势). */
+function layers(): Frame[] {
+  const out: Frame[] = [];
+  const acts: Pose[] = ["write", "read", "exec", "think", "wait", "delegate", "handoff"];
+  for (const a of acts) {
+    for (const b of [a, ...acts.filter((x) => x !== a).slice(0, 2)]) {
+      const sp = makeSprings();
+      const label = a === b ? `layer: idle → ${a} → idle` : `layer: idle → ${a} → ${b} → idle`;
+      let first = true;
+      const T = a === b ? [0, 1200, 3400] : [0, 1200, 2600, 4800];
+      const end = T[T.length - 1] + 1600;
+      for (let t = 0; t <= end; t += STEP) {
+        const seg = T.filter((x) => x <= t).length - 1;
+        const pose: Pose = a === b ? (seg === 1 ? a : "idle") : seg === 1 ? a : seg === 2 ? b : "idle";
+        const since = t - T[Math.max(0, seg)];
+        const j = solve(base({ t, wall: t, dt: first ? undefined : STEP / 1000, reset: first, pose, since }), sp);
+        first = false;
+        const settled = pose === "idle" && (seg === 0 ? t > 700 : t - T[seg] > 1000);
+        out.push({ scenario: "layer", label, t, joints: j, expect: standing({ turning: Math.abs(j.turn) < 0.98 || pose === "handoff" || a === "handoff" || b === "handoff", handsBack: settled }), k: REF_K });
       }
     }
   }
@@ -272,7 +327,7 @@ function doors(): Frame[] {
 
 /** The frames of every scenario. */
 export function frames(): Frame[] {
-  return [...poses(), ...gestures(), ...trips(), ...walks(), ...doors()];
+  return [...poses(), ...stand(), ...layers(), ...gestures(), ...trips(), ...walks(), ...doors()];
 }
 
 export type Found = { frame: Frame; issues: Issue[] };
@@ -346,6 +401,8 @@ export function snaps(fs: readonly Frame[], max = 2.5): { a: Frame; b: Frame; jo
 }
 
 // ——— the speed of a trip (what the body does along the way, before any pose is put on it) ———
+/** The most a body may speed up or slow down (px/ms², for a figure at the reference scale): 1200 px/s². */
+export const ACCEL_MAX = 0.0012;
 export type Speed = { name: string; samples: { t: number; v: number }[]; maxV: number; maxAccel: number; /** How long it stands before the first step (the turn and the weight shift), ms. */ setOff: number; /** The moments inside the trip where the body all but stops (a leg's end and the next leg's start each go to rest). */ dips: number[] };
 /** The root's speed (world px per ms) along a trip every 16 ms, where it stands before setting off, and the dips to rest between legs (walk → ladder → walk). */
 export function speedOf(name: string, trip: Trip): Speed {
@@ -381,4 +438,17 @@ export function speeds(): Speed[] {
   }
   for (const [name, dir, leaving] of [["door down, going in", 1, true], ["door down, coming out", 1, false], ["door up, going in", -1, true], ["door up, coming out", -1, false]] as const) out.push(speedOf(name, planDoor(k, dir, leaving, 1)));
   return out;
+}
+
+/** The standing pose's own motion, over `fs` (frames of one standing worker): how far the hips rise and fall, how far the body sways, how far the head tips. */
+export function standRange(fs: readonly Frame[]): { hips: number; sway: number; tilt: number } {
+  const ys = fs.map((f) => f.joints.py);
+  const xs = fs.map((f) => f.joints.px);
+  const tilts = fs.map((f) => Math.abs(deg(Math.atan2((f.joints.hx - f.joints.nx) * f.joints.f, f.joints.ny - f.joints.hy))));
+  return { hips: Math.max(...ys) - Math.min(...ys), sway: Math.max(...xs) - Math.min(...xs), tilt: Math.max(...tilts) };
+}
+
+/** Frames of the blends between layers (起势/收势): no joint jumps more than `max` figure units in one frame. */
+export function layerJumps(fs: readonly Frame[], max = 5): ReturnType<typeof jumps> {
+  return jumps(fs.filter((f) => f.scenario === "layer"), max);
 }

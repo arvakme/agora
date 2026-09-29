@@ -1,6 +1,6 @@
 // 姿势体检 (web/docs/workstation.md §小人 · 姿势体检): the rules themselves, and every pose, gesture, pose change, trip and door ladder held to them frame by frame.
 import { describe, expect, it } from "vitest";
-import { checkJoints, ELBOW_MAX, ELBOW_MAX_WALKING, elbowJumps, frames, jumps, speedOf, speeds, sweep, type Expect } from "./poseHealth.ts";
+import { ACCEL_MAX, checkJoints, ELBOW_MAX, ELBOW_MAX_WALKING, elbowJumps, frames, jumps, layerJumps, speedOf, standRange, speeds, sweep, type Expect } from "./poseHealth.ts";
 import { REF_K } from "./docks.ts";
 import { makeSprings, planDoor, RAISED, RIG, solve, WALK_SPEED, type Joints } from "./rig.ts";
 
@@ -20,7 +20,7 @@ describe("the rules", () => {
   });
   it("a knee that points backwards, or is folded shut, is caught", () => {
     const j = stand();
-    const bent = { ...j.legN, jx: 2 * j.hipN.x - j.legN.jx + 2 * (j.legN.ex - j.hipN.x) }; // mirrored through the hip → foot line
+    const bent = { ...j.legN, jx: Math.min(j.hipN.x, j.legN.ex) - 4, jy: (j.hipN.y + j.legN.ey) / 2 }; // behind the hip → foot line
     expect(rules({ ...j, legN: bent })).toContain("knee");
     expect(rules({ ...j, legN: { ...j.legN, jx: j.hipN.x, jy: j.hipN.y + 12, ex: j.hipN.x + 1, ey: j.hipN.y + 1 } })).toContain("fold");
   });
@@ -45,7 +45,7 @@ describe("the rules", () => {
 describe("every frame of every scenario", () => {
   const all = frames();
   it("there are frames of every kind", () => {
-    expect(new Set(all.map((f) => f.scenario))).toEqual(new Set(["pose at rest", "pose change", "gesture", "trip", "door"]));
+    expect(new Set(all.map((f) => f.scenario))).toEqual(new Set(["pose at rest", "pose change", "stand", "layer", "gesture", "trip", "door"]));
     expect(all.length).toBeGreaterThan(10_000);
   });
   it("none breaks a rule (poses, gestures, pose changes, walks, ladders, doors)", () => {
@@ -69,20 +69,32 @@ describe("the raised hand and the stretch keep clear of the head", () => {
   });
 });
 
-describe("a trip's speed", () => {
+describe("a trip's speed (DR4)", () => {
   const all = speeds();
-  it("tops out at the walking pace and at the climbing pace on a door's ladder, and never changes faster than the ramps allow", () => {
-    for (const s of all) {
-      expect(s.maxV).toBeLessThanOrEqual(WALK_SPEED * 1.02);
-      expect(s.maxAccel).toBeLessThan(0.0025); // px/ms², the steepest measured is 0.0023 (pay → api)
-    }
+  // how long each trip took before DR4 (ms, from set-off to the last foot down): the trips may not get slower than 10 % over it
+  const BEFORE: Record<string, number> = {
+    "api → mysql (ladder up)": 3440, "mysql → api (ladder down)": 3424, "web → api (a bridge)": 2048,
+    "web → pay (bridge, then down beside api)": 4032, "pay → api (up beside api)": 2832, "web → the tray (a scaffold)": 6192, "a few steps on one floor": 672,
+  };
+  it("tops out at the walking pace and at the climbing pace on a door's ladder", () => {
+    for (const s of all) expect(s.maxV).toBeLessThanOrEqual(WALK_SPEED * 1.02);
     expect(all.find((s) => s.name.startsWith("door"))!.maxV).toBeCloseTo(0.13, 2);
   });
-  it("stands a beat before setting off, and goes down to rest between the legs of a trip (walk → ladder → walk)", () => {
-    const trip = all.find((s) => s.name === "web → the tray (a scaffold)")!;
-    expect(trip.setOff).toBeGreaterThanOrEqual(240);
-    expect(trip.dips.length).toBeGreaterThanOrEqual(2); // measured 4: each leg ends at rest and the next starts from it
-    expect(all.find((s) => s.name === "a few steps on one floor")!.dips).toEqual([]);
+  it("never changes speed faster than 1200 px/s² (0.0012 px/ms²): a start, a stop and the change between walking and climbing all ease", () => {
+    expect(all.filter((s) => s.maxAccel > ACCEL_MAX).map((s) => `${s.name} ${(s.maxAccel * 1000).toFixed(0)}`)).toEqual([]);
+  });
+  it("goes from walking to climbing and back without stopping: no dip to rest inside a trip (it stands only before the first step and at the end)", () => {
+    expect(all.filter((s) => s.dips.length).map((s) => `${s.name} ${s.dips}`)).toEqual([]);
+    for (const s of all.filter((x) => !x.name.startsWith("door"))) expect(s.setOff).toBeGreaterThanOrEqual(240);
+  });
+  it("no frame changes the speed by more than 0.019 px/ms (the 1200 px/s² limit over one 16 ms frame)", () => {
+    for (const s of all) for (let i = 1; i < s.samples.length; i++) expect(Math.abs(s.samples[i].v - s.samples[i - 1].v), `${s.name} @${s.samples[i].t}`).toBeLessThanOrEqual(0.0195);
+  });
+  it("a trip is not slower than before: at most 10 % longer", () => {
+    for (const s of all) {
+      const was = BEFORE[s.name];
+      if (was) expect(s.samples[s.samples.length - 1].t - s.samples[0].t, s.name).toBeLessThanOrEqual(was * 1.1);
+    }
   });
   it("a door's ladder is one steady climb: no dips", () => {
     const s = speedOf("door", planDoor(REF_K, 1, true, 1));
@@ -105,5 +117,34 @@ describe("the elbow never flips (EL1)", () => {
     const one = all.filter((f) => f.label === "wait → idle");
     const worst = Math.max(...elbowJumps(one, 0).map((x) => x.d), 0);
     expect(worst).toBeLessThan(6);
+  });
+});
+
+describe("the standing pose and the layers (DR4)", () => {
+  const all = frames();
+  it("standing, both hands are behind the torso's back edge, in every frame of 24 s of breathing, shifting and glancing (and never drawn over the body in front)", () => {
+    const st = all.filter((f) => f.scenario === "stand");
+    expect(st.length).toBeGreaterThan(2400);
+    expect(st.every((f) => f.expect.handsBack)).toBe(true);
+    expect(sweep(st).map((b) => b.issues.map((i) => i.detail))).toEqual([]);
+  });
+  it("the rule sees a hand in front of the back edge", () => {
+    const j = stand("idle");
+    const hand = { ...j.armN, ex: j.px + 1, ey: j.py - 2 };
+    expect(rules({ ...j, armN: hand }, { ...ok, handsBack: true })).toContain("behind");
+  });
+  it("its own motion is small: the hips move under 1.5 units, the body sways under 2.5, the head tips under 10° (lean and glance)", () => {
+    const r = standRange(all.filter((f) => f.scenario === "stand" && f.label.startsWith("idle")));
+    expect(r.hips).toBeLessThan(1.5);
+    expect(r.hips).toBeGreaterThan(0.1); // it breathes
+    expect(r.sway).toBeLessThan(2.5);
+    expect(r.tilt).toBeLessThan(10);
+  });
+  it("into an activity and out of it (raise, clap, back behind the back), and from one activity to another: no joint jumps more than 5 units in a frame, and the hands are behind the back again once it stands", () => {
+    const layers = all.filter((f) => f.scenario === "layer");
+    expect(layers.length).toBeGreaterThan(5000);
+    expect(layerJumps(all).map((x) => `${x.a.label} ${x.a.t} ${x.joint} ${x.d.toFixed(1)}`)).toEqual([]);
+    expect(layers.some((f) => f.expect.handsBack)).toBe(true);
+    expect(sweep(layers).map((b) => `${b.frame.label} ${b.frame.t} ${b.issues[0].detail}`).slice(0, 4)).toEqual([]);
   });
 });
