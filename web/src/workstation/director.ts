@@ -1,5 +1,5 @@
-// The director's figure half (web/docs/workstation.md §导演层): one pure function from the runs and the moment to what every figure shows in that
-// frame. The camera half (`camera`) is filled in by ./replayView.ts's successor; the types are here so both halves speak one language.
+// The director (web/docs/workstation.md §导演层): pure functions from the runs and the moment to what every figure shows in a frame
+// (`directorFrame`) and to where the camera is (`cameraStep`); ./replayView.ts only applies them to the canvas.
 //
 //   - The delay buffer. Live, the figures show the world of `now − LOOKAHEAD_MS`; the director itself works at `now`, so what is about to
 //     be drawn (`known`: the calls that have reached it and are not on screen yet) is known before it is. A replay knows all of its future
@@ -8,8 +8,9 @@
 //     CUT_DISTANCE, is cut across: for CUT_MS it is drawn twice, fading in where it goes (`alpha`) while it fades out where it was (`ghost`), the
 //     two opacities adding up to one. Never two full figures, never one that is suddenly somewhere else.
 // Pure: no DOM, no clock; the caller says what time it is.
-import { CUT_MS, placeOfSeg, stateAt, type Ctx, type RunState } from "./place";
+import { CUT_DISTANCE, CUT_MS, placeOfSeg, stateAt, type Ctx, type RunState } from "./place";
 import { tripAt, type Pt } from "./rig";
+import type { Fit } from "./replayFit";
 import type { RunSeg, WorkRun } from "./runs/types";
 
 /** How far behind `now` the figures are drawn, live (ms): what they do next is known this long before it shows. */
@@ -29,10 +30,8 @@ export type FigureFrame = {
 };
 /** A call that has reached the director (start ≤ now) and is not on screen yet (start > now − delay), with where its work is. */
 export type Known = { run: string; seg: RunSeg; place: string | null };
-/** The camera's half of a frame (filled by the camera director): not yet part of this function. */
-export type CameraPlan = { follow: string | null };
 export type DirectorIn = { runs: readonly WorkRun[]; now: number; delay: number; ctx: Ctx };
-export type DirectorOut = { t: number; figures: FigureFrame[]; known: Known[]; camera?: CameraPlan };
+export type DirectorOut = { t: number; figures: FigureFrame[]; known: Known[] };
 
 const smooth = (u: number) => u * u * (3 - 2 * u);
 
@@ -54,3 +53,102 @@ export function figureAt(f: FigureFrame, ctx: Pick<Ctx, "dock">): Pt {
   const trip = f.state.trip;
   return trip && f.state.w < 1 ? tripAt(trip, f.t).root : ctx.dock(f.state.at);
 }
+
+// ── the camera ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// A shot is what the person is shown: the followed figure with the room its head and bubble take (./replayFollow.ts `followView` frames it).
+// The camera holds while that frame is where the view is (`hold`), follows it (`follow`), or — when it is over CUT_DISTANCE away — cuts to it
+// (`cut`, decided once: the picture cross-fades, ./replayView.ts). Following is a rate-limited carrot the view chases as a critically damped
+// spring: a start and a stop are eased, the speed never jumps, whatever the goal does. Zoom is the same, in [ZOOM_MIN, ZOOM_MAX].
+/** The carrot's top speed (world units a second), and the spring's natural frequency (a second⁻¹). */
+export const CARROT_SPEED = 780;
+export const CAMERA_OMEGA = 3.2;
+/** How fast the zoom carrot moves (zoom a second), and the zoom the camera keeps to. */
+export const ZOOM_RATE = 0.8;
+export const ZOOM_MIN = 0.7;
+export const ZOOM_MAX = 1;
+/** The place a figure is going to is framed with it only when it is this near (world units): a shot holds one cluster, a far place is a cut. */
+export const SHOT_REACH = 520;
+/** After a cut the camera does not cut again for this long (a shot is decided once; no going back and forth). */
+export const CUT_COOLDOWN_MS = 1500;
+
+type Pane = { w: number; h: number };
+/** The camera: where the view is (its centre in world coordinates, and zoom), how fast it moves, the carrot it chases, and whether it is on its way. */
+export type CameraState = { at: { x: number; y: number; zoom: number }; v: { x: number; y: number; z: number }; carrot: { x: number; y: number; zoom: number }; following: boolean; lastCutAt: number };
+/** What the shot wants: the frame (Excalidraw's view) and whether it is off from where the view is (`move`: outside the dead zone). null: no shot. */
+export type CameraGoal = { view: Fit; move: boolean } | null;
+export type CameraOut = { state: CameraState; view: Fit; mode: "follow" | "hold" | "cut" | "manual"; /** This frame is the cut: the view is at the goal from here on. */ cut: boolean };
+
+/** Excalidraw's view (screen = (scene + scroll) × zoom) as the world point at the middle of the pane, and back. */
+export const centreOf = (v: Fit, pane: Pane) => ({ x: pane.w / 2 / v.zoom - v.scrollX, y: pane.h / 2 / v.zoom - v.scrollY });
+export const viewAt = (c: { x: number; y: number }, zoom: number, pane: Pane): Fit => ({ zoom, scrollX: pane.w / 2 / zoom - c.x, scrollY: pane.h / 2 / zoom - c.y });
+
+/** A camera at rest on `view`. */
+export function cameraStart(view: Fit, pane: Pane): CameraState {
+  const c = centreOf(view, pane);
+  const at = { x: c.x, y: c.y, zoom: view.zoom };
+  return { at, v: { x: 0, y: 0, z: 0 }, carrot: { ...at }, following: false, lastCutAt: -Infinity };
+}
+/** 「继续」: the camera takes over from the view the person left (no jump), keeping what it knows of its last cut. */
+export const cameraResume = (s: CameraState, view: Fit, pane: Pane): CameraState => ({ ...cameraStart(view, pane), lastCutAt: s.lastCutAt });
+
+/** One step of a critically damped spring toward `target` (exact for a constant target). */
+function spring(x: number, v: number, target: number, dt: number): [number, number] {
+  const w = CAMERA_OMEGA;
+  const e = Math.exp(-w * dt);
+  const d = x - target;
+  const j = v + w * d;
+  return [target + (d + j * dt) * e, (v - j * w * dt) * e];
+}
+const clampV = (x: number, y: number, max: number): [number, number] => {
+  const n = Math.hypot(x, y);
+  return n > max ? [(x / n) * max, (y / n) * max] : [x, y];
+};
+
+/** One frame of the camera: `dt` ms since the last, `now` in ms, the pane size, `manual` while the person has the camera. Pure. */
+export function cameraStep(s: CameraState, goal: CameraGoal, o: { dt: number; now: number; pane: Pane; manual?: boolean }): CameraOut {
+  const dt = Math.min(o.dt, 100) / 1000;
+  if (o.manual) return { state: s, view: viewAt(s.at, s.at.zoom, o.pane), mode: "manual", cut: false };
+  const gc = goal ? centreOf(goal.view, o.pane) : null;
+  const gz = goal ? Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, goal.view.zoom)) : s.at.zoom;
+  let following = !!goal && (goal.move || s.following);
+  // a shot over CUT_DISTANCE away is cut to, once; the picture cross-fades in the driver, the view is simply there
+  if (following && gc && Math.hypot(gc.x - s.at.x, gc.y - s.at.y) > CUT_DISTANCE && o.now - s.lastCutAt >= CUT_COOLDOWN_MS) {
+    const at = { x: gc.x, y: gc.y, zoom: gz };
+    return { state: { at, v: { x: 0, y: 0, z: 0 }, carrot: { ...at }, following: true, lastCutAt: o.now }, view: viewAt(at, gz, o.pane), mode: "cut", cut: true };
+  }
+  const carrot = { ...s.carrot };
+  if (following && gc) {
+    const [mx, my] = clampV(gc.x - carrot.x, gc.y - carrot.y, CARROT_SPEED * dt);
+    carrot.x += mx;
+    carrot.y += my;
+    carrot.zoom += Math.max(-ZOOM_RATE * dt, Math.min(ZOOM_RATE * dt, gz - carrot.zoom));
+  } else {
+    // holding: the carrot stays where the view is, and the spring runs the speed out
+    carrot.x = s.at.x;
+    carrot.y = s.at.y;
+    carrot.zoom = s.at.zoom;
+  }
+  const [x, vx] = spring(s.at.x, s.v.x, carrot.x, dt);
+  const [y, vy] = spring(s.at.y, s.v.y, carrot.y, dt);
+  const [z, vz0] = spring(s.at.zoom, s.v.z, carrot.zoom, dt);
+  // the spring may run a hair past its carrot; the zoom never leaves the range (a view that starts outside it, a play's overview, eases in)
+  const zoom = Math.max(Math.min(ZOOM_MIN, s.at.zoom), Math.min(Math.max(ZOOM_MAX, s.at.zoom), z));
+  const vz = zoom === z ? vz0 : 0;
+  if (following && gc && Math.hypot(gc.x - x, gc.y - y) < 2 && Math.hypot(vx, vy) < 5 && Math.abs(gz - zoom) < 0.005) following = false;
+  const state: CameraState = { at: { x, y, zoom }, v: { x: vx, y: vy, z: vz }, carrot, following, lastCutAt: s.lastCutAt };
+  return { state, view: viewAt(state.at, state.at.zoom, o.pane), mode: following ? "follow" : "hold", cut: false };
+}
+
+/**
+ * The view a canvas gets when the camera switches to it. Live: the view the person left on the way home, else the shot, else the canvas's fit
+ * held to the zoom range and never the whole diagram (FL2 root cause 6: a paused camera's switch fitted a large diagram, zoom 1 → 0.3 in one
+ * frame). A play may show the whole diagram (its overview, its summary).
+ */
+export function switchView(i: { live: boolean; restore: boolean; home: boolean; homeView: Fit | null; follow: Fit | null; fit: Fit | null; pane: Pane }): Fit | null {
+  const held = i.fit && i.live ? viewAt(centreOf(i.fit, i.pane), Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, i.fit.zoom)), i.pane) : i.fit;
+  if (i.restore && i.home) return i.homeView ?? held;
+  return (i.restore ? null : i.follow) ?? held;
+}
+
+/** Whether a place (its box, world coordinates) belongs in the shot of a figure at `figure`: its middle is within SHOT_REACH. */
+export const inShot = (figure: Pt, box: { x: number; y: number; w: number; h: number }): boolean => Math.hypot(box.x + box.w / 2 - figure.x, box.y + box.h / 2 - figure.y) <= SHOT_REACH;

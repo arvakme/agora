@@ -12,11 +12,11 @@ import { pointerFollow } from "../pointer/follow";
 import { openSessions } from "../session/ui";
 import { clock } from "./clock";
 import { choose, chosenRun, NONE, type Choice } from "./followChoice";
-import { followsWhere, isWorking, lastWorkStart, pickFollow, whereOf, type Pick } from "./liveCamera";
-import { canvasWhere, OUTSIDE, stateAt } from "./place";
+import { isWorking, newSpell, pickFollow, spellStep, type Pick, type Spell } from "./liveCamera";
+import { canvasWhere } from "./place";
 import { beforePlay, plays } from "./replayMode";
 import { quiet } from "./replayQuiet";
-import { createCamera, ctxFor } from "./replayView";
+import { createCamera } from "./replayView";
 import { runs } from "./runs/store";
 import type { WorkRun } from "./runs/types";
 
@@ -52,34 +52,26 @@ const currentCanvas = () => {
   return null;
 };
 
-/** Work on the diagram to follow: on a node, on the way, through a door — not in the tray, not idle (./liveCamera.ts `whereOf`). */
-function workOnDiagram(): boolean {
-  const r = runOf();
-  const c = camera.shown();
-  const ctx = c ? ctxFor(c) : null;
-  if (!r || !ctx) return false;
-  const now = clock.time();
-  // work that began before the page opened is not followed
-  if ((lastWorkStart(r, now) ?? -1) < OPENED_AT) return false;
-  return followsWhere(whereOf(stateAt(r, now, ctx), OUTSIDE, isWorking(r, now)));
-}
-/** When the page opened: only the work that begins after it is followed. */
+/** When the page opened: a turn that was going already is followed only when it does something new (./liveCamera.ts `spellStep`). */
 const OPENED_AT = Date.now();
+/** What the camera has seen of the followed run's turns, whom it belongs to and whether the person chose them. */
+let spell: { run: string | null; s: Spell } = { run: null, s: newSpell() };
+/** Once per tick: the camera has a turn to follow — from the person's message to the end of the turn, whatever the agent does meanwhile. */
+function updateSpell() {
+  const r = runOf();
+  if (spell.run !== (r?.id ?? null)) spell = { run: r?.id ?? null, s: newSpell() };
+  if (!r) return;
+  const now = Date.now();
+  let last: number | null = null;
+  for (const g of r.segs) if (g.start <= now) last = Math.max(last ?? 0, g.start);
+  spell.s = spellStep(spell.s, { working: isWorking(r, now), lastWorkStart: last, openedAt: OPENED_AT, now, chosen: state.why === "chosen" });
+}
 
 const camera = createCamera(() => null, runOf, () => (state.run ? NOW : null), {
   setManual: (on) => set({ paused: on }),
   live: {
     current: currentCanvas,
-    awake: workOnDiagram,
-    working: () => {
-      const r = runOf();
-      return !!r && isWorking(r, Date.now());
-    },
-    lastWorkStart: () => {
-      const r = runOf();
-      return r ? lastWorkStart(r, Date.now()) : null;
-    },
-    openedAt: OPENED_AT,
+    working: () => spell.s.followed,
     away: (on) => quiet.hold("live", on),
   },
 });
@@ -127,6 +119,7 @@ if (typeof window !== "undefined") {
     const p = pick();
     const r = p ? runs.get().byId.get(p.run) : undefined;
     set({ run: p && r ? p.run : null, name: r?.name ?? "", why: p && r ? p.why : null });
+    updateSpell();
     camera.tick();
   };
   const timer = window.setInterval(tick, 200);
