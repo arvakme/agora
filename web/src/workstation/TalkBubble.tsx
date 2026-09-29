@@ -11,10 +11,10 @@ import { viewport } from "../canvas/viewport";
 import { agentName, agents } from "../session/agents";
 import { figurePositions, useFocus } from "./focus";
 import { frame } from "./frame";
-import { excalidrawEl, occupiedOf } from "./replayDom";
+import { occupiedOf } from "./replayDom";
 import { useRuns } from "./runs/store";
 import type { FlatRun } from "./runs/types";
-import { deliveryNote, placeTalk, sendState, talk, talkDismissed, talkHost, talkTarget, watchDelivery, type SendState, type Side, type TBox } from "./talk";
+import { deliveryNote, placeTalk, sendState, talkDismissed, talkHost, talkSent, talkTarget, type Side, type TBox } from "./talk";
 import "./TalkBubble.css";
 
 /**
@@ -45,9 +45,8 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
   const [text, setText] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState<{ agent: string; state: SendState } | null>(null);
-  const stop = useRef<() => void>(() => {});
-  useEffect(() => () => stop.current(), []);
+  // the note under the box is the module's (./talk.ts `talkSent`): it survives this box unmounting while the figure is in another view
+  const sent = useSyncExternalStore(talkSent.subscribe, () => talkSent.get(f.run.id));
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const id = f.run.id;
@@ -68,7 +67,8 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
       if (!el || !p || !v) return;
       // what covers the canvas's edges (Excalidraw's toolbar, the footer): measured from the DOM twice a second
       if (!canvasId.startsWith("follow:") && performance.now() - inset.current.at > 500) {
-        const ex = excalidrawEl();
+        // the .excalidraw of this canvas's own pane, not the first one on the page
+        const ex = el.closest<HTMLElement>("[data-pane]")?.querySelector<HTMLElement>(".excalidraw") ?? null;
         const o = ex ? occupiedOf(ex) : { top: 0, bottom: 0 };
         inset.current = { at: performance.now(), top: o.top + 8, bottom: o.bottom + 8 };
       }
@@ -87,7 +87,9 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
   }, [shut, id, canvasId]);
   const working = useSyncExternalStore(agents.subscribe, () => !!f.root.sessionId && sendState(f.root.sessionId) === "queued");
   const target = talkTarget({ name: f.run.name, hasSession: !!f.run.sessionId, rootName: f.root.name, working });
-  if (shut) return null;
+  // closed by Esc, or after the delivery note had been up for a while
+  const dismissed = useSyncExternalStore(talkSent.subscribe, () => talkDismissed.run === f.run.id);
+  if (shut || dismissed) return null;
   // who gets it: the agent's own session, or — for a sub-agent — the session that dispatched it
   const to = f.root;
   const send = async () => {
@@ -101,12 +103,7 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
       const sentAt = Date.now() - 1500; // the log's clock and the page's are one machine's; a little slack
       await agents.send(sid, target.prefix + words, { canvasId: canvasId.startsWith("follow:") ? canvasId.slice(7) : canvasId });
       const agent = agentName(agents.get().bindings[sid]?.agent);
-      setSent({ agent, state });
-      stop.current = watchDelivery(sid, words, sentAt, () => {
-        setSent({ agent, state: "delivered" });
-        talk.said(to.id);
-        setTimeout(() => setShut(true), 4000);
-      });
+      talkSent.start({ runId: f.run.id, nodId: to.id, sessionId: sid, words, sentAt, agent, state });
     } catch (e) {
       setErr(`没发出去：${(e as Error).message}`);
     } finally {

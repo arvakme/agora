@@ -31,6 +31,8 @@ export type PlayState = {
   barNote: string | null;
   /** The person has taken the camera (panned or zoomed): it does not follow until 「跟随小人」. Only for this play. */
   manual: boolean;
+  /** ▶ was pressed and the live camera is still coming home: Esc cancels (the bar says so). */
+  starting: boolean;
 };
 
 /** After the turn's own end the play goes on this long: the summary, on the whole diagram. */
@@ -38,7 +40,8 @@ const SUMMARY_MS = 3000;
 /** Then it lets go by itself after this long. */
 const HOLD_MS = 3500;
 
-let state: PlayState = { play: null, barNote: null, manual: false };
+let state: PlayState = { play: null, barNote: null, manual: false, starting: false };
+let startToken = 0;
 const ls = new Set<() => void>();
 const set = (p: Partial<PlayState>) => {
   const was = !!state.play;
@@ -66,13 +69,27 @@ export const plays = {
   run,
   /** Play a turn. The caller has traced it (`focus.trace`); the clock starts a moment before it and ends after it (the summary). */
   async start(p: Play) {
-    await beforePlay.run();
-    const now = Date.now();
-    main = p.canvasId ?? null;
-    doneAt = 0;
-    until = Math.min(now, (p.win.end ?? now) + SUMMARY_MS);
-    set({ play: p, barNote: null, manual: false });
-    clock.play(p.win.start - 400, until, 1, clock.get()?.gaps);
+    const token = ++startToken;
+    set({ starting: true });
+    try {
+      await beforePlay.run();
+      if (token !== startToken) return; // cancelled (Esc) while the live camera was coming home
+      const now = Date.now();
+      main = p.canvasId ?? null;
+      doneAt = 0;
+      until = Math.min(now, (p.win.end ?? now) + SUMMARY_MS);
+      set({ play: p, barNote: null, manual: false });
+      clock.play(p.win.start - 400, until, 1, clock.get()?.gaps);
+    } finally {
+      if (token === startToken) set({ starting: false });
+    }
+  },
+  /** Esc while ▶ waits for the live camera to come home: no play starts. */
+  cancelStart() {
+    if (!state.starting) return false;
+    startToken++;
+    set({ starting: false });
+    return true;
   },
   /** How much the turn changed, for the summary (nodes are the deepest ones, as the follow view counts them). */
   summary(): { nodes: number; files: number } | null {
@@ -90,11 +107,13 @@ export const plays = {
   setBarNote: (note: string | null) => void (state.barNote !== note && set({ barNote: note })),
   /** Let go: the canvas and the view it was started from come back, and the timeline goes back to now. */
   exit() {
+    if (plays.cancelStart()) return;
     if (!state.play) return;
     set({ play: null, barNote: null, manual: false });
     clock.live();
     // …and saving comes back once the canvas and the view are back (the layout is as it was: nothing to save)
-    void camera.exit().then(() => (main = null, state.play || quiet.hold("play", false)));
+    // whatever happens to the camera's way home, saving and the hint come back
+    void camera.exit().finally(() => ((main = null), state.play || quiet.hold("play", false)));
   },
 };
 
@@ -123,7 +142,7 @@ if (typeof window !== "undefined") {
   addEventListener(
     "keydown",
     (e) => {
-      if (e.key !== "Escape" || !state.play) return;
+      if (e.key !== "Escape" || !(state.play || state.starting)) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
       e.stopPropagation();

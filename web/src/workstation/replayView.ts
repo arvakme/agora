@@ -7,7 +7,7 @@
 // reduced motion, or where the browser has no view transitions, it is a cut. Imperative, no React: it outlives the canvases it switches.
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { El } from "../canvas/scene";
-import { goHomeDue, nextPaused, type PauseEvent } from "./liveCamera";
+import { liveStep, nextPaused, newLiveMachine, type PauseEvent } from "./liveCamera";
 import { firstView, viewport, type Viewport } from "../canvas/viewport";
 import { nav, nested } from "../nested/store";
 import { canvases } from "../session/ui";
@@ -61,8 +61,14 @@ export type Camera = { tick: () => void; frame: (dtMs: number) => void; resume: 
 export type LiveHooks = {
   /** The canvas the person has in front of them (the main pane's). */
   current: () => string | null;
-  /** Whether there is work on the diagram to follow (on a node or on the way): idle, or in the tray, the camera holds still — and after a while goes home. */
+  /** Whether there is work on the diagram to follow (on a node or on the way, work begun after the page opened): thinking, the tray, idle: the view holds still. */
   awake: () => boolean;
+  /** The followed run's turn is running (./liveCamera.ts `isWorking`, the strip's standard): only the turn's end sends the camera home. */
+  working: () => boolean;
+  /** When its latest call began. */
+  lastWorkStart: () => number | null;
+  /** When the page opened: only work that begins after it is followed. */
+  openedAt: number;
   /** Whether the camera has taken the canvas away from the one the person is on: saving the layout and the 「在子图里」 hint wait meanwhile. */
   away: (on: boolean) => void;
 };
@@ -79,10 +85,8 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
   let chasing = false;
   /** Leaving (a play's exit is under way): nothing else moves the view meanwhile. */
   let leaving = false;
-  /** Live: how many ticks in a row the canvas in front of the person was not the one the camera shows; whether it is `away`. */
-  let mismatch = 0;
-  /** Live: since when there has been nothing to follow (performance.now), and whether the view is on its way back to `homeView`. */
-  let holdSince: number | null = null;
+  /** Live: the state machine deciding go / home / the person's own doing (./liveCamera.ts `liveStep`), and whether the view is on its way back to `homeView`. */
+  const machine = newLiveMachine();
   let returning = false;
   let awayNow = false;
   const setAway = (on: boolean) => {
@@ -192,24 +196,37 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     }
   }
 
-  // the person's own pan or zoom of the canvas takes the camera from us until they hand it back
+  // the person's own pan or zoom of the canvas takes the camera from us until they hand it back. Live: only a real drag (not a click that
+  // selects), a wheel, the zoom buttons, opening the comment dock or typing into the canvas's text editor; Esc alone is not.
+  let press: { x: number; y: number } | null = null;
   const takeOver = (e: Event) => {
     const el = e.target as HTMLElement | null;
-    // live: opening the comment dock is the person's doing too
     if (live && e.type === "pointerdown" && el?.closest?.(".dock")) return pause("comment");
+    if (live && e.type === "pointermove") {
+      const pe = e as PointerEvent;
+      if (press && Math.hypot(pe.clientX - press.x, pe.clientY - press.y) > 4) ((press = null), pause("pan"));
+      return;
+    }
+    if (live && e.type === "pointerup") return void (press = null);
     if (!el?.closest?.(".excalidraw") || el.closest?.(".ws-play-bar, .ws-live-bar")) return;
-    if (el.tagName === "CANVAS" || el.closest(".zoom-actions")) pause(e.type === "wheel" ? "zoom" : "pan");
+    if (e.type === "wheel") return pause("zoom");
+    if (el.closest(".zoom-actions")) return pause("zoom");
+    if (el.tagName === "CANVAS") {
+      if (live) press = { x: (e as PointerEvent).clientX, y: (e as PointerEvent).clientY };
+      else pause("pan");
+    }
   };
-  // live: Esc, and typing into an element of the canvas (its text editor), pause it as well
+  // live: typing into an element of the canvas (its text editor) pauses it as well
   const onKey = (e: KeyboardEvent) => {
     const el = e.target as HTMLElement | null;
     const typing = !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
-    if (e.key === "Escape") return void ((!typing || !!el?.closest?.(".excalidraw")) && pause("escape"));
-    if (typing && el?.closest?.(".excalidraw")) pause("edit");
+    if (e.key !== "Escape" && typing && el?.closest?.(".excalidraw")) pause("edit");
   };
   const listen = (on: boolean) => {
-    for (const ev of ["pointerdown", "wheel"] as const) on ? addEventListener(ev, takeOver, true) : removeEventListener(ev, takeOver, true);
+    const evs = live ? (["pointerdown", "pointermove", "pointerup", "wheel"] as const) : (["pointerdown", "wheel"] as const);
+    for (const ev of evs) on ? addEventListener(ev, takeOver, true) : removeEventListener(ev, takeOver, true);
     if (live) on ? addEventListener("keydown", onKey, true) : removeEventListener("keydown", onKey, true);
+    if (!on) press = null;
   };
   /** Live: the camera lets go (a play takes over, the switch is off, the timeline is replaying): nothing put back — the person's view is theirs. */
   const release = () => {
@@ -220,8 +237,7 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     home = shown = null;
     homeView = null;
     entry = null;
-    mismatch = 0;
-    holdSince = null;
+    Object.assign(machine, newLiveMachine());
     returning = false;
   };
   /** Live: the view eases back to the one it started from (a cut with reduced motion), once the work is over. */
@@ -253,33 +269,6 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
       listen(true);
       return;
     }
-    if (busy) return;
-    // the person went to another canvas themself (breadcrumb, a node's child, back): that is theirs, they are on their own view now
-    if (cur && cur !== shown) {
-      if (++mismatch < 2) return;
-      mismatch = 0;
-      home = shown = cur;
-      homeView = null;
-      setAway(false);
-      return pause("select");
-    }
-    mismatch = 0;
-    setAway(!manual && shown !== home);
-    if (manual) return;
-    if (!live!.awake()) {
-      // nothing on the diagram to follow: about 3 s on, back to the canvas and the view it started from
-      holdSince ??= now();
-      if (goHomeDue({ holdFor: now() - holdSince, paused: manual, displaced: shown !== home || !!homeView })) {
-        holdSince = null;
-        if (shown !== home) {
-          setAway(true);
-          void go(home, true).then(() => void (homeView = null));
-        } else returning = true;
-      }
-      return;
-    }
-    holdSince = null;
-    returning = false;
     const t = clock.time();
     const want = cameraCanvas(home, (c) => {
       const ctx = ctxFor(c);
@@ -287,10 +276,29 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
       const st = stateAt(r, t, ctx);
       return { behind: !st.present && st.portalPhase === "behind", into: st.portal?.canvasId ?? null };
     });
-    if (want === shown) return;
-    // away from the first moment of a switch (in or back home) until the tick after it is done: nothing of the move is kept
-    setAway(true);
-    void go(want);
+    const act = liveStep(machine, { now: Date.now(), working: live!.working(), lastWorkStart: live!.lastWorkStart(), openedAt: live!.openedAt, want, shown: shown!, home, cur, busy, manual, displaced: shown !== home || !!homeView });
+    if (act.type === "user-moved") {
+      // the person went to another canvas themself (breadcrumb, a node's child, back): that is theirs; they are on their own view now
+      home = shown = act.to;
+      homeView = null;
+      setAway(false);
+      return pause("select");
+    }
+    if (act.type === "home") {
+      // the turn is over (about 3 s ago): back to the canvas and the view it started from
+      if (shown !== home) {
+        setAway(true);
+        void go(home, true).then(() => void (homeView = null));
+      } else returning = true;
+      return;
+    }
+    if (act.type === "go") {
+      // away from the first moment of a switch until the tick after it is done: nothing of the move is kept
+      setAway(true);
+      void go(act.to);
+      return;
+    }
+    if (!busy) setAway(!manual && shown !== home);
   };
 
   async function leave() {
@@ -317,6 +325,8 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     shown: () => shown,
     stop: release,
     resume() {
+      // live: the person's view now is the view to go home to
+      if (live && home && shown === home) homeView = viewport.get(home) ?? null;
       manual = false;
       chasing = true;
       hooks.setManual(false);
@@ -327,7 +337,6 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
       if (live) {
         if (!live.awake()) return void homeStep(dtMs);
         returning = false;
-        holdSince = null;
         // the view the person had, kept once before the first move (a canvas the camera left is remembered by `go`)
         if (!homeView && shown === home) homeView = viewport.get(shown) ?? null;
       }

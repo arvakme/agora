@@ -375,7 +375,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const runs = useRuns();
   const nst = useNested();
   const replay = useReplay();
-  const playing = !!usePlay().play;
+  const playState = usePlay();
+  const playing = !!playState.play;
   const camFollow = useLiveFollow();
   const fo = useFocus();
   const fl = useFollow();
@@ -465,7 +466,6 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const foldPass = useRef<{ snap: Snap | null; n: number }>({ snap: null, n: 0 });
   const chipEls = useRef(new Map<string, HTMLElement>());
   const trayEl = useRef<HTMLDivElement>(null);
-  const bannerTime = useRef<HTMLElement>(null);
   /** Something new was rendered (a bubble, a chip): draw on the next frame even when reduced motion only repaints once a second. */
   const dirty = useRef(true);
   const snapRef = useRef(snap);
@@ -782,10 +782,6 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         const b = g.tray;
         trayEl.current.style.transform = `translate3d(${px((b.x + v.scrollX) * v.zoom)}px, ${px((b.y + v.scrollY) * v.zoom)}px, 0)`;
         trayEl.current.style.width = `${px(b.w * v.zoom)}px`;
-      }
-      if (bannerTime.current) {
-        const txt = hhmmss(t);
-        if (bannerTime.current.textContent !== txt) bannerTime.current.textContent = txt;
       }
       // Playing into "now" ends the replay.
       const r = clock.get();
@@ -1219,6 +1215,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         );
       })}
       {playing && !only && <ReplayBar />}
+      {!playing && !only && playState.starting && <div className="ws-live-bar" role="status"><span className="btn sm">正在准备回放…（Esc 取消）</span></div>}
       {!playing && !only && camFollow.run && camFollow.paused && (
         <div className="ws-live-bar" role="status">
           <button className="btn sm primary" onClick={() => liveFollow.resume()} title={`镜头继续跟着 ${camFollow.name}`}>跟随 {shortAgentName(camFollow.name)}</button>

@@ -1,6 +1,7 @@
 // 对小人说话: which view hosts the one box, where it goes, what it says while a turn runs (workstation/talk.ts).
-import { describe, expect, it } from "vitest";
-import { pickTalkHost, placeTalk, talkTarget, type TBox } from "./talk.ts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { agents, handleEvent } from "../session/agents.ts";
+import { CLOSE_AFTER_MS, pickTalkHost, placeTalk, talk, talkDismissed, talkSent, talkTarget, type TBox } from "./talk.ts";
 
 describe("pickTalkHost: the view that really draws the figure hosts the one box", () => {
   const main = { id: "c1", drawn: false };
@@ -74,4 +75,32 @@ describe("talkTarget: whom the words go to, said from the start", () => {
     expect(t.note).toBe("T-ed3070 是 Claude Code 派的，话会发给 Claude Code");
   });
   it("…and waits for the turn to end when one is running", () => expect(talkTarget({ name: "T-1", hasSession: false, rootName: "Pi", working: true }).placeholder).toBe("对 Pi 说（关于 T-1）…（这一轮结束后送达）"));
+});
+
+describe("talkSent: waiting for delivery does not depend on the box", () => {
+  const binding = { agent: "claude" as const, model: "m", effort: "", nativeId: "n", createdAt: 1 };
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    talkSent.clear("sub-run");
+    talkDismissed.run = null;
+    agents.forget("s9");
+    vi.useRealTimers();
+  });
+  it("sent behind a running turn, the figure goes elsewhere (the box is gone): the note and the nod still come when the words show up", async () => {
+    await handleEvent({ t: "status", sessionId: "s9", binding, running: true, busy: false, queued: 0, held: null, activity: null, error: null, terminal: { alive: false, attach: "", clients: 0, app: null } });
+    talkSent.start({ runId: "sub-run", nodId: "top-run", sessionId: "s9", words: "顺便说一句", sentAt: 1000, agent: "Claude Code", state: "queued" });
+    expect(talkSent.get("sub-run")).toEqual({ agent: "Claude Code", state: "queued" });
+    // …the box unmounts here; nothing of the watch was in it…
+    await handleEvent({ t: "transcript", sessionId: "s9", items: [{ id: "u1", kind: "user", text: "关于你派的 x：顺便说一句", at: 2000 }] });
+    expect(talkSent.get("sub-run")).toEqual({ agent: "Claude Code", state: "delivered" });
+    expect(talk.get()).toMatchObject({ runId: "top-run" }); // the nod
+  });
+  it("the delivered note goes away after a while and the box stays closed", async () => {
+    await handleEvent({ t: "transcript", sessionId: "s9", items: [{ id: "u2", kind: "user", text: "在了", at: 5000 }] });
+    talkSent.start({ runId: "sub-run", nodId: "top-run", sessionId: "s9", words: "在了", sentAt: 1000, agent: "Claude Code", state: "sent" });
+    expect(talkSent.get("sub-run")?.state).toBe("delivered");
+    vi.advanceTimersByTime(CLOSE_AFTER_MS + 10);
+    expect(talkSent.get("sub-run")).toBeNull();
+    expect(talkDismissed.run).toBe("sub-run");
+  });
 });
