@@ -33,6 +33,7 @@ import { modeLabel, waitLabel } from "./requestModel";
 import { canvasChoices, topOf } from "./canvasChoices";
 import { agents, effortChoices, forkHeadless, loadAdapters, sessionKinds, steerOf, useAgentName, useAgents, type AgentKind, type Catalog, type TerminalApps } from "./agents";
 import { planSend, type SendMode } from "./steerModel";
+import { FIRST_DRAW_MARK } from "./pageMessage";
 import { AgentAvatar } from "./AgentAvatar";
 import { Picker } from "./Picker";
 import { kindShown, recommendAgent } from "./recommend";
@@ -230,7 +231,7 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
       const m = e ? e.default || e.featured[0] || "" : "";
       await agents.bind(sessionId, plan.kind, m, effortChoices(e, m).initial);
       agentChoice.resolve(sessionId, sessionId);
-      await agents.send(sessionId, plan.prompt, canvasId ? { canvasId } : {});
+      await agents.send(sessionId, plan.prompt, { ...(canvasId && { canvasId }), page: FIRST_DRAW_MARK });
     } catch (e) {
       setErr((e as Error).message);
     } finally {

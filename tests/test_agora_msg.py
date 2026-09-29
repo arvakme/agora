@@ -67,3 +67,34 @@ def test_a_selection_picture_is_named_by_its_token_in_the_footer():
 def test_a_plain_message_has_no_card_and_no_selection():
     it = user_item("u1", f"你好\n\n{FOOT}", 1)
     assert "card" not in it and "selection" not in it and it["text"] == "你好"
+
+
+# ——— a prompt the page wrote for the person (「画出这个项目的架构」, 「让 AI 画子图」, the figure's 「关于你派的 X」) ———
+from server.canvas.agora_msg import page_mark  # noqa: E402
+
+ARCH = "看一下这个项目，把它的整体架构画到这张图上。"
+
+
+def test_the_footer_names_who_wrote_it_and_the_message_becomes_a_source_card_not_the_persons_bubble():
+    it = user_item("u1", f"{ARCH}\n\n{FOOT} {page_mark('画布', '画出这个项目的架构')}", 1)
+    assert it["card"] == {"kind": "page", "from": "画布", "title": "画出这个项目的架构", "text": ARCH}
+    assert it["text"] == ARCH and it["source"] == "agora"
+
+
+def test_the_mark_is_one_short_token_at_the_end_of_the_footer_and_survives_a_selection_or_dispatch_token():
+    assert page_mark("画布", "画出这个项目的架构") == "agora-page[画布|画出这个项目的架构]"
+    it = user_item("u1", f"{ARCH}\n\n{FOOT} agora-sel-sel-0123456789 {page_mark('小人', '关于你派的 T-1')}", 1)
+    assert it["card"]["from"] == "小人" and it["card"]["title"] == "关于你派的 T-1" and it["selection"] == {"id": "sel-0123456789"}
+
+
+def test_the_same_words_the_person_typed_are_not_a_card_from_the_page_the_terminal_or_the_composer():
+    assert "card" not in user_item("u1", ARCH, 1)  # typed in the terminal
+    assert "card" not in user_item("u2", f"{ARCH}\n\n{FOOT}", 2)  # sent from the composer: Agora's footer, no page mark
+    typed = f"{ARCH} agora-page[画布|画出这个项目的架构]"  # the person typing the mark itself: it is in the body, not the footer
+    assert "card" not in user_item("u3", f"{typed}\n\n{FOOT}", 3)
+
+
+def test_a_mark_cannot_be_forged_into_more_than_one_line_or_a_bracket():
+    m = page_mark("画布\n", "画] 出|这个\n项目")
+    assert "\n" not in m and m.count("]") == 1 and m.count("|") == 1
+    assert user_item("u1", f"{ARCH}\n\n{FOOT} {m}", 1)["card"]["kind"] == "page"

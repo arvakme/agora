@@ -10,7 +10,7 @@ import pytest
 
 from server.canvas import build_log, buildlog
 from server.canvas.project import ProjectStore
-from server.canvas.share import BundleError, export_bundle, import_bundle
+from server.canvas.share import BundleError, ShareFile, export_bundle, import_bundle
 from tests.test_share import OWNER, guest, joined, owner  # noqa: F401
 from tests.test_share import env as share_env  # noqa: F401
 
@@ -232,3 +232,58 @@ def test_a_thread_on_the_whole_canvas_comes_in_read_only_with_its_moment(built, 
     out = import_bundle(other, bundle)
     threads = other.read("threads", out["canvasId"])[0]["threads"]
     assert [(t["anchor"], t["moment"], t["messages"][0]["by"]["id"].startswith("imported:")) for t in threads] == [(None, {"step": 2}, True)]
+
+
+# ——— the owner changes the switch after the link was made ———
+
+
+async def set_build(app, share_id: str, on: bool):
+    async with owner(app) as c:
+        return await c.patch(f"/api/share/{share_id}", json={"buildReplay": on})
+
+
+async def test_the_owner_can_turn_watching_on_and_off_after_sharing_and_the_guest_side_follows_at_once(built):
+    store, (_, shares, _, _, _, app) = built
+    rec, host, token = await share(app, build=False)
+    g = await joined(app, host, token)
+    assert (await g.get("/api/guest/build")).status_code == 403
+    r = await set_build(app, rec["id"], True)
+    assert r.status_code == 200 and r.json()["share"]["buildReplay"] is True
+    assert (await g.get("/api/guest/build")).status_code == 200  # the very next request, same guest
+    assert (await g.get("/api/guest/state")).json()["share"]["buildReplay"] is True
+    assert any("build" in c for c in (await g.get("/api/guest/bundle")).json()["canvases"].values())
+    r = await set_build(app, rec["id"], False)
+    assert r.json()["share"]["buildReplay"] is False
+    assert (await g.get("/api/guest/build")).status_code == 403
+    assert all("build" not in c for c in (await g.get("/api/guest/bundle")).json()["canvases"].values())
+
+
+async def test_the_switch_is_kept_with_the_share_and_shows_in_the_list(built):
+    store, (_, shares, _, _, _, app) = built
+    rec, _, _ = await share(app, build=False)
+    await set_build(app, rec["id"], True)
+    assert ShareFile(store).load()[0].buildReplay is True  # on disk, so a restart keeps it
+    async with owner(app) as c:
+        assert [s["buildReplay"] for s in (await c.get("/api/share")).json()["shares"]] == [True]
+    assert shares.get(rec["id"]).buildReplay is True
+
+
+async def test_an_ended_or_unknown_share_cannot_be_changed_and_a_guest_cannot_change_it(built):
+    store, (_, shares, _, _, _, app) = built
+    rec, host, token = await share(app, build=False)
+    assert (await set_build(app, "nope", True)).status_code == 404
+    async with owner(app) as c:
+        await c.delete(f"/api/share/{rec['id']}")
+    assert (await set_build(app, rec["id"], True)).status_code == 409  # over: nothing to change
+    rec2, host2, token2 = await share(app, build=False)
+    g = await joined(app, host2, token2)
+    assert (await g.patch(f"/api/share/{rec2['id']}", json={"buildReplay": True})).status_code in (403, 404, 405)
+    assert (await g.get("/api/guest/build")).status_code == 403
+
+
+async def test_a_bad_body_is_refused(built):
+    store, (_, shares, _, _, _, app) = built
+    rec, _, _ = await share(app, build=False)
+    async with owner(app) as c:
+        assert (await c.patch(f"/api/share/{rec['id']}", json={"buildReplay": "yes"})).status_code == 422
+        assert (await c.patch(f"/api/share/{rec['id']}", json={})).status_code == 422

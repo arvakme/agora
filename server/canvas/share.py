@@ -906,6 +906,20 @@ class ShareManager:
             with self.lock:
                 return share.public(self.now_ms())
 
+    def set_build_replay(self, id: str, on: bool) -> dict[str, Any]:
+        """The owner's switch for guests watching how the canvas was built, changed after the link was made: kept with the share, and the
+        guest side reads it from the share on every request (``/api/guest/build``, the bundle, the page's state), so it holds at once."""
+        with self.ops:
+            share = self.get(id)
+            if share is None:
+                raise KeyError(id)
+            if not share.active(self.now_ms()):
+                raise ValueError("这条分享已经结束，不能再改")
+            with self.lock:
+                share.buildReplay = bool(on)
+                self._save()
+                return share.public(self.now_ms())
+
     def end_for_canvas(self, canvas_id: str, reason: str = "canvas-deleted") -> list[str]:
         """End every live share of one canvas (it was deleted). Returns the ids ended now."""
         ended = []

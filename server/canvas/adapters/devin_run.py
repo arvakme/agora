@@ -85,13 +85,17 @@ def main(argv: list[str]) -> int:
     watch: proctree.Watch | None = None  # descendants noticed while the turn ran
 
     def on_signal(signum: int, _frame: object) -> None:
+        # Only a flag: the stop is done by the main flow below. The handler runs in the main thread, possibly while it holds proctree's lock (inside the
+        # `ps` snapshot of `watch.update()`), and stopping needs that lock too — done here, a signal at the wrong moment hung the wrapper for good,
+        # with devin's tool process left running (1 stop in 2 in the test).
         stopping.set()
-        if child is not None:
-            proctree.stop(child.pid, watch.seen if watch else None, 2.0, watch.root_start if watch else None)
 
     signal.signal(signal.SIGTERM, on_signal)
     signal.signal(signal.SIGINT, on_signal)
 
+    if stopping.is_set():  # told to stop before it started
+        emit(type="interrupted")
+        return 143
     try:
         child = subprocess.Popen([exe, *args], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd)
     except OSError as exc:
@@ -108,13 +112,24 @@ def main(argv: list[str]) -> int:
         rows = query(f"select id from sessions where working_directory in ({marks}) and created_at >= ? order by created_at, rowid", (*where, int(started) - 1))
         return next((r[0] for r in rows if r[0] not in before), None)
 
+    def stop() -> None:
+        proctree.stop(child.pid, watch.seen, 2.0, watch.root_start)
+
+    stopped = False
     while child.poll() is None:
+        if stopping.is_set() and not stopped:
+            stopped = True
+            stop()
+            continue
         watch.update()
         if session is None:
             session = claim()
             if session:
                 emit(type="session", id=session)
         time.sleep(POLL_S)
+    if stopping.is_set() and not stopped:
+        # devin died with the signal too (it shares the wrapper's group), before the loop saw it: what it started, in groups of their own, is still there
+        stop()
     for r in readers:
         r.join(timeout=5)
     if session is None:

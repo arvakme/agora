@@ -20,7 +20,7 @@ export function AgoraCard({ card, open, summary, onOpenSession, onOpenComment }:
 }) {
   const [opened, setOpened] = useState(!!open);
   const { line, more } = cardPreview(card);
-  const Icon = card.kind === "receipt" ? IconMessage : card.kind === "task" ? IconSend : IconComment;
+  const Icon = card.kind === "receipt" ? IconMessage : card.kind === "task" || card.kind === "page" ? IconSend : IconComment;
   const first = summary || line || (card.kind === "receipt" ? "（对方没有写答复）" : "");
   return (
     <div className="ds-card" data-kind={card.kind} data-state={card.kind === "receipt" ? card.state : undefined}>
@@ -39,6 +39,7 @@ export function AgoraCard({ card, open, summary, onOpenSession, onOpenComment }:
               {card.scope.length > 0 && <p className="ds-card-scope">范围：{card.scope.join("、")}</p>}
             </>
           )}
+          {card.kind === "page" && <Markdown text={card.text} />}
           {card.kind === "comment" && (
             <ul>
               {card.messages.map((m, i) => (
@@ -58,7 +59,7 @@ export function AgoraCard({ card, open, summary, onOpenSession, onOpenComment }:
             <IconChevron open={opened} />
           </button>
         )}
-        {onOpenSession && card.kind !== "comment" && (
+        {onOpenSession && card.kind !== "comment" && card.kind !== "page" && (
           <button className="ds-card-act" onClick={onOpenSession}>
             打开 {card.kind === "receipt" ? (card.agent ?? "对方") : (card.from.split(" ")[0] || "对方")} 那个会话
           </button>
@@ -96,7 +97,7 @@ function useDispatch(id: string | undefined): Dispatch | null {
 export function CardMessage({ item, card }: { item: Item; card: MsgCard }) {
   const bound = useAgents().bindings;
   const d = useDispatch(card.kind === "receipt" ? undefined : item.dispatch);
-  const session = card.kind === "comment" ? undefined : card.session;
+  const session = card.kind === "comment" || card.kind === "page" ? undefined : card.session;
   const canOpen = !!session && !!bound[session];
   const c = d?.source.kind === "comment" && d.source.canvasId && d.source.threadId ? { canvasId: d.source.canvasId, threadId: d.source.threadId } : null;
   const task = d?.task?.summary;

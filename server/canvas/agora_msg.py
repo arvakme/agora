@@ -1,9 +1,11 @@
 """What Agora writes into a session as a "user" message, and how it is read back for display.
 
-Three things are not something the person said and are not drawn as a chat bubble:
+Four things are not something the person said and are not drawn as a chat bubble:
 
 - a **receipt** (``[Agora 派发回执 …]``): the note that tells a giver its dispatch ended;
 - a **task envelope** (``[Agora 派发 …]``): what a dispatch sends the session that takes the task;
+- a **prompt the page wrote for the person** (「画出这个项目的架构」, 「让 AI 画子图」, the figure's 「关于你派的 X」): the footer names
+  it with ``agora-page[<who wrote it>|<what it is>]`` and the page draws a card «来自画布 · …»;
 - a **selection** that rode on a chat message: a picture of the selected elements saved beside the project
   (``selection.py``), named in the footer by ``agora-sel-<id>``, and, in messages from before pictures, a
   trailing ``（当前选区：…）`` note in the text.
@@ -72,6 +74,25 @@ def card(body: str, receipt_state: str | None = None) -> dict[str, Any] | None:
         who = _who(m.group(2))
         return {"kind": "task", "id": m.group(1), "from": m.group(2), **({"session": who["session"]} if who else {}), "scope": [s for s in (m.group(3) or "").split("、") if s]}
     return None
+
+
+# ——— a prompt the page wrote ———
+
+PAGE_MARK = re.compile(r"agora-page\[([^|\]\n]{1,20})\|([^\]\n]{1,80})\]")
+
+
+def page_mark(source: str, title: str) -> str:
+    """The one token, at the end of a message's footer, that says the page wrote it (the same shape as the page builds it in web/src/session/pageMessage.ts):
+    who (画布, 小人 …) and what it is. Line breaks, ``|`` and ``]`` in either are dropped, so a mark is always one token of one line."""
+    clean = lambda t, n: re.sub(r"[|\]\[\r\n]+", " ", t).strip()[:n]
+    return f"agora-page[{clean(source, 20)}|{clean(title, 80)}]"
+
+
+def page_card(foot: str, body: str) -> dict[str, Any] | None:
+    """The card for a message whose footer carries the page's mark, else None. Only the footer counts: the same token typed into the
+    person's own words (before the footer) is just their words."""
+    m = PAGE_MARK.search(foot)
+    return {"kind": "page", "from": m.group(1), "title": m.group(2), "text": body} if m else None
 
 
 # ——— selection and references ———

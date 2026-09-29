@@ -13,6 +13,7 @@ import type { Box } from "../canvas/clearance";
 import { threadStores } from "../comments/threads";
 import { useSessionFolds } from "../multi/writes";
 import { agents } from "../session/agents";
+import { DRAW_CHILD_MARK } from "../session/pageMessage";
 import { sessions } from "../session/store";
 import { ui } from "../session/ui";
 import { pointerFollow } from "../pointer/follow";
@@ -235,7 +236,7 @@ async function askAgent(canvasId: string, text: string) {
   const sid = await sessionFor(canvasId);
   if (!sid) return;
   ui.openSession(sid);
-  await agents.send(sid, text, { canvasId });
+  await agents.send(sid, text, { canvasId, page: DRAW_CHILD_MARK });
 }
 
 const expandPrompt = (canvasId: string, el: El, label: string) => {

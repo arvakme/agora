@@ -1,4 +1,5 @@
 // 对小人说话: which view hosts the one box, where it goes, what it says while a turn runs (workstation/talk.ts).
+import { takePageLead } from "../session/pageMessage.ts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { agents, handleEvent } from "../session/agents.ts";
 import { CLOSE_AFTER_MS, pickTalkHost, placeTalk, talk, talkDismissed, talkSent, talkTarget, type TBox } from "./talk.ts";
@@ -71,7 +72,7 @@ describe("talkTarget: whom the words go to, said from the start", () => {
     const t = talkTarget({ name: "T-ed3070", hasSession: false, rootName: "Claude Code", working: false });
     expect(t.direct).toBe(false);
     expect(t.placeholder).toBe("对 Claude Code 说（关于 T-ed3070）…");
-    expect(t.prefix).toBe("关于你派的 T-ed3070：");
+    expect(takePageLead(t.prefix).text).toBe("关于你派的 T-ed3070："); // (the page's mark rides in front of it: session/pageMessage.ts)
     expect(t.note).toBe("T-ed3070 是 Claude Code 派的，话会发给 Claude Code");
   });
   it("…and waits for the turn to end when one is running", () => expect(talkTarget({ name: "T-1", hasSession: false, rootName: "Pi", working: true }).placeholder).toBe("对 Pi 说（关于 T-1）…（这一轮结束后送达）"));

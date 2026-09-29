@@ -3,6 +3,7 @@
 // item with those words shows up in the session (`watchDelivery`) — not when it is sent. `at` is wall-clock
 // ms; the frame loop compares it with its own time, so nothing here renders anything per frame.
 import { agents } from "../session/agents";
+import { pageLead } from "../session/pageMessage";
 
 export type SendState = "sent" | "queued" | "delivered" | "steered" | "steerRead" | "interrupted";
 /** Sent behind a turn that is running (or others already waiting)? Messages from the panel wait for the turn to end. */
@@ -65,7 +66,7 @@ export function pickTalkHost(views: readonly TalkView[], prev: string | null): s
 export function talkTarget(o: { name: string; hasSession: boolean; rootName: string; working: boolean; plan?: "steer" | "choose" }): { direct: boolean; placeholder: string; prefix: string; note: string | null } {
   const tail = o.working ? (o.plan === "steer" ? "（直接插进这一轮）" : o.plan === "choose" ? "（回车后选：停下改说 / 等做完）" : "（这一轮结束后送达）") : "";
   if (o.hasSession) return { direct: true, placeholder: `对 ${o.name} 说…${tail || "（回车发送）"}`, prefix: "", note: null };
-  return { direct: false, placeholder: `对 ${o.rootName} 说（关于 ${o.name}）…${tail}`, prefix: `关于你派的 ${o.name}：`, note: `${o.name} 是 ${o.rootName} 派的，话会发给 ${o.rootName}` };
+  return { direct: false, placeholder: `对 ${o.rootName} 说（关于 ${o.name}）…${tail}`, prefix: `${pageLead({ source: "小人", title: `关于你派的 ${o.name}` })}关于你派的 ${o.name}：`, note: `${o.name} 是 ${o.rootName} 派的，话会发给 ${o.rootName}` };
 }
 
 export type Side = "below" | "above" | "right" | "left";
