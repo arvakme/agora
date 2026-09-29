@@ -5,11 +5,13 @@
 // plays the runs store (./runs/store.ts) shows this one run and nothing else. `?replay=<id>` opens one
 // at load; Esc leaves.
 import { useSyncExternalStore } from "react";
+import { backHintQuiet } from "../nested/up";
 import { nested } from "../nested/store";
 import { clock, replayTime } from "./clock";
 import { canvasWhere, DOOR_MS, OUTSIDE, planFor } from "./place";
 import { replayRun, type ReplayCtx, type ReplayItem, type ReplaySpec } from "./replay";
 import type { WorkRun } from "./runs/types";
+import { createCamera } from "./replayView";
 import { subviewCtx } from "./subview";
 
 export type ReplayState = {
@@ -29,6 +31,8 @@ let state: ReplayState = { items: null, id: null, spec: null, series: [], loadin
 const ls = new Set<() => void>();
 const set = (p: Partial<ReplayState>) => {
   state = { ...state, ...p };
+  // no 「在子图里」 hint over the menu while the camera goes in and out by itself
+  backHintQuiet.set(!!state.id);
   ls.forEach((l) => l());
 };
 /** The canvas the PR is drawn on (the one it was started from). */
@@ -37,7 +41,9 @@ let main: string | null = null;
 let anchor = 0;
 let started = "";
 
-const mainCanvas = () => main ?? [...canvasWhere.keys()].find((k) => !k.startsWith("follow:")) ?? null;
+const mainCanvas = () => (main ??= [...canvasWhere.keys()].find((k) => !k.startsWith("follow:")) ?? null);
+/** The camera: the main view follows the figure into sub-diagrams (./replayView.ts). */
+const camera = createCamera(() => (state.id ? mainCanvas() : null), () => (state.id ? run() : null));
 const byMerged = (items: readonly ReplayItem[]) => [...items].sort((a, b) => (a.mergedAt < b.mergedAt ? -1 : a.mergedAt > b.mergedAt ? 1 : a.number - b.number));
 
 /** What the run needs to know of the diagram: main canvas `id`'s places, docks and walking times (null until its overlay has published them). */
@@ -153,6 +159,8 @@ export const replays = {
     anchor = 0;
     set({ id: null, spec: null, series: [] });
     clock.live();
+    // back to the canvas and the view the replay was entered from
+    void camera.exit().then(() => void (main = null));
   },
   /** Position in a 连播: 1-based k of n, or null when one PR is played alone. */
   position: () => (state.series.length > 1 ? { k: state.series.indexOf(state.id ?? "") + 1, n: state.series.length } : null),
@@ -174,6 +182,7 @@ if (typeof window !== "undefined") {
       if (next) window.setTimeout(() => state.id === doneFor && void open(next), 1200);
     }
   }, 400);
+  window.setInterval(() => camera.tick(), 200);
   // Esc leaves (before the app's own Esc: trace, follow, selection)
   addEventListener(
     "keydown",

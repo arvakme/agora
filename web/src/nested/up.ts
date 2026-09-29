@@ -54,6 +54,20 @@ export function backHintSeen(s: Store | undefined = storage()): boolean {
     return false;
   }
 }
+/** Whether the hint shows: not yet seen, and not held back. */
+export const backHintVisible = (seen: boolean, quiet: boolean) => !seen && !quiet;
+/** Held back while a PR replay plays (its camera goes in and out of sub-diagrams by itself). Marks nothing as seen. */
+let quiet = false;
+const quietLs = new Set<() => void>();
+export const backHintQuiet = {
+  get: () => quiet,
+  set(v: boolean) {
+    if (v === quiet) return;
+    quiet = v;
+    quietLs.forEach((f) => f());
+  },
+  subscribe: (f: () => void) => (quietLs.add(f), () => void quietLs.delete(f)),
+};
 const seenLs = new Set<() => void>();
 /** Hear when the hint is dismissed (the button, or going up by any route). */
 export const onBackHintSeen = (f: () => void) => (seenLs.add(f), () => void seenLs.delete(f));

@@ -11,7 +11,7 @@ import { nodeBox } from "../canvas/nodes";
 import { viewport } from "../canvas/viewport";
 import { clock, useReplay, useTick } from "./clock";
 import { frame } from "./frame";
-import { OUTSIDE, type Ctx } from "./place";
+import { OUTSIDE, stateAt, type Ctx } from "./place";
 import { fileCounts } from "./replay";
 import { useRuns } from "./runs/store";
 import "./replay.css";
@@ -26,6 +26,11 @@ export function ReplayMarks({ view, ctx }: { view: CanvasViewState; ctx: Ctx }) 
     const at = ctx.locate(p)?.place;
     return at && at !== OUTSIDE ? at : null;
   }) : new Map<string, number>();
+  // The summary at the end is on the whole diagram; when the figure is still behind a node's door (its last
+  // files were in that sub-diagram) it cannot say it itself, so the node says it for it.
+  const sum = run?.segs[run.segs.length - 1];
+  const lastWrite = run ? [...run.segs].reverse().find((s) => s.kind === "write" && s.path) : undefined;
+  const sumNode = run && sum?.note && t >= sum.start && lastWrite && !stateAt(run, t, ctx).present ? ctx.locate(lastWrite.path!)?.place : undefined;
   const nodes = [...counts].flatMap(([id, n]) => {
     const el = view.map.get(id);
     return el && !el.isDeleted ? [{ id, n, box: nodeBox(el, view.map, view.elements) }] : [];
@@ -37,10 +42,10 @@ export function ReplayMarks({ view, ctx }: { view: CanvasViewState; ctx: Ctx }) 
   boxes.current = new Map(nodes.map((d) => [d.id, d.box]));
   drawn.current.gen++;
   /** A node's badge: its top right corner, straddling the top edge. */
-  const place = (id: string, el: HTMLElement) => {
+  const place = (id: string, el: HTMLElement, mid = false) => {
     const v = viewport.get(view.id);
     const b = boxes.current.get(id);
-    if (v && b) el.style.transform = `translate3d(${((b.x + b.w + v.scrollX) * v.zoom).toFixed(2)}px, ${((b.y + v.scrollY) * v.zoom).toFixed(2)}px, 0)`;
+    if (v && b) el.style.transform = `translate3d(${((b.x + (mid ? b.w / 2 : b.w) + v.scrollX) * v.zoom).toFixed(2)}px, ${((b.y + v.scrollY) * v.zoom).toFixed(2)}px, 0)`;
   };
   const sync = useRef(() => {});
   sync.current = () => {
@@ -50,7 +55,7 @@ export function ReplayMarks({ view, ctx }: { view: CanvasViewState; ctx: Ctx }) 
     if (key === drawn.current.key) return;
     drawn.current.key = key;
     world.current?.setAttribute("transform", `matrix(${v.zoom} 0 0 ${v.zoom} ${v.scrollX * v.zoom} ${v.scrollY * v.zoom})`);
-    for (const [id, el] of marks.current) place(id, el);
+    for (const [id, el] of marks.current) id.startsWith("sum:") ? place(id.slice(4), el, true) : place(id, el);
   };
   useLayoutEffect(() => sync.current());
   useEffect(() => frame.add(() => sync.current()), []);
@@ -76,6 +81,18 @@ export function ReplayMarks({ view, ctx }: { view: CanvasViewState; ctx: Ctx }) 
           +{d.n}
         </span>
       ))}
+      {sumNode && nodes.some((d) => d.id === sumNode) && (
+        <span
+          key="sum"
+          className="ws-pr-n ws-pr-sum"
+          ref={(el) => {
+            if (el) (marks.current.set(`sum:${sumNode}`, el), place(sumNode, el, true));
+            else marks.current.delete(`sum:${sumNode}`);
+          }}
+        >
+          {sum!.note}
+        </span>
+      )}
     </div>
   );
 }
