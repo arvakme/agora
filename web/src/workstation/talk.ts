@@ -125,3 +125,49 @@ export const talkHost = {
 
 /** The box was closed (Esc, or after the delivery) for the selected run: it stays closed if the figure leaves the view and comes back, until another figure is selected. */
 export const talkDismissed = { run: null as string | null };
+
+// ── waiting for delivery lives here, not in the box ──
+// A message sent while a turn runs waits for its end; the figure may walk into a sub-diagram meanwhile and the box unmounts.
+// The watch, the 「已发给 … / 已送达」 note and the nod are this module's state per run, so none of it depends on which view draws the figure.
+export type SentNote = { agent: string; state: SendState };
+const sentNotes = new Map<string, SentNote>();
+const stops = new Map<string, () => void>();
+const timers = new Map<string, ReturnType<typeof setTimeout>>();
+const sentLs = new Set<() => void>();
+const sentEmit = () => sentLs.forEach((l) => l());
+export const CLOSE_AFTER_MS = 4000;
+export const talkSent = {
+  get: (runId: string) => sentNotes.get(runId) ?? null,
+  subscribe: (l: () => void) => (sentLs.add(l), () => void sentLs.delete(l)),
+  /** The words went out to `sessionId`: say so, watch for them in the session, nod (`talk.said`) when they show up. */
+  start(o: { runId: string; /** The figure that nods (the session's own, for a sub-agent's box). */ nodId: string; sessionId: string; words: string; sentAt: number; agent: string; state: SendState }) {
+    stops.get(o.runId)?.();
+    clearTimeout(timers.get(o.runId));
+    sentNotes.set(o.runId, { agent: o.agent, state: o.state });
+    sentEmit();
+    stops.set(
+      o.runId,
+      watchDelivery(o.sessionId, o.words, o.sentAt, () => {
+        sentNotes.set(o.runId, { agent: o.agent, state: "delivered" });
+        talk.said(o.nodId);
+        sentEmit();
+        timers.set(
+          o.runId,
+          setTimeout(() => {
+            sentNotes.delete(o.runId);
+            talkDismissed.run = o.runId;
+            sentEmit();
+          }, CLOSE_AFTER_MS),
+        );
+      }),
+    );
+  },
+  /** Forget everything about `runId` (tests, a run that is gone). */
+  clear(runId: string) {
+    stops.get(runId)?.();
+    stops.delete(runId);
+    clearTimeout(timers.get(runId));
+    sentNotes.delete(runId);
+    sentEmit();
+  },
+};

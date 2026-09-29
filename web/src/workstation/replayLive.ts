@@ -11,7 +11,7 @@ import { pointerFollow } from "../pointer/follow";
 import { openSessions } from "../session/ui";
 import { clock } from "./clock";
 import { focus } from "./focus";
-import { followsWhere, pickFollow, whereOf, type Pick } from "./liveCamera";
+import { followsWhere, isWorking, lastWorkStart, pickFollow, whereOf, type Pick } from "./liveCamera";
 import { canvasWhere, OUTSIDE, stateAt } from "./place";
 import { beforePlay, plays } from "./replayMode";
 import { quiet } from "./replayQuiet";
@@ -54,15 +54,29 @@ function workOnDiagram(): boolean {
   const r = runOf();
   const c = camera.shown();
   const ctx = c ? ctxFor(c) : null;
-  if (!r || !ctx) return !!r?.running;
-  return followsWhere(whereOf(stateAt(r, clock.time(), ctx), OUTSIDE, r.running));
+  if (!r || !ctx) return false;
+  const now = clock.time();
+  // work that began before the page opened is not followed
+  if ((lastWorkStart(r, now) ?? -1) < OPENED_AT) return false;
+  return followsWhere(whereOf(stateAt(r, now, ctx), OUTSIDE, isWorking(r, now)));
 }
+/** When the page opened: only the work that begins after it is followed. */
+const OPENED_AT = Date.now();
 
 const camera = createCamera(() => null, runOf, () => (state.run ? NOW : null), {
   setManual: (on) => set({ paused: on }),
   live: {
     current: currentCanvas,
     awake: workOnDiagram,
+    working: () => {
+      const r = runOf();
+      return !!r && isWorking(r, Date.now());
+    },
+    lastWorkStart: () => {
+      const r = runOf();
+      return r ? lastWorkStart(r, Date.now()) : null;
+    },
+    openedAt: OPENED_AT,
     away: (on) => quiet.hold("live", on),
   },
 });
@@ -104,12 +118,19 @@ if (typeof window !== "undefined") {
     set({ run: p && r ? p.run : null, name: r?.name ?? "", why: p && r ? p.why : null });
     camera.tick();
   };
-  window.setInterval(tick, 200);
+  const timer = window.setInterval(tick, 200);
   let last = 0;
+  let raf = 0;
   const loop = (n: number) => {
     camera.frame(last ? n - last : 16);
     last = n;
-    requestAnimationFrame(loop);
+    raf = requestAnimationFrame(loop);
   };
-  requestAnimationFrame(loop);
+  raf = requestAnimationFrame(loop);
+  // a hot update must not leave two cameras running (they would fight over the canvas)
+  import.meta.hot?.dispose(() => {
+    clearInterval(timer);
+    cancelAnimationFrame(raf);
+    camera.stop();
+  });
 }
