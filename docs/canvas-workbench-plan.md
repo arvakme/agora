@@ -155,7 +155,7 @@ P2 必测：重复启动不创建第二 Master；后端和宿主重启不杀存�
 ## 8. 证据入口
 
 - 原生控制契约：[`native_protocol.py`](../native_protocol.py) 与[行为契约](native-control.md)；P0 实测结论记在后者，不在本文重复。
-- Agora 当前实现：[设计说明](design.md)、[测试入口](testing.md)、`server/scheduler.py`、`server/db.py`、`server/auth.py`、`daemon/main.py`、`brain/world.py` 与 Compose。原有文档描述现状，不构成保留旧执行路径的要求。
+- Agora 当前实现：[测试入口](testing.md)、`server/canvas/`。早期房间调度（`server/scheduler.py`、`brain/`、`daemon/`、`k8s/`、Compose）已删除，见提交 `b6e9789`。
 - canvas-agent：检查提交 `119ee5124408264424f3c1ce96ab9fdb8bd473e4` 的[内部契约](https://github.com/arvakme/canvas-agent/blob/119ee5124408264424f3c1ce96ab9fdb8bd473e4/docs/api-contract.md)和实际 runner/同步实现；再次复用时核对差异与授权。
 - tmux：[官方手册](https://man.openbsd.org/tmux.1)、[Control Mode](https://github.com/tmux/tmux/wiki/Control-Mode)。
 - Pi：[扩展接口](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md)；以本机安装版本自带的 `docs/extensions.md` 为准。各 CLI 的安装版本、hooks、精确模型与恢复能力在 P0 实测，未实测到的能力按未证实记录，不把命令名称视为能力保证。
