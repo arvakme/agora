@@ -1,6 +1,6 @@
 """``agora dispatch`` and ``agora reply``: give a task to another session, and hand the receipt back.
 
-    agora dispatch --to <session> | --new claude|codex|pi  --task-file t.md [--scope 'server/**'] [--model M --effort E]
+    agora dispatch --to <session> | --new <agent>  --task-file t.md [--scope 'server/**'] [--model M --effort E]
     agora dispatch status <id> | wait <id> [--timeout S] | interrupt <id> | list [--active]
     agora reply --request <id> --status done|failed|blocked [-f reply.md | --text '…']
 
@@ -19,6 +19,13 @@ import sys
 from pathlib import Path
 
 from agora_cli.canvas import call, out, server_url
+
+
+def session_agents() -> list[str]:
+    """The CLIs an Agora session can be bound to (tier T1): the only ones a task can be given to."""
+    from server.canvas.adapters.registry import session_kinds
+
+    return list(session_kinds())
 
 STATES_DONE = ("done", "failed", "blocked", "idle_no_reply", "interrupted")
 
@@ -47,7 +54,7 @@ def cmd_dispatch(p, a) -> int:
         return out(body, 0 if code == 200 else 1)
     # create
     if bool(a.to) == bool(a.new):
-        return out({"error": "usage: agora dispatch (--to <session> | --new claude|codex|pi) --task-file <file> [--scope …]"}, 2)
+        return out({"error": f"usage: agora dispatch (--to <session> | --new {'|'.join(session_agents())}) --task-file <file> [--scope …]"}, 2)
     if not a.task_file and not a.text:
         return out({"error": "the task: --task-file <file> (or --text '…')"}, 2)
     src = a.session or os.environ.get("AGORA_SESSION")
@@ -93,7 +100,7 @@ def add_parsers(sub) -> None:
     d.add_argument("rid", nargs="?", help="the dispatch id (status / wait / interrupt)")
     d.add_argument("--project", default=None, help="project directory (default: $AGORA_PROJECT or the nearest .agora/)")
     d.add_argument("--to", default=None, help="the session (id) to give the task to")
-    d.add_argument("--new", default=None, choices=["claude", "codex", "pi"], help="give it to a new session of this agent")
+    d.add_argument("--new", default=None, choices=session_agents(), help="give it to a new session of this agent")
     d.add_argument("--task-file", default=None, help="the task text (a file, or - for stdin)")
     d.add_argument("--text", default=None, help="the task text itself")
     d.add_argument("--scope", nargs="*", default=None, help="where the work belongs, e.g. 'server/**' (a hint, not a sandbox)")
