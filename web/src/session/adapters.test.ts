@@ -14,7 +14,6 @@ const info = (kind: string, name: string, tier: string, extra: Record<string, un
   icon: { kind: "mark", src: kind },
   logDir: `~/.${kind}/`,
   deleteCommand: null,
-  seedmuxNames: [kind],
   ...extra,
 });
 

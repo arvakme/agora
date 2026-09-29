@@ -5,7 +5,6 @@ capabilities. The registry (registry.py) derives a CLI's tier from which ones an
   ``Binding``. Only these can be picked for an Agora session.
 - T2 (observed agent): ``Locator`` + ``Projector`` + ``ToolVocab`` (+ optional ``Subagents``):
   trajectory, pointer, workstation figure — read-only.
-- T3 (receipts only): a ``ReceiptSource`` (Seedmux tickets) knows it ran, where, and what it said.
 - T0 (inferred): nothing but file events in a directory (not implemented yet).
 
 Design: web/docs/cli-adapters.md. Capabilities are checked with ``isinstance(a, Locator)`` etc.
@@ -21,16 +20,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 
-Tier = Literal["T1", "T2", "T3", "T0"]
-TIERS: tuple[Tier, ...] = ("T1", "T2", "T3", "T0")
-Via = Literal["native", "seedmux", "inferred"]
+Tier = Literal["T1", "T2", "T0"]
+TIERS: tuple[Tier, ...] = ("T1", "T2", "T0")
+Via = Literal["native", "dispatch", "inferred"]
 
 # Tool activity vocabulary shared with the page (web/src/session/trajectoryModel.ts `Activity`).
 ACTIVITIES = ("read", "search", "write", "edit", "commands", "webFetch", "webSearch", "subagents", "plan", "questions", "tools")
 
 
 def lower_tier(t: Tier) -> Tier:
-    """One step down: T1 → T2 → T3 → T0 (T0 stays)."""
+    """One step down: T1 → T2 → T0 (T0 stays)."""
     i = TIERS.index(t)
     return TIERS[min(i + 1, len(TIERS) - 1)]
 
@@ -90,12 +89,12 @@ class VersionRange:
 @dataclass(frozen=True)
 class ParentLink:
     """Why a run is taken to be another run's child, strongest evidence first:
-    ``native`` (the CLI wrote the link), ``seedmux`` (a dispatch record), ``inferred``."""
+    ``native`` (the CLI wrote the link), ``dispatch`` (a dispatch record: dispatch.py), ``inferred``."""
 
     via: Via
     parent_run: str | None = None  # AgentRun id of the parent
     tool_call_id: str | None = None  # the parent's tool call that dispatched it
-    task_id: str | None = None  # Seedmux T-xx
+    task_id: str | None = None  # the dispatch record that started it
     evidence: str = ""
 
 
@@ -119,7 +118,7 @@ class NativeRef:
 def tool_facts(activity: str, *, files: list[dict[str, str]] | None = None, reads: list[str] | None = None, waits_user: bool = False, spawn: dict[str, Any] | None = None, on: list[str] | None = None) -> dict[str, Any]:
     """What the page needs to know about one tool call, without knowing tool names: its
     ``activity``, the files it ``reads``, whether it ``waitsUser``, and whether it ``spawn``s an
-    agent (``{childKind?, childId?, taskId?, pane?}``). ``files`` (writes) are reported separately
+    agent (``{childKind?, childId?}``). ``files`` (writes) are reported separately
     on the tool item, as before. ``on``: files a shell command runs on (a test or script path in it)."""
     out: dict[str, Any] = {"activity": activity}
     if reads:
@@ -209,7 +208,6 @@ class Adapter:
     binaries: tuple[str, ...] = ()
     tested: VersionRange = VersionRange("")
     max_tier: Tier = "T2"
-    seedmux_names: tuple[str, ...] = ()  # how Seedmux's meta.json `agent` names this CLI
     log_hint: str = ""  # where its logs are, for people (doctor)
     log_dir: str = ""  # the folder its native conversations live under (page: "原生对话在 …")
     delete_hint: str = ""  # command that deletes a native session by hand, "{id}" = its id; "" = rm the log
@@ -223,6 +221,15 @@ class Adapter:
     catalog_per_project: bool = False
     # How it forks a session in a terminal (shown when it cannot fork headless).
     terminal_fork: str = ""
+    # Whether the CLI process keeps its own session log open, so the files a pane's process holds
+    # name its native session (``native_from_open_files``).
+    claims_by_open_file: bool = False
+    # Two-way headless: the turn's stdin stays open (the host answers the CLI's requests and can interrupt).
+    duplex: bool = False
+
+    def native_from_open_files(self, paths: list[str], home: Path | None = None) -> str | None:
+        """The native session id named by the files a CLI process has open, None when none does."""
+        return None
 
     def is_header(self, rec: dict[str, Any]) -> bool:
         """Whether ``rec`` is the log's header record (it names the session's ``cwd``)."""

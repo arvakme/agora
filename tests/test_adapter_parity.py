@@ -81,6 +81,9 @@ def test_projection_is_identical(kind, folder, root):
 MAPPERS = {"claude": ("ClaudeStream", "sonnet", "00000000-0000-0000-0000-000000000001"), "pi": ("PiStream", None, "p-1"), "codex": ("CodexStream", "gpt-5", None)}
 
 
+DUPLEX_EVENTS = {"mode", "request", "request_cancel", "denied", "session"}  # session: Codex names its thread as it starts (the host follows the log from then on)
+
+
 @pytest.mark.parametrize("kind,folder", FIXTURES, ids=[f"{k}-{v.name}" for k, v in FIXTURES])
 def test_stream_mapping_is_identical(kind, folder):
     stream = folder / "stream.jsonl"
@@ -89,7 +92,9 @@ def test_stream_mapping_is_identical(kind, folder):
     cls, model, session = MAPPERS[kind]
     old, new = getattr(agents_v0, cls)(model, session), getattr(agents, cls)(model, session)
     for i, rec in enumerate(records(stream)):
-        assert new.feed(copy.deepcopy(rec), 1000 + i) == old.feed(copy.deepcopy(rec), 1000 + i)
+        # Claude's two-way protocol (N2) adds events the old mapper never had: tests/test_claude_duplex.py.
+        got = [e for e in new.feed(copy.deepcopy(rec), 1000 + i) if e["t"] not in DUPLEX_EVENTS]
+        assert got == old.feed(copy.deepcopy(rec), 1000 + i)
     for attr in ("model", "session", "text", "error", "usage", "done"):
         assert getattr(new, attr) == getattr(old, attr), attr
     assert new.final_usage(1234) == old.final_usage(1234)
@@ -221,7 +226,8 @@ def requests(cwd: str) -> list[RunRequest]:
 
 def test_headless_args_are_identical(home):
     roots = build_home(home)
-    for name in ("ClaudeCodeBackend", "PiBackend", "CodexBackend"):
+    # Claude's command line changed on purpose (two-way protocol, auto mode: tests/test_claude_duplex.py).
+    for name in ("PiBackend", "CodexBackend"):
         for req in requests(roots["a"]) + requests("/work/none"):
             new_b, old_b = getattr(agents, name)(), getattr(agents_v0, name)()
             try:

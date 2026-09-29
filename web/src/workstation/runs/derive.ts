@@ -39,9 +39,8 @@ export function runFromTranscript(o: { sessionId: string; agent: string; name: s
   };
 }
 
-const FINAL_STATES = new Set(["done", "failed", "blocked", "exited"]);
+const FINAL_STATES = new Set(["done", "failed", "blocked", "exited", "idle_no_reply", "interrupted"]);
 const LIVE_STATES = new Set(["running", "waiting", "dispatched", "acknowledged"]);
-const accepted = (a: string | null | undefined) => !!a && !/^(no|none|reject|fail|pending|false)/i.test(a);
 
 /**
  * The server's run tree (`GET /api/agent/runs?session=&items=1`, web/docs/cli-adapters.md §5) as
@@ -61,8 +60,6 @@ export function fromTree(tree: RunTree, sessionId: string, o: { now: number; roo
   const out = new Map<string, WorkRun>();
   for (const r of tree.runs) {
     if (r.id === tree.root || !r.parent) continue;
-    const via: WorkRun["via"] = r.parent.via === "native" ? "native" : "seedmux";
-    const coarse = r.tier === "T3";
     const segs = r.items?.length ? buildLane(r.id, r.items, { live: LIVE_STATES.has(r.state), now: o.now, root: o.root }).segs.map(toRunSeg) : r.timeline.segments.map((s) => ({ kind: s.kind, start: s.start, end: s.end, turn: s.turn, itemId: s.itemId, label: s.label, ...(s.path ? { path: s.path } : {}) }) as RunSeg);
     const d = moment(r.id, "dispatch");
     const h = moment(r.id, "handoff");
@@ -71,20 +68,10 @@ export function fromTree(tree: RunTree, sessionId: string, o: { now: number; roo
     const final = FINAL_STATES.has(r.state);
     const doneAt = h?.at ?? (final ? (r.endedAt ?? r.lastAt ?? undefined) : undefined);
     const receipts: Receipt[] = [];
-    const tickets = r.receipts?.length ? r.receipts : r.receipt ? [r.receipt] : [];
-    if (tickets.length) {
-      for (const k of tickets) {
-        if (k.createdAt) receipts.push({ at: k.createdAt, state: "dispatched" });
-        const end = k.repliedAt ?? (FINAL_STATES.has(k.state) ? (r.endedAt ?? r.lastAt) : null);
-        if (!FINAL_STATES.has(k.state)) receipts.push({ at: Math.max(k.createdAt ?? 0, r.startedAt ?? k.createdAt ?? o.now), state: k.state });
-        else if (end) receipts.push({ at: end, state: k.state, ...(accepted(k.accept) ? { accepted: true } : {}) });
-      }
-    } else {
-      if (spawnAt != null) receipts.push({ at: spawnAt, state: "dispatched" });
-      if (r.startedAt != null) receipts.push({ at: Math.max(r.startedAt, spawnAt ?? 0), state: "running" });
-      if (final && doneAt != null) receipts.push({ at: doneAt, state: r.state });
-      else if (!final && r.state !== "running") receipts.push({ at: r.lastAt ?? o.now, state: r.state });
-    }
+    if (spawnAt != null) receipts.push({ at: spawnAt, state: "dispatched" });
+    if (r.startedAt != null) receipts.push({ at: Math.max(r.startedAt, spawnAt ?? 0), state: "running" });
+    if (final && doneAt != null) receipts.push({ at: doneAt, state: r.state });
+    else if (!final && r.state !== "running") receipts.push({ at: r.lastAt ?? o.now, state: r.state });
     receipts.sort((a, b) => a.at - b.at);
     const spawnSeg = r.parent.toolCallId ? byId.get(r.parent.runId)?.items?.find((it) => it.id === r.parent!.toolCallId) : undefined;
     out.set(r.id, {
@@ -92,10 +79,10 @@ export function fromTree(tree: RunTree, sessionId: string, o: { now: number; roo
       agent: r.kind,
       name: r.label || o.name?.(r.kind) || r.kind,
       parentId: idOf(r.parent.runId),
-      via,
+      via: r.parent.via === "dispatch" ? "dispatch" : "native",
+      ...(r.dispatchSession ? { dispatchSession: r.dispatchSession } : {}),
       evidence: r.parent.via,
       ...(r.role || spawnSeg?.tool?.input ? { task: r.role || spawnSeg?.tool?.input } : {}),
-      ...(coarse ? { coarse } : {}),
       segs,
       receipts,
       ...(spawnAt != null ? { spawnAt } : {}),

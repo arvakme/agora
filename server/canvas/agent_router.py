@@ -7,14 +7,15 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from server.canvas import adapters, agents, nested
-from server.canvas.project import Gone, Locked
+from server.canvas.dispatch import DispatchError, Dispatches
+from server.canvas.project import Gone, Locked, NotFound
 from server.canvas.sessions import AgentHub, Busy, Copied, NoPage, agora_prompt, canvas_names
 from server.canvas.terminal import TerminalError
 
@@ -41,10 +42,38 @@ class Send(BaseModel):
     raw: bool = False  # send text as-is (no Agora footer)
 
 
+class Answer(BaseModel):
+    """The person's answer to a request the CLI put to Agora (a question, or an approval)."""
+
+    decision: str  # allow | allow_session | deny
+    message: str = ""  # why not (deny)
+    answers: dict[str, Any] = {}  # question text → chosen option label (a list for a multi-select)
+
+
 class Term(BaseModel):
     launch: bool = True
     canvasId: str | None = None
-    app: Literal["kitty", "seedmux"] | None = None
+
+
+class DispatchIn(BaseModel):
+    # Who gives the task: {"kind": "session", "sessionId"} (agora dispatch: $AGORA_SESSION), {"kind": "comment",
+    # "canvasId", "threadId", "threadN"} (a canvas comment handed to a session), or {"kind": "user"}.
+    source: dict[str, Any] = {"kind": "user"}
+    to: str | None = None
+    new: str | None = None
+    task: str
+    scope: list[str] = []
+    model: str = ""
+    effort: str = ""
+    inline: bool = False  # the task text itself is the message (a comment), not a file the target reads
+    expectsReply: bool = True
+    canvasId: str | None = None
+
+
+class ReplyIn(BaseModel):
+    status: str
+    text: str = ""
+    session: str | None = None
 
 
 class CanvasCall(BaseModel):
@@ -66,7 +95,14 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
     router = APIRouter()
     store = hub.store
 
+    dispatches: Dispatches = getattr(hub, "dispatches", None) or Dispatches(hub)
+    hub.dispatches = dispatches  # type: ignore[attr-defined]
+
     def fail(e: Exception):
+        if isinstance(e, (DispatchError, ValueError)):
+            return JSONResponse(status_code=400, content={"error": str(e)})
+        if isinstance(e, NotFound):
+            return JSONResponse(status_code=404, content={"error": str(e)})
         if isinstance(e, Gone):
             return JSONResponse(status_code=410, content={"gone": True, "error": str(e)})
         if isinstance(e, Locked):
@@ -103,17 +139,46 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
 
         return await asyncio.to_thread(build)
 
+    def dispatched_runs(top: Any, session: str):
+        """``more`` for the run tree: the sessions a session gave tasks to (dispatch records), and theirs."""
+        from server.canvas.adapters.base import NativeRef, ParentLink
+        from server.canvas.dispatch_store import derive_state, is_final
+
+        sess = {top.run_id: session}
+
+        def more(ref):
+            sid = sess.get(ref.run_id)
+            if not sid:
+                return []
+            out: dict[str, Any] = {}
+            for d in dispatches.from_session(sid):  # oldest first: the latest dispatch to a session names its state
+                tb = store.read_binding(d.target["sessionId"]) or {}
+                kind, nid = tb.get("agent") or d.target["agent"], tb.get("nativeId") or f"dispatch-{d.id[:8]}"
+                look = agents.locate_log(kind, tb["nativeId"], store.root, hint=(tb.get("log") or {}).get("path")) if tb.get("nativeId") else None
+                state = derive_state(d)
+                child = NativeRef(
+                    kind, nid, look.path if look else None, str(store.root),
+                    ParentLink("dispatch", ref.run_id, task_id=d.id, evidence=f"派发记录 {d.id}（.agora/dispatch/{d.id}.json）"),
+                    label=adapters.need(kind).name,
+                    meta={"record": True, "sessionId": d.target["sessionId"], "state": state, "role": d.task.get("summary"), "model": tb.get("model") or None, "dispatchedAt": d.created_at, "acceptedAt": next((h["at"] for h in d.history if h["state"] in ("running", "waiting")), None), "doneAt": d.updated_at if is_final(state) else None},
+                )
+                out[child.run_id] = child
+                sess[child.run_id] = d.target["sessionId"]
+            return list(out.values())
+
+        return more
+
     @router.get("/runs")
-    async def agent_runs(session: str | None = None, kind: str | None = None, native: str | None = None, depth: str = "all", canvas: str | None = None, items: int = 0, receipts: int = 1):
-        """The run tree of a session (web/docs/cli-adapters.md §7): the session, its native sub-agents
-        and its Seedmux workers (read-only receipts), each with a timeline. ``session=<sid>`` for an
+    async def agent_runs(session: str | None = None, kind: str | None = None, native: str | None = None, depth: str = "all", canvas: str | None = None, items: int = 0):
+        """The run tree of a session (web/docs/cli-adapters.md §7): the session and its native
+        sub-agents, each with a timeline. ``session=<sid>`` for an
         Agora session, or ``kind=<cli>&native=<id>`` for any native session Agora can read. ``depth``:
         levels to expand (default ``all``; each run carries ``descendants`` for folding);
         ``canvas=<id>`` adds the canvas node each segment's file maps to; ``items=1`` adds each run's
-        transcript items; ``receipts=0`` leaves out Seedmux workers."""
+        transcript items."""
         from server.canvas.adapters import runs as runs_mod
         from server.canvas.adapters.base import NativeRef, valid_id
-        from server.canvas.adapters.receipts import worktrees
+        from server.canvas.adapters.common import worktrees
         from server.canvas.project import ID_RE
 
         if canvas is not None and not ID_RE.match(canvas):  # the store's own canvas-id rule
@@ -148,7 +213,7 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
                 look = agents.locate_log(k, nid, store.root, hint=hint)
             path = look.path or (look.candidates[0] if look.candidates else None)
             ref = NativeRef(k, nid, path, str(store.root))
-            return runs_mod.build(ref, root=str(store.root), session_id=session, depth=d, store=store, canvas=canvas, with_items=bool(items), receipts=bool(receipts))
+            return runs_mod.build(ref, root=str(store.root), session_id=session, depth=d, store=store, canvas=canvas, with_items=bool(items), more=dispatched_runs(ref, session) if session else None)
 
         return await asyncio.to_thread(build)
 
@@ -238,28 +303,114 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
         return b
 
     @router.post("/sessions/{sid}/interrupt")
-    def interrupt(sid: str):
+    async def interrupt(sid: str):  # on the loop: it writes to the running turn's stdin
         return {"stopped": hub.interrupt(sid)}
+
+    @router.get("/sessions/{sid}/requests")
+    async def requests(sid: str):
+        """What the session's CLI has open with the person right now (runtime only: gone with the turn)."""
+        try:
+            return {"requests": hub.requests(sid)}
+        except Exception as e:
+            return fail(e)
+
+    @router.post("/sessions/{sid}/requests/{rid}")
+    async def answer_request(sid: str, rid: str, body: Answer):
+        try:
+            hub.binding(sid)
+            hub.answer_request(sid, rid, body.model_dump())
+        except KeyError:
+            return JSONResponse(status_code=404, content={"error": "这个请求已经不在了：它被回答过、被撤回，或者这一轮已经结束。"})
+        except Exception as e:
+            return fail(e)
+        return {"ok": True}
 
     @router.post("/sessions/{sid}/terminal")
     async def open_terminal(sid: str, body: Term):
         hub.ensure_started()
         try:
-            return await asyncio.to_thread(hub.open_terminal, sid, launch=body.launch, canvas_id=body.canvasId, app=body.app)
+            return await asyncio.to_thread(hub.open_terminal, sid, launch=body.launch, canvas_id=body.canvasId)
         except Exception as e:
             return fail(e)
 
     @router.get("/terminals")
     async def terminals():
-        """Where「在终端打开」can open: Kitty / macOS Terminal on this machine, and Seedmux's bridge."""
-        smx = await asyncio.to_thread(hub.terms.seedmux_status)
-        return {"kitty": hub.terms.kitty() is not None, "seedmux": smx}
+        """Where「在终端打开」can open: Kitty / macOS Terminal on this machine."""
+        return {"kitty": hub.terms.kitty() is not None}
+
+    @router.post("/sessions/{sid}/takeover")
+    async def takeover(sid: str):
+        """A person takes the pane's input over: automatic delivery pauses, the queue stays. Detaching
+        does not give it back; ``/return`` does."""
+        try:
+            return await asyncio.to_thread(hub.takeover, sid)
+        except Exception as e:
+            return fail(e)
+
+    @router.post("/sessions/{sid}/return")
+    async def give_back(sid: str):
+        try:
+            return await asyncio.to_thread(hub.give_back, sid)
+        except Exception as e:
+            return fail(e)
+
+    @router.post("/sessions/{sid}/deliver-now")
+    async def deliver_now(sid: str):
+        """The message at the head of the queue goes into the pane now, past the input-right pause; the next one waits again."""
+        try:
+            return await asyncio.to_thread(hub.deliver_now, sid)
+        except Exception as e:
+            return fail(e)
 
     @router.delete("/sessions/{sid}/terminal")
     async def close_terminal(sid: str):
         hub.ensure_started()
         await asyncio.to_thread(hub.close_terminal, sid)
         return {"ok": True}
+
+    # ——— dispatches (dispatch.py): session A gives a task to session B ———
+    @router.post("/dispatches")
+    async def dispatch(body: DispatchIn):
+        hub.ensure_started()
+        try:
+            got = await dispatches.dispatch(source=body.source, task=body.task, to=body.to, new=body.new, scope=body.scope, model=body.model, effort=body.effort, inline=body.inline, expects_reply=body.expectsReply, canvas_id=body.canvasId)
+        except Exception as e:
+            return fail(e)
+        if got.get("error") and body.source.get("kind") == "comment":  # the page that handed a comment over is told, so it can offer another session
+            return JSONResponse(status_code=409, content={"error": got["error"], "dispatch": got})
+        return got
+
+    @router.get("/dispatches")
+    async def list_dispatches(session: str | None = None, active: int = 0):
+        return {"dispatches": await asyncio.to_thread(dispatches.list, session=session, active=bool(active))}
+
+    @router.get("/dispatches/{rid}")
+    async def get_dispatch(rid: str):
+        try:
+            return await asyncio.to_thread(dispatches.status, rid)
+        except Exception as e:
+            return fail(e)
+
+    @router.get("/dispatches/{rid}/wait")
+    async def wait_dispatch(rid: str, timeout: float = 600.0):
+        try:
+            return await dispatches.wait(rid, min(max(timeout, 0.0), 3600.0))
+        except Exception as e:
+            return fail(e)
+
+    @router.post("/dispatches/{rid}/reply")
+    async def reply_dispatch(rid: str, body: ReplyIn):
+        try:
+            return await asyncio.to_thread(dispatches.reply, rid, body.status, body.text, body.session)
+        except Exception as e:
+            return fail(e)
+
+    @router.post("/dispatches/{rid}/interrupt")
+    async def interrupt_dispatch(rid: str):
+        try:
+            return dispatches.interrupt(rid)
+        except Exception as e:
+            return fail(e)
 
     @router.get("/events")
     async def events(request: Request, executor: int = 0):

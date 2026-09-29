@@ -11,7 +11,7 @@
 import { ConflictNotice } from "../multi/ConflictNotice";
 import { AnimatePresence, motion } from "motion/react";
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
-import { IconCheck, IconChevron, IconCode, IconCommentSolid, IconCopy, IconLayers, IconLock, IconMore, IconPath, IconTarget, IconUndo } from "../app/icons";
+import { IconChevron, IconCode, IconCommentSolid, IconCopy, IconLayers, IconLock, IconMore, IconPath, IconTarget, IconUndo } from "../app/icons";
 import { panelView, useReplay, useReplayAt, useTick, type PanelView } from "../workstation/clock";
 import { hhmmss } from "../workstation/axis";
 import { useRuns } from "../workstation/runs/store";
@@ -21,7 +21,10 @@ import { TraceTurn } from "./TraceTurn";
 import { buildTurns, fmtCost, fmtDuration, fmtTokens, sumUsage, type TrajTurn } from "./trajectoryModel";
 import { SPRING } from "../comments/motion";
 import { Composer } from "./Composer";
-import { AGENT_NAMES, agents, effortChoices, forkHeadless, loadAdapters, sessionKinds, useAgents, type AgentKind, type Catalog, type TerminalApp, type TerminalApps } from "./agents";
+import { InputRight } from "./InputRight";
+import { RequestCards } from "./RequestCards";
+import { modeLabel, terminalBanner } from "./requestModel";
+import { AGENT_NAMES, agents, effortChoices, forkHeadless, loadAdapters, sessionKinds, useAgents, type AgentKind, type Catalog, type TerminalApps } from "./agents";
 import { AgentAvatar } from "./AgentAvatar";
 import { Picker } from "./Picker";
 import { effortGroups, modelGroups } from "./pickerModel";
@@ -122,17 +125,6 @@ function OriginCard({ sessionId, origin, canvasTitles }: { sessionId: string; or
     </div>
   );
 }
-
-/** Where「在终端打开」opens, remembered per browser (a convenience; the default is Kitty). */
-const TERM_KEY = "agora.terminalApp";
-const readTermApp = (): TerminalApp => {
-  try {
-    return localStorage.getItem(TERM_KEY) === "seedmux" ? "seedmux" : "kitty";
-  } catch {
-    return "kitty";
-  }
-};
-const TERM_APP_NAME: Record<TerminalApp, string> = { kitty: "Kitty", seedmux: "Seedmux" };
 
 /** Pick the session's agent, model and effort. Once started this never changes. */
 function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: string }) {
@@ -297,48 +289,29 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
     ].filter(Boolean);
     await agents.send(sessionId, notes.length ? `${text}\n\n（${notes.join("；")}）` : text, { canvasId: session.canvasId });
   };
-  const [termApp, setTermApp] = useState<TerminalApp>(readTermApp);
   const [termMenu, setTermMenu] = useState(false);
   const [apps, setApps] = useState<TerminalApps | null>(null);
   useEffect(() => {
     if (termMenu) void agents.terminalApps().then(setApps).catch(() => setApps(null));
   }, [termMenu]);
-  const openTerminal = async (app: TerminalApp = termApp) => {
+  const openTerminal = async () => {
     setTermMsg(null);
     setTermMenu(false);
-    if (app !== termApp) {
-      setTermApp(app);
-      try {
-        localStorage.setItem(TERM_KEY, app);
-      } catch {
-        /* private window: the choice just isn't remembered */
-      }
-    }
     try {
-      const r = await agents.openTerminal(sessionId, session.canvasId, true, app);
-      setTermMsg(
-        r.launched === "seedmux"
-          ? r.attached
-            ? "已在 Seedmux 里再开一个 pane，连到同一个终端"
-            : r.created
-              ? "已在 Seedmux 当前标签页旁新开 pane"
-              : "已在 Seedmux 中打开，到 Seedmux 里切到那个 pane"
-          : r.launched
-            ? `已在 ${r.launched === "kitty" ? "Kitty" : "终端"} 中打开`
-            : "没找到可用的终端：复制下面的命令自己打开",
-      );
+      const r = await agents.openTerminal(sessionId, session.canvasId, true);
+      setTermMsg(r.launched ? `已在 ${r.launched === "kitty" ? "Kitty" : "终端"} 中打开` : "没找到可用的终端：复制下面的命令自己打开");
     } catch (e) {
       setTermMsg((e as Error).message);
     }
   };
-  /** Fallback for any terminal (also inside a Seedmux pane): start Agora's pane, copy the attach command. */
+  /** Fallback for any terminal: start Agora's pane, copy the attach command. */
   const copyOpen = async () => {
     setTermMenu(false);
     setTermMsg(null);
     try {
-      const r = await agents.openTerminal(sessionId, session.canvasId, false, "kitty");
+      const r = await agents.openTerminal(sessionId, session.canvasId, false);
       await navigator.clipboard?.writeText(`env -u TMUX ${r.attach}`).catch(() => {});
-      setTermMsg("已复制命令：在 Seedmux 或任意终端里新开一个 pane 粘贴运行");
+      setTermMsg("已复制命令：在任意终端里新开一个窗口粘贴运行");
     } catch (e) {
       setTermMsg((e as Error).message);
     }
@@ -349,7 +322,6 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
     setTimeout(() => setCopied(false), 1400);
   };
 
-  const inSeedmux = !!status?.terminal.alive && status.terminal.app === "seedmux";
   const [staleSeen, setStaleSeen] = useState(() => staleKnown(sessionId));
   // Copied along with the project (cp -r): read-only until forked here. A pending fork: the next
   // message (Claude, Pi) or the terminal (all three; Codex only there) continues it as a new native session.
@@ -379,6 +351,11 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           <IconLock size={12} />
           {binding.model || "默认模型"}{binding.effort ? ` · ${binding.effort}` : ""}
         </span>
+        {modeLabel(status?.mode) && (
+          <span className="sp-mode" data-tone={modeLabel(status?.mode)!.tone} title="Claude 这一轮实际的权限模式：auto 由它自己判断哪些要问你">
+            {modeLabel(status?.mode)!.text}
+          </span>
+        )}
         <span className="sp-sep" aria-hidden>·</span>
         <label className="sp-cv" title="这个会话默认改的画布">
           <i className="sp-cv-sq" aria-hidden />
@@ -393,12 +370,12 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
         </button>
         <button
           className="icon-btn sm"
-          disabled={inSeedmux || (!status?.terminal.alive && !!status?.running) || stuck}
+          disabled={(!status?.terminal.alive && !!status?.running) || stuck}
           onClick={() => void openTerminal()}
-          title={inSeedmux ? "在 Seedmux 里切到这个 pane 继续" : status?.terminal.alive ? `再开一个 ${TERM_APP_NAME[termApp]} 窗口连到同一个终端` : status?.running ? "这一轮结束后再打开" : `在 ${TERM_APP_NAME[termApp]} 中打开，直接在里面做 coding`}
+          title={status?.terminal.alive ? "再开一个 Kitty 窗口连到同一个终端" : status?.running ? "这一轮结束后再打开" : "在 Kitty 中打开，直接在里面做 coding"}
           aria-label="在终端打开"
         >
-          <TerminalAppIcon app={inSeedmux ? "seedmux" : termApp} />
+          <TerminalAppIcon />
         </button>
         <div className="sp-term">
           <button className="icon-btn sm" aria-haspopup="dialog" aria-expanded={termMenu} aria-label="用量与更多" title="用量、会话 id、在哪个终端打开" onClick={() => setTermMenu((v) => !v)}>
@@ -421,27 +398,18 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
                 </dl>
                 <hr />
                 <p className="menu-title">在哪里打开</p>
-                {(["kitty", "seedmux"] as const).map((app) => {
-                  const off = app === "seedmux" ? apps && !apps.seedmux.available : apps && !apps.kitty;
-                  const why = app === "seedmux" ? apps?.seedmux.reason : "没装 Kitty：会改用 macOS 终端";
-                  return (
-                    <button
-                      key={app}
-                      role="menuitemradio"
-                      aria-checked={termApp === app}
-                      data-on={termApp === app}
-                      disabled={(app === "seedmux" && !!off) || inSeedmux || (!status?.terminal.alive && !!status?.running)}
-                      title={off ? why : app === "seedmux" ? "在 Seedmux 当前标签页旁新开一个 pane，直接跑这个会话" : "在 Kitty 窗口里打开这个会话的终端"}
-                      onClick={() => void openTerminal(app)}
-                    >
-                      <span className="menu-check">{termApp === app && <IconCheck size={14} />}</span>
-                      <TerminalAppIcon app={app} />
-                      在 {TERM_APP_NAME[app]} 中打开
-                      {off && <em className="menu-note">{app === "seedmux" ? "不可用" : "用终端"}</em>}
-                    </button>
-                  );
-                })}
-                <button role="menuitem" disabled={inSeedmux || (!status?.terminal.alive && !!status?.running)} onClick={() => void copyOpen()} title="Seedmux 不可用时：在 Seedmux 或任意终端里新开 pane 粘贴运行">
+                <button
+                  role="menuitem"
+                  disabled={!status?.terminal.alive && !!status?.running}
+                  title={apps && !apps.kitty ? "没装 Kitty：会改用 macOS 终端" : "在 Kitty 窗口里打开这个会话的终端"}
+                  onClick={() => void openTerminal()}
+                >
+                  <span className="menu-check" />
+                  <TerminalAppIcon />
+                  在 Kitty 中打开
+                  {apps && !apps.kitty && <em className="menu-note">用终端</em>}
+                </button>
+                <button role="menuitem" disabled={!status?.terminal.alive && !!status?.running} onClick={() => void copyOpen()} title="在任意终端里新开窗口粘贴运行">
                   <span className="menu-check" />
                   <IconCopy size={16} />
                   复制打开命令
@@ -457,16 +425,11 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
         <div className="notice sp-attach" data-tone={status?.terminal.alive ? undefined : "caution"}>
           {status?.terminal.alive ? (
             <>
-              <i className="dot" data-tone="ok" />
-              <b>终端已接管</b>
-              {inSeedmux ? (
-                <span className="sp-attach-where" title={`Seedmux pane ${status.terminal.paneId}`}>在 Seedmux 中 · pane {status.terminal.paneId?.slice(0, 4)}</span>
-              ) : (
-                <>
-                  <code title="在任意终端里运行，连到这个会话">{status.terminal.attach}</code>
-                  <button className="icon-btn sm" onClick={() => void copy()} aria-label={copied ? "已复制" : "复制命令"} title={copied ? "已复制" : "复制命令"}><IconCopy size={16} /></button>
-                </>
-              )}
+              <i className="dot" data-tone={terminalBanner(status.terminal) === "attached" ? "ok" : undefined} />
+              <b>{terminalBanner(status.terminal) === "attached" ? "终端已接管" : "终端里的 CLI 在后台"}</b>
+              {terminalBanner(status.terminal) === "background" && <span className="sp-attach-msg">没有窗口连着；空闲后自动关掉，下一句在面板里续接</span>}
+              <code title="在任意终端里运行，连到这个会话">{status.terminal.attach}</code>
+              <button className="icon-btn sm" onClick={() => void copy()} aria-label={copied ? "已复制" : "复制命令"} title={copied ? "已复制" : "复制命令"}><IconCopy size={16} /></button>
               <button className="btn sm ghost" onClick={() => void agents.closeTerminal(sessionId)} title="结束终端里的 CLI；会话可随时再续接">关闭终端</button>
             </>
           ) : (
@@ -529,6 +492,9 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
       ) : stuck && native ? (
         <NativeMissing sessionId={sessionId} canvasId={session.canvasId} problem={native} agent={binding.agent} model={binding.model} effort={binding.effort} snapshot={!!status?.snapshot || items.length > 0} />
       ) : (
+        <>
+        <RequestCards sessionId={sessionId} />
+        <InputRight sessionId={sessionId} />
         <Composer
           key={binding.nativeId ?? "new"}
           initial={takeDraft(sessionId)}
@@ -541,6 +507,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           onStop={status?.running ? () => void agents.interrupt(sessionId) : undefined}
           onTerminal={() => void openTerminal()}
         />
+        </>
       )}
     </div>
   );
@@ -681,7 +648,8 @@ function Conversation({ sessionId, turns, changes, canvasTitles, flash, onTrajec
           <ProcessFold sessionId={sessionId} turn={t} />
           {(byTurn.get(t.n) ?? []).map(card)}
           {t.reply?.text && <Markdown className="ds-say" text={t.reply.text} />}
-          {t.error && !t.running && <p className="ds-say" data-error>这一轮出错：{t.error}</p>}
+          {t.error && !t.running && (t.error === "interrupted" ? <p className="sp-notice">这一轮已停止</p> : <p className="ds-say" data-error>这一轮出错：{t.error}</p>)}
+          {(t.notices ?? []).map((n) => <p key={n.id} className="sp-notice" data-tone={n.tone}>{n.text}</p>)}
         </article>
       ))}
     </div>

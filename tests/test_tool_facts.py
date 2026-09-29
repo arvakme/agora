@@ -4,7 +4,7 @@ longer needs to know any CLI's tool names."""
 
 import pytest
 
-from server.canvas.adapters.tools import activity_of, is_dispatch, shell_reads, spawn_in_output
+from server.canvas.adapters.tools import activity_of, shell_reads
 from server.canvas.transcript import State, project
 
 ROOT = "/work/p"
@@ -50,15 +50,6 @@ def test_shell_reads(cmd, want):
     assert shell_reads(cmd, ROOT, ROOT) == want
 
 
-def test_seedmux_dispatch_in_output():
-    out = "ok\ntask=T-5ee5fa pane=a5d548ff-0d58-4406-bdd0-bd1f40810cb3\n"
-    assert spawn_in_output(out, "~/.local/bin/smx-team spawn --agent devin") == {"taskId": "T-5ee5fa", "pane": "A5D548FF-0D58-4406-BDD0-BD1F40810CB3", "via": "seedmux"}
-    assert spawn_in_output(out, ["/bin/zsh", "-lc", "smx-team assign --to X"])["taskId"] == "T-5ee5fa"
-    # The same line printed by something else (a grep of old logs) is not a dispatch.
-    assert spawn_in_output(out, "rg task= ~/.claude/projects") is None and spawn_in_output(out) is None
-    assert spawn_in_output("task=T-1 pane=nope", "smx-team spawn") is None
-
-
 def test_activity_fallback_covers_every_cli_name():
     assert activity_of("apply_patch") == activity_of("search_replace") == "edit"
     assert activity_of("run_terminal_command") == activity_of("exec_command") == "commands"
@@ -82,8 +73,6 @@ def test_claude_tool_facts():
         claude_use("t3", "AskUserQuestion", {"questions": []}),
         claude_use("t4", "Agent", {"subagent_type": "general-purpose", "prompt": "x"}),
         claude_result("t4", "launched", {"toolUseResult": {"isAsync": True, "status": "async_launched", "agentId": "a8e4"}}),
-        claude_use("t5", "Bash", {"command": "smx-team spawn --agent devin"}),
-        claude_result("t5", "task=T-19c9ab pane=FDC89E5E-61FD-454D-A822-C01693AE47F2"),
         claude_use("t6", "Edit", {"file_path": "/work/p/b.py"}),
     ])
     by = {i["id"]: i["tool"] for i in items}
@@ -91,7 +80,6 @@ def test_claude_tool_facts():
     assert by["t2"]["activity"] == "read" and by["t2"]["reads"] == ["server/x.py"]
     assert by["t3"]["activity"] == "questions" and by["t3"]["waitsUser"] is True
     assert by["t4"]["activity"] == "subagents" and by["t4"]["spawn"] == {"childKind": "claude", "childId": "a8e4", "via": "native", "state": "async_launched"}
-    assert by["t5"]["spawn"]["taskId"] == "T-19c9ab" and by["t5"]["activity"] == "commands"
     assert by["t6"]["activity"] == "edit" and by["t6"]["files"] == [{"path": "b.py", "op": "edit"}]
 
 
@@ -104,16 +92,12 @@ def test_codex_reads_through_the_shell():
         cmd("c2", "rtk read /work/p/docs/a.md", [{"type": "unknown", "cmd": "rtk read /work/p/docs/a.md"}]),
         cmd("c3", "rg foo src", [{"type": "search", "cmd": "rg foo src", "query": "foo", "path": "src"}]),
         cmd("c4", "cat x.py", []),
-        cmd("c5", "smx-team spawn --agent devin --cwd .", [{"type": "unknown", "cmd": "smx-team spawn --agent devin --cwd ."}], out="task=T-aaaaaa pane=FDC89E5E-61FD-454D-A822-C01693AE47F2"),
-        cmd("c6", "cat old.log", [{"type": "read", "cmd": "cat old.log", "name": "old.log", "path": "old.log"}], out="task=T-bbbbbb pane=FDC89E5E-61FD-454D-A822-C01693AE47F2"),
     ])
     by = {i["id"]: i["tool"] for i in items}
     assert (by["c1"]["activity"], by["c1"]["reads"]) == ("read", ["src/telegram/butler.js"])
     assert (by["c2"]["activity"], by["c2"]["reads"]) == ("read", ["docs/a.md"])
     assert by["c3"]["activity"] == "search" and "reads" not in by["c3"]
     assert (by["c4"]["activity"], by["c4"]["reads"]) == ("read", ["x.py"])
-    assert by["c5"]["activity"] == "commands" and by["c5"]["spawn"]["taskId"] == "T-aaaaaa"
-    assert "spawn" not in by["c6"]  # printing an old dispatch line is not a dispatch
 
 
 def test_pi_tool_facts():
@@ -126,24 +110,3 @@ def test_pi_tool_facts():
     assert (by["p1"]["activity"], by["p1"]["reads"]) == ("read", ["src/a.ts"])
     assert (by["p2"]["activity"], by["p2"]["reads"]) == ("read", ["b.md"])
     assert by["p3"]["activity"] == "edit" and by["p3"]["files"] == [{"path": "c.ts", "op": "edit"}]
-
-
-@pytest.mark.parametrize(
-    "cmd,want",
-    [
-        ("smx-team spawn --agent devin --cwd .", True),
-        ("~/.local/bin/smx-team assign --to A5D548FF", True),
-        ("cd web && FOO=1 smx-team spawn --agent codex", True),
-        (["/bin/zsh", "-lc", "smx-team spawn --agent claude"], True),
-        ("for a in devin codex; do smx-team spawn --agent $a; done", True),  # a loop's body is a command too
-        ("if ! smx-team assign --to X; then echo no; fi", True),
-        ("echo smx-team spawn", False),  # review P2-7: a substring is not a dispatch
-        ("grep 'smx-team spawn' old.log", False),
-        ("smx-team panes", False),
-        ("smx-team reply T-1 --status done", False),
-        ("cat notes.md | grep smx-team", False),
-    ],
-)
-def test_dispatch_needs_smx_team_spawn_or_assign(cmd, want):
-    assert is_dispatch(cmd) is want
-    assert (spawn_in_output("task=T-5ee5fa pane=a5d548ff-0d58-4406-bdd0-bd1f40810cb3", cmd) is not None) is want

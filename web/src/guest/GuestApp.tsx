@@ -7,11 +7,12 @@ import { CanvasView, type CanvasHandle } from "../canvas/CanvasView";
 import { createThreadStore, setIdentity, useThreads, type Message, type Thread, type ThreadStore } from "../comments/threads";
 import { threadsFromFile, type ThreadsFile } from "../project/format";
 import { SPRING } from "../comments/motion";
-import { IconComment, IconEye, IconList, IconLock, IconPointer, IconUser, IconWorkspace } from "../app/icons";
+import { IconComment, IconCopy, IconEye, IconFile, IconList, IconLock, IconPointer, IconUser, IconWorkspace } from "../app/icons";
 import { ThemeButton } from "../app/ThemeButton";
 import type { El } from "../canvas/scene";
 import { Breadcrumb, ChildMarkers } from "../nested/NestedLayer";
 import { canvasFromUrl, urlFor } from "../nested/store";
+import { openLive, type LiveEvent } from "./live";
 import "./guest.css";
 
 type State = {
@@ -70,6 +71,7 @@ export function GuestApp({ initial }: { initial: State }) {
   const [mode, setMode] = useState<"browse" | "comment">("browse");
   const [drawer, setDrawer] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
   const handle = useRef<CanvasHandle | null>(null);
   const nameRef = useRef(name);
   nameRef.current = name;
@@ -154,25 +156,38 @@ export function GuestApp({ initial }: { initial: State }) {
     setTimeout(() => setToast((t) => (t === msg ? null : t)), 4000);
   };
 
-  // Live: others' comments, the owner's edits to the drawing, and the end of the share.
+  // Live: others' comments, the owner's edits to the drawing, and the end of the share. Over a
+  // tunnel that buffers streams (quick tunnels) `openLive` falls back to polling the state.
   useEffect(() => {
-    const es = new EventSource("/api/guest/events");
-    es.onmessage = (e) => {
-      const ev = JSON.parse(e.data) as { t: string; canvasId?: string; data?: ThreadsFile; elements?: El[] };
+    const onEvent = (ev: LiveEvent) => {
       const here = !ev.canvasId || ev.canvasId === curRef.current.canvas.id;
       if (ev.t === "threads" && ev.data) {
-        const snap = threadsFromFile(ev.data);
+        const snap = threadsFromFile(ev.data as ThreadsFile);
         const target = stores.current.get(ev.canvasId ?? curRef.current.canvas.id);
         if (snap && target) target.merge(snap);
         refreshCounts();
       } else if (ev.t === "canvas" && ev.elements && handle.current && here) {
         handle.current.api.updateScene({ elements: ev.elements as never });
       } else if (ev.t === "ended") {
-        es.close();
         setEnded(true);
       }
     };
-    return () => es.close();
+    const poll = async () => {
+      let n: State;
+      try {
+        n = await loadGuest(curRef.current.canvas.id);
+      } catch (e) {
+        if (e instanceof Ended) setEnded(true);
+        return;
+      }
+      if (n.canvas.id !== curRef.current.canvas.id) return;
+      const snap = threadsFromFile(n.threads);
+      const target = stores.current.get(n.canvas.id);
+      if (snap && target) target.merge(snap);
+      if (JSON.stringify(n.canvas.elements) !== JSON.stringify(curRef.current.canvas.elements)) handle.current?.api.updateScene({ elements: n.canvas.elements as never });
+      setCur((c) => (c.canvas.id === n.canvas.id ? { ...c, canvas: n.canvas, canvases: n.canvases } : c));
+    };
+    return openLive({ onEvent, poll });
   }, []);
   useEffect(() => {
     const at = initial.share.expiresAt;
@@ -236,6 +251,9 @@ export function GuestApp({ initial }: { initial: State }) {
           <span className="guest-project">{initial.project.name}</span>
           <span className="guest-gap" />
           <span className="guest-note"><IconEye size={16} />只能查看和评论{expires != null && <> · <Remaining at={expires} /></>}</span>
+          <button className="btn quiet" onClick={() => setImporting(true)} title="把这块画布和评论下载成文件，导入到你自己的 Agora">
+            <IconFile size={16} /><span>导入到我的 Agora</span>
+          </button>
           <ThemeButton />
           <button className="btn quiet guest-name" onClick={() => setAsking("needed")} title="修改显示名">
             <IconUser size={16} /><span>{name || "填写名字"}</span>
@@ -267,6 +285,7 @@ export function GuestApp({ initial }: { initial: State }) {
           </motion.div>
         )}
         {toast && <div className="toast" role="status"><span>{toast}</span></div>}
+        {importing && <ImportDialog onClose={() => setImporting(false)} />}
         {asking && <NameDialog initial={name} welcome={asking === "welcome"} title={cur.canvas.title} onOk={confirmName} onSkip={skipName} />}
       </div>
     </MotionConfig>
@@ -339,6 +358,42 @@ function NameDialog({ initial, welcome, title, onOk, onSkip }: { initial: string
           <button type="submit" className="btn primary" disabled={!v.trim()}>{welcome ? "开始" : "好"}</button>
         </div>
       </motion.form>
+    </div>
+  );
+}
+
+const IMPORT_CMD = "agora import <下载的文件>";
+
+/** How a guest takes the share home: the bundle file, and the command that brings it into their own Agora. */
+function ImportDialog({ onClose }: { onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard?.writeText(IMPORT_CMD).then(
+      () => (setCopied(true), setTimeout(() => setCopied(false), 1500)),
+      () => {},
+    );
+  };
+  return (
+    <div className="guest-scrim" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="guest-dialog" role="dialog" aria-label="导入到我的 Agora">
+        <h2>导入到我的 Agora</h2>
+        <p>下载分享包，再在你自己的项目里运行下面的命令：画布和子图会作为新画布导入，评论作为只读的历史保留。</p>
+        <a className="btn primary" href="/api/guest/bundle" download>
+          <IconFile size={16} />下载分享包
+        </a>
+        <div className="guest-cmd">
+          <code>{IMPORT_CMD}</code>
+          <button className="btn quiet" onClick={copy} aria-label="复制命令">
+            <IconCopy size={16} />{copied ? "已复制" : "复制"}
+          </button>
+        </div>
+        <p className="guest-warn" role="note">
+          <IconLock size={14} />分享包一旦下载就收不回来：撤销分享只让链接失效，已经保存的文件不受影响。
+        </p>
+        <div className="guest-dialog-actions">
+          <button className="btn quiet" onClick={onClose}>关闭</button>
+        </div>
+      </div>
     </div>
   );
 }

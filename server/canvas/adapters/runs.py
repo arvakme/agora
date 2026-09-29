@@ -1,5 +1,5 @@
-"""Agent runs: a session, the sub-agents it started natively, and the workers it dispatched through
-Seedmux — one tree, each run with its own timeline (web/docs/cli-adapters.md §5, API §7).
+"""Agent runs: a session and the sub-agents it started natively — one tree, each run with its own
+timeline (web/docs/cli-adapters.md §5, API §7).
 
 ``GET /api/agent/runs?session=<sid>`` (or ``?kind=<cli>&native=<id>`` for a session Agora does
 not own) returns::
@@ -9,16 +9,16 @@ not own) returns::
 ``AgentRun``::
 
     {id, kind, nativeId?, tier, sessionId?, label, role?, model?, depth,
-     parent?: {runId, via: native|seedmux|inferred, toolCallId?, taskId?, evidence},
+     parent?: {runId, via: native|dispatch|inferred, toolCallId?, taskId?, evidence},
      cwd?, worktree?, state, startedAt?, endedAt?, lastAt?, logPath?,
-     childCount, descendants, hiddenDescendants, receipt?: {...Seedmux ticket...},
+     childCount, descendants, hiddenDescendants,
      timeline: {segments: [{kind, start, end, path?, node?, itemId, label, turn}],
                 turns: [{n, start, end}],
-                moments: [{kind: dispatch|handoff|receipt, at, childRunId?, toolCallId?, taskId?, state?}],
+                moments: [{kind: dispatch|handoff, at, childRunId?, toolCallId?, taskId?, state?}],
                 timesInferred?: true}}
 
-Parent/child evidence, strongest first: ``native`` (the CLI wrote the link), ``seedmux`` (a
-dispatch record: the parent's own ``task=T-xx pane=…`` output, then ``meta.from_pane``), then
+Parent/child evidence, strongest first: ``native`` (the CLI wrote the link), ``dispatch`` (a dispatch
+record, ``.agora/dispatch/<id>.json``: ``taskId`` is its id and the run's state is the record's), then
 ``inferred`` (cwd and a time window). The whole tree is returned by default; every run says how
 many runs are below it (``descendants``) so the page can show one level and fold the rest into a
 badge (user decision). ``depth=N`` stops expanding below N (``hiddenDescendants`` counts the rest).
@@ -31,6 +31,7 @@ import re
 import time
 from collections import OrderedDict
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from server.canvas.adapters.base import NativeRef, Subagents
@@ -41,7 +42,7 @@ RUNNING_S = 120  # a log written to this recently counts as running
 MIN_TOOL_MS = 300
 SEG_KIND = {"read": "read", "search": "read", "webFetch": "read", "webSearch": "read", "write": "write", "edit": "write", "commands": "exec", "tools": "exec", "subagents": "exec", "plan": "think", "questions": "wait"}
 
-# Unified lifecycle (§5.3). Seedmux receipt states map onto it in receipts.py.
+# Unified lifecycle (§5.3).
 STATES = ("dispatched", "acknowledged", "running", "waiting", "idle_no_reply", "done", "failed", "blocked", "exited", "session_changed", "unknown", "idle")
 
 
@@ -272,6 +273,9 @@ def _state(ref_state: str | None, tl: dict[str, Any], mtime: float | None) -> st
 def _moments(parent: dict[str, Any], child: dict[str, Any], ref: NativeRef, items: list[dict[str, Any]]) -> None:
     m = ref.meta
     tcid = ref.parent.tool_call_id if ref.parent else None
+    if tcid is None and m.get("record") and ref.parent and ref.parent.task_id:
+        # The parent's tool call that ran `agora dispatch`: the one whose result names the dispatch.
+        tcid = next((i["id"] for i in items if i.get("kind") == "tool" and ref.parent.task_id in str((i.get("tool") or {}).get("output", "")) + str((i.get("tool") or {}).get("args", ""))), None)
     at = m.get("dispatchedAt")
     if at is None and tcid:
         at = next((i["at"] for i in items if i["id"] == tcid), None)
@@ -291,7 +295,7 @@ def run_of(ref: NativeRef, root: str | None, *, depth: int, links: list | None =
                     s["node"] = n
     a = ADAPTERS.get(ref.kind)
     stat = log_stat(a, ref.path) if a is not None else None
-    state = _state(ref.meta.get("state"), tl, stat[1] if stat else None)
+    state = ref.meta["state"] if ref.meta.get("record") else _state(ref.meta.get("state"), tl, stat[1] if stat else None)
     run = {
         "id": ref.run_id,
         "kind": ref.kind,
@@ -301,7 +305,9 @@ def run_of(ref: NativeRef, root: str | None, *, depth: int, links: list | None =
         "label": ref.label or ref.native_id,
         "depth": depth,
         "state": state,
-        "startedAt": ref.meta.get("dispatchedAt") or tl["startedAt"],
+        # A dispatched run starts when its target took the task (the marker in its log), not when it was sent:
+        # between the two it is "sent, waiting to be taken", which the page draws differently from working.
+        "startedAt": ref.meta.get("acceptedAt") if ref.meta.get("record") else (ref.meta.get("dispatchedAt") or tl["startedAt"]),
         "endedAt": ref.meta.get("doneAt") or (tl["endedAt"] if state in ("done", "failed", "idle") else None),
         "lastAt": tl["lastAt"],
         "hiddenDescendants": 0,
@@ -312,6 +318,8 @@ def run_of(ref: NativeRef, root: str | None, *, depth: int, links: list | None =
             run[k] = ref.meta[k]
     if session_id:
         run["sessionId"] = session_id
+    elif ref.meta.get("record") and ref.meta.get("sessionId"):
+        run["dispatchSession"] = ref.meta["sessionId"]  # the Agora session a dispatch gave the task to (it is this run: the page draws it once)
     if ref.path is not None:
         run["logPath"] = str(ref.path)
     if ref.cwd:
@@ -326,10 +334,9 @@ def run_of(ref: NativeRef, root: str | None, *, depth: int, links: list | None =
     return run
 
 
-def build(ref: NativeRef, *, root: str | None, session_id: str | None = None, depth: int | None = None, store: Any = None, canvas: str | None = None, with_items: bool = False, receipts: bool = True, home: Path | None = None) -> dict[str, Any]:
-    """The run tree under ``ref``: its native sub-agents and — with a project ``store`` — the Seedmux
-    workers it dispatched (and theirs, and their sub-agents'…). ``depth`` levels are expanded
-    (None = all, the default); deeper runs are only counted (``folded``, ``hiddenDescendants``).
+def build(ref: NativeRef, *, root: str | None, session_id: str | None = None, depth: int | None = None, store: Any = None, canvas: str | None = None, with_items: bool = False, home: Path | None = None, more: Callable[[NativeRef], list[NativeRef]] | None = None) -> dict[str, Any]:
+    """The run tree under ``ref``: its native sub-agents (and theirs…). ``depth`` levels are expanded
+    (None = all, the default); ``more(ref)`` adds runs the CLI's own log does not name (dispatched ones: ``via="dispatch"``); deeper runs are only counted (``folded``, ``hiddenDescendants``).
     Every run says how many runs are below it (``descendants``) so a page can fold the tree itself
     (the default view shows one level: user decision 2026-09-28)."""
     links = canvas_links(store, canvas) if store is not None and canvas else None
@@ -345,12 +352,13 @@ def build(ref: NativeRef, *, root: str | None, session_id: str | None = None, de
         while queue:
             pref, prun, is_folded = queue.pop(0)
             a = ADAPTERS.get(pref.kind)
-            if pref.path is None or a is None or not isinstance(a, Subagents):
-                continue
-            try:
-                kids = a.children(pref, home)
-            except Exception:
-                kids = []
+            kids: list[NativeRef] = []
+            if pref.path is not None and a is not None and isinstance(a, Subagents):
+                try:
+                    kids = a.children(pref, home)
+                except Exception:
+                    kids = []
+            kids = [*kids, *(more(pref) if more else [])]
             for kref in kids:
                 if kref.run_id in seen:
                     continue
@@ -373,19 +381,6 @@ def build(ref: NativeRef, *, root: str | None, session_id: str | None = None, de
                 queue.append((kref, krun, False))
 
     expand()
-    if receipts and store is not None:
-        from server.canvas.adapters import receipts as rc
-
-        placed: set[str] = set()
-        scan = rc.Scan(root) if root else None  # the tickets folder and `git worktree list`, once per build
-        while True:  # workers can have native sub-agents, which can dispatch workers again
-            new = rc.attach(runs, root=root, store=store, depth=depth, folded=folded, links=links, home=home, placed=placed, with_items=with_items, scan=scan)
-            if not new:
-                break
-            for kref, krun in new:
-                seen.add(krun["id"])
-                queue.append((kref, krun, False))
-            expand()
     kids: dict[str, list[str]] = {}
     for r in runs.values():
         r.pop("_items", None)

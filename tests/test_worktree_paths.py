@@ -70,7 +70,7 @@ def test_runs_place_edits_from_other_worktrees_on_their_nodes(repo, tmp_path, mo
     (d / f"{SID}.jsonl").write_text("".join(json.dumps(r) + "\n" for r in recs))
     s.bind("s-1", agent="claude", model="haiku", native_id=SID, started=True)
     s.write("canvas", "c1", {"elements": [{"id": "api", "type": "rectangle", "customData": {"codePaths": ["server/**"]}}]}, base=None)
-    got = TestClient(create_project_app(s.root)).get("/api/agent/runs", params={"session": "s-1", "canvas": "c1", "receipts": 0}).json()
+    got = TestClient(create_project_app(s.root)).get("/api/agent/runs", params={"session": "s-1", "canvas": "c1"}).json()
     segs = [x for x in got["runs"][0]["timeline"]["segments"] if x["kind"] == "write"]
     assert [x.get("node") for x in segs] == ["api", "api", None]
     # the page places files itself from the paths it is given: they must already be relative

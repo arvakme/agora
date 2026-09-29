@@ -16,7 +16,7 @@
 .sp-meta select:hover { background: var(--raised); color: var(--fg); }
 .sp-native { flex: none; font-size: var(--text-xs); color: var(--fg-subtle); }
 .sp-term-btn { flex: none; }
-/* 「在 X 中打开」+ ▾: one split control; the menu picks Kitty or Seedmux and remembers it */
+/* 「在 Kitty 中打开」+ ▾: one split control */
 .sp-term { position: relative; flex: none; display: flex; align-items: center; gap: 1px; }
 .sp-term .sp-term-btn { border-top-right-radius: var(--r-xs); border-bottom-right-radius: var(--r-xs); }
 .sp-term-more { width: 26px; padding: 0; border-top-left-radius: var(--r-xs); border-bottom-left-radius: var(--r-xs); }
@@ -147,7 +147,7 @@
 .sp-choose-go { display: flex; gap: var(--space-4); }
 .sp-choose .notice { margin-bottom: var(--space-6); }
 @container sp (max-width: 360px) { .sp-choose-row { grid-template-columns: minmax(0, 1fr); } }
-/* Kitty / Seedmux app icons in the terminal button and its menu: the apps' own icons, unframed. */
+/* Kitty app icon in the terminal button and its menu: the app's own icon, unframed. */
 .term-app-icon { flex: none; display: block; user-select: none; }
 .sp-term-menu button:disabled .term-app-icon { filter: grayscale(1); }
 
@@ -240,3 +240,26 @@
 .sp-jump[data-new] { color: var(--accent, var(--fg)); font-weight: 500; }
 .sp-jump-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok, #2f9e6b); flex: none; }
 @media (prefers-reduced-motion: reduce) { .sp-jump { transition: none; } }
+
+/* ——— what a two-way CLI asks (RequestCards, InputRight, mode, notices) ——— */
+.sp-requests { flex: none; display: flex; flex-direction: column; gap: var(--space-3); margin: 0 var(--space-5) var(--space-3); }
+.sp-req { border: 1px solid var(--line-strong); border-radius: var(--r-lg); padding: var(--space-3) var(--space-4); background: var(--raised); display: flex; flex-direction: column; gap: var(--space-2); }
+.sp-req[data-kind="question"] { border-color: var(--accent, var(--line-strong)); }
+.sp-req-q { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.sp-req-q legend { padding: 0; margin-bottom: var(--space-1); font-size: var(--text-sm); }
+.sp-req-head { margin-right: var(--space-2); color: var(--fg-muted); font-weight: 600; }
+.sp-req-hint { margin-left: var(--space-2); color: var(--fg-subtle); font-style: normal; font-size: var(--text-xs); }
+.sp-req-opt { text-align: left; display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) var(--space-3); border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--fg); cursor: pointer; }
+.sp-req-opt small { color: var(--fg-subtle); font-size: var(--text-xs); }
+.sp-req-opt[data-on] { border-color: var(--accent); background: var(--accent-wash); }
+.sp-req-title { margin: 0; font-size: var(--text-sm); display: flex; gap: var(--space-2); min-width: 0; }
+.sp-req-title code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-req-reason { margin: 0; color: var(--fg-subtle); font-size: var(--text-xs); }
+.sp-req-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.sp-req-why { flex: 1 1 10rem; min-width: 0; }
+.sp-req-err { color: var(--negative); font-size: var(--text-xs); }
+.sp-inputright { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0 var(--space-5) var(--space-2); font-size: var(--text-sm); color: var(--fg-muted); }
+.sp-mode { font-size: var(--text-xs); padding: 0 var(--space-2); border-radius: var(--r-sm); border: 1px solid var(--line-strong); color: var(--fg-muted); white-space: nowrap; }
+.sp-mode[data-tone="caution"] { color: var(--caution); border-color: currentColor; }
+.sp-notice { margin: var(--space-2) 0 0; font-size: var(--text-sm); color: var(--fg-muted); }
+.sp-notice[data-tone="denied"]::before { content: "⛔ "; }

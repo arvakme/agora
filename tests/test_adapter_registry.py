@@ -17,12 +17,11 @@ def test_session_agents_are_the_t1_adapters():
 
 def test_observed_clis_are_registered_but_never_session_agents():
     """User decision 2026-09-28: Grok, Cursor and Devin are observed (T2) — trajectory and workstation
-    figure for their sub-agents and Seedmux workers — never picked for an Agora session."""
+    figure for their sub-agents — never picked for an Agora session."""
     assert [a["kind"] for a in registry.adapter_infos(with_versions=False)] == ["pi", "claude", "codex", "grok", "cursor", "devin"]
     for k in ("grok", "cursor", "devin"):
         a = adapters.need(k)
         assert adapters.implemented_tier(a) == "T2" and a.max_tier == "T2" and k not in adapters.session_kinds()
-    assert adapters.by_seedmux_name("cursor-agent").kind == "cursor" and adapters.by_seedmux_name("devin").kind == "devin"
 
 
 def test_tier_follows_capabilities_and_max_tier():
@@ -77,4 +76,4 @@ def test_adapters_endpoint(tmp_path, monkeypatch):
     assert by["claude"]["logDir"] == "~/.claude/projects/" and by["claude"]["catalog"] == {"kind": "claude", "default": "m"}
     assert "version" not in by["pi"]
     for a in got:
-        assert set(a) >= {"kind", "name", "tier", "maxTier", "installed", "tested", "caps", "icon", "logDir", "deleteCommand", "seedmuxNames"}
+        assert set(a) >= {"kind", "name", "tier", "maxTier", "installed", "tested", "caps", "icon", "logDir", "deleteCommand"}

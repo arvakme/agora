@@ -26,13 +26,13 @@ Agora 把这三件事放到同一张图上：图就在仓库里，agent 能读�
 
 ### 2. 你自己的 coding agent，平级、会话锁定
 
-每个会话开始时从 **Pi / Claude Code / Codex** 里选一个，连同模型和强度一起锁定。会话就是这个 CLI 自己的原生会话，Agora 不另存对话，而是跟随 CLI 的会话日志。agent 通过 `agora-canvas` skill 调 `agora canvas read / apply / link / anim` 读图、改图，每次改图都是一批可撤销的修改。画布上的评论可以直接「交给 Agent」，答复会贴回评论线程。见 [Agent 会话](web/docs/agent-sessions.md)。
+每个会话开始时从 **Pi / Claude Code / Codex** 里选一个，连同模型和强度一起锁定。会话就是这个 CLI 自己的原生会话，Agora 不另存对话，而是跟随 CLI 的会话日志。agent 通过 `agora` skill 调 `agora canvas read / apply / link / anim` 读图、改图，每次改图都是一批可撤销的修改。画布上的评论可以直接「交给 Agent」，答复会贴回评论线程。见 [Agent 会话](web/docs/agent-sessions.md)。
 
 ![新会话先选 agent、模型和强度，选定后不能更改](docs/media/choose-agent.png)
 
 ### 3. 一键在终端继续，双向同步
 
-「在终端打开」用同一个原生会话 id 起交互式 CLI（`claude --resume`、`pi --session-id`、`codex resume`），下拉里选在哪儿打开（记在浏览器里）：**Kitty**——在本项目专属的 tmux 服务器里起，再用 Kitty（没有就 Terminal.app）打开窗口；**Seedmux**——经 Seedmux 官方控制桥在当前标签页旁新开一个 pane，CLI 直接跑在里面。你在终端里说的话、agent 的回复和工具调用都会出现在面板上；从面板发的消息会等 agent 这一轮结束、终端 4 秒没有按键后粘贴进去。
+「在终端打开」用同一个原生会话 id 起交互式 CLI（`claude --resume`、`pi --session-id`、`codex resume`），在本项目专属的 tmux 服务器里起，再用 Kitty（没有就 Terminal.app）打开窗口。你在终端里说的话、agent 的回复和工具调用都会出现在面板上；从面板发的消息会等 agent 这一轮结束、且没有人占着终端的输入（接管了，或挂着一个可写窗口）时粘贴进去，队列不丢。
 
 ![终端已接管：面板显示 tmux attach 命令，对话继续同步](docs/media/terminal.png)
 
@@ -50,7 +50,7 @@ Agora 把这三件事放到同一张图上：图就在仓库里，agent 能读�
 
 ### 6. 经 quietharbor.de 分享给别人只读评论
 
-`agora share create --for 1d`（或顶栏「分享」）经 Cloudflare Tunnel 给一块画布开一个独立子域名，访客只能看图、读评论、发评论和回复；改图、会话、终端、代码路径和本地路径都不下发。到期或撤销后 DNS 记录和隧道一起删除。域名来自你自己的 Cloudflare zone（作者本机用的是 `quietharbor.de`）。见[分享](web/docs/sharing.md)。
+`agora share create --for 1d`（或顶栏「分享」）经 Cloudflare Tunnel 给一块画布开一个独立子域名，访客只能看图、读评论、发评论和回复；改图、会话、终端、代码路径和本地路径都不下发。到期或撤销后 DNS 记录和隧道一起删除。域名来自你自己的 Cloudflare zone（作者本机用的是 `quietharbor.de`）。没有账号也行：`agora share create --quick` 用 `cf tunnels quick-start` 开一个临时 trycloudflare.com 地址（一次一个分享，撤销或 `agora down` 即失效）。想把画布交给别的开发者：`agora share export` 导出分享包（访客页也有「导入到我的 Agora」），对方 `agora import` 就成了他项目里的新画布，评论作为只读历史；**分享包一旦给出去就收不回来**。见[分享](web/docs/sharing.md)。
 
 | 作者：选画布和有效期 | 访客：只读画布，可评论 |
 |---|---|
@@ -82,8 +82,8 @@ flowchart LR
   Server <-->|原子写 + 版本校验| Files
   Server -->|发消息| Headless
   Server -->|粘贴 / 托管| TUI
-  Headless -->|agora-canvas skill<br/>agora canvas read/apply/link| Server
-  TUI -->|agora-canvas skill| Server
+  Headless -->|agora skill<br/>agora canvas read/apply/link| Server
+  TUI -->|agora skill| Server
   Headless --> Logs
   TUI --> Logs
   Logs -->|每 0.4s 跟随| Server
@@ -124,7 +124,7 @@ cd ~/code/my-service                            # 你的项目
 - 仓库移动、`cp -r` 复制、重新 clone 都有处理：移动后 Pi 会话的日志跟着挪；副本里的会话只读、可分叉继续；别的机器建的会话显示成只读卡片。`git clean -fdx` 删掉的本机数据（会话绑定、改图记录、回收站）由仓库外的每日备份和本机注册表兜底：`agora doctor --fix`。见[项目存储](web/docs/project-storage.md)。
 
 - 首次打开会建一块「示例架构图」和一个会话；在会话里选好 agent 就可以开始讨论。
-- 绑定会话时会自动为该 agent 安装 `agora-canvas` skill；也可以手动 `agora skill install --agent claude|codex|pi|all`（Claude Code 链接到 `.claude/skills/`，Codex 链接到 `.agents/skills/`，Pi 每次启动带 `--skill`；链接写进 `.git/info/exclude`，不改全局配置）。
+- 绑定会话时会自动为该 agent 安装 `agora` skill（旧的 `agora-canvas` 链接会被换掉）；也可以手动 `agora skill install --agent claude|codex|pi|all`（Claude Code 链接到 `.claude/skills/`，Codex 链接到 `.agents/skills/`，Pi 每次启动带 `--skill`；链接写进 `.git/info/exclude`，不改全局配置）。
 - 把 `~/code/agora/bin` 加进 `PATH` 后可以直接用 `agora up` / `agora open`。`agora up` 只起服务并打印地址；`agora open --dev` 走 vite 热更新，开发 Agora 本身时用。
 
 分享需要 `cloudflared`，并已 `cloudflared tunnel login`（或设置 `AGORA_CF_API_TOKEN` + `AGORA_CF_ZONE_ID`；`AGORA_SHARE_DOMAIN` 可指定域名）：
@@ -164,13 +164,11 @@ npm run eval:replay          # 离线回放最近一轮的模型输出（validat
 agora_cli/            agora 命令：init / up / open / status / down / canvas / skill / share
 bin/agora             在任意项目目录里调用上面的命令（uv run --project <仓库>）
 server/canvas/        本项目服务：项目存储、三个 agent 后端、会话跟随与终端、画布桥接、分享与网关
-skills/agora-canvas/  给 Pi / Claude Code / Codex 的 skill（读图、改图、关联代码、动画）
+skills/agora/         给 Pi / Claude Code / Codex 的 skill：SKILL.md 是入口路由，references/ 按领域放细节（改图、动画、子图、关联代码、评论、派活）
 web/                  前端（React + Excalidraw）；web/docs/ 是各功能规格，web/eval/ 是评测
 web/libraries/        vendored 素材库（约 6k 个组件，来源与许可见其 NOTICE.md）
 tests/                Python 测试
-docs/                 开发协作与测试说明；docs/legacy-rooms.md 是早期房间调度的说明
-server/ brain/ daemon/ host/ agora_ask/ k8s/
-                      早期「多 Agent 房间调度」实现（Postgres + Redis），已不是当前产品路径
+docs/                 开发协作与测试说明
 ```
 
 ## 限制
@@ -183,7 +181,7 @@ server/ brain/ daemon/ host/ agora_ask/ k8s/
 - **Codex 终端先行时靠认领。** 还没有原生 id 的 Codex 会话在终端里开新会话，Agora 认领打开终端之后同目录下出现的第一个 rollout；同一时间在同一目录另起 Codex 可能认错。
 - **用量不全。** Claude Code 终端里的轮次没有花费（原生日志不记），Codex 不记花费。
 - **指针只看编辑工具的写入。** `sed -i`、`cat > x` 这类 shell 写入不会被识别；读文件、跑测试不移动指针；一个文件只属于最具体的那个节点。
-- **只在 macOS 上实测过。** 终端窗口用 Kitty 或 Terminal.app 打开；都没有时面板给出 `tmux attach` 命令。Seedmux 需要它的 Agent Team 控制桥开着（设置 › Agent Team）；关着时下拉里的「复制打开命令」给出可在任意 pane 里运行的命令。Agora 没法让 Seedmux 切到已开的 pane，要自己在 Seedmux 里切过去。
+- **只在 macOS 上实测过。** 终端窗口用 Kitty 或 Terminal.app 打开；都没有时面板给出 `tmux attach` 命令；下拉里的「复制打开命令」给出可在任意终端里运行的命令。
 
 可能的方向（未排期）：多人实时协同编辑、Linux 上的终端窗口、进度指针识别更多写入方式。
 
@@ -194,7 +192,7 @@ uv run pytest tests/test_project_store.py tests/test_agent_sessions.py tests/tes
 cd web && npx tsc -p . && npx vitest run && npm run build && npm run eval:replay
 ```
 
-CI（`.github/workflows/test.yml`）跑全部 Python 测试（带 Postgres / Redis 服务容器，给早期房间调度的集成测试用），以及前端的类型检查、单测、构建、离线评测回放和素材库校验。开发协作见 [docs/development.md](docs/development.md)，测试说明见 [docs/testing.md](docs/testing.md)。
+CI（`.github/workflows/test.yml`）跑全部 Python 测试（不需要外部服务），以及前端的类型检查、单测、构建、离线评测回放和素材库校验。开发协作见 [docs/development.md](docs/development.md)，测试说明见 [docs/testing.md](docs/testing.md)。
 
 ## 许可与致谢
 
@@ -206,5 +204,5 @@ CI（`.github/workflows/test.yml`）跑全部 Python 测试（带 Postgres / Red
 - **dither-extra 图标**（`web/src/app/dither-extra/`）：本项目作者为 Marginalia 按 Dither Icons 的构造规则绘制的 17 个补充图标（`eye-off` 复用 Dither Icons 的眼睛几何），随本项目以 MIT 发布，并附 Dither Icons 的许可原文（[LICENSE-dither-icons.txt](web/src/app/dither-extra/LICENSE-dither-icons.txt)）。
 - **DeepSeek Harness**（github.com/deepseek-ai/deepseek-harness，MIT）：会话「对话 / 轨迹」视图的信息结构，用本项目的技术栈重写，未引入其依赖。
 - **Agent 标志**（`web/src/app/agents/`，随应用打包、不在运行时外链）：Pi 取自 [pi.dev](https://pi.dev) Press Kit 的方形徽标（Badge SVG，`pi.dev/favicon.svg`，单色，亮色 `#111111`、暗色 `#f6f6f6`），以矢量路径内联；Claude Code 取自官方文档站 [code.claude.com/docs](https://code.claude.com/docs) 的矢量标志（橙色星芒 `#D97757`），以矢量路径内联；Codex 取自 OpenAI 签名的 Codex 桌面应用（bundle id `com.openai.codex`，26.908.70816）自带的 1024px 图标 `Contents/Resources/icon-codex-light.png` 与 `icon-codex-dark-color.png`：用两张图做差分抠图去掉应用底板与投影，只留中间的云形标志，导出 64px 与 128px 两档。
-- **终端应用图标**（`web/src/app/terminals/`）：Kitty 取自本机 `kitty.app`（0.48.2）的 `Contents/Resources/kitty.icns`，Kitty 为 Kovid Goyal 的作品（[kovidgoyal/kitty](https://github.com/kovidgoyal/kitty)）；Seedmux 取自本机 `Seedmux.app`（0.1.69，`com.xx.seedmux`）的 `Contents/Resources/AppIcon.icns`；各取 32px 与 64px 两档，未改动图形。
-- **以上标志和图标是各自所有者（Earendil / Pi、Anthropic、OpenAI、Kovid Goyal / kitty、Seedmux）的商标或作品，不在本项目的 MIT 许可范围内，这里仅用于标识对应的产品；本项目与它们没有从属或背书关系。**
+- **终端应用图标**（`web/src/app/terminals/`）：Kitty 取自本机 `kitty.app`（0.48.2）的 `Contents/Resources/kitty.icns`，Kitty 为 Kovid Goyal 的作品（[kovidgoyal/kitty](https://github.com/kovidgoyal/kitty)）；取 32px 与 64px 两档，未改动图形。
+- **以上标志和图标是各自所有者（Earendil / Pi、Anthropic、OpenAI、Kovid Goyal / kitty）的商标或作品，不在本项目的 MIT 许可范围内，这里仅用于标识对应的产品；本项目与它们没有从属或背书关系。**

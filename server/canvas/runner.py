@@ -86,6 +86,17 @@ class ExecOptions:
         )
 
 
+class Control:
+    """The host's side of a two-way turn: JSON lines the backend writes to the CLI's stdin while the
+    turn runs (answers to its requests, an interrupt). ``send`` is safe to call before the process is up."""
+
+    def __init__(self) -> None:
+        self.queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+    def send(self, line: dict[str, Any]) -> None:
+        self.queue.put_nowait(line)
+
+
 @dataclass(frozen=True)
 class RunRequest:
     """What to run: one prompt — schema-constrained (planning) or free (a session turn)."""
@@ -98,6 +109,8 @@ class RunRequest:
     # Session turns: where the agent runs (the project root) and extra environment.
     cwd: str | None = None
     env: dict[str, str] | None = None
+    # Two-way backends (Claude): where the host writes what it sends to the running turn.
+    control: Control | None = None
 
 
 class Usage(TypedDict):
