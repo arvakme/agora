@@ -73,7 +73,7 @@ def test_binding_api_locks_and_goes_with_the_session(store):
     assert c.put("/api/agent/sessions/s-a", json={"agent": "codex"}).json()["locked"] is True
     assert c.put("/api/agent/sessions/s-a", json={"agent": "claude", "model": "opus", "effort": "high"}).status_code == 409
     assert c.put("/api/agent/sessions/s-b", json={"agent": "codex"}).json()["nativeId"] is None  # Codex assigns its own
-    assert (store.root / ".claude" / "skills" / "agora-canvas").exists()  # skill linked on demand
+    assert (store.root / ".claude" / "skills" / "agora").exists()  # skill linked on demand
     native = store.read_binding("s-a")["nativeId"]
     m = c.post("/api/project/trash/session/s-a", json={}).json()
     assert m["terminalClosed"] is False and store.read_binding("s-a") is None  # the binding goes to the trash with it
@@ -277,5 +277,5 @@ def test_skill_install_cli(store):
     r = agora("skill", "install", "--agent", "codex", cwd=store.root)
     assert r.returncode == 0, r.stderr
     got = json.loads(r.stdout)["installed"]
-    assert got[0]["path"].endswith(".agents/skills/agora-canvas") and got[0]["state"] == "created"
-    assert (store.root / ".agents" / "skills" / "agora-canvas" / "references" / "ops.md").exists()
+    assert got[0]["path"].endswith(".agents/skills/agora") and got[0]["state"] == "created"
+    assert (store.root / ".agents" / "skills" / "agora" / "references" / "canvas-ops.md").exists()

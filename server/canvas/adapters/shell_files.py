@@ -240,6 +240,10 @@ def shell_tool(command: Any, root: str | None = None, cwd: str | None = None) ->
     """``(activity, reads, files, on)`` for a shell command: ``shell_reads`` and, for a command that does
     more than read, the files it writes (activity ``edit``, ``files`` = ``[{path, op}]``) or runs on
     (activity stays ``commands``; ``on`` = paths)."""
+    from server.canvas.adapters.tools import dispatches_a_task
+
+    if dispatches_a_task(command):
+        return "subagents", [], [], []
     act, reads = shell_reads(command, root, cwd)
     if act not in ("commands", None):
         return act, reads, [], []

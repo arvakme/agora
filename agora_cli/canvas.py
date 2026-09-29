@@ -1,4 +1,4 @@
-"""``agora canvas …`` and ``agora skill …``: the commands the agora-canvas skill teaches.
+"""``agora canvas …`` and ``agora skill …``: the commands the agora skill teaches.
 
 Every canvas command prints one JSON object. With the project's server running (``agora
 up``) they go through it, so writes reach the open page (which validates, checks
@@ -177,7 +177,7 @@ def _session_kinds() -> tuple[str, ...]:
 
 
 def add_parsers(sub) -> None:
-    c = sub.add_parser("canvas", help="read and edit this project's canvases (used by the agora-canvas skill)")
+    c = sub.add_parser("canvas", help="read and edit this project's canvases (used by the agora skill)")
     c.add_argument("--project", default=None, help="project directory (default: $AGORA_PROJECT or the nearest .agora/)")
     csub = c.add_subparsers(dest="action", required=True)
     for name, help in (
@@ -216,10 +216,10 @@ def add_parsers(sub) -> None:
             s.add_argument("--clear", action="store_true", help="replace the element's paths with the given ones (none = remove them)")
     c.set_defaults(fn=cmd_canvas)
 
-    k = sub.add_parser("skill", help="put the agora-canvas skill where Pi / Claude Code / Codex find it in this project")
+    k = sub.add_parser("skill", help="put the agora skill where Pi / Claude Code / Codex find it in this project")
     k.add_argument("--project", default=None)
     ksub = k.add_subparsers(dest="skill_action", required=True)
-    i = ksub.add_parser("install", help="link skills/agora-canvas into the project (.claude/skills, .agents/skills)")
+    i = ksub.add_parser("install", help="link skills/agora into the project (.claude/skills, .agents/skills)")
     i.add_argument("--agent", choices=["all", *_session_kinds()], default="all")
     i.add_argument("--copy", action="store_true", help="copy instead of symlink")
     k.set_defaults(fn=cmd_skill)

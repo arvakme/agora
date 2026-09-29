@@ -1,10 +1,10 @@
 # Agent 会话：会话就是你自己的 Pi / Claude Code / Codex
 
-Agora 里的一个会话，就是用户选定的原生 coding agent 的一个原生会话。没有「主控」和「worker」之分：在会话里和它讨论架构，它通过 agora-canvas skill 读图、改图、做算法动画；想直接写代码时「在终端打开」，同一个原生会话在终端里接着用，两边说的话互相同步。
+Agora 里的一个会话，就是用户选定的原生 coding agent 的一个原生会话。没有「主控」和「worker」之分：在会话里和它讨论架构，它通过 agora skill 读图、改图、做算法动画；想直接写代码时「在终端打开」，同一个原生会话在终端里接着用，两边说的话互相同步。
 
 只支持三个 agent：**Pi**、**Claude Code**、**Codex**（适配器注册表里的 T1；每个 CLI 的知识在 `server/canvas/adapters/<kind>.py`，档位、工具事实、子 agent、漂移检测与怎么加新 CLI 见 [CLI 适配层](cli-adapters.md)）。
 
-实现：`server/canvas/agents.py`（入口：无头后端、命令、日志位置、模型目录、skill 安装，转发到适配器）、`server/canvas/transcript.py`（日志 → 会话记录）、`server/canvas/sessions.py`（路由、跟随、终端、画布桥接）、`server/canvas/terminal.py`（tmux）、`server/canvas/agent_router.py`（`/api/agent`）、`agora_cli/canvas.py`（`agora canvas` / `agora skill`）、`skills/agora-canvas/`；前端 `web/src/session/agents.ts`（事件流与发送）、`agentBridge.ts`（在页面上执行改图）、`SessionPane.tsx`。
+实现：`server/canvas/agents.py`（入口：无头后端、命令、日志位置、模型目录、skill 安装，转发到适配器）、`server/canvas/transcript.py`（日志 → 会话记录）、`server/canvas/sessions.py`（路由、跟随、终端、画布桥接）、`server/canvas/terminal.py`（tmux）、`server/canvas/agent_router.py`（`/api/agent`）、`agora_cli/canvas.py`（`agora canvas` / `agora skill`）、`skills/agora/`；前端 `web/src/session/agents.ts`（事件流与发送）、`agentBridge.ts`（在页面上执行改图）、`SessionPane.tsx`。
 
 ## 1. 会话模型
 
@@ -36,7 +36,7 @@ Agora 里的一个会话，就是用户选定的原生 coding agent 的一个原
 | | 无头续接（Agora 发消息、终端没开） | 终端里的交互式续接 |
 |---|---|---|
 | Claude Code | `claude -p --output-format stream-json --verbose --session-id <uuid>`（没开始过）/ `--resume <uuid>`（其余一律如此，日志没了 CLI 会明确报错），`--model`、`--effort`、`--allowedTools "Bash(agora canvas *)"`，提示词走 stdin | `claude --resume <uuid> --model … --effort …`（没开始过时 `--session-id`） |
-| Pi | `pi -p --mode json --session-id <uuid> --model <provider/id> --thinking <level> --skill <repo>/skills/agora-canvas -- "<提示词>"` | `pi --session-id <uuid> --model … --models …（锁住 Ctrl+P 轮换）--thinking … --skill …` |
+| Pi | `pi -p --mode json --session-id <uuid> --model <provider/id> --thinking <level> --skill <repo>/skills/agora -- "<提示词>"` | `pi --session-id <uuid> --model … --models …（锁住 Ctrl+P 轮换）--thinking … --skill …` |
 | Codex | `codex exec --json --skip-git-repo-check [-m] [-c model_reasoning_effort="…"] -`（首轮）/ `codex exec resume <id> --json … -`，提示词走 stdin | `codex resume <id> -m … -c model_reasoning_effort=…`（还没有 id 时 `codex`，id 从 pane 进程自己打开的 rollout 认领） |
 
 日志定位（`agents.locate_log`）：先找**当前项目根**对应的位置（Claude `~/.claude/projects/<根路径非字母数字换成 ->/`，Pi `~/.pi/agent/sessions/--<根路径>--/`），它就是 CLI 续接时用的那份；不在那里时，Claude 只有一份就跟那份（`--resume` 全局查找），多份就报「找到多份」；Pi 只在别的目录下时报「在别的目录」（`--session-id` 在这里会新开空会话）。Codex 先按 rollout 文件名找，找不到再看绑定记下的路径和 Codex 自己的索引（`~/.codex/state_5.sqlite` 的 `threads.rollout_path`，只读打开），归档或存储迁移后照样找得到。本项目那份之外还有同 id 的副本时，面板顶部提示一次，照常跟随本项目那份。跟随中每 5 秒重新定位一次，日志换了位置（Pi 迁移、分叉）就换过去；跟随中的日志被删了（服务开着时 Claude 做了 30 天清理），就转成「原生记录缺失」，面板上已有的内容留着。
@@ -72,9 +72,9 @@ Agora 发出的消息末尾有一行隐藏页脚：`[[agora]] 来自 Agora · �
 
 一个会话同时只跑一轮无头续接，后来的消息排队；「停止」取消当前一轮。
 
-## 3. agora-canvas skill 与 `agora canvas`
+## 3. agora skill 与 `agora canvas`
 
-`skills/agora-canvas/SKILL.md`（操作说明）+ `references/ops.md`（改图操作）+ `references/animation.md`（动画脚本）+ `scripts/agora`（PATH 上没有 `agora` 时用，顺着软链接找到 Agora 仓库的 `bin/agora`），三个 CLI 共用一份。命令都输出一个 JSON 对象：
+`skills/agora/SKILL.md`（一页路由：什么时候用、各领域的核心步骤）+ `references/`（`canvas-ops.md` 改图操作、`animation.md` 动画脚本、`nested.md` 子图、`link.md` 关联代码、`comments.md` 答复评论、`dispatch.md` 派活）+ `scripts/agora`（PATH 上没有 `agora` 时用，顺着软链接找到 Agora 仓库的 `bin/agora`），三个 CLI 共用一份。命令都输出一个 JSON 对象：
 
 ```bash
 agora canvas list                     # 画布与会话
@@ -88,7 +88,7 @@ agora canvas schema ops|anim          # 精确 JSON Schema
 agora canvas child create --parent c1 --node api   # 节点展开成子画布（见 nested-canvas.md）
 ```
 
-退出码：0 成功 · 1 被拒（invalid / stale / error，见输出）· 2 用法错误 · 3 需要服务或打开的页面。
+退出码：0 成功 · 1 被拒（invalid / stale / error，见输出）· 2 用法错误 · 3 需要服务或打开的页面。`read` / `list` / `search` / `schema` / `child list` 没有页面也能用；`apply` / `anim` / `link` / `child create|link|unlink` 需要打开的页面。
 
 - **找项目**：`--project`，否则 `$AGORA_PROJECT`，否则向上找最近的 `.agora/config.toml`。画布默认 `$AGORA_CANVAS` → 会话关联的画布 → 聚焦画布 → 唯一画布。
 - **读**：服务在跑且有页面打开时读页面上的实时场景（可能有还没落盘的编辑），否则读 `.agora/canvases/<id>.excalidraw`（`server/canvas/model_view.py`，与前端 `toModelView` 同构）。服务没开也能读。每次读把元素版本记到 `.agora/run/reads/<base>.json`。
@@ -99,8 +99,8 @@ agora canvas child create --parent c1 --node api   # 节点展开成子画布（
 
 | CLI | 加载方式 | `agora skill install` 做什么 |
 |---|---|---|
-| Claude Code | 项目 `.claude/skills/<name>/SKILL.md`（软链接可用） | 链接 `.claude/skills/agora-canvas` |
-| Codex | 项目 `.agents/skills/`（软链接可用） | 链接 `.agents/skills/agora-canvas` |
+| Claude Code | 项目 `.claude/skills/<name>/SKILL.md`（软链接可用） | 链接 `.claude/skills/agora`（旧的 `agora-canvas` 链接同时删掉） |
+| Codex | 项目 `.agents/skills/`（软链接可用） | 链接 `.agents/skills/agora`（同上） |
 | Pi | 启动参数 `--skill <dir>`；项目 `.agents/skills` 只在用户信任该项目后加载（print 模式下不信任就静默跳过） | 不放文件，Agora 每次启动 Pi 都带 `--skill` |
 
 绑定会话时自动为该 agent 安装（`agora skill install --agent <x>` 可手动，`--copy` 复制而不是链接）。链接写进 `.git/info/exclude`，不出现在未跟踪文件里；不改任何用户全局配置。

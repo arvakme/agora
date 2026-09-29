@@ -1,5 +1,5 @@
 // What the 工位视图 draws: a top-level Agora session and, below it, the sub-agents it dispatched —
-// native (Claude Agent / Task, Codex spawn), and theirs. This is a view model:
+// native (Claude Agent / Task, Codex spawn), sessions it gave a task to (`agora dispatch`), and theirs. This is a view model:
 // the one wire shape is the server's `RunTree` / `AgentRun` (session/agents.ts, `fetchRuns`,
 // web/docs/cli-adapters.md §5), converted once in ./derive.ts (`fromTree`). The receipt states are
 // the server's unified `RunState`; what the page says for them (已返回结果 vs 验收通过)
@@ -50,6 +50,7 @@ export type ReceiptState =
   | "running"
   | "waiting"
   | "idle_no_reply"
+  | "interrupted"
   | "claimed"
   | "accepted"
   | "returned"
@@ -63,7 +64,8 @@ export const RECEIPT_NAMES: Record<ReceiptState, string> = {
   acknowledged: "已读",
   running: "运行中",
   waiting: "等回复",
-  idle_no_reply: "空闲未回",
+  idle_no_reply: "停了，没交回执",
+  interrupted: "已中断",
   claimed: "声明完成",
   accepted: "验收通过",
   returned: "已返回结果",
@@ -72,8 +74,13 @@ export const RECEIPT_NAMES: Record<ReceiptState, string> = {
   exited: "无回复退出",
   unknown: "状态不明",
 };
+/**
+ * The words for a receipt on a sub-agent: sent but not yet taken says who has to take it (no tick, no
+ * "idle": nothing has been done yet); the rest are `RECEIPT_NAMES`.
+ */
+export const receiptText = (run: Pick<WorkRun, "name" | "parentId">, r: ReceiptState): string => (r === "dispatched" && run.parentId ? `等 ${run.name} 接手` : RECEIPT_NAMES[r]);
 /** Receipts that end a run. */
-export const FINAL: ReadonlySet<ReceiptState> = new Set(["claimed", "accepted", "returned", "failed", "blocked", "exited"]);
+export const FINAL: ReadonlySet<ReceiptState> = new Set(["claimed", "accepted", "returned", "failed", "blocked", "exited", "idle_no_reply", "interrupted"]);
 /** Receipts the tree's 出问题 filter shows. */
 export const TROUBLE: ReadonlySet<ReceiptState> = new Set(["failed", "blocked", "exited", "unknown", "idle_no_reply"]);
 
@@ -81,8 +88,8 @@ export const TROUBLE: ReadonlySet<ReceiptState> = new Set(["failed", "blocked", 
 export type Receipt = { at: number; state: RunState; accepted?: boolean };
 
 /** How a sub-agent was dispatched, and how sure the parent link is (adapter doc §5.2). */
-export type Via = "task" | "native";
-export type Evidence = "native" | "inferred";
+export type Via = "task" | "native" | "dispatch";
+export type Evidence = "native" | "dispatch" | "inferred";
 
 export type WorkRun = {
   /** `kind:nativeId`, or the Agora session id for a derived top-level run. */
@@ -93,6 +100,8 @@ export type WorkRun = {
   /** The Agora session (top-level runs only). */
   sessionId?: string;
   parentId?: string;
+  /** A run a dispatch gave to an Agora session: which session (that session is not drawn a second time as a top-level run). */
+  dispatchSession?: string;
   via?: Via;
   evidence?: Evidence;
   /** What it was asked to do (sub-agents). */

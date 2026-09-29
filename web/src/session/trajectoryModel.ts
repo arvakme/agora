@@ -51,6 +51,8 @@ export type TrajTurn = {
   messageCount: number;
   activity: { kind: Activity; count: number }[];
   files: FileTouch[];
+  /** Lines the server adds to the conversation: an action auto mode blocked, a turn a restart ended. */
+  notices?: Item[];
 };
 
 const emptyUsage = (): UsageSum => ({ input: null, output: null, cacheRead: null, cacheWrite: null, cost: null, requests: 0 });
@@ -255,6 +257,10 @@ export function buildTurns(items: readonly Item[], defaults: { model?: string | 
     }
     if (it.kind === "run") {
       if (cur) runs.set(cur, [...(runs.get(cur) ?? []), it]);
+      continue;
+    }
+    if (it.kind === "notice") {
+      if (cur) cur.notices = [...(cur.notices ?? []), it];
       continue;
     }
     if (!cur) cur = open(it.at);

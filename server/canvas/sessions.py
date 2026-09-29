@@ -31,6 +31,7 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from server.canvas import adapters, agents, nested, schemas
@@ -38,7 +39,8 @@ from server.canvas.adapters import drift
 from server.canvas.local import Local
 from server.canvas.model_view import model_view, versions
 from server.canvas.project import ProjectStore
-from server.canvas.runner import ExecOptions, RunRequest, make_backend
+from server.canvas.adapters.claude import answer_response, approve_response, deny_response, interrupt_request
+from server.canvas.runner import Control, ExecOptions, RunRequest, make_backend
 from server.canvas.terminal import TerminalError, Terminals, gate_hold
 from server.canvas.transcript import MARKER, State, Tail, project, split_agora
 
@@ -53,6 +55,9 @@ READS_KEPT = 64
 SNAPSHOT_MAX = 20 * 1024 * 1024  # per session: past this the trajectory snapshot stops growing
 SUMMARY_MAX = 6000  # characters of the "carry on with a summary" message
 STALE_DAYS = 20  # a Claude Code session idle this long is warned about Claude's 30-day cleanup
+INTERRUPT_GRACE_S = 15.0  # a two-way turn that has not ended this long after an interrupt is stopped the hard way
+DETACH_GRACE_S = 3.0  # the last window has been gone this long (and the CLI is idle): the background pane is closed
+ASKED_MODE = "auto"  # the permission mode Agora asks a two-way CLI for (adapters/claude.py headless_args)
 
 
 class NoPage(RuntimeError):
@@ -80,7 +85,7 @@ def agora_prompt(body: str, *, canvas_id: str | None, canvas_name: str | None, e
     Agora session it belongs to even when ``.agora/sessions/`` is gone."""
     ids = " ".join(f"{k}={v}" for k, v in (("canvas", canvas_id), ("session", session_id), ("project", (project_id or "").replace("-", "")[:8] or None)) if v)
     where = f"画布「{canvas_name or canvas_id}」" if canvas_id else "这个项目的画布"
-    footer = f"{MARKER} 来自 Agora · {where}{f'({ids})' if ids else ''}。读图、改图、做动画用 agora-canvas skill（`agora canvas …`）。{extra}".rstrip()
+    footer = f"{MARKER} 来自 Agora · {where}{f'({ids})' if ids else ''}。读图、改图、做动画用 agora skill（`agora canvas …`）。{extra}".rstrip()
     return f"{body.rstrip()}\n\n{footer}"
 
 
@@ -155,6 +160,7 @@ class Pending:
     prompt: str
     at: float
     delivered_at: float | None = None
+    force: bool = False  # the person said "send it now": this one message goes past the input-right gate
 
 
 def public_item(it: dict[str, Any]) -> dict[str, Any]:
@@ -195,6 +201,16 @@ class Live:
     located_at: float = 0.0  # when the followed log was last looked up
     snap: dict[str, str] = field(default_factory=dict)  # item id → what the trajectory snapshot holds for it
     snap_size: int = 0
+    # Two-way headless turn (Claude): what the CLI has open with the person is runtime fact, never saved
+    # and never replayed: a restart ends it together with the process.
+    requests: OrderedDict[str, dict[str, Any]] = field(default_factory=OrderedDict)  # request id → the CLI's request (adapter event)
+    control: Control | None = None  # where answers and the interrupt are written while the turn runs
+    mode: str | None = None  # the permission mode the CLI reported in its init (``auto``, or ``default`` when the model has no auto)
+    interrupting: bool = False
+    asked: set[str] = field(default_factory=set)  # tool calls put to the person this turn (the CLI lists a denied or interrupted one in permission_denials too: not auto's doing)
+    seen_window: bool = False  # a terminal window has been attached to this pane (an unattended pane is not closed)
+    detached_at: float | None = None  # since when no window is attached (only while the pane is otherwise idle)
+    notes: list[dict[str, Any]] = field(default_factory=list)  # notices to show once the transcript is loaded (a turn a restart ended)
 
 
 class Subscriber:
@@ -225,12 +241,23 @@ class AgentHub:
         self._loop_task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._follow_lock = threading.Lock()
+        # Who else needs to know what the hub sees (dispatch.py): every broadcast event (on the loop
+        # thread); the moment before a message is injected into a CLI (session id, send id; from a
+        # worker thread or the loop, and it must not block); the first time the loop starts.
+        self.listeners: list[Callable[[dict[str, Any]], None]] = []
+        self.handoff_hooks: list[Callable[[str, str], None]] = []
+        self.start_hooks: list[Callable[[], None]] = []
+        self._reap_orphans()
 
     # ——— lifecycle ———
     def ensure_started(self) -> None:
         self._loop = asyncio.get_running_loop()
         if self._loop_task is None or self._loop_task.done():
+            first = self._loop_task is None
             self._loop_task = self._loop.create_task(self._run_loop())
+            if first:
+                for hook in self.start_hooks:
+                    hook()
 
     async def close(self) -> None:
         if self._loop_task:
@@ -265,6 +292,16 @@ class AgentHub:
     def _fanout(self, ev: dict[str, Any]) -> None:
         for s in list(self.subs):
             s.put(ev)
+        for fn in list(self.listeners):
+            try:
+                fn(ev)
+            except Exception:  # a listener must never stop the transcript
+                pass
+
+    def _handoff(self, sid: str, send_id: str) -> None:
+        """Tell the hooks a message is about to be injected: what they persist is written before it is."""
+        for fn in list(self.handoff_hooks):
+            fn(sid, send_id)
 
     def subscribe(self, executor: bool) -> Subscriber:
         self.ensure_started()
@@ -294,6 +331,8 @@ class AgentHub:
             "stale": self.stale(sid, b),
             "snapshot": bool(lv.snap),
             "running": lv.running,
+            "waiting": bool(lv.requests),
+            "mode": {"actual": lv.mode, "asked": ASKED_MODE} if lv.mode else None,
             "busy": lv.state.busy,
             "queued": len(lv.headless) + len(lv.pane),
             "held": lv.held,
@@ -305,7 +344,10 @@ class AgentHub:
     def _terminal(self, sid: str, lv: Live) -> dict[str, Any]:
         out: dict[str, Any] = {"alive": lv.pane_alive, "attach": self.terms.attach_command(sid), "clients": 0, "app": None}
         if lv.pane_alive:
-            out.update(app="tmux", clients=self.terms.clients(sid), inputRight=self.terms.gate(sid).input_right)
+            gate = self.terms.gate(sid)
+            clients = self.terms.clients(sid)
+            lv.seen_window = lv.seen_window or clients > 0
+            out.update(app="tmux", clients=clients, inputRight=gate.input_right, paused=gate.paused, writers=gate.unmanaged_writers)
         return out
 
     def _status(self, sid: str) -> None:
@@ -329,6 +371,15 @@ class AgentHub:
                 lv.items[it["id"]] = it
             for it in self._load_runs(sid):
                 lv.items[it["id"]] = it
+            for it in lv.items.values():  # a wait the host marked lived only as long as the process that held the request
+                if isinstance(it.get("tool"), dict) and it["tool"].pop("hostWait", None):
+                    it["tool"]["waitsUser"] = bool(b and adapters.need(b["agent"]).classify(str(it["tool"].get("name")), {}, None).get("waitsUser"))
+            for n in lv.notes:
+                lv.items[n["id"]] = n
+            if lv.notes:
+                self._keep_snapshot(sid, lv, lv.notes)
+                lv.state.busy = False  # the log still shows the turn open, but its process is gone
+            lv.notes = []
         if not b or not b.get("nativeId"):
             return
         lv.state.root = str(self.store.root)
@@ -384,6 +435,10 @@ class AgentHub:
                     self.broadcast({"t": "done", "sessionId": sid, "sendId": done.send_id, "text": tc.get("text") or "", "error": tc.get("error"), "route": "terminal"})
         while len(lv.items) > MAX_ITEMS * 2:
             lv.items.popitem(last=False)
+        for ev in lv.requests.values():  # a call the log has now, of a request that arrived first
+            marked = self._flag(lv, ev, True)
+            if marked is not None:
+                changed.append(marked)
         if changed:
             latest = {i["id"]: i for i in changed}  # a call and its result in one read: send the merged item once
             self._keep_snapshot(sid, lv, list(latest.values()))
@@ -583,7 +638,29 @@ class AgentHub:
                 new = self._claim_native(sid, b, lv.pane_since, {t for t in taken if t})
                 if new:
                     self.adopt_fork(sid, new)
+            if lv.pane_alive:
+                self._reap_detached(sid, lv)
             self._follow(sid, lv)
+
+    def _reap_detached(self, sid: str, lv: Live) -> None:
+        """The person closed the terminal window (Ctrl-B D, the window's ×): the CLI keeps running in its
+        pane, but nobody is at it. Once it is idle the pane is closed, so the session is the panel's again
+        and the next message is a headless turn that resumes the same native session. A window that is
+        still attached, a takeover the person asked for (B1: it holds until given back), a turn in
+        progress and a pane nobody ever attached to are all left alone."""
+        if self.terms.clients(sid) > 0:
+            lv.seen_window, lv.detached_at = True, None
+            return
+        if not lv.seen_window or self.terms.input_right(sid) is not None:
+            return
+        if lv.state.busy or lv.awaiting or lv.pane or lv.current is not None:
+            lv.detached_at = None  # still working: look again when it is idle
+            return
+        now = time.time()
+        if lv.detached_at is None:
+            lv.detached_at = now
+        elif now - lv.detached_at >= DETACH_GRACE_S:
+            self.close_terminal(sid)
 
     def _claim_native(self, sid: str, b: dict[str, Any], since: float, taken: set[str]) -> str | None:
         """The native session this pane's CLI started. A CLI whose process keeps its session log open
@@ -623,7 +700,7 @@ class AgentHub:
                 self._kick(sid)
                 continue
             # A person's input right comes first: nothing is typed over them, and nothing is lost (the queue stays).
-            reason = gate_hold(await asyncio.to_thread(self.terms.gate, sid))
+            reason = gate_hold(await asyncio.to_thread(self.terms.gate, sid), force=head.force)
             if reason:
                 pass
             elif lv.pane_since and time.time() - lv.pane_since < PANE_BOOT_S:
@@ -638,6 +715,7 @@ class AgentHub:
                 continue
             lv.held = None
             try:
+                await asyncio.to_thread(self._handoff, sid, head.send_id)
                 await asyncio.to_thread(self.terms.paste, sid, head.prompt)
             except (TerminalError, OSError) as exc:
                 lv.last_error = f"投递到终端失败：{exc}"
@@ -739,6 +817,9 @@ class AgentHub:
                 self._status(sid)
                 continue
             backend = self.make_backend(b["agent"])
+            lv.control = Control() if adapters.need(b["agent"]).duplex else None
+            lv.interrupting = False
+            lv.asked.clear()
             req = RunRequest(
                 schema=None,
                 system=None,
@@ -754,11 +835,13 @@ class AgentHub:
                 ),
                 cwd=str(self.store.root),
                 env=self.env_for(sid),
+                control=lv.control,
             )
             lv.activity = "启动中"
             lv.running = True
             started = time.time()
             self._status(sid)
+            self._handoff(sid, p.send_id)
             self.broadcast({"t": "delivered", "sessionId": sid, "sendId": p.send_id, "route": "headless"})
             result: dict[str, Any] | None = None
             try:
@@ -769,17 +852,36 @@ class AgentHub:
                         lv.activity = f"{ev.get('name')}"
                     elif ev["t"] == "text":
                         lv.activity = "回复中"
+                    elif ev["t"] == "session" and ev.get("session") and not b.get("nativeId") and not fork and sid not in self.dropped:
+                        # A CLI that names its session as it starts (Codex): the log is followed from now on, not only after the turn.
+                        self.store.set_native(sid, ev["session"])
+                        self.note_bind(sid, "bind")
+                        b = self.binding(sid)
                     elif ev["t"] == "result":
                         result = ev
+                    elif ev["t"] == "spawned":
+                        self._write_marker(sid, ev)
+                        continue
+                    elif ev["t"] == "mode":
+                        lv.mode = ev["mode"]
+                        self._status(sid)
+                    elif ev["t"] == "request":
+                        self._open_request(sid, lv, ev)
+                    elif ev["t"] == "request_cancel":
+                        self._close_request(sid, lv, ev["id"])
+                    elif ev["t"] == "denied":
+                        self._note_denied(sid, lv, ev)
                     if ev["t"] in ("start", "tool_use", "text"):
                         self._status(sid)
                     self.broadcast({"t": "run", "sessionId": sid, "sendId": p.send_id, "event": _compact(ev)})
             except asyncio.CancelledError:
                 lv.activity = None
                 lv.running = False
+                self._end_turn(sid, lv)
                 self.broadcast({"t": "done", "sessionId": sid, "sendId": p.send_id, "text": "", "error": "已停止", "route": "headless"})
                 self._status(sid)
                 raise
+            self._end_turn(sid, lv)
             if sid in self.dropped:  # trashed while the turn ran: nothing is written for it any more
                 return
             native = (result or {}).get("session")
@@ -804,18 +906,199 @@ class AgentHub:
                 "sessionId": sid,
                 "sendId": p.send_id,
                 "text": (result or {}).get("raw") or "",
-                "error": (result or {}).get("error") or (None if result else "no result"),
+                "error": (result or {}).get("error") or ("已停止" if (result or {}).get("interrupted") else None if result else "no result"),
                 "usage": (result or {}).get("usage"),
                 "route": "headless",
             })
 
+    def cancel_send(self, sid: str, send_id: str) -> bool:
+        """Take a message out of the queue before it was injected. False when it is already in a CLI."""
+        lv = self._get(sid)
+        for q in (lv.pane, lv.headless):
+            for p in q:
+                if p.send_id == send_id:
+                    q.remove(p)
+                    self._status(sid)
+                    return True
+        return False
+
+    def items(self, sid: str) -> list[dict[str, Any]]:
+        """The session's transcript items as of now (the native log read first)."""
+        lv = self._get(sid)
+        self._follow(sid, lv)
+        return list(lv.items.values())
+
     def interrupt(self, sid: str) -> bool:
+        """Stop the turn. A two-way CLI (Claude) is asked to: it ends the turn itself (its ``result``
+        is what closes it), withdrawing whatever it had open with the person. Should it not answer
+        within ``INTERRUPT_GRACE_S``, the process is stopped the hard way. Call on the event loop."""
         lv = self._get(sid)
         lv.headless.clear()
-        if lv.run and not lv.run.done():
+        if not (lv.run and not lv.run.done()):
+            return False
+        if lv.control is None:
             lv.run.cancel()
             return True
-        return False
+        lv.interrupting = True
+        lv.control.send(interrupt_request(f"i-{secrets.token_hex(4)}"))
+        for rid in list(lv.requests):
+            self._close_request(sid, lv, rid)
+        task = lv.run
+        if self._loop is not None:
+            self._loop.call_later(INTERRUPT_GRACE_S, lambda: None if task.done() else task.cancel())
+        return True
+
+    # ——— what a two-way CLI asks the person ———
+    def _open_request(self, sid: str, lv: Live, ev: dict[str, Any]) -> None:
+        lv.requests[ev["id"]] = ev
+        lv.asked.add(ev.get("toolUseId") or ev["id"])
+        self._request_item(lv, ev)
+        self._mark_wait(sid, lv, ev, True)
+        self.broadcast({"t": "request", "sessionId": sid, "request": self.public_request(sid, ev)})
+        self._status(sid)
+
+    def _close_request(self, sid: str, lv: Live, rid: str) -> None:
+        ev = lv.requests.pop(rid, None)
+        if ev is None:
+            return
+        self._mark_wait(sid, lv, ev, False)
+        self.broadcast({"t": "request_cancel", "sessionId": sid, "id": rid})
+        self._status(sid)
+
+    def _request_item(self, lv: Live, ev: dict[str, Any]) -> None:
+        """The tool call a request is about, before the CLI's log has it (it writes the call when it runs): the
+        transcript shows it at once, so the workstation has something to wait on. The log's own record merges in later."""
+        tid = ev.get("toolUseId") or ""
+        if not tid:
+            return
+        from server.canvas.adapters.claude import ask_text, classify
+        from server.canvas.adapters.common import _full
+
+        inp = ev.get("input") or {}
+        facts = {k: v for k, v in classify(ev["tool"], inp, str(self.store.root)).items() if k != "files"}
+        with self._follow_lock:
+            if tid not in lv.items:
+                summary = ask_text(inp) if ev["tool"] == "AskUserQuestion" else _summarize(inp)
+                lv.items[tid] = {"id": tid, "kind": "tool", "at": ev["at"], "tool": {"name": ev["tool"], "input": summary, "args": _full(inp), **facts}}
+
+    def _flag(self, lv: Live, ev: dict[str, Any], on: bool) -> dict[str, Any] | None:
+        """Mark (or unmark) the tool call a request is about as "waiting for you"; the item when something changed.
+        The caller holds ``_follow_lock`` — the log follower calls this while it holds it, so it must not take it."""
+        it = lv.items.get(ev.get("toolUseId") or "")
+        tool = it.get("tool") if it else None
+        if not isinstance(tool, dict):
+            return None
+        native = bool(adapters.need("claude").classify(str(tool.get("name")), {}, None).get("waitsUser"))
+        if on and not native and not tool.get("hostWait"):
+            tool.update(waitsUser=True, hostWait=True)
+        elif not on and tool.pop("hostWait", None):
+            tool["waitsUser"] = native
+        else:
+            return None
+        return it
+
+    def _mark_wait(self, sid: str, lv: Live, ev: dict[str, Any], on: bool) -> None:
+        """The tool call a request is about shows as "waiting for you" in the transcript (and so on the
+        workstation), until it is answered or withdrawn. An ``AskUserQuestion`` already is one natively."""
+        with self._follow_lock:
+            it = self._flag(lv, ev, on)
+        if it is not None:
+            self.broadcast({"t": "transcript", "sessionId": sid, "items": [public_item(it)]})
+
+    def _note_denied(self, sid: str, lv: Live, ev: dict[str, Any]) -> None:
+        """Actions auto mode blocked inside the CLI: no request ever reaches the person, so say so in the conversation."""
+        notes = [{"id": f"denied-{d['toolUseId'] or secrets.token_hex(4)}", "kind": "notice", "tone": "denied", "at": ev["at"], "text": f"被 auto 拦下：{d['tool']} {d['summary']}".rstrip()} for d in ev["denials"] if d["toolUseId"] not in lv.asked]
+        if not notes:
+            return
+        with self._follow_lock:
+            for n in notes:
+                lv.items[n["id"]] = n
+        self._keep_snapshot(sid, lv, notes)
+        self.broadcast({"t": "transcript", "sessionId": sid, "items": notes})
+
+    def _end_turn(self, sid: str, lv: Live) -> None:
+        """The turn's process is gone: whatever it had open with the person went with it."""
+        for rid in list(lv.requests):
+            self._close_request(sid, lv, rid)
+        lv.control = None
+        lv.interrupting = False
+        self._marker(sid).unlink(missing_ok=True)
+
+    def public_request(self, sid: str, ev: dict[str, Any]) -> dict[str, Any]:
+        """A request as the page shows it: a question (with its options) or an approval."""
+        inp = ev.get("input") or {}
+        ask = ev["tool"] == "AskUserQuestion"
+        out: dict[str, Any] = {"id": ev["id"], "sessionId": sid, "kind": "question" if ask else "approval", "tool": ev["tool"], "toolUseId": ev.get("toolUseId"), "at": ev["at"]}
+        if ask:
+            out["questions"] = [
+                {"question": str(q.get("question")), "header": q.get("header"), "multiSelect": bool(q.get("multiSelect")), "options": [{"label": str(o.get("label")), "description": o.get("description") or ""} for o in q.get("options") or [] if isinstance(o, dict)]}
+                for q in inp.get("questions") or [] if isinstance(q, dict)
+            ]
+        else:
+            out.update(summary=_summarize(inp), reason=ev.get("reason"), canSession=bool(ev.get("suggestions")), input=_preview(inp))
+        return out
+
+    def requests(self, sid: str) -> list[dict[str, Any]]:
+        self.binding(sid)
+        return [self.public_request(sid, e) for e in self._get(sid).requests.values()]
+
+    def answer_request(self, sid: str, rid: str, answer: dict[str, Any]) -> None:
+        """The person's answer to an open request: ``decision`` allow | allow_session | deny, ``message`` (why not),
+        ``answers`` ({question text: option label(s)}) for a question. ValueError: the answer does not fit the
+        request; KeyError: the request is not open any more (answered, withdrawn, or its turn ended)."""
+        lv = self._get(sid)
+        ev = lv.requests.get(rid)
+        if ev is None or lv.control is None:
+            raise KeyError(rid)
+        decision = answer.get("decision")
+        inp = ev.get("input") or {}
+        if decision == "deny":
+            line = deny_response(rid, answer.get("message"))
+        elif decision in ("allow", "allow_session") and ev["tool"] == "AskUserQuestion":
+            line = answer_response(rid, inp, answer.get("answers") or {})
+        elif decision == "allow":
+            line = approve_response(rid, inp, None)
+        elif decision == "allow_session":
+            if not ev.get("suggestions"):
+                raise ValueError("这个请求没有「本会话以后都允许」的选项")
+            line = approve_response(rid, inp, ev["suggestions"])
+        else:
+            raise ValueError(f"decision 应为 allow / allow_session / deny，收到 {decision!r}")
+        lv.control.send(line)
+        self._close_request(sid, lv, rid)
+
+    # ——— a turn a restart ended ———
+    def _marker(self, sid: str) -> Path:
+        return self.store.run_dir / "headless" / f"{sid}.json"
+
+    def _write_marker(self, sid: str, ev: dict[str, Any]) -> None:
+        """Where this turn's CLI process is, so a server that starts later can end it if this one dies mid-turn."""
+        if self.store.gone():
+            return
+        try:
+            path = self._marker(sid)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"pid": ev["pid"], "argv": ev["argv"], "at": int(time.time() * 1000)}))
+        except OSError:
+            pass
+
+    def _reap_orphans(self) -> None:
+        """A turn's marker that is still there belongs to a server that died: its CLI process may still be
+        waiting for an answer nobody can give. End it and record the turn as interrupted. It is never re-sent."""
+        try:
+            markers = sorted((self.store.run_dir / "headless").glob("*.json"))
+        except OSError:
+            return
+        for path in markers:
+            sid = path.stem
+            try:
+                m = json.loads(path.read_text())
+            except (OSError, ValueError):
+                m = {}
+            path.unlink(missing_ok=True)
+            _stop_process(m.get("pid"), m.get("argv"))
+            at = int(m.get("at") or time.time() * 1000)
+            self._get(sid).notes.append({"id": f"notice-{sid}-{at}", "kind": "notice", "tone": "interrupted", "at": int(time.time() * 1000), "text": "上一轮随服务重启中断了：它没有做完，也不会自动重来。"})
 
     # ——— terminal ———
     def open_terminal(self, sid: str, *, launch: bool, canvas_id: str | None = None) -> dict[str, Any]:
@@ -852,10 +1135,23 @@ class AgentHub:
         self._status(sid)
         return {"inputRight": "host", "wasHeld": held}
 
+    def deliver_now(self, sid: str) -> dict[str, Any]:
+        """The person overrides the input-right pause for the message at the head of the queue: it goes into
+        the pane at the next tick, the ones behind it wait as before. (A busy CLI or one still loading still
+        makes it wait: that is about the CLI, not about who holds the input.)"""
+        self.binding(sid)
+        lv = self._get(sid)
+        if not lv.pane:
+            raise ValueError("没有排队等着投递的消息")
+        lv.pane[0].force = True
+        self._status(sid)
+        return {"sendId": lv.pane[0].send_id, "queued": len(lv.pane)}
+
     def close_terminal(self, sid: str) -> None:
         self.terms.kill(sid)
         lv = self._get(sid)
         lv.pane_alive, lv.pane_since = False, None
+        lv.seen_window, lv.detached_at = False, None
         self._status(sid)
 
     # ——— identity (registry, forks) ———
@@ -1035,6 +1331,38 @@ class AgentHub:
         if errors:
             return {"status": "invalid", "errors": errors[:12]}
         return await self.bridge("anim", {"canvasId": cid, "sessionId": session, "script": script})
+
+
+def _summarize(inp: dict[str, Any]) -> str:
+    from server.canvas.adapters.common import _summary
+
+    return _summary(inp)
+
+
+def _preview(inp: dict[str, Any]) -> dict[str, Any]:
+    """A request's tool input for the page: long strings cut."""
+    return {k: (v[:PREVIEW] if isinstance(v, str) else v) for k, v in inp.items()}
+
+
+def _stop_process(pid: Any, argv: Any) -> None:
+    """End a leftover CLI process group — only when the pid still runs the command that was recorded (pids are reused)."""
+    import signal
+    import subprocess
+
+    if not isinstance(pid, int) or pid <= 1 or not isinstance(argv, list):
+        return
+    try:
+        cmd = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return
+    if cmd != " ".join(argv):
+        return
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(pid, sig)
+        except (ProcessLookupError, PermissionError):
+            return
+        time.sleep(0.5)
 
 
 def binding_started(b: dict[str, Any]) -> bool:

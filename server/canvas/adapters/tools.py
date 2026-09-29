@@ -285,3 +285,22 @@ def patch_files(patch: Any, root: str | None = None) -> list[dict[str, str]]:
         if f not in out:
             out.append(f)
     return out
+
+
+def dispatches_a_task(command: Any) -> bool:
+    """Whether a shell command runs ``agora dispatch`` to give a task (not ``status`` / ``wait`` /
+    ``interrupt`` / ``list`` of one): parsed, so ``echo agora dispatch`` is not a dispatch. Such a call is
+    the agent handing work to another session: its activity is ``subagents``."""
+    if isinstance(command, list):
+        command = command[-1] if command else ""
+    if not isinstance(command, str) or "dispatch" not in command:
+        return False
+    for words in _simple_commands(command.strip()):
+        words = _program(_redirects(words)[0])
+        if not words or os.path.basename(words[0]) not in ("agora", "agora.py"):
+            continue
+        args = [w for w in words[1:] if not w.startswith("-")]
+        if args[:1] == ["dispatch"] and args[1:2] not in (["status"], ["wait"], ["interrupt"], ["list"]):
+            return True
+    return False
+

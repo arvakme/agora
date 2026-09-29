@@ -51,6 +51,12 @@ def test_gate_pauses_for_a_takeover_and_for_foreign_writers_only():
     assert g.input_right == "host" and not g.paused and g.unmanaged_writers == 2
 
 
+def test_a_forced_message_goes_past_every_hold_but_only_that_one():
+    for gate in (make_gate({"right": "human"}, 0), make_gate(None, 2)):
+        assert gate_hold(gate)
+        assert gate_hold(gate, force=True) is None
+
+
 def test_clients_are_parsed_with_their_rights():
     raw = "/dev/ttys001|0|0\n/dev/ttys002|1|0\nclient-77|0|1\n\n"
     assert parse_clients(raw) == [Client("/dev/ttys001", False, False), Client("/dev/ttys002", True, False), Client("client-77", False, True)]
@@ -404,3 +410,135 @@ async def test_a_codex_session_is_claimed_from_the_panes_own_process(hub, tmp_pa
         await asyncio.sleep(0.1)
     assert got == mine  # not "the first unclaimed rollout in the directory"
     assert hub._claim_native("s-c", hub.store.read_binding("s-c"), since, {mine}) is None  # already owned by a session
+
+
+@needs_tmux
+async def test_send_now_lets_one_message_past_a_writable_window_and_the_next_waits(hub):
+    hub.ensure_started()
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    lv = hub.live["s-t"]
+    lv.pane_since = time.time() - 60
+
+    writer = await asyncio.to_thread(_attach, hub.terms, "s-t", readonly=False)
+    try:
+        hub.send("s-t", "先送的这一句")
+        hub.send("s-t", "后面的一句")
+        await _held(hub, "s-t", "可写")
+        st = hub.status("s-t")
+        assert st["queued"] == 2 and st["terminal"]["writers"] == 1 and st["terminal"]["inputRight"] == "host"
+        hub.deliver_now("s-t")
+        await _until(lambda: "先送的这一句" in hub.terms.capture("s-t"))
+        await _until(lambda: not lv.state.busy and not lv.awaiting, timeout=30)
+        await asyncio.sleep(1.0)  # several ticks later the window is still there: the second one is not typed
+        assert len(lv.pane) == 1 and "后面的一句" not in hub.terms.capture("s-t")
+        lv.pane.clear()
+        with pytest.raises(ValueError):  # forcing needs a queued message
+            hub.deliver_now("s-t")
+    finally:
+        _detach(writer)
+
+
+@needs_tmux
+async def test_closing_the_last_window_gives_the_session_back_to_the_panel(hub, monkeypatch):
+    from server.canvas import sessions
+
+    monkeypatch.setattr(sessions, "DETACH_GRACE_S", 0.5)
+    hub.ensure_started()
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    lv = hub.live["s-t"]
+    lv.pane_since = time.time() - 60
+
+    await asyncio.sleep(1.5)  # a pane nobody ever attached to stays (it may be about to be opened)
+    assert hub.terms.alive("s-t")
+
+    viewer = await asyncio.to_thread(_attach, hub.terms, "s-t", readonly=False)
+    await _until(lambda: hub.status("s-t")["terminal"]["clients"] == 1)
+    _detach(viewer)  # Ctrl-B D
+    await _until(lambda: not hub.terms.alive("s-t"))  # idle: the background CLI is closed
+    await _until(lambda: hub.status("s-t")["terminal"]["alive"] is False)
+    assert not lv.pane_alive
+
+
+@needs_tmux
+async def test_a_busy_cli_is_left_running_and_closed_when_it_is_idle(hub, monkeypatch):
+    from server.canvas import sessions
+
+    monkeypatch.setattr(sessions, "DETACH_GRACE_S", 0.5)
+    hub.ensure_started()
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    lv = hub.live["s-t"]
+    lv.pane_since = time.time() - 60
+    viewer = await asyncio.to_thread(_attach, hub.terms, "s-t", readonly=False)
+    await _until(lambda: hub.status("s-t")["terminal"]["clients"] == 1)
+    lv.state.busy = True  # a turn is running in the pane
+    _detach(viewer)
+    await asyncio.sleep(2.0)
+    assert hub.terms.alive("s-t")  # its work goes on without a window
+    lv.state.busy = False
+    await _until(lambda: not hub.terms.alive("s-t"))
+
+
+@needs_tmux
+async def test_a_takeover_the_person_asked_for_survives_the_window_closing(hub, monkeypatch):
+    from server.canvas import sessions
+
+    monkeypatch.setattr(sessions, "DETACH_GRACE_S", 0.5)
+    hub.ensure_started()
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    hub.live["s-t"].pane_since = time.time() - 60
+    viewer = await asyncio.to_thread(_attach, hub.terms, "s-t", readonly=False)
+    await _until(lambda: hub.status("s-t")["terminal"]["clients"] == 1)
+    hub.takeover("s-t")
+    _detach(viewer)
+    await asyncio.sleep(2.0)
+    assert hub.terms.alive("s-t") and hub.status("s-t")["terminal"]["inputRight"] == "human"  # B1: held until it is given back
+
+
+# ——— nothing of another app's environment goes into a session ———
+def test_child_env_leaves_out_seedmux_variables(monkeypatch):
+    from server.canvas.agents import child_env
+
+    monkeypatch.setenv("SEEDMUX_PANE_ID", "F9576FBB-BE99-4ED1-8239-A11E14331FB7")
+    monkeypatch.setenv("SEEDMUX_STATE_SOCK", "/x/tmux.sock")
+    monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")  # the user's own configuration stays
+    env = child_env({"AGORA_SESSION": "s-1", "SEEDMUX_TEAM_BRIDGE_PATH": "/x"})
+    assert not [k for k in env if k.startswith("SEEDMUX_")] and env["AGORA_SESSION"] == "s-1" and env["CLAUDE_CODE_USE_BEDROCK"] == "1"
+
+
+async def test_a_headless_turn_is_started_without_seedmux_variables(monkeypatch, tmp_path):
+    from server.canvas import agents
+    from server.canvas.runner import ExecOptions, RunRequest
+
+    monkeypatch.setenv("SEEDMUX_PANE_ID", "F9576FBB-BE99-4ED1-8239-A11E14331FB7")
+    seen = {}
+
+    async def fake_exec(*args, **kw):
+        seen.update(kw["env"])
+        raise OSError("not started")
+
+    monkeypatch.setattr(agents.asyncio, "create_subprocess_exec", fake_exec)
+    req = RunRequest(schema=None, system=None, prompt="x", options=ExecOptions(backend="codex", session=None, new_session=True), cwd=str(tmp_path), env={"SEEDMUX_STATE_SOCK": "/x", "AGORA_SESSION": "s-1"})
+    async for _ in agents.CodexBackend().run(req):
+        pass
+    assert seen and "SEEDMUX_PANE_ID" not in seen and "SEEDMUX_STATE_SOCK" not in seen and seen["AGORA_SESSION"] == "s-1"
+
+
+@needs_tmux
+def test_a_pane_has_no_seedmux_variables_even_when_the_tmux_server_already_carries_them(terms, tmp_path, monkeypatch):
+    # The server was started (by an older build, or a restart from someone's pane) with the leak in its own environment.
+    leaky = {**os.environ, "SEEDMUX_PANE_ID": "F9576FBB-BE99-4ED1-8239-A11E14331FB7", "SEEDMUX_STATE_SOCK": "/x/tmux.sock"}
+    subprocess.run([terms.tmux, "-L", terms.socket, "-f", "/dev/null", "new-session", "-d", "-s", "keep", "sleep", "300"], env=leaky, check=True, capture_output=True)
+    assert "SEEDMUX_PANE_ID" in terms._run("show-environment", "-g").stdout.decode()
+    monkeypatch.setenv("SEEDMUX_STATE_SOCK", "/y")  # and this process has one too
+    out = tmp_path / "env.txt"
+    assert terms.open("s-1", ["sh", "-c", f"env > {out}; sleep 30"], cwd=tmp_path, env={"SEEDMUX_TEAM_BRIDGE_PATH": "/z", "AGORA_SESSION": "s-1"}) is True
+    for _ in range(50):
+        if out.exists() and out.read_text():
+            break
+        time.sleep(0.1)
+    got = out.read_text()
+    assert "AGORA_SESSION=s-1" in got and "SEEDMUX" not in got

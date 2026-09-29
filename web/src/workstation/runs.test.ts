@@ -5,7 +5,7 @@ import type { Item } from "../session/agents.ts";
 import { pickBubbles, slots } from "./crowd.ts";
 import type { RunTree } from "../session/agents.ts";
 import { fromTree, runFromTranscript } from "./runs/derive.ts";
-import { flatten, receiptAt, receiptView } from "./runs/types.ts";
+import { flatten, receiptAt, receiptText, receiptView, RECEIPT_NAMES } from "./runs/types.ts";
 
 describe("fromTree (the server's run tree → sub-agents)", () => {
   const T = 1_790_000_000_000;
@@ -42,6 +42,48 @@ describe("fromTree (the server's run tree → sub-agents)", () => {
     expect(receiptAt(a, T + 6000)).toBe("running");
     expect(receiptAt(a, T + 25000)).toBe("returned");
     expect(receiptView(a, { at: T, state: "done", accepted: true })).toBe("accepted");
+  });
+});
+
+describe("fromTree: a session the run's session gave a task to (via dispatch)", () => {
+  const T = 1_790_000_000_000;
+  const base = { tier: "T2" as const, depth: 1, hiddenDescendants: 0, childCount: 0, descendants: 0 };
+  const mk = (state: RunTree["runs"][number]["state"], extra: object = {}): RunTree => ({
+    root: "claude:root",
+    depth: null,
+    folded: {},
+    generatedAt: T + 60_000,
+    runs: [
+      { ...base, tier: "T1", depth: 0, id: "claude:root", kind: "claude", label: "Claude Code", sessionId: "s1", state: "running", childCount: 1, descendants: 1, timeline: { segments: [], turns: [], moments: [{ kind: "dispatch", at: T + 5000, childRunId: "codex:t1", toolCallId: "tool-1" }, ...(state === "idle_no_reply" ? [{ kind: "handoff" as const, at: T + 30000, childRunId: "codex:t1", state }] : [])] } },
+      { ...base, id: "codex:t1", kind: "codex", label: "Codex", role: "在 notes.md 末尾加一行", parent: { runId: "claude:root", via: "dispatch", taskId: "0d5f6a1e", evidence: "派发记录 0d5f6a1e" }, state, startedAt: T + 5200, endedAt: state === "idle_no_reply" ? T + 30000 : null, lastAt: T + 30000, timeline: { segments: [], turns: [], moments: [] }, ...extra },
+    ],
+  });
+  it("is drawn as sent by its giver, from the record's state", () => {
+    const { children, dispatches } = fromTree(mk("running", { dispatchSession: "s2" }), "s1", { now: T + 40_000 });
+    expect(children[0]).toMatchObject({ id: "codex:t1", parentId: "s1", via: "dispatch", evidence: "dispatch", dispatchSession: "s2", task: "在 notes.md 末尾加一行", running: true }); // running = the record says running
+    expect(dispatches.get("tool-1")).toBe("codex:t1");
+  });
+  it("sent but not yet taken says who has to take it (not work, not idle); once taken it is running", () => {
+    const sent = fromTree(mk("dispatched", { startedAt: null, lastAt: T + 5000 }), "s1", { now: T + 9000 }).children[0];
+    expect(receiptAt(sent, T + 8000)).toBe("dispatched");
+    expect(receiptText(sent, "dispatched")).toBe("等 Codex 接手");
+    expect(sent.running).toBe(true); // it is not "done" or "idle": the figure waits, it does not tick
+    const taken = fromTree(mk("running", { startedAt: T + 7000 }), "s1", { now: T + 9000 }).children[0];
+    expect(receiptAt(taken, T + 6000)).toBe("dispatched");
+    expect(receiptAt(taken, T + 8000)).toBe("running");
+    expect(receiptText(taken, "running")).toBe("运行中");
+    expect(receiptText({ name: "Claude Code", parentId: undefined }, "dispatched")).toBe("已派发"); // a top-level run has no one to wait for
+  });
+  it("a turn that ended without a receipt says so in words, and is over, not running", () => {
+    const { children } = fromTree(mk("idle_no_reply"), "s1", { now: T + 40_000 });
+    const c = children[0];
+    expect(c).toMatchObject({ running: false, doneAt: T + 30000 });
+    expect(receiptAt(c, T + 35_000)).toBe("idle_no_reply");
+    expect(RECEIPT_NAMES.idle_no_reply).toBe("停了，没交回执");
+  });
+  it("an interrupted one is named as such", () => {
+    const { children } = fromTree(mk("interrupted"), "s1", { now: T + 40_000 });
+    expect(receiptAt(children[0], T + 40_000)).toBe("interrupted");
   });
 });
 

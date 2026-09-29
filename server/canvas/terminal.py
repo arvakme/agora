@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Literal
 
 from native_protocol import SessionGate
-from server.canvas.agents import _NESTED, child_env
+from server.canvas.agents import _NESTED, child_env, leaked
 
 CONF = """\
 # Agora's tmux server for this project (not the user's ~/.tmux.conf).
@@ -80,8 +80,12 @@ def make_gate(right: dict | None, unmanaged_writers: int) -> SessionGate:
     return SessionGate(input_right="human" if right else "host", paused=right is not None, unmanaged_writers=unmanaged_writers)
 
 
-def gate_hold(gate: SessionGate) -> str | None:
-    """Why automatic delivery waits, in words for the page; None when it may go."""
+def gate_hold(gate: SessionGate, *, force: bool = False) -> str | None:
+    """Why automatic delivery waits, in words for the page; None when it may go. ``force``: the person
+    told Agora to send this one message regardless (the pause, a takeover, a writable window) — only the
+    message it was given for; the next one is judged again."""
+    if force:
+        return None
     if gate.input_right != "host":
         return "终端已被人接管，归还输入权后再投递"
     if gate.paused:
@@ -404,8 +408,14 @@ class Terminals:
         name = self.name(session_id)
         self._run("kill-session", "-t", f"={name}", check=False)  # a dead leftover
         self._close_control(name)
+        # A tmux server that was started before (by an older build, or by whatever pane restarted Agora)
+        # may carry another app's variables in its own environment: take them out of it, and out of the pane.
+        stale = sorted({line.lstrip("-").split("=")[0] for line in self._run("show-environment", "-g", check=False).stdout.decode(errors="replace").splitlines() if leaked(line.lstrip("-"))})
+        for k in stale:
+            self._run("set-environment", "-g", "-u", k, check=False)
+        drop = [*_NESTED, *sorted({*stale, *(k for k in os.environ if leaked(k))})]
         # `env -u …` drops nesting markers inherited from whoever started the tmux server.
-        wrapped = ["env", *[a for k in _NESTED for a in ("-u", k)], *[f"{k}={v}" for k, v in env.items()], *argv]
+        wrapped = ["env", *[a for k in drop for a in ("-u", k)], *[f"{k}={v}" for k, v in env.items() if not leaked(k)], *argv]
         r = self._run("new-session", "-d", "-s", name, "-x", "220", "-y", "56", "-c", str(cwd), "--", *wrapped, check=False)
         if r.returncode != 0:
             raise TerminalError(r.stderr.decode(errors="replace").strip() or "tmux new-session failed")

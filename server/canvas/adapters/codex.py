@@ -70,6 +70,8 @@ class CodexStream(StreamMapper):
         t = d.get("type")
         if t == "thread.started":
             self.session = str(d.get("thread_id") or self.session or "") or None
+            if self.session:
+                out.append({"t": "session", "at": at, "session": self.session})  # the host follows the log from the first record on
         elif t in ("item.started", "item.completed"):
             item = d.get("item") or {}
             kind = item.get("type")
@@ -166,8 +168,8 @@ def shell_facts(item: dict[str, Any], root: str | None) -> dict[str, Any]:
     on: list[str] = []
     if act == "commands":  # more than reads: what the command line writes / runs on
         cmd = item.get("command")
-        _, _, fs, on = shell_tool(cmd[-1] if isinstance(cmd, list) and cmd else cmd, root, cwd)
-        act = "edit" if fs else act
+        got, _, fs, on = shell_tool(cmd[-1] if isinstance(cmd, list) and cmd else cmd, root, cwd)
+        act = "subagents" if got == "subagents" else "edit" if fs else act
     return tool_facts(act, reads=reads, files=fs, on=on)
 
 
