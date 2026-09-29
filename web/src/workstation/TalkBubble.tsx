@@ -6,26 +6,42 @@
 // really shows up in the session, not when it is sent (./talk.ts `watchDelivery`). Mount it in the
 // overlay's layer (screen coordinates of the canvas pane); it follows the selected figure's feet in
 // the one frame loop. `data-esc-local`: the app's global Esc leaves it alone.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { viewport } from "../canvas/viewport";
 import { agentName, agents } from "../session/agents";
 import { figurePositions, useFocus } from "./focus";
 import { frame } from "./frame";
+import { excalidrawEl, occupiedOf } from "./replayDom";
 import { useRuns } from "./runs/store";
 import type { FlatRun } from "./runs/types";
-import { deliveryNote, sendState, talk, watchDelivery, type SendState } from "./talk";
+import { deliveryNote, placeTalk, sendState, talk, talkDismissed, talkHost, talkPlaceholder, watchDelivery, type SendState, type Side, type TBox } from "./talk";
 import "./TalkBubble.css";
 
-export function TalkBubble({ canvasId }: { canvasId: string }) {
+/**
+ * Mounted by every view that draws figures (the canvas, a follow tab); only the one that really draws the
+ * selected figure shows the box. `obstacles`: what the box keeps off, in world coordinates (nodes, labels).
+ */
+export function TalkBubble({ canvasId, obstacles }: { canvasId: string; obstacles: () => TBox[] }) {
   const fo = useFocus();
   const runs = useRuns();
-  const f = fo.selected ? runs.flat.find((x) => x.run.id === fo.selected) : undefined;
+  const id = fo.selected;
+  const f = id ? runs.flat.find((x) => x.run.id === id) : undefined;
+  useEffect(() => {
+    if (!id) return;
+    const report = () => talkHost.report(id, canvasId, !!figurePositions.get(canvasId, id));
+    report();
+    const off = frame.add(report);
+    return () => (off(), talkHost.report(id, canvasId, false));
+  }, [id, canvasId]);
+  useEffect(() => void (talkDismissed.run !== id && (talkDismissed.run = null)), [id]);
+  const host = useSyncExternalStore(talkHost.subscribe, () => (id ? talkHost.of(id) : null));
   // a new selection starts a new, empty box
-  return f ? <Talk key={f.run.id} f={f} canvasId={canvasId} /> : null;
+  return f && host === canvasId ? <Talk key={f.run.id} f={f} canvasId={canvasId} obstacles={obstacles} /> : null;
 }
 
-function Talk({ f, canvasId }: { f: FlatRun; canvasId: string }) {
-  const [shut, setShut] = useState(false);
+function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstacles: () => TBox[] }) {
+  const [shut, setShut0] = useState(() => talkDismissed.run === f.run.id);
+  const setShut = (v: boolean) => (v && (talkDismissed.run = f.run.id), setShut0(v));
   const [text, setText] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -35,10 +51,14 @@ function Talk({ f, canvasId }: { f: FlatRun; canvasId: string }) {
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const id = f.run.id;
-  // Just under the figure's feet (bubbles sit above the heads, neighbours stand on the same line), in
-  // the canvas pane's pixels, every frame; hidden until first placed. Focus waits until after the click
-  // that selected the figure (its mousedown focuses the figure, a button) and places the box first: a
-  // hidden input cannot take focus.
+  // Under the figure's feet (bubbles sit above the heads); when that would cover a node or a label, above the
+  // bubble or beside it (./talk.ts `placeTalk`), inside what the toolbar and the strip leave free — in the
+  // view's pixels, every frame. Focus waits until after the click that selected the figure (its mousedown
+  // focuses the figure, a button) and places the box first: a hidden input cannot take focus.
+  const side = useRef<Side | null>(null);
+  const obsRef = useRef(obstacles);
+  obsRef.current = obstacles;
+  const inset = useRef({ at: 0, top: 8, bottom: 8 });
   useEffect(() => {
     if (shut) return;
     const place = () => {
@@ -46,13 +66,26 @@ function Talk({ f, canvasId }: { f: FlatRun; canvasId: string }) {
       const v = viewport.get(canvasId);
       const el = box.current;
       if (!el || !p || !v) return;
-      el.style.transform = `translate3d(${((p.x + v.scrollX) * v.zoom - 18).toFixed(1)}px, ${((p.y + v.scrollY) * v.zoom + 9).toFixed(1)}px, 0)`;
+      // what covers the canvas's edges (Excalidraw's toolbar, the footer): measured from the DOM twice a second
+      if (!canvasId.startsWith("follow:") && performance.now() - inset.current.at > 500) {
+        const ex = excalidrawEl();
+        const o = ex ? occupiedOf(ex) : { top: 0, bottom: 0 };
+        inset.current = { at: performance.now(), top: o.top + 8, bottom: o.bottom + 8 };
+      }
+      const { top, bottom } = inset.current;
+      const feet = { x: (p.x + v.scrollX) * v.zoom, y: (p.y + v.scrollY) * v.zoom };
+      const obs = obsRef.current().map((b) => ({ x: (b.x + v.scrollX) * v.zoom, y: (b.y + v.scrollY) * v.zoom, w: b.w * v.zoom, h: b.h * v.zoom }));
+      const r = placeTalk({ feet, size: { w: el.offsetWidth, h: el.offsetHeight }, area: { x: 8, y: top, w: Math.max(0, v.width - 16), h: Math.max(0, v.height - top - bottom) }, obstacles: obs, prev: side.current });
+      side.current = r.side;
+      el.dataset.side = r.side;
+      el.style.transform = `translate3d(${r.x.toFixed(1)}px, ${r.y.toFixed(1)}px, 0)`;
       el.style.visibility = "";
     };
     const t = setTimeout(() => (place(), input.current?.focus({ preventScroll: true })), 0);
     const off = frame.add(place);
     return () => (clearTimeout(t), off());
   }, [shut, id, canvasId]);
+  const working = useSyncExternalStore(agents.subscribe, () => !!f.root.sessionId && sendState(f.root.sessionId) === "queued");
   if (shut) return null;
   // who gets it: the agent's own session, or — for a sub-agent — the session that dispatched it
   const sub = !f.run.sessionId;
@@ -66,7 +99,7 @@ function Talk({ f, canvasId }: { f: FlatRun; canvasId: string }) {
       const sid = to.sessionId;
       const state = sendState(sid); // before the send: is a turn running now?
       const sentAt = Date.now() - 1500; // the log's clock and the page's are one machine's; a little slack
-      await agents.send(sid, sub ? `关于子代理 ${f.run.name}${f.run.task ? `（${f.run.task}）` : ""}：${words}` : words, { canvasId });
+      await agents.send(sid, sub ? `关于子代理 ${f.run.name}${f.run.task ? `（${f.run.task}）` : ""}：${words}` : words, { canvasId: canvasId.startsWith("follow:") ? canvasId.slice(7) : canvasId });
       const agent = agentName(agents.get().bindings[sid]?.agent);
       setSent({ agent, state });
       stop.current = watchDelivery(sid, words, sentAt, () => {
@@ -88,7 +121,7 @@ function Talk({ f, canvasId }: { f: FlatRun; canvasId: string }) {
       <input
         ref={input}
         value={text}
-        placeholder={sub ? `对 ${f.run.name} 说…` : `对 ${f.run.name} 说…（回车发送）`}
+        placeholder={talkPlaceholder(f.run.name, working, sub)}
         aria-label={`对 ${f.run.name} 说`}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {

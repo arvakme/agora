@@ -52,3 +52,27 @@ export function nextPaused(paused: boolean, ev: PauseEvent): boolean {
 export function mayOpenFollowTab(run: string, isTop: boolean, cam: { on: boolean; paused: boolean; run: string | null }): boolean {
   return !(isTop && cam.on && !cam.paused && cam.run === run);
 }
+
+// ── only work on the diagram is followed; done, it goes home ──
+
+export type Where = "node" | "route" | "tray" | "think" | "idle";
+
+/**
+ * Where the followed run is, for the camera: on a node working on a file (`seg.path`), on the way (a trip in
+ * progress), through a door of a sub-diagram, in the tray outside the diagram, thinking (no file in hand: nothing
+ * on the diagram changes), or not at work.
+ */
+export function whereOf(st: { present: boolean; at: string; trip: unknown; w: number; seg?: { path?: string } | null; portalPhase?: string }, outside: string, running: boolean): Where {
+  if (!running) return "idle";
+  if (st.portalPhase) return "node"; // through a door of a sub-diagram
+  if (st.at === outside) return "tray";
+  if (st.trip && st.w < 1) return "route";
+  return st.seg?.path ? "node" : "think";
+}
+/** The camera pushes in on the diagram's work only: not on the tray, not on an idle run. */
+export const followsWhere = (w: Where) => w === "node" || w === "route";
+
+/** After this long without work on the diagram the camera goes back to the view it started from (「✓ 这一轮做完了」 has come out by then). */
+export const HOME_AFTER_MS = 3000;
+/** `holdFor`: how long the camera has had nothing to follow (null: it has). Goes home once, if it moved, unless you took it over. */
+export const goHomeDue = (o: { holdFor: number | null; paused: boolean; displaced: boolean }) => o.holdFor != null && o.holdFor >= HOME_AFTER_MS && !o.paused && o.displaced;

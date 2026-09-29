@@ -4,7 +4,7 @@
 // the person's own doing pauses it and what resumes it, and whether the follow tab should still open for
 // an agent the camera is already following. Pure.
 import { describe, expect, it } from "vitest";
-import { mayOpenFollowTab, nextPaused, pickFollow, type Top } from "./liveCamera.ts";
+import { followsWhere, mayOpenFollowTab, nextPaused, pickFollow, whereOf, goHomeDue, HOME_AFTER_MS, type Top } from "./liveCamera.ts";
 
 const top = (id: string, o: Partial<Top> = {}): Top => ({ id, sessionId: `s-${id}`, working: false, lastWorkAt: 0, ...o });
 const base = { on: true, playing: null, traced: null, focusedSession: null, tops: [] as Top[] };
@@ -75,5 +75,55 @@ describe("mayOpenFollowTab: the follow tab for an agent the camera already follo
   });
   it("for another top-level agent than the one followed", () => {
     expect(mayOpenFollowTab("other", true, cam)).toBe(true);
+  });
+});
+
+// ── the camera only follows work on the diagram, and goes home when it is done (§10 默认跟随) ──
+const OUT = "\u0000outside";
+const st = (o: Partial<Parameters<typeof whereOf>[0]> = {}) => ({ present: true, at: "n1", trip: null, w: 1, seg: { path: "a.go" }, ...o });
+
+describe("whereOf / followsWhere: does the camera push in?", () => {
+  it("on a node: yes", () => {
+    expect(whereOf(st(), OUT, true)).toBe("node");
+    expect(followsWhere("node")).toBe(true);
+  });
+  it("on the way (a trip in progress): yes", () => {
+    expect(whereOf(st({ trip: {}, w: 0.4 }), OUT, true)).toBe("route");
+    expect(followsWhere("route")).toBe(true);
+  });
+  it("going through a door of a sub-diagram: yes", () => {
+    expect(whereOf(st({ present: false, portalPhase: "behind" }), OUT, true)).toBe("node");
+    expect(whereOf(st({ portalPhase: "in" }), OUT, true)).toBe("node");
+  });
+  it("in the tray outside the diagram: no", () => {
+    expect(whereOf(st({ at: OUT }), OUT, true)).toBe("tray");
+    expect(followsWhere("tray")).toBe(false);
+  });
+  it("thinking on a node with no file in hand (a reply that touches nothing): no", () => {
+    expect(whereOf(st({ seg: null }), OUT, true)).toBe("think");
+    expect(whereOf(st({ seg: {} }), OUT, true)).toBe("think");
+    expect(followsWhere("think")).toBe(false);
+  });
+  it("idle (the run is not at work): no", () => {
+    expect(whereOf(st(), OUT, false)).toBe("idle");
+    expect(followsWhere("idle")).toBe(false);
+  });
+});
+
+describe("goHomeDue: when the camera goes back to the view it started from", () => {
+  const base = { holdFor: HOME_AFTER_MS, paused: false, displaced: true };
+  it("about 3 s after the work on the diagram stopped", () => {
+    expect(HOME_AFTER_MS).toBe(3000);
+    expect(goHomeDue(base)).toBe(true);
+    expect(goHomeDue({ ...base, holdFor: HOME_AFTER_MS - 1 })).toBe(false);
+  });
+  it("not while it is still at work (no hold)", () => {
+    expect(goHomeDue({ ...base, holdFor: null })).toBe(false);
+  });
+  it("not when you paused or took it over: your view is yours", () => {
+    expect(goHomeDue({ ...base, paused: true })).toBe(false);
+  });
+  it("nothing to go back from when it never moved", () => {
+    expect(goHomeDue({ ...base, displaced: false })).toBe(false);
   });
 });

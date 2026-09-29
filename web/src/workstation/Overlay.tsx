@@ -60,7 +60,7 @@ import { useRuns, type Runs } from "./runs/store";
 import { RECEIPT_NAMES, type FlatRun } from "./runs/types";
 import { TalkBubble } from "./TalkBubble";
 import { glideTo } from "../canvas/glide";
-import { itemOfStop, latestTurnWindow, pointAt, spanOf, stopForItem, traceAt, walkedAt, type Trace, type TurnWindow } from "./trace";
+import { itemOfStop, itemsOfStop, latestTurnWindow, pointAt, spanOf, stopForItem, traceAt, walkedAt, type Trace, type TurnWindow } from "./trace";
 import { TrayHint } from "./TrayHint";
 import "./workstation.css";
 
@@ -631,6 +631,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         const st = stateAt(run, t, c);
         if (!st.present) {
           n.place(0, 0, k, 0, false);
+          positions.delete(run.id); // not drawn in this view: the talk box is not hosted here
           continue;
         }
         let sp = springs.current.get(run.id);
@@ -995,7 +996,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
     if (!sid || !trv) return;
     const turn = fo.turn?.n ?? (tracedRun ? latestTurnWindow(tracedRun)?.n : undefined);
     ui.openSession(sid);
-    setTimeout(() => dispatchEvent(new CustomEvent("agora:step", { detail: { sessionId: sid, itemId: itemOfStop(trv, trv.id, i), turn } })), 60);
+    setTimeout(() => dispatchEvent(new CustomEvent("agora:step", { detail: { sessionId: sid, itemId: itemOfStop(trv, trv.id, i), itemIds: itemsOfStop(trv, trv.id, i), turn } })), 60);
   };
   // 「在图上看这一轮」 / a row clicked in the trajectory: glide this canvas there, once
   useEffect(() => {
@@ -1077,7 +1078,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
           />
         </g>
       </svg>
-      {figuresOn && !only && <TalkBubble canvasId={view.id} />}
+      {figuresOn && <TalkBubble canvasId={view.id} obstacles={() => (geomRef.current.tray ? [...geomRef.current.obstacles, geomRef.current.tray] : geomRef.current.obstacles)} />}
       <EntryMarks view={view} />
       {snap.tray && (
         <div className="ws-tray" ref={trayEl}>

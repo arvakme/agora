@@ -17,6 +17,10 @@ import { focus, useFocus, type SegRef } from "./focus";
 import { follow, useFollow } from "./follow";
 import { frame } from "./frame";
 import { canvasWhere, OUTSIDE, outsideProject, planFor, stateAt, writeConflicts } from "./place";
+import { idleStrip, laneLabel, yieldView, type LaneAct } from "./stripRules";
+import { excalidrawEl, occupiedOf } from "./replayDom";
+import { canvases } from "../session/ui";
+import { viewport } from "../canvas/viewport";
 import { bucketize, idleSince, isDense, recentKids } from "./density";
 import { DaySummary } from "./DaySummary";
 import { RunAvatar } from "./RunAvatar";
@@ -384,6 +388,19 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
     sectionEl.current?.querySelector<HTMLElement>(open ? "[data-close]" : "[data-open]")?.focus();
   }, [open]);
 
+  /** The opened strip took height from the canvas: keep the diagram clear of the zoom bar and the mode bar (what the camera fits into is what is left, too). */
+  const yieldBottom = () => {
+    const api = canvasId ? canvases.get(canvasId)?.api : undefined;
+    const v = canvasId ? viewport.get(canvasId) : undefined;
+    const ex = excalidrawEl();
+    const els = api?.getSceneElements().filter((e) => !e.isDeleted);
+    if (!api || !v || !ex || !els?.length) return;
+    const x0 = Math.min(...els.map((e) => e.x)), y0 = Math.min(...els.map((e) => e.y));
+    const bounds = { x: x0, y: y0, w: Math.max(...els.map((e) => e.x + e.width)) - x0, h: Math.max(...els.map((e) => e.y + e.height)) - y0 };
+    const f = yieldView({ view: { zoom: v.zoom, scrollX: v.scrollX, scrollY: v.scrollY }, pane: { w: v.width, h: v.height }, occupied: occupiedOf(ex), bounds });
+    if (f) api.updateScene({ appState: { scrollX: f.scrollX, scrollY: f.scrollY, zoom: { value: f.zoom } } as never });
+  };
+
   // ── scrubbing and picking a segment ──
   const drag = useRef<{ x: number; moved: boolean; el: HTMLElement; A: Axis; seg: HTMLElement | null } | null>(null);
   const gaps = (A: Axis) => A.pieces.filter((p) => p.kind === "gap").map((p) => ({ a: p.a, b: p.b }));
@@ -492,21 +509,23 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
   const activate = (go: () => void) => (e: React.KeyboardEvent) => {
     if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) (e.preventDefault(), go());
   };
-  /** A lane name's hover menu: 追踪 (or 退出追踪) and 跟随 (in the follow pane). */
-  const laneActs = (id: string) => (
-    <>
-      {traced === id ? (
-        <button onClick={(e) => (e.stopPropagation(), focus.trace(null))} title="退出追踪（Esc）">退出追踪</button>
-      ) : (
-        <button onClick={(e) => (e.stopPropagation(), focus.trace(id))} title="只看它走过的路">追踪</button>
-      )}
-      <button data-on={fl.run === id || undefined} aria-pressed={fl.run === id} onClick={(e) => (e.stopPropagation(), fl.run === id ? follow.stop() : follow.start(id))} title={fl.run === id ? "停止跟随" : "在右侧窗口里跟着它"}>
-        跟随
-      </button>
-    </>
-  );
+  /** A lane name's actions, short (the full words are the tooltips), shown on hover or focus: 会话, 追踪 / 退出, 跟随. */
+  const laneActs = (id: string, hasSession: boolean, sub: boolean, sessionId?: string) => {
+    const lab = laneLabel({ traced: traced === id, hasSession, sub, hover: false, focus: false });
+    const btn: Record<LaneAct, ReactNode> = {
+      session: <button key="s" onClick={(e) => (e.stopPropagation(), sessionId && ui.openSession(sessionId))} title="打开会话" aria-label="打开会话">会话</button>,
+      trace: <button key="t" onClick={(e) => (e.stopPropagation(), focus.trace(id))} title="只看它走过的路" aria-label="追踪">追踪</button>,
+      untrace: <button key="t" onClick={(e) => (e.stopPropagation(), focus.trace(null))} title="退出追踪（Esc）" aria-label="退出追踪">退出</button>,
+      follow: (
+        <button key="f" data-on={fl.run === id || undefined} aria-pressed={fl.run === id} onClick={(e) => (e.stopPropagation(), fl.run === id ? follow.stop() : follow.start(id))} title={fl.run === id ? "停止跟随" : "在右侧窗口里跟着它"} aria-label={fl.run === id ? "停止跟随" : "跟随"}>
+          跟随
+        </button>
+      ),
+    };
+    return <>{lab.acts.map((a) => btn[a])}</>;
+  };
 
-  if (empty || !runs.flat.length) return null;
+  if (empty) return null;
 
   const tops = runs.flat.filter((f) => f.depth === 0);
   const kidsOf = (id: string) => runs.flat.filter((x) => x.depth === 1 && x.parent?.id === id);
@@ -544,13 +563,15 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
       const n = nowText(busy[0].run, now, placeOfPath);
       state = { k: n.k, node: <><i className="live" /><b>{busy[0].run.name}</b><span>{n.text}</span></> };
     } else if (busy.length > 1) state = { k: "busy", node: <><i className="live" /><span>{busy.length} 个会话在干活</span></> };
-    else state = { k: "idle", node: <span>都空闲</span> };
+    else state = { k: "idle", node: <span>{idleStrip({ runs: runs.flat.length, busy: 0, waiting: 0 }).text ?? "都空闲"}</span> };
     if (where?.empty && !tf) {
       const on = runs.flat.filter((f) => f.run.running || f.run.segs.some((g) => g.start <= now && now < g.end)).length;
       state = { k: on ? "busy" : "idle", node: <>{on > 0 && <i className="live" />}<span>{on > 0 ? `${on} 个 agent 在干活 · ` : ""}这张图还是空的</span></> };
     }
     if (quietAt != null) state = { k: "idle", node: <span>都空闲 · 上次活动 {hhmm(quietAt)}</span> };
     const subs = runs.flat.filter((f) => f.depth > 0).length;
+    const idle = idleStrip({ runs: runs.flat.length, busy: busy.length, waiting: waiting.length });
+    const showNew = idle.newSession && !tf && !replay;
     return (
       <div className="ws-bar">
         <button className="ttl" onClick={() => toggle(true)} title="展开时间线">
@@ -558,6 +579,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
           工位
         </button>
         <span className="stt" data-k={state.k}>{replay && !tf ? <><b className="rp">回放 {hhmmss(t)}</b><span>比实时晚 {dur(now - t)}</span></> : state.node}</span>
+        {showNew && <button className="btn sm quiet ws-new" onClick={() => ui.newSession()} title="新建一个 agent 会话">新建会话</button>}
         <div className="mini" ref={miniRef} {...scrub(maxis)} title="拖动回看任意时刻" role="slider" aria-label="回放位置" aria-valuemin={maxis.start} aria-valuemax={maxis.end} aria-valuenow={Math.round(t)} aria-valuetext={hhmmss(t)} tabIndex={0} onKeyDown={onKey}>
           <canvas ref={miniCanvas} className="mini-cv" aria-hidden />
           <span className="mph" ref={mph} data-replay={replay ? "" : undefined} />
@@ -605,7 +627,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
               {on && <span className="trk">追踪中</span>}
               {rc && <span className="now"><span className="rc" data-r={rc}>{RECEIPT_NAMES[rc]}</span></span>}
             </span>
-            <span className="lacts">{laneActs(run.id)}</span>
+            <span className="lacts">{laneActs(run.id, false, true)}</span>
           </div>} />
         );
       }
@@ -619,20 +641,19 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
         <div className="lname" role="button" tabIndex={0} data-trace={on || undefined} style={{ top: r.y, height: r.h }} onClick={() => traceAndLocate(run.id)} onKeyDown={activate(() => traceAndLocate(run.id))} onPointerEnter={() => focus.hover(run.id)} onPointerLeave={() => focus.hover(null)} title="追踪它，并在画布上找到它">
           <RunAvatar agent={run.agent} size={22} />
           <span className="t">
-            <b>
-              {run.name}
+            <span className="l1">
+              <b>{run.name}</b>
               {on && <span className="trk">追踪中</span>}
               {nk > 0 && (
                 <span className="fold" role="button" aria-expanded={!fold[run.id]} title={`${fold[run.id] ? "展开" : "收起"}子代理`} onClick={(e) => (e.stopPropagation(), setFold((o) => ({ ...o, [run.id]: !o[run.id] })))}>
                   {fold[run.id] ? "▸" : "▾"} {nk}
                 </span>
               )}
-            </b>
+            </span>
             <span className="now" data-k={k}>{text}{place ? ` · ${place}` : ""}</span>
           </span>
           <span className="lacts">
-            {r.f.root.sessionId && <button onClick={(e) => (e.stopPropagation(), ui.openSession(r.f.root.sessionId!))}>打开会话</button>}
-            {laneActs(run.id)}
+            {laneActs(run.id, !!r.f.root.sessionId, false, r.f.root.sessionId)}
           </span>
         </div>} />
       );
@@ -822,7 +843,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
     >
       {/* the height follows what is inside by a CSS transition: it is sampled once per frame, so it
           moves in even steps (a JS tween timed inside its own rAF batch did not) */}
-      <div className="ws-tl-anim" style={{ height: innerH }} onTransitionEnd={(e) => void (e.target === e.currentTarget && (timelineResize.at = performance.now()))}>
+      <div className="ws-tl-anim" style={{ height: innerH }} onTransitionEnd={(e) => void (e.target === e.currentTarget && ((timelineResize.at = performance.now()), open && yieldBottom()))}>
         <div ref={innerRef}>{open ? lanes() : strip()}</div>
       </div>
       {/* the words replay brings in, laid out once up front: the first scrub never waits on new glyphs */}

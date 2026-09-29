@@ -7,7 +7,7 @@
 // reduced motion, or where the browser has no view transitions, it is a cut. Imperative, no React: it outlives the canvases it switches.
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { El } from "../canvas/scene";
-import { nextPaused, type PauseEvent } from "./liveCamera";
+import { goHomeDue, nextPaused, type PauseEvent } from "./liveCamera";
 import { firstView, viewport, type Viewport } from "../canvas/viewport";
 import { nav, nested } from "../nested/store";
 import { canvases } from "../session/ui";
@@ -61,7 +61,7 @@ export type Camera = { tick: () => void; frame: (dtMs: number) => void; resume: 
 export type LiveHooks = {
   /** The canvas the person has in front of them (the main pane's). */
   current: () => string | null;
-  /** Whether the followed agent is at work: idle, the camera does not move. */
+  /** Whether there is work on the diagram to follow (on a node or on the way): idle, or in the tray, the camera holds still — and after a while goes home. */
   awake: () => boolean;
   /** Whether the camera has taken the canvas away from the one the person is on: saving the layout and the 「在子图里」 hint wait meanwhile. */
   away: (on: boolean) => void;
@@ -81,6 +81,9 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
   let leaving = false;
   /** Live: how many ticks in a row the canvas in front of the person was not the one the camera shows; whether it is `away`. */
   let mismatch = 0;
+  /** Live: since when there has been nothing to follow (performance.now), and whether the view is on its way back to `homeView`. */
+  let holdSince: number | null = null;
+  let returning = false;
   let awayNow = false;
   const setAway = (on: boolean) => {
     if (on === awayNow) return;
@@ -161,7 +164,7 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
   async function go(to: string, restore = false) {
     const from = shown!;
     // live: the view of the canvas the person is on, to give back when the camera comes home
-    if (live && from === home && !restore) homeView = viewport.get(from) ?? homeView;
+    if (live && from === home && !restore) homeView ??= viewport.get(from) ?? null;
     busy = true;
     measureBar();
     try {
@@ -218,6 +221,25 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     homeView = null;
     entry = null;
     mismatch = 0;
+    holdSince = null;
+    returning = false;
+  };
+  /** Live: the view eases back to the one it started from (a cut with reduced motion), once the work is over. */
+  const homeStep = (dtMs: number) => {
+    if (!returning || !home || shown !== home || !homeView) return;
+    const api = canvases.get(home)?.api;
+    const v = viewport.get(home);
+    if (!api || !v || !v.width) return;
+    const cur = { zoom: v.zoom, scrollX: v.scrollX, scrollY: v.scrollY };
+    const near = Math.abs(homeView.zoom - cur.zoom) < 0.004 && Math.abs(homeView.scrollX - cur.scrollX) * cur.zoom < 1.5 && Math.abs(homeView.scrollY - cur.scrollY) * cur.zoom < 1.5;
+    if (near || prefersReducedMotion()) {
+      setView(api, homeView);
+      returning = false;
+      homeView = null;
+      return;
+    }
+    const k = 1 - Math.exp(-Math.min(dtMs, 100) / CATCH_UP_MS);
+    setView(api, { zoom: cur.zoom + (homeView.zoom - cur.zoom) * k, scrollX: cur.scrollX + (homeView.scrollX - cur.scrollX) * k, scrollY: cur.scrollY + (homeView.scrollY - cur.scrollY) * k });
   };
   /** The live tick: the same choice of canvas as a play's, from the canvas the person is on; nothing while the agent is idle. */
   const liveTick = () => {
@@ -237,12 +259,27 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
       if (++mismatch < 2) return;
       mismatch = 0;
       home = shown = cur;
+      homeView = null;
       setAway(false);
       return pause("select");
     }
     mismatch = 0;
     setAway(!manual && shown !== home);
-    if (manual || !live!.awake()) return;
+    if (manual) return;
+    if (!live!.awake()) {
+      // nothing on the diagram to follow: about 3 s on, back to the canvas and the view it started from
+      holdSince ??= now();
+      if (goHomeDue({ holdFor: now() - holdSince, paused: manual, displaced: shown !== home || !!homeView })) {
+        holdSince = null;
+        if (shown !== home) {
+          setAway(true);
+          void go(home, true).then(() => void (homeView = null));
+        } else returning = true;
+      }
+      return;
+    }
+    holdSince = null;
+    returning = false;
     const t = clock.time();
     const want = cameraCanvas(home, (c) => {
       const ctx = ctxFor(c);
@@ -287,7 +324,13 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     /** Once per animation frame: the follow camera moves the shown canvas toward the view it should have. */
     frame(dtMs) {
       if (!home || !shown || busy || manual || leaving) return;
-      if (live && !live.awake()) return;
+      if (live) {
+        if (!live.awake()) return void homeStep(dtMs);
+        returning = false;
+        holdSince = null;
+        // the view the person had, kept once before the first move (a canvas the camera left is remembered by `go`)
+        if (!homeView && shown === home) homeView = viewport.get(shown) ?? null;
+      }
       const r = run();
       const w = getWindow();
       const api = canvases.get(shown)?.api;

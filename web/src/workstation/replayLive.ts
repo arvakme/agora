@@ -11,11 +11,11 @@ import { pointerFollow } from "../pointer/follow";
 import { openSessions } from "../session/ui";
 import { clock } from "./clock";
 import { focus } from "./focus";
-import { pickFollow, type Pick } from "./liveCamera";
-import { canvasWhere } from "./place";
+import { followsWhere, pickFollow, whereOf, type Pick } from "./liveCamera";
+import { canvasWhere, OUTSIDE, stateAt } from "./place";
 import { beforePlay, plays } from "./replayMode";
 import { quiet } from "./replayQuiet";
-import { createCamera } from "./replayView";
+import { createCamera, ctxFor } from "./replayView";
 import { runs } from "./runs/store";
 import type { WorkRun } from "./runs/types";
 
@@ -49,11 +49,20 @@ const currentCanvas = () => {
   return null;
 };
 
+/** Work on the diagram to follow: on a node, on the way, through a door — not in the tray, not idle (./liveCamera.ts `whereOf`). */
+function workOnDiagram(): boolean {
+  const r = runOf();
+  const c = camera.shown();
+  const ctx = c ? ctxFor(c) : null;
+  if (!r || !ctx) return !!r?.running;
+  return followsWhere(whereOf(stateAt(r, clock.time(), ctx), OUTSIDE, r.running));
+}
+
 const camera = createCamera(() => null, runOf, () => (state.run ? NOW : null), {
   setManual: (on) => set({ paused: on }),
   live: {
     current: currentCanvas,
-    awake: () => !!runOf()?.running,
+    awake: workOnDiagram,
     away: (on) => quiet.hold("live", on),
   },
 });

@@ -4,6 +4,9 @@
  * (transform). */
 .ws-talk { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: auto; display: flex; flex-direction: column; gap: 4px; width: 232px; padding: 4px; border-radius: var(--r-lg); background: var(--surface); box-shadow: 0 0 0 1px var(--accent); will-change: transform; animation: ws-talk-in var(--dur-glide) var(--ease-out) both; }
 @keyframes ws-talk-in { from { opacity: 0; } }
+.ws-talk[data-side="above"]::before { top: auto; bottom: -4px; left: calc(50% - 4px); transform: rotate(225deg); }
+.ws-talk[data-side="right"]::before { top: auto; bottom: 6px; left: -4px; transform: rotate(315deg); }
+.ws-talk[data-side="left"]::before { top: auto; bottom: 6px; left: auto; right: -4px; transform: rotate(135deg); }
 .ws-talk::before { content: ""; position: absolute; left: 14px; top: -4px; width: 8px; height: 8px; background: var(--surface); box-shadow: -1px -1px 0 0 var(--accent); transform: rotate(45deg); }
 .ws-talk input { position: relative; height: 26px; padding: 0 10px; border: 0; border-radius: var(--r-sm); background: var(--surface); box-shadow: var(--box); color: var(--fg); font: inherit; font-size: var(--text-sm); outline: none; }
 .ws-talk input::placeholder { color: var(--fg-subtle); }
