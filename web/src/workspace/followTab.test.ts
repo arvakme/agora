@@ -4,7 +4,7 @@
 // person has moved it, and that it is never saved in the project's layout. Pure.
 import { describe, expect, it } from "vitest";
 import { group, groupOf, groups, layout, moveTab, type Node, type Split } from "./layout.ts";
-import { FOLLOW_TAB, followHome, insertFollow, isFollowTab, spotOf, withoutFollow } from "./followTab.ts";
+import { FOLLOW_TAB, followHome, insertFollow, spotOf, withoutFollow } from "./followTab.ts";
 import { savedWorkspace, type Doc } from "./model.ts";
 
 const canvas = group(["c1"], "c1");
@@ -125,10 +125,6 @@ describe("withoutFollow and the saved layout", () => {
   });
   it("is the same tree when it is not there", () => {
     expect(withoutFollow(canvas)).toBe(canvas);
-  });
-  it("isFollowTab", () => {
-    expect(isFollowTab(FOLLOW_TAB)).toBe(true);
-    expect(isFollowTab("c1")).toBe(false);
   });
   it("the project's layout never holds it: savedWorkspace leaves the tab (and its group) out", () => {
     const docs: Doc[] = [{ id: "c1", kind: "canvas", title: "总架构" }, { id: "p-s1", kind: "session", sessionId: "s1", title: "" }];

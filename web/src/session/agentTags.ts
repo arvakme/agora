@@ -25,12 +25,32 @@ export function agentTags(tops: readonly WorkRun[], now: number): AgentTag[] {
     .sort((a, b) => RANK[a.state] - RANK[b.state] || b.lastAt - a.lastAt);
 }
 
-/** As many tags as fit (`max`), the rest as 「+N」; the tag being looked at is never the one folded away — it takes the last place. */
-export function fitTags(tags: readonly AgentTag[], max: number, keep?: string): { shown: AgentTag[]; more: AgentTag[] } {
-  if (tags.length <= max) return { shown: [...tags], more: [] };
-  const room = Math.max(0, max - 1); // one place goes to 「+N」
-  let shown = tags.slice(0, room);
+/** How many idle tags stay beside the ones at work; the rest go into 「+N」. */
+export const IDLE_SHOWN = 2;
+/** A tag's name is at most this many characters (the full name is the tooltip). */
+export const TAG_NAME_MAX = 12;
+
+/**
+ * Which tags show: everyone working, waiting or thinking, plus the most recently idle (`IDLE_SHOWN`); every other idle session
+ * is one 「+N」 (its list opens on click). `max` is how many places fit (「+N」 takes one); the tag being looked at (`keep`)
+ * is never the one folded away.
+ */
+export function splitTags(tags: readonly AgentTag[], max: number, keep?: string): { shown: AgentTag[]; more: AgentTag[] } {
+  const active = tags.filter((t) => t.state !== "idle");
+  const idle = tags.filter((t) => t.state === "idle");
+  const wanted = [...active, ...idle.slice(0, IDLE_SHOWN)];
+  const hidden = idle.slice(IDLE_SHOWN);
+  const room = Math.max(1, hidden.length > 0 || wanted.length > max ? max - 1 : max);
+  let shown = wanted.slice(0, room);
   const kept = keep ? tags.find((t) => t.runId === keep) : undefined;
-  if (kept && room > 0 && !shown.includes(kept)) shown = [...shown.slice(0, room - 1), kept];
+  if (kept && !shown.includes(kept)) shown = [...shown.slice(0, Math.max(0, room - 1)), kept];
   return { shown, more: tags.filter((t) => !shown.includes(t)) };
+}
+
+/** The name on a tag: the agent, or (several of one agent) what the session is about, cut to `TAG_NAME_MAX` characters with 「…」. */
+export function tagLabel(name: string, sameAgent: boolean): string {
+  const [who, ...topic] = name.split(" · ");
+  const text = sameAgent && topic.length ? topic.join(" · ") : who;
+  const chars = [...text];
+  return chars.length > TAG_NAME_MAX ? `${chars.slice(0, TAG_NAME_MAX).join("")}…` : text;
 }

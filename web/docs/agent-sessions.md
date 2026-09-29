@@ -35,7 +35,7 @@ Agora 里的一个会话，就是用户选定的原生 coding agent 的一个原
 
 | | 无头续接（Agora 发消息、终端没开） | 终端里的交互式续接 |
 |---|---|---|
-| Claude Code | `claude -p --output-format stream-json --verbose --session-id <uuid>`（没开始过）/ `--resume <uuid>`（其余一律如此，日志没了 CLI 会明确报错），`--model`、`--effort`、`--allowedTools "Bash(agora canvas *)"`，提示词走 stdin | `claude --resume <uuid> --model … --effort …`（没开始过时 `--session-id`） |
+| Claude Code | `claude -p --input-format stream-json --output-format stream-json --verbose --permission-prompt-tool stdio --permission-mode auto --session-id <uuid>`（没开始过）/ `--resume <uuid>`（其余一律如此，日志没了 CLI 会明确报错），`--model`、`--effort`、`--allowedTools "Bash(agora canvas *)"`；第一条用户消息以 stream-json 一行写进 stdin，**这一轮里 stdin 保持打开**（回审批/问题、发中断），收到 `result` 后关掉；双向协议、auto 与「等你」见 [claude-headless-duplex.md](../../docs/claude-headless-duplex.md) | `claude --resume <uuid> --model … --effort …`（没开始过时 `--session-id`） |
 | Pi | `pi -p --mode json --session-id <uuid> --model <provider/id> --thinking <level> --skill <repo>/skills/agora -- "<提示词>"` | `pi --session-id <uuid> --model … --models …（锁住 Ctrl+P 轮换）--thinking … --skill …` |
 | Codex | `codex exec --json --skip-git-repo-check [-m] [-c model_reasoning_effort="…"] -`（首轮）/ `codex exec resume <id> --json … -`，提示词走 stdin | `codex resume <id> -m … -c model_reasoning_effort=…`（还没有 id 时 `codex`，id 从 pane 进程自己打开的 rollout 认领） |
 

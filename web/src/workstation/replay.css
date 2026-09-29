@@ -3,7 +3,7 @@
 
 /* the bar over the canvas: it takes the replay banner's place */
 /* left, under the toolbar */
-.ws-banner.ws-play-bar { top: 68px; left: 12px; transform: none; max-width: calc(100% - 24px); padding-right: 4px; --icon: var(--fg); }
+.ws-banner.ws-play-bar { top: 68px; left: 12px; transform: none; max-width: calc(100% - 24px); padding-right: 12px; --icon: var(--fg); }
 .ws-play-bar .k { color: var(--accent-ink); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
 .ws-play-bar .ttl { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg-muted); }
 

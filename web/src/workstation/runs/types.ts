@@ -79,10 +79,6 @@ export const RECEIPT_NAMES: Record<ReceiptState, string> = {
  * "idle": nothing has been done yet); the rest are `RECEIPT_NAMES`.
  */
 export const receiptText = (run: Pick<WorkRun, "name" | "parentId">, r: ReceiptState): string => (r === "dispatched" && run.parentId ? `等 ${run.name} 接手` : RECEIPT_NAMES[r]);
-/** Receipts that end a run. */
-export const FINAL: ReadonlySet<ReceiptState> = new Set(["claimed", "accepted", "returned", "failed", "blocked", "exited", "idle_no_reply", "interrupted"]);
-/** Receipts the tree's 出问题 filter shows. */
-export const TROUBLE: ReadonlySet<ReceiptState> = new Set(["failed", "blocked", "exited", "unknown", "idle_no_reply"]);
 
 /** One point of a run's lifecycle: the server's unified state, and whether the work was verified. */
 export type Receipt = { at: number; state: RunState; accepted?: boolean };

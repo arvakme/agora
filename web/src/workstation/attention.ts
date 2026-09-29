@@ -1,7 +1,6 @@
 // The person came back to the page (web/docs/workstation.md「新想法」, 等你就叫你): the figures waiting on
 // them turn and wave. Pinged by ./WaitNotifier.tsx when the page is in view again; `at` is wall-clock
 // ms, null until the first time.
-import { useSyncExternalStore } from "react";
 
 export type Attention = { at: number } | null;
 let state: Attention = null;
@@ -15,4 +14,3 @@ export const attention = {
     ls.forEach((l) => l());
   },
 };
-export const useAttention = () => useSyncExternalStore(attention.subscribe, attention.get);

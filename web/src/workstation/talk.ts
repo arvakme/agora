@@ -2,7 +2,6 @@
 // The message may wait behind the agent's running turn, so the figure nods when it really arrives — a user
 // item with those words shows up in the session (`watchDelivery`) — not when it is sent. `at` is wall-clock
 // ms; the frame loop compares it with its own time, so nothing here renders anything per frame.
-import { useSyncExternalStore } from "react";
 import { agents } from "../session/agents";
 
 export type SendState = "sent" | "queued" | "delivered";
@@ -40,7 +39,6 @@ export const talk = {
     ls.forEach((l) => l());
   },
 };
-export const useTalk = () => useSyncExternalStore(talk.subscribe, talk.get);
 
 // ── where the box goes (web/docs/workstation.md §12 对小人说话) ──
 

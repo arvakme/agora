@@ -7,7 +7,6 @@
 import { addTab, groupOf, groups, layout, removeTab, splitOff, type Node, type Zone } from "./layout";
 
 export const FOLLOW_TAB = "follow-pane";
-export const isFollowTab = (id: string) => id === FOLLOW_TAB;
 
 /** How much of the room the follow view takes: a column of its own to the right of the canvas / the top of the session group on its right. */
 const SHARE_COLUMN = 0.4;

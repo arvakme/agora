@@ -31,7 +31,6 @@ function fold(): SessionFold[] {
 
 /** All bound sessions, folded (stable identity while nothing changed). */
 export const useSessionFolds = () => useSyncExternalStore(agents.subscribe, fold);
-export const sessionFolds = fold;
 
 /** Display names of sessions (the workspace's session titles, set by the app shell). */
 let names: Record<string, string> = {};

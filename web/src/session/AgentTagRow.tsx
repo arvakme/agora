@@ -7,7 +7,7 @@ import { canvasWhere, OUTSIDE, stateAt } from "../workstation/place";
 import { RunAvatar } from "../workstation/RunAvatar";
 import { useRuns } from "../workstation/runs/store";
 import type { WorkRun } from "../workstation/runs/types";
-import { agentTags, fitTags, TAG_STATE_NAME, type AgentTag } from "./agentTags";
+import { agentTags, splitTags, tagLabel, TAG_STATE_NAME, type AgentTag } from "./agentTags";
 import { sessions } from "./store";
 import { ui } from "./ui";
 import "./agentTags.css";
@@ -42,11 +42,11 @@ export function AgentTags() {
   const tags = agentTags(tops, now);
   if (!tags.length) return <div className="agent-tags" ref={box} />;
   const room = Math.max(2, Math.floor((width + MORE_W) / TAG_W)); // at least one tag beside 「+N」
-  const { shown, more } = fitTags(tags, room);
+  const { shown, more } = splitTags(tags, room);
   const byId = new Map(tops.map((r) => [r.id, r]));
   // several sessions of one agent: tell them apart by what they are about (the name is 「agent · topic」)
   const same = (t: AgentTag) => tags.filter((x) => x.agent === t.agent).length > 1;
-  const label = (t: AgentTag) => { const [who, ...topic] = t.name.split(" · "); return same(t) && topic.length ? topic.join(" · ") : who; };
+  const label = (t: AgentTag) => tagLabel(t.name, same(t));
   const tag = (t: AgentTag, listed?: boolean) => {
     const run = byId.get(t.runId)!;
     const where = whereIs(run, now);
