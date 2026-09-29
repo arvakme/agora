@@ -1,1 +1,1 @@
-"""Agora HTTP server: rooms, messages, WebSocket fanout, wake scheduler."""
+"""Agora server: the project canvas app and native agent sessions (server/canvas)."""

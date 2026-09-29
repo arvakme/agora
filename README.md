@@ -168,9 +168,7 @@ skills/agora-canvas/  给 Pi / Claude Code / Codex 的 skill（读图、改图�
 web/                  前端（React + Excalidraw）；web/docs/ 是各功能规格，web/eval/ 是评测
 web/libraries/        vendored 素材库（约 6k 个组件，来源与许可见其 NOTICE.md）
 tests/                Python 测试
-docs/                 开发协作与测试说明；docs/legacy-rooms.md 是早期房间调度的说明
-server/ brain/ daemon/ k8s/
-                      早期「多 Agent 房间调度」实现（Postgres + Redis），已不是当前产品路径
+docs/                 开发协作与测试说明
 ```
 
 ## 限制
@@ -194,7 +192,7 @@ uv run pytest tests/test_project_store.py tests/test_agent_sessions.py tests/tes
 cd web && npx tsc -p . && npx vitest run && npm run build && npm run eval:replay
 ```
 
-CI（`.github/workflows/test.yml`）跑全部 Python 测试（带 Postgres / Redis 服务容器，给早期房间调度的集成测试用），以及前端的类型检查、单测、构建、离线评测回放和素材库校验。开发协作见 [docs/development.md](docs/development.md)，测试说明见 [docs/testing.md](docs/testing.md)。
+CI（`.github/workflows/test.yml`）跑全部 Python 测试（不需要外部服务），以及前端的类型检查、单测、构建、离线评测回放和素材库校验。开发协作见 [docs/development.md](docs/development.md)，测试说明见 [docs/testing.md](docs/testing.md)。
 
 ## 许可与致谢
 
