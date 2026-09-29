@@ -24,7 +24,7 @@ export function agentTags(tops: readonly WorkRun[], now: number): AgentTag[] {
     .map((r) => {
       const state = tagState(r, now);
       const waitSince = state === "waiting" ? r.segs.find((s) => s.kind === "wait" && s.start <= now && now < s.end)?.start : undefined;
-      return { runId: r.id, sessionId: r.sessionId, agent: r.agent, name: r.name, state, kids: count(r), lastAt: r.lastAt, ...(waitSince !== undefined ? { waitSince } : {}) };
+      return { runId: r.id, sessionId: r.sessionId, agent: r.agent, name: r.name || r.agent, state, kids: count(r), lastAt: r.lastAt, ...(waitSince !== undefined ? { waitSince } : {}) };
     })
     .sort((a, b) => RANK[a.state] - RANK[b.state] || b.lastAt - a.lastAt);
 }
@@ -53,7 +53,7 @@ export function splitTags(tags: readonly AgentTag[], max: number, keep?: string)
 
 /** The name on a tag: the agent, or (several of one agent) what the session is about, cut to `TAG_NAME_MAX` characters with 「…」. */
 export function tagLabel(name: string, sameAgent: boolean): string {
-  const [who, ...topic] = name.split(" · ");
+  const [who, ...topic] = (name || "").split(" · ");
   const text = sameAgent && topic.length ? topic.join(" · ") : who;
   const chars = [...text];
   return chars.length > TAG_NAME_MAX ? `${chars.slice(0, TAG_NAME_MAX).join("")}…` : text;
