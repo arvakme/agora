@@ -70,7 +70,7 @@ function useFollowing(main: string) {
  * the tab in the window manager's layout (`root`) in step with that. It draws nothing itself; the tab's
  * body is `FollowView`.
  */
-export function FollowPane({ main, root, setRoot }: { main: string; root: Node; setRoot: (f: (r: Node) => Node) => void }) {
+export function FollowPane({ main, root, setRoot, isSession }: { main: string; root: Node; setRoot: (f: (r: Node) => Node) => void; /** Whether a tab is a session's (a follow view opens above the session group on the canvas's right). */ isSession: (tab: string) => boolean }) {
   const { f, on, ps, open } = useFollowing(main);
   // ── open for a newcomer, move on when its agent leaves, say it ended ──
   const announced = useRef(new Map<string, number>());
@@ -106,7 +106,7 @@ export function FollowPane({ main, root, setRoot }: { main: string; root: Node; 
   const spot = useRef<Spot | null>(null);
   const had = useRef(false);
   useEffect(() => {
-    if (open && !has) setRoot((r) => insertFollow(r, main, spot.current));
+    if (open && !has) setRoot((r) => insertFollow(r, main, spot.current, isSession));
     else if (!open && has) setRoot((r) => withoutFollow(r));
   }, [open, has, main]);
   useEffect(() => {

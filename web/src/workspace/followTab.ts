@@ -1,22 +1,40 @@
 // The follow view as a tab of the window manager (web/docs/workstation.md §10; the design in §9「跟随窗格」:
 // a follow group type in the window manager). One virtual tab, `FOLLOW_TAB`, which is not a document: it is in
 // the layout tree while an agent is followed and never in the project's saved layout (./model.ts
-// `savedWorkspace` leaves it out). It opens in a new group cut off the right of the canvas's group — between
-// the canvas and a session group already on its right — and after the person has moved it, where it was put.
+// `savedWorkspace` leaves it out). It opens cut off the top of the session group on the canvas's right (the
+// canvas keeps its width), else in a column of its own to the canvas's right — and after the person has moved it, where it was put.
 // Pure; ../workstation/FollowTabSync.tsx applies it.
-import { addTab, groupOf, groups, removeTab, splitOff, type Node, type Zone } from "./layout";
+import { addTab, groupOf, groups, layout, removeTab, splitOff, type Node, type Zone } from "./layout";
 
 export const FOLLOW_TAB = "follow-pane";
 export const isFollowTab = (id: string) => id === FOLLOW_TAB;
 
-/** How much of the canvas's room the new group takes. */
-const SHARE = 0.45;
+/** How much of the room the follow view takes: a column of its own to the right of the canvas / the top of the session group on its right. */
+const SHARE_COLUMN = 0.4;
+const SHARE_ABOVE_SESSION = 0.5;
 
-/** Where the follow tab goes: nowhere new when it is open already, else a new group to the right of the canvas's. */
-export function followHome(root: Node, canvasTab: string): { action: "keep" } | { action: "split"; target: string; zone: "right" } {
+export type Home = { action: "keep" } | { action: "split"; target: string; zone: Exclude<Zone, "center">; share: number };
+
+/**
+ * Where the follow tab goes: nowhere new when it is open already. With a session group already to the
+ * right of the canvas's, it is cut off the top of that (the canvas is not made narrower — three columns
+ * would leave a canvas too narrow for the diagram); with none, a column of its own to the canvas's right.
+ * `isSession`: whether a tab is a session's.
+ */
+export function followHome(root: Node, canvasTab: string, isSession: (tab: string) => boolean = () => false): Home {
   if (groupOf(root, FOLLOW_TAB)) return { action: "keep" };
   const g = groupOf(root, canvasTab) ?? groups(root)[0];
-  return { action: "split", target: g.id, zone: "right" };
+  // "to the right": its left edge is at or beyond the canvas group's right edge, in the laid-out tree (a unit square is enough)
+  const { rects } = layout(root, { x: 0, y: 0, w: 1, h: 1 }, 0);
+  const at = rects.get(g.id);
+  // the nearest such group: the one whose left edge is least far to the right
+  const nearest = at
+    ? groups(root)
+        .filter((o) => o.id !== g.id && o.tabs.some(isSession) && (rects.get(o.id)?.x ?? -1) >= at.x + at.w - 1e-9)
+        .sort((a, b) => rects.get(a.id)!.x - rects.get(b.id)!.x)[0]
+    : undefined;
+  if (nearest) return { action: "split", target: nearest.id, zone: "top", share: SHARE_ABOVE_SESSION };
+  return { action: "split", target: g.id, zone: "right", share: SHARE_COLUMN };
 }
 
 /** Where the person left the tab: inside a group with other tabs, or in a group of its own beside another one. */
@@ -50,15 +68,15 @@ export function spotOf(root: Node, tab: string): Spot | null {
 }
 
 /** The tree with the follow tab in it: at `spot` when it still makes sense, else in the default place. Unchanged if it is open. */
-export function insertFollow(root: Node, canvasTab: string, spot?: Spot | null): Node {
+export function insertFollow(root: Node, canvasTab: string, spot?: Spot | null, isSession: (tab: string) => boolean = () => false): Node {
   if (groupOf(root, FOLLOW_TAB)) return root;
   if (spot?.kind === "joined" && groups(root).some((g) => g.id === spot.groupId)) return addTab(root, spot.groupId, FOLLOW_TAB);
   if (spot?.kind === "split") {
     const anchor = groupOf(root, spot.anchorTab);
-    if (anchor) return splitOff(root, anchor.id, FOLLOW_TAB, spot.zone, SHARE);
+    if (anchor) return splitOff(root, anchor.id, FOLLOW_TAB, spot.zone, SHARE_COLUMN);
   }
-  const home = followHome(root, canvasTab);
-  return home.action === "split" ? splitOff(root, home.target, FOLLOW_TAB, home.zone, SHARE) : root;
+  const home = followHome(root, canvasTab, isSession);
+  return home.action === "split" ? splitOff(root, home.target, FOLLOW_TAB, home.zone, home.share) : root;
 }
 
 /** The tree with `groupId`'s room handed to its neighbour (the one before it, else the one after), so removing it gives the room back. */
