@@ -3,7 +3,7 @@
 // looking at, else the top-level run most recently at work), when it holds still (the agent is idle), when
 // the person's own doing pauses it and what resumes it. Pure.
 import { describe, expect, it } from "vitest";
-import { followsWhere, nextPaused, pickFollow, whereOf, ENTER_MS, HOME_AFTER_MS, isWorking, lastWorkStart, liveStep, MOUNT_GRACE_MS, newLiveMachine, type LiveIn, type Top } from "./liveCamera.ts";
+import { canvasStep, ENTER_MS, HOME_AFTER_MS, isWorking, MOUNT_GRACE_MS, newCanvasMachine, newSpell, nextPaused, pickFollow, SPELL_FIRST_SIGHT_MS, spellStep, type CanvasIn, type Top } from "./liveCamera.ts";
 
 const top = (id: string, o: Partial<Top> = {}): Top => ({ id, sessionId: `s-${id}`, working: false, lastWorkAt: 0, ...o });
 const base = { on: true, playing: null, chosen: null, focusedSession: null, tops: [] as Top[] };
@@ -59,60 +59,24 @@ describe("nextPaused: the person's own doing pauses the camera; only the button 
   });
 });
 
-// ── the camera only follows work on the diagram, and goes home when it is done (§10 默认跟随) ──
-const OUT = "\u0000outside";
-const st = (o: Partial<Parameters<typeof whereOf>[0]> = {}) => ({ present: true, at: "n1", trip: null, w: 1, seg: { path: "a.go" }, ...o });
-
-describe("whereOf / followsWhere: does the camera push in?", () => {
-  it("on a node: yes", () => {
-    expect(whereOf(st(), OUT, true)).toBe("node");
-    expect(followsWhere("node")).toBe(true);
-  });
-  it("on the way (a trip in progress): yes", () => {
-    expect(whereOf(st({ trip: {}, w: 0.4 }), OUT, true)).toBe("route");
-    expect(followsWhere("route")).toBe(true);
-  });
-  it("going through a door of a sub-diagram: yes", () => {
-    expect(whereOf(st({ present: false, portalPhase: "behind" }), OUT, true)).toBe("node");
-    expect(whereOf(st({ portalPhase: "in" }), OUT, true)).toBe("node");
-  });
-  it("in the tray outside the diagram: no", () => {
-    expect(whereOf(st({ at: OUT }), OUT, true)).toBe("tray");
-    expect(followsWhere("tray")).toBe(false);
-  });
-  it("thinking on a node with no file in hand: the camera does not move (frame level) — it is neither a reason to go home nor to go in (see liveStep)", () => {
-    expect(whereOf(st({ seg: null }), OUT, true)).toBe("think");
-    expect(whereOf(st({ seg: {} }), OUT, true)).toBe("think");
-    expect(followsWhere("think")).toBe(false);
-  });
-  it("idle (the run is not at work): no", () => {
-    expect(whereOf(st(), OUT, false)).toBe("idle");
-    expect(followsWhere("idle")).toBe(false);
-  });
-});
-
-describe("isWorking / lastWorkStart: one standard for the strip and the camera", () => {
+describe("isWorking: one standard for the strip and the camera", () => {
   const run = (running: boolean, segs: [number, number][]) => ({ running, segs: segs.map(([start, end]) => ({ start, end })) });
   it("the turn is running: working, whatever the calls", () => expect(isWorking(run(true, []), 10)).toBe(true));
   it("a call in progress: working", () => expect(isWorking(run(false, [[5, 20]]), 10)).toBe(true));
   it("turn over, no call in progress: idle", () => expect(isWorking(run(false, [[5, 8]]), 10)).toBe(false));
-  it("the latest call's start", () => {
-    expect(lastWorkStart(run(false, [[5, 8], [12, 15]]), 10)).toBe(5);
-    expect(lastWorkStart(run(false, []), 10)).toBeNull();
-  });
 });
 
 // ── the live camera's state machine, fed a time series ──
-describe("liveStep: the camera's decisions over time", () => {
-  const base: LiveIn = { now: 0, working: true, lastWorkStart: 1000, openedAt: 0, want: "home", shown: "home", home: "home", cur: "home", busy: false, manual: false, displaced: false };
+describe("canvasStep: which canvas the camera shows, over time", () => {
+  const base: CanvasIn = { now: 0, working: true, want: "home", shown: "home", home: "home", cur: "home", busy: false, manual: false, displaced: false };
   /** Feeds one tick per `dt` ms; `f(t)` gives that tick's changes; returns the actions that were not "none", with their times. */
-  const run = (seconds: number, f: (t: number) => Partial<LiveIn>, dt = 200) => {
-    const m = newLiveMachine();
+  const run = (seconds: number, f: (t: number) => Partial<CanvasIn>, dt = 200) => {
+    const m = newCanvasMachine();
     const acts: { t: number; type: string; to?: string }[] = [];
     const cur = { ...base };
     for (let t = 0; t <= seconds * 1000; t += dt) {
       Object.assign(cur, { now: t }, f(t));
-      const a = liveStep(m, { ...cur });
+      const a = canvasStep(m, { ...cur });
       if (a.type !== "none") {
         acts.push({ t, type: a.type, to: "to" in a ? a.to : undefined });
         // the world follows the action: the canvas is shown (and mounted), the person's canvas is where they went
@@ -125,11 +89,11 @@ describe("liveStep: the camera's decisions over time", () => {
   };
   it("thinking for 20 s inside a sub-diagram: nothing — no home, no going in and out", () => {
     // it went in at 4 s (wanted there for 3 s), then thinks (still running, no calls) for 20 s
-    const acts = run(30, (t) => ({ want: t >= 1000 ? "child" : "home", working: true, lastWorkStart: 1000 }));
+    const acts = run(30, (t) => ({ want: t >= 1000 ? "child" : "home", working: true }));
     expect(acts).toEqual([{ t: 4000, type: "go", to: "child" }]);
   });
   it("several files written in a sub-diagram in a row: one way in, none out until the turn ends", () => {
-    const acts = run(40, (t) => ({ want: t >= 1000 && t < 30000 ? "child" : "home", working: t < 30000, lastWorkStart: 1000 + Math.floor(t / 4000) * 4000 }));
+    const acts = run(40, (t) => ({ want: t >= 1000 && t < 30000 ? "child" : "home", working: t < 30000 }));
     expect(acts.map((a) => a.type)).toEqual(["go", "home"]);
     expect(acts[1].t).toBeGreaterThanOrEqual(30000 + HOME_AFTER_MS);
   });
@@ -150,10 +114,6 @@ describe("liveStep: the camera's decisions over time", () => {
     const acts = run(20, (t) => (t === 0 ? { displaced: true, shown: "child", cur: "child", want: "child" } : { working: !(t >= 6000 && t < 8000) }));
     expect(acts.some((a) => a.type === "home")).toBe(false);
   });
-  it("just opened the page: work that began before it is not followed; work after it is", () => {
-    const acts = run(20, (t) => ({ openedAt: 5000, lastWorkStart: t >= 12000 ? 12000 : 1000, want: "child" }));
-    expect(acts).toEqual([{ t: 15000, type: "go", to: "child" }]);
-  });
   it("paused: nothing happens; resumed: the machine goes on from there", () => {
     const acts = run(30, (t) => ({ manual: t >= 2000 && t < 15000, want: "child" }));
     expect(acts.every((a) => a.t >= 15000)).toBe(true);
@@ -170,7 +130,45 @@ describe("liveStep: the camera's decisions over time", () => {
     expect(MOUNT_GRACE_MS).toBeGreaterThan(5000);
   });
   it("a switch in progress: nothing", () => {
-    const m = newLiveMachine();
-    expect(liveStep(m, { ...base, busy: true, want: "child", now: 99999 })).toEqual({ type: "none" });
+    const m = newCanvasMachine();
+    expect(canvasStep(m, { ...base, busy: true, want: "child", now: 99999 })).toEqual({ type: "none" });
+  });
+});
+
+// ── whether the camera has a turn to follow (replayLive.ts feeds it one tick at a time) ──
+describe("spellStep: a turn is followed from the moment it begins", () => {
+  const OPENED = 100_000;
+  const ticks = (f: (t: number) => { working: boolean; lastWorkStart?: number | null; chosen?: boolean }, from: number, to: number) => {
+    let s = newSpell();
+    const out: [number, boolean][] = [];
+    for (let now = from; now <= to; now += 200) {
+      const i = f(now);
+      s = spellStep(s, { working: i.working, lastWorkStart: i.lastWorkStart ?? null, openedAt: OPENED, now, chosen: !!i.chosen });
+      out.push([now, s.followed]);
+    }
+    return out;
+  };
+  it("the person sends a message: it is followed at once — before the run has begun a single call (FL2 root cause 1)", () => {
+    const at = OPENED + 30_000;
+    const r = ticks((t) => ({ working: t >= at, lastWorkStart: 5 }), OPENED + 20_000, OPENED + 40_000);
+    expect(r.find(([, f]) => f)![0]).toBe(at);
+  });
+  it("and keeps following through thinking, the tray and waiting: the turn is what counts, not a call in hand", () => {
+    const at = OPENED + 30_000;
+    const r = ticks((t) => ({ working: t >= at && t < at + 60_000, lastWorkStart: null }), OPENED + 20_000, OPENED + 100_000);
+    expect(r.filter(([t]) => t >= at && t < at + 60_000).every(([, f]) => f)).toBe(true);
+    expect(r.filter(([t]) => t >= at + 60_000).every(([, f]) => !f)).toBe(true);
+  });
+  it("a turn already running when the page opened is not followed until it does something new", () => {
+    const r = ticks((t) => ({ working: true, lastWorkStart: t >= OPENED + 4000 ? OPENED + 4000 : 5 }), OPENED, OPENED + 6000);
+    expect(r.find(([, f]) => f)![0]).toBe(OPENED + 4000);
+  });
+  it("a run first seen a long time after the page opened is a new turn (a session that had nothing yet): followed at once", () => {
+    const now = OPENED + SPELL_FIRST_SIGHT_MS + 1000;
+    expect(spellStep(newSpell(), { working: true, lastWorkStart: null, openedAt: OPENED, now, chosen: false }).followed).toBe(true);
+    expect(spellStep(newSpell(), { working: true, lastWorkStart: null, openedAt: OPENED, now: OPENED + 500, chosen: false }).followed).toBe(false);
+  });
+  it("the person chose this agent: followed while it works", () => {
+    expect(spellStep(newSpell(), { working: true, lastWorkStart: null, openedAt: OPENED, now: OPENED + 500, chosen: true }).followed).toBe(true);
   });
 });

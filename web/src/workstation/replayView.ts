@@ -7,7 +7,8 @@
 // reduced motion, or where the browser has no view transitions, it is a cut. Imperative, no React: it outlives the canvases it switches.
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { El } from "../canvas/scene";
-import { liveStep, nextPaused, newLiveMachine, type PauseEvent } from "./liveCamera";
+import { canvasStep, nextPaused, newCanvasMachine, type PauseEvent } from "./liveCamera";
+import { cameraResume, cameraStart, cameraStep, inShot, switchView, ZOOM_MAX, ZOOM_MIN, type CameraGoal, type CameraState } from "./director";
 import { firstView, viewport, type Viewport } from "../canvas/viewport";
 import { nav, nested } from "../nested/store";
 import { canvases } from "../session/ui";
@@ -16,7 +17,7 @@ import { buildGeometry } from "./geometry";
 import { stateAt, type Ctx } from "./place";
 import { cameraCanvas } from "./replayCamera";
 import { occupiedOf, excalidrawEl } from "./replayDom";
-import { fitView, viewShowsContent, type Box } from "./replayFit";
+import { fitView, type Box, type Fit } from "./replayFit";
 import { followView } from "./replayFollow";
 import { figurePositions } from "./focus";
 import { replacingPush } from "./replayHistory";
@@ -26,11 +27,10 @@ import type { WorkRun } from "./runs/types";
 /** Room over the top nodes for the figure standing there and its bubble (px), and the margin round the rest. */
 const FIGURE_ROOM = 100;
 const MARGIN = 28;
-/** The follow camera: 100 % preferred, 70 % at the least, 125 % at the most; screen px the figure needs round its feet (head and bubble above, the bubble to each side); the dead zone; how fast the view catches up (ms). */
-const ZOOM = { preferred: 1, min: 0.7, max: 1.25 };
+/** The follow shot (./replayFollow.ts): 100 % preferred, held to the camera's zoom range (./director.ts); screen px the figure needs round its feet (head and bubble above, the bubble to each side); the dead zone. How the view gets there is ./director.ts `cameraStep`. */
+const ZOOM = { preferred: 1, min: ZOOM_MIN, max: ZOOM_MAX };
 const ROOM = { up: 120, side: 170, down: 20 };
 const DEAD = 0.18;
-const CATCH_UP_MS = 320;
 /** A look at the whole diagram this long after the replay's first beat starts (the clock begins 400 ms before it), and for the summary. */
 const OVERVIEW_MS = 600;
 
@@ -53,6 +53,7 @@ export function ctxFor(id: string): Ctx | null {
 const boxOfFor = (id: string, place: string) => ctxs.get(id)?.boxOf(place);
 
 const now = () => performance.now();
+const sameView = (a: Fit, b: Fit) => Math.abs(a.zoom - b.zoom) < 0.004 && Math.abs(a.scrollX - b.scrollX) * a.zoom < 1.5 && Math.abs(a.scrollY - b.scrollY) * a.zoom < 1.5;
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export type CameraEvent = { at: number; t: number; from: string; to: string; title: string };
@@ -61,14 +62,8 @@ export type Camera = { tick: () => void; frame: (dtMs: number) => void; resume: 
 export type LiveHooks = {
   /** The canvas the person has in front of them (the main pane's). */
   current: () => string | null;
-  /** Whether there is work on the diagram to follow (on a node or on the way, work begun after the page opened): thinking, the tray, idle: the view holds still. */
-  awake: () => boolean;
-  /** The followed run's turn is running (./liveCamera.ts `isWorking`, the strip's standard): only the turn's end sends the camera home. */
+  /** The camera has a turn to follow (./liveCamera.ts `spellStep`): from the person's message to the turn's end, thinking and the tray included; only the turn's end sends it home. */
   working: () => boolean;
-  /** When its latest call began. */
-  lastWorkStart: () => number | null;
-  /** When the page opened: only work that begins after it is followed. */
-  openedAt: number;
   /** Whether the camera has taken the canvas away from the one the person is on: saving the layout and the 「在子图里」 hint wait meanwhile. */
   away: (on: boolean) => void;
 };
@@ -82,12 +77,16 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
   const live = hooks.live;
   const tag = live ? "Live" : "";
   let manual = false;
-  let chasing = false;
   /** Leaving (a play's exit is under way): nothing else moves the view meanwhile. */
   let leaving = false;
-  /** Live: the state machine deciding go / home / the person's own doing (./liveCamera.ts `liveStep`), and whether the view is on its way back to `homeView`. */
-  const machine = newLiveMachine();
+  /** Live: which canvas to show — go / home / the person's own doing (./liveCamera.ts `canvasStep`) — and whether the view is on its way back to `homeView`. */
+  const machine = newCanvasMachine();
   let returning = false;
+  /** Where the camera is (./director.ts `cameraStep`; made from the view the first frame it is needed, and again after a switch), and whether it is to take over from the view the person left (「继续」). */
+  let cam: CameraState | null = null;
+  let resync = false;
+  /** A play's whole-diagram view (its first moment, its summary) that was put on the canvas: not put again while it is the view. */
+  let overviewShown: Fit | null = null;
   let awayNow = false;
   const setAway = (on: boolean) => {
     if (on === awayNow) return;
@@ -138,7 +137,16 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
   }
   const setView = (api: ExcalidrawImperativeAPI, v: { scrollX: number; scrollY: number; zoom: number }) => api.updateScene({ appState: { scrollX: v.scrollX, scrollY: v.scrollY, zoom: { value: v.zoom } } as never });
   /** Whole diagram (the first moment of a replay, the summary, when the person has taken over) or the figure close up. */
-  const overviewAt = (w: { start: number; end: number | null }, t: number) => manual || t < w.start + OVERVIEW_MS || (w.end != null && t >= w.end);
+  const overviewAt = (w: { start: number; end: number | null }, t: number) => t < w.start + OVERVIEW_MS || (w.end != null && t >= w.end);
+  /** A view put on the canvas as a cut: the picture cross-fades into it (a view transition; where there is none, or with reduced motion, it is simply there). */
+  const cutTo = (api: ExcalidrawImperativeAPI, v: Fit) => {
+    const vt = (document as Document & { startViewTransition?: (f: () => Promise<void>) => unknown }).startViewTransition;
+    if (prefersReducedMotion() || !vt) return setView(api, v);
+    vt.call(document, async () => {
+      setView(api, v);
+      await wait(60);
+    });
+  };
   /** The follow view on canvas `id` at time `t`: the figure, the node it is going to and its bubble. */
   function followOf(api: ExcalidrawImperativeAPI, id: string, r: WorkRun, t: number, current: { zoom: number; scrollX: number; scrollY: number } | null) {
     const ctx = ctxFor(id);
@@ -151,17 +159,16 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     // where it stands now (as drawn), else at the dock of its place — a canvas just mounted has drawn nothing yet
     const dock = ctx.dock(st.at);
     const figure = figurePositions.get(id, r.id) ?? dock;
-    return followView({ pane: { w: appState.width, h: appState.height }, occupied: occ, margin: MARGIN, figure, node: boxOfFor(id, st.at) ?? null, room: ROOM, zoom: ZOOM, current, dead: DEAD });
+    const node = boxOfFor(id, st.at) ?? null;
+    return followView({ pane: { w: appState.width, h: appState.height }, occupied: occ, margin: MARGIN, figure, node: node && inShot(figure, node) ? node : null, room: ROOM, zoom: ZOOM, current, dead: DEAD });
   }
-  /** The view a canvas gets when it is shown: the one it was entered with (leaving the replay), else the whole diagram or the figure close up. */
+  /** The view a canvas gets when it is shown (./director.ts `switchView`): the one it was entered with (leaving), else the figure close up; a play's whole diagram; live, never the whole diagram. */
   const viewFor = (id: string, restore: boolean) => (api: ExcalidrawImperativeAPI) => {
-    let v: { zoom: number; scrollX: number; scrollY: number } | null = restore && id === home ? homeView : null;
-    if (!v && !restore) {
-      const r = run();
-      const w = getWindow();
-      v = r && w && !overviewAt(w, clock.time()) ? (followOf(api, id, r, clock.time(), null)?.view ?? null) : null;
-    }
-    v ??= restore && id === home ? homeView : fitOf(api);
+    const r = run();
+    const w = getWindow();
+    const follow = !restore && r && w && !overviewAt(w, clock.time()) ? (followOf(api, id, r, clock.time(), null)?.view ?? null) : null;
+    const st = api.getAppState();
+    const v = switchView({ live: !!live, restore, home: id === home, homeView, follow, fit: fitOf(api), pane: { w: st.width, h: st.height } });
     if (v) setView(api, v);
   };
 
@@ -192,6 +199,8 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
       else await vt.call(document, swap).finished.catch(() => {});
     } finally {
       firstView.drop(to);
+      cam = null;
+      overviewShown = null;
       busy = false;
     }
   }
@@ -232,30 +241,15 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
   const release = () => {
     listen(false);
     setAway(false);
-    manual = chasing = false;
+    manual = false;
     hooks.setManual(false);
     home = shown = null;
     homeView = null;
     entry = null;
-    Object.assign(machine, newLiveMachine());
+    Object.assign(machine, newCanvasMachine());
     returning = false;
-  };
-  /** Live: the view eases back to the one it started from (a cut with reduced motion), once the work is over. */
-  const homeStep = (dtMs: number) => {
-    if (!returning || !home || shown !== home || !homeView) return;
-    const api = canvases.get(home)?.api;
-    const v = viewport.get(home);
-    if (!api || !v || !v.width) return;
-    const cur = { zoom: v.zoom, scrollX: v.scrollX, scrollY: v.scrollY };
-    const near = Math.abs(homeView.zoom - cur.zoom) < 0.004 && Math.abs(homeView.scrollX - cur.scrollX) * cur.zoom < 1.5 && Math.abs(homeView.scrollY - cur.scrollY) * cur.zoom < 1.5;
-    if (near || prefersReducedMotion()) {
-      setView(api, homeView);
-      returning = false;
-      homeView = null;
-      return;
-    }
-    const k = 1 - Math.exp(-Math.min(dtMs, 100) / CATCH_UP_MS);
-    setView(api, { zoom: cur.zoom + (homeView.zoom - cur.zoom) * k, scrollX: cur.scrollX + (homeView.scrollX - cur.scrollX) * k, scrollY: cur.scrollY + (homeView.scrollY - cur.scrollY) * k });
+    cam = null;
+    overviewShown = null;
   };
   /** The live tick: the same choice of canvas as a play's, from the canvas the person is on; nothing while the agent is idle. */
   const liveTick = () => {
@@ -276,7 +270,7 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
       const st = stateAt(r, t, ctx);
       return { behind: !st.present && st.portalPhase === "behind", into: st.portal?.canvasId ?? null };
     });
-    const act = liveStep(machine, { now: Date.now(), working: live!.working(), lastWorkStart: live!.lastWorkStart(), openedAt: live!.openedAt, want, shown: shown!, home, cur, busy, manual, displaced: shown !== home || !!homeView });
+    const act = canvasStep(machine, { now: Date.now(), working: live!.working(), want, shown: shown!, home, cur, busy, manual, displaced: shown !== home || !!homeView });
     if (act.type === "user-moved") {
       // the person went to another canvas themself (breadcrumb, a node's child, back): that is theirs; they are on their own view now
       home = shown = act.to;
@@ -314,10 +308,12 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     entry = null;
     listen(false);
     setAway(false);
-    manual = chasing = false;
+    manual = false;
     hooks.setManual(false);
     home = shown = null;
     homeView = null;
+    cam = null;
+    overviewShown = null;
     leaving = false;
   }
 
@@ -328,18 +324,12 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
       // live: the person's view now is the view to go home to
       if (live && home && shown === home) homeView = viewport.get(home) ?? null;
       manual = false;
-      chasing = true;
+      resync = true;
       hooks.setManual(false);
     },
-    /** Once per animation frame: the follow camera moves the shown canvas toward the view it should have. */
+    /** Once per animation frame: the camera (./director.ts `cameraStep`) moves the shown canvas toward the shot. */
     frame(dtMs) {
-      if (!home || !shown || busy || manual || leaving) return;
-      if (live) {
-        if (!live.awake()) return void homeStep(dtMs);
-        returning = false;
-        // the view the person had, kept once before the first move (a canvas the camera left is remembered by `go`)
-        if (!homeView && shown === home) homeView = viewport.get(shown) ?? null;
-      }
+      if (!home || !shown || busy || leaving) return;
       const r = run();
       const w = getWindow();
       const api = canvases.get(shown)?.api;
@@ -347,29 +337,50 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
       if (!r || !w || !api || !v || !v.width) return;
       const t = clock.time();
       const cur = { zoom: v.zoom, scrollX: v.scrollX, scrollY: v.scrollY };
-      let target: { zoom: number; scrollX: number; scrollY: number } | null = null;
-      if (overviewAt(w, t)) target = fitOf(api);
-      else {
-        const f = followOf(api, shown, r, t, cur);
-        if (f && (f.move || chasing)) target = f.view;
-      }
+      const pane = { w: v.width, h: v.height };
       if (now() - lastSample > 100) (lastSample = now(), zooms.length < 4000 && zooms.push([Date.now(), shown, +v.zoom.toFixed(3)]));
-      // live: never to a place with no diagram in it (the tray, a canvas just switched to): the view stays
-      if (target && live) {
-        const els = api.getSceneElements().filter((e) => !e.isDeleted);
-        if (els.length) {
-          const x0 = Math.min(...els.map((e) => e.x)), y0 = Math.min(...els.map((e) => e.y));
-          const bounds = { x: x0, y: y0, w: Math.max(...els.map((e) => e.x + e.width)) - x0, h: Math.max(...els.map((e) => e.y + e.height)) - y0 };
-          if (!viewShowsContent(target, { w: v.width, h: v.height }, bounds)) target = null;
+      // a play's first moment and its summary: the whole diagram, as a cut
+      if (!live && overviewAt(w, t)) {
+        const fit = fitOf(api);
+        if (fit && (!overviewShown || !sameView(fit, overviewShown))) {
+          overviewShown = fit;
+          cutTo(api, fit);
+          cam = null;
         }
+        return;
       }
-      if (!target) return void (chasing = false);
-      const near = Math.abs(target.zoom - cur.zoom) < 0.004 && Math.abs(target.scrollX - cur.scrollX) * cur.zoom < 1.5 && Math.abs(target.scrollY - cur.scrollY) * cur.zoom < 1.5;
-      if (near) return void (chasing = false);
-      chasing = true;
-      if (prefersReducedMotion()) return setView(api, target);
-      const k = 1 - Math.exp(-Math.min(dtMs, 100) / CATCH_UP_MS);
-      setView(api, { zoom: cur.zoom + (target.zoom - cur.zoom) * k, scrollX: cur.scrollX + (target.scrollX - cur.scrollX) * k, scrollY: cur.scrollY + (target.scrollY - cur.scrollY) * k });
+      overviewShown = null;
+      let goal: CameraGoal = null;
+      if (live) {
+        if (live.working()) {
+          returning = false;
+          // the view the person had, kept once before the first move (a canvas the camera left is remembered by `go`)
+          if (!homeView && shown === home) homeView = viewport.get(shown) ?? null;
+          const f = followOf(api, shown, r, t, cur);
+          goal = f && { view: f.view, move: f.move };
+        } else if (returning && homeView) goal = { view: homeView, move: true };
+      } else {
+        const f = followOf(api, shown, r, t, cur);
+        goal = f && { view: f.view, move: f.move };
+      }
+      if (prefersReducedMotion()) {
+        // no travelling: the shot is simply there, and the way home too
+        cam = null;
+        if (goal?.move) setView(api, goal.view);
+        if (live && returning) ((returning = false), (homeView = null));
+        return;
+      }
+      if (!cam) cam = cameraStart(cur, pane);
+      else if (resync) cam = cameraResume(cam, cur, pane);
+      resync = false;
+      const out = cameraStep(cam, goal, { dt: dtMs, now: now(), pane, manual });
+      if (out.mode === "manual") return;
+      const moved = out.state.at.x !== cam.at.x || out.state.at.y !== cam.at.y || out.state.at.zoom !== cam.at.zoom;
+      cam = out.state;
+      if (out.cut) cutTo(api, out.view);
+      else if (moved) setView(api, out.view);
+      // arrived home
+      if (live && returning && out.mode === "hold") ((returning = false), (homeView = null));
     },
     tick() {
       if (leaving) return;

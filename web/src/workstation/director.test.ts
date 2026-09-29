@@ -145,3 +145,253 @@ describe("a run that is still going does not go home", () => {
     expect(stateAt(done, 200 * S, ctx([done])).present).toBe(false);
   });
 });
+
+// ── the camera: a rate-limited carrot and a critically damped spring, in shots (hold / follow / cut) ──
+import { pickFollow } from "./liveCamera.ts";
+import { CAMERA_OMEGA, cameraResume, inShot, SHOT_REACH, switchView, cameraStart, cameraStep, CARROT_SPEED, centreOf, CUT_COOLDOWN_MS, viewAt, ZOOM_MAX, ZOOM_MIN, type CameraGoal, type CameraState } from "./director.ts";
+import { viewProblems, type ViewSample } from "./cameraCurve.ts";
+
+const PANE = { w: 900, h: 700 };
+const goalAt = (x: number, y: number, zoom = 1, move = true): CameraGoal => ({ view: viewAt({ x, y }, zoom, PANE), move });
+type Rec = { t: number; state: CameraState; out: ReturnType<typeof cameraStep> };
+/** Run the camera at 60 fps for `secs`; `goal(t)` is what the shot wants at t (ms). */
+function film(secs: number, start: { x: number; y: number; zoom?: number }, goal: (t: number) => CameraGoal, opts: { manual?: (t: number) => boolean } = {}): Rec[] {
+  let s = cameraStart(viewAt(start, start.zoom ?? 1, PANE), PANE);
+  const out: Rec[] = [];
+  for (let t = 0; t <= secs * 1000; t += FRAME) {
+    const o = cameraStep(s, goal(t), { dt: FRAME, now: t, pane: PANE, manual: opts.manual?.(t) ?? false });
+    s = o.state;
+    out.push({ t, state: s, out: o });
+  }
+  return out;
+}
+const samples = (fr: Rec[]): ViewSample[] => fr.map((f) => ({ t: f.t, canvas: "c1", zoom: f.out.view.zoom, sx: f.out.view.scrollX, sy: f.out.view.scrollY }));
+const speed = (a: Rec, b: Rec) => Math.hypot(b.state.at.x - a.state.at.x, b.state.at.y - a.state.at.y) / (FRAME / 1000);
+
+describe("(a) the camera eases in and out", () => {
+  const fr = film(4, { x: 0, y: 0 }, () => goalAt(500, 0));
+  it("the first frame after a goal appears is slow: at most 20% of the peak speed", () => {
+    const v = fr.slice(1).map((f, i) => speed(fr[i], f));
+    const peak = Math.max(...v);
+    expect(peak).toBeGreaterThan(200);
+    expect(v[0]).toBeLessThanOrEqual(0.2 * peak);
+  });
+  it("never faster than the carrot could take it (with the spring's overshoot allowed a little) and it arrives without overshooting", () => {
+    const v = fr.slice(1).map((f, i) => speed(fr[i], f));
+    expect(Math.max(...v)).toBeLessThan(CARROT_SPEED * 1.05);
+    expect(Math.max(...fr.map((f) => f.state.at.x))).toBeLessThan(500 + 5);
+    expect(fr.at(-1)!.state.at.x).toBeCloseTo(500, 0);
+  });
+  it("the acceleration is bounded: no frame changes the speed by more than the spring and the carrot allow", () => {
+    const v = fr.slice(1).map((f, i) => speed(fr[i], f));
+    for (let i = 1; i < v.length; i++) expect(Math.abs(v[i] - v[i - 1]), `frame ${i}`).toBeLessThan(CARROT_SPEED * CAMERA_OMEGA * (FRAME / 1000) * 1.2);
+  });
+});
+
+describe("(b) no snap in the speed except across a cut", () => {
+  it("a goal that jumps around within a shot is followed without one frame of jerk", () => {
+    const fr = film(8, { x: 0, y: 0 }, (t) => goalAt(t < 2000 ? 400 : t < 4000 ? 100 : 600, t < 4000 ? 0 : 200));
+    const p = viewProblems(samples(fr), { snapPx: 12 });
+    expect(p.snaps).toEqual([]);
+    expect(p.switches).toEqual([]);
+    expect(fr.some((f) => f.out.cut)).toBe(false);
+  });
+});
+
+describe("(c) far away is a cut: one, decided once, and no going back and forth", () => {
+  it("a goal over CUT_DISTANCE away cuts at once: the view is at the goal on that frame, and it says so", () => {
+    const fr = film(3, { x: 0, y: 0 }, (t) => goalAt(2000, 300));
+    const cuts = fr.filter((f) => f.out.cut);
+    expect(cuts).toHaveLength(1);
+    expect(cuts[0].out.mode).toBe("cut");
+    expect(centreOf(cuts[0].out.view, PANE).x).toBeCloseTo(2000, 0);
+    expect(fr.at(-1)!.state.at.x).toBeCloseTo(2000, 0);
+  });
+  it("inside a shot (a goal wandering a few hundred units) there is no second cut, even if it wanders over CUT_DISTANCE from where the camera was before the cut", () => {
+    const fr = film(6, { x: 0, y: 0 }, (t) => goalAt(t < 1000 ? 2000 : 2000 + 500 * Math.sin(t / 700), 300));
+    expect(fr.filter((f) => f.out.cut)).toHaveLength(1);
+  });
+  it("a second far goal, after the cooldown, is a second cut; before it the camera does not cut back", () => {
+    const fr = film(6, { x: 0, y: 0 }, (t) => (t < 1000 ? goalAt(2000, 0) : t < 1000 + CUT_COOLDOWN_MS / 2 ? goalAt(0, 0) : goalAt(-2000, 0)));
+    const cuts = fr.filter((f) => f.out.cut).map((f) => f.t);
+    expect(cuts.length).toBeGreaterThanOrEqual(2);
+    for (let i = 1; i < cuts.length; i++) expect(cuts[i] - cuts[i - 1]).toBeGreaterThanOrEqual(CUT_COOLDOWN_MS);
+  });
+});
+
+describe("(c) the camera's cut and the figure's cut are one cross-fade: both start together, the figure is never left outside the new picture", () => {
+  // FL2's session (thinks 6 s in the tray, then a file 2400 away), live: the figures show now − LOOKAHEAD_MS
+  const r = run([seg("think", 0, 6), seg("read", 6, 9, "far/queue.py"), seg("write", 9, 12, "far/queue.py"), seg("read", 12, 15, "server/app.py")], { running: true });
+  const c = ctx([r]);
+  const film2 = () => {
+    let s = cameraStart(viewAt(DOCKS[OUTSIDE], 1, PANE), PANE);
+    const rows: { t: number; f: FigureFrame; out: ReturnType<typeof cameraStep>; d: number }[] = [];
+    for (let now = 0; now <= 16 * S; now += FRAME) {
+      const f = directorFrame({ runs: [r], now, delay: LOOKAHEAD_MS, ctx: c }).figures[0];
+      if (!f) continue;
+      const p = figureAt(f, c);
+      const out = cameraStep(s, { view: viewAt(p, 1, PANE), move: Math.hypot(centreOf(viewAt(p, 1, PANE), PANE).x - s.at.x, centreOf(viewAt(p, 1, PANE), PANE).y - s.at.y) > 40 }, { dt: FRAME, now, pane: PANE });
+      s = out.state;
+      rows.push({ t: now, f, out, d: Math.hypot(p.x - s.at.x, p.y - s.at.y) });
+    }
+    return rows;
+  };
+  it("the camera cuts in the same frames the figure does (its fade-in has just begun), once", () => {
+    const rows = film2();
+    const cuts = rows.filter((x) => x.out.cut);
+    expect(cuts).toHaveLength(1);
+    expect(cuts[0].f.ghost).toBeTruthy(); // the figure is mid cross-fade
+    expect(cuts[0].f.alpha).toBeLessThan(0.3); // and has just begun to fade in
+  });
+  it("no other frame moves the camera by a jump; the figure is in the middle of the pane while it is still", () => {
+    const rows = film2();
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i].out.cut) continue;
+      const a = rows[i - 1].out.state.at;
+      const b = rows[i].out.state.at;
+      expect(Math.hypot(b.x - a.x, b.y - a.y) / (FRAME / 1000)).toBeLessThan(CARROT_SPEED * 1.05);
+    }
+    const after = rows.filter((x) => x.t > 7.5 * S && x.t < 9.5 * S);
+    expect(Math.max(...after.map((x) => x.d))).toBeLessThan(60);
+  });
+});
+
+// N: FL2's figure stands at the tray, 1800–2500 away from the view the person had: a cut, so frame 1. A figure 500 away (the widest a shot holds, SHOT_REACH) is 500 / 780 =
+// 0.64 s of carrot plus the spring's catch-up (about 1/ω = 0.3 s) → within 1.2 s = 72 frames. Under the dead zone (near the middle) it holds.
+describe("(d) after a message is sent the followed figure gets into the middle of the pane, fast", () => {
+  const centred = (f: Rec, p: { x: number; y: number }) => {
+    const c = centreOf(f.out.view, PANE);
+    return Math.abs(c.x - p.x) < PANE.w * 0.25 && Math.abs(c.y - p.y) < PANE.h * 0.25;
+  };
+  it("the figure at the far tray (FL2's start: 1800 away): the very first frame — a cut", () => {
+    const fr = film(2, { x: 400, y: 300 }, () => goalAt(500, 1900));
+    expect(centred(fr[0], { x: 500, y: 1900 })).toBe(true);
+  });
+  it("the figure 500 away: within 1.2 s (72 frames)", () => {
+    const fr = film(3, { x: 400, y: 300 }, () => goalAt(400, 800));
+    const n = fr.findIndex((f) => centred(f, { x: 400, y: 800 }));
+    expect(n).toBeGreaterThanOrEqual(0);
+    expect(n).toBeLessThanOrEqual(72);
+  });
+  it("a figure already in the middle: the camera stays (hold)", () => {
+    const fr = film(2, { x: 400, y: 300 }, () => goalAt(420, 310, 1, false));
+    expect(fr.every((f) => f.out.mode === "hold")).toBe(true);
+    expect(Math.hypot(fr.at(-1)!.state.at.x - 400, fr.at(-1)!.state.at.y - 300)).toBeLessThan(1);
+  });
+});
+
+describe("(f) the person moves the canvas: the camera lets go; 「继续」 hands it back without a jump", () => {
+  it("while manual nothing moves, whatever the goal", () => {
+    const fr = film(3, { x: 0, y: 0 }, () => goalAt(500, 0), { manual: () => true });
+    expect(fr.every((f) => f.out.mode === "manual")).toBe(true);
+    expect(fr.at(-1)!.state.at).toEqual(fr[0].state.at);
+  });
+  it("resuming starts from the view the person left it in: the next frame is no further than one frame's worth of motion", () => {
+    let s = cameraStart(viewAt({ x: 0, y: 0 }, 1, PANE), PANE);
+    const theirs = viewAt({ x: 700, y: -300 }, 0.85, PANE); // the person panned and zoomed
+    s = cameraResume(s, theirs, PANE);
+    const o = cameraStep(s, goalAt(1000, -300, 0.85), { dt: FRAME, now: 0, pane: PANE });
+    const a = centreOf(theirs, PANE);
+    const b = centreOf(o.view, PANE);
+    expect(Math.hypot(b.x - a.x, b.y - a.y)).toBeLessThan(CARROT_SPEED * (FRAME / 1000) * 0.5);
+    expect(Math.abs(o.view.zoom - theirs.zoom)).toBeLessThan(0.02);
+    expect(o.cut).toBe(false);
+  });
+});
+
+describe("zoom: only inside [ZOOM_MIN, ZOOM_MAX], smooth, and never 0.3", () => {
+  it("a goal outside the range is brought into it, gradually", () => {
+    const fr = film(4, { x: 0, y: 0, zoom: 0.3 }, () => goalAt(0, 0, 0.3));
+    expect(fr.at(-1)!.out.view.zoom).toBeGreaterThanOrEqual(ZOOM_MIN - 1e-3); // a view from outside the range approaches it from below
+    expect(fr.at(-1)!.out.view.zoom).toBeLessThanOrEqual(ZOOM_MAX + 1e-6);
+    expect(viewProblems(samples(fr.slice(2)), { zoomStep: 0.03 }).zoomJumps).toEqual([]);
+  });
+  it("across a cut the zoom does not change by more than a frame's worth either (no fit of the whole diagram on the way)", () => {
+    const fr = film(3, { x: 0, y: 0, zoom: 0.85 }, () => goalAt(3000, 0, 0.85));
+    expect(viewProblems(samples(fr), { zoomStep: 0.03 }).zoomJumps).toEqual([]);
+    expect(Math.min(...fr.map((f) => f.out.view.zoom))).toBeGreaterThanOrEqual(ZOOM_MIN);
+  });
+});
+
+describe("(g) two agents at work: one is followed, the other cannot take the camera", () => {
+  const tops = (bWorking: boolean) => [
+    { id: "a", sessionId: "sa", working: true, lastWorkAt: 1 },
+    { id: "b", sessionId: "sb", working: bWorking, lastWorkAt: bWorking ? 99 : 0 },
+  ];
+  it("while the person is talking to a, b starting to work and walking through the middle changes nothing: the camera stays on a", () => {
+    const at = { a: { x: 300, y: 300 }, b: { x: 2000, y: 100 } };
+    let s = cameraStart(viewAt(at.a, 1, PANE), PANE);
+    let worst = 0;
+    for (let t = 0; t <= 12000; t += FRAME) {
+      const b = { x: 2000 - t * 0.3, y: 300 }; // b walks across the whole diagram, through a's place, from 3 s on
+      const p = pickFollow({ on: true, playing: null, chosen: null, focusedSession: "sa", tops: tops(t > 3000) })!;
+      const target = p.run === "a" ? at.a : b;
+      expect(p.run).toBe("a");
+      const o = cameraStep(s, { view: viewAt(target, 1, PANE), move: true }, { dt: FRAME, now: t, pane: PANE });
+      s = o.state;
+      worst = Math.max(worst, Math.hypot(s.at.x - at.a.x, s.at.y - at.a.y));
+    }
+    expect(worst).toBeLessThan(1);
+  });
+  it("the person chooses b (a click on its figure): the camera goes to b once, and stays with b whoever works", () => {
+    const p = pickFollow({ on: true, playing: null, chosen: "b", focusedSession: "sa", tops: tops(false) })!;
+    expect(p.run).toBe("b");
+  });
+});
+
+describe("root cause 6: switching canvas never flashes the whole diagram (zoom 1 → 0.3 in one frame)", () => {
+  const fit03 = { zoom: 0.3, scrollX: 20, scrollY: 40 }; // a large diagram fitted to the pane
+  const home = viewAt({ x: 300, y: 200 }, 1, PANE);
+  it("live, paused, no view to give back: the shot's view, else the canvas's fit held to the zoom range", () => {
+    const shot = viewAt({ x: 900, y: 500 }, 0.9, PANE);
+    expect(switchView({ live: true, restore: false, home: false, homeView: null, follow: shot, fit: fit03, pane: PANE })).toEqual(shot);
+    const v = switchView({ live: true, restore: false, home: false, homeView: null, follow: null, fit: fit03, pane: PANE })!;
+    expect(v.zoom).toBeGreaterThanOrEqual(ZOOM_MIN);
+    expect(v.zoom).toBeLessThanOrEqual(ZOOM_MAX);
+  });
+  it("live, coming home without a remembered view: still not the whole diagram", () => {
+    const v = switchView({ live: true, restore: true, home: true, homeView: null, follow: null, fit: fit03, pane: PANE })!;
+    expect(v.zoom).toBeGreaterThanOrEqual(ZOOM_MIN);
+  });
+  it("live, coming home: the view the person left", () => {
+    expect(switchView({ live: true, restore: true, home: true, homeView: home, follow: null, fit: fit03, pane: PANE })).toEqual(home);
+  });
+  it("a play may still show the whole diagram (its overview and its summary)", () => {
+    expect(switchView({ live: false, restore: false, home: false, homeView: null, follow: null, fit: fit03, pane: PANE })).toEqual(fit03);
+  });
+  it("across the whole switch the zoom the person sees never drops below the range", () => {
+    // from a followed view (zoom 1) to a canvas that has only its fit: the zoom on the new canvas
+    const to = switchView({ live: true, restore: false, home: false, homeView: null, follow: null, fit: fit03, pane: PANE })!;
+    expect(1 - to.zoom).toBeLessThanOrEqual(1 - ZOOM_MIN + 1e-9);
+  });
+});
+
+describe("(e) the turn ends: three seconds on, the camera eases back to the view the person had", () => {
+  it("from the followed place it travels home under the same speed and acceleration limits, and arrives", () => {
+    const home = viewAt({ x: 0, y: 0 }, 1, PANE);
+    const fr = film(4, { x: 400, y: 300 }, () => ({ view: home, move: true }));
+    expect(fr.some((f) => f.out.cut)).toBe(false);
+    const c = centreOf(fr.at(-1)!.out.view, PANE);
+    expect(Math.hypot(c.x, c.y)).toBeLessThan(3);
+    expect(fr.at(-1)!.out.mode).toBe("hold"); // arrived
+    expect(Math.max(...fr.slice(1).map((f, i) => speed(fr[i], f)))).toBeLessThanOrEqual(CARROT_SPEED * 1.05);
+    expect(viewProblems(samples(fr), { snapPx: 12 }).snaps).toEqual([]);
+  });
+});
+
+describe("zoom from outside the range eases in (a play's overview leaves the view at 0.3)", () => {
+  it("no frame changes the zoom by a jump, the first included", () => {
+    const fr = film(4, { x: 0, y: 0, zoom: 0.3 }, () => goalAt(0, 0, 1));
+    expect(viewProblems(samples(fr), { zoomStep: 0.03 }).zoomJumps).toEqual([]);
+    expect(fr.at(-1)!.out.view.zoom).toBeGreaterThan(0.95);
+  });
+});
+
+describe("the shot: the place the figure is going to is framed with it only when it is near (SHOT_REACH)", () => {
+  const node = { x: 1000, y: 100, w: 200, h: 100 };
+  it("within SHOT_REACH of the figure: framed together", () => expect(inShot({ x: 700, y: 150 }, node)).toBe(true));
+  it("further (a cut or a long walk): the figure only — the view does not zoom out to hold both (FL2 after DR3: zoom 1 → 0.88 before a cut)", () => {
+    expect(inShot({ x: 100, y: 150 }, node)).toBe(false);
+    expect(SHOT_REACH).toBe(520);
+  });
+});

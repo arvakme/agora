@@ -1,5 +1,6 @@
 // The live camera (web/docs/workstation.md §10 默认跟随): the "▶ 放一轮" camera, generalised to live mode. It follows the
-// main agent by default. Pure decisions live here: whom to follow and when the person's own doing pauses it.
+// main agent by default. Pure decisions live here: whom to follow, whether there is a turn to follow, which canvas to show and when the
+// person's own doing pauses it. Where the view goes is ./director.ts `cameraStep`.
 
 export type Top = {
   id: string;
@@ -47,25 +48,6 @@ export function nextPaused(paused: boolean, ev: PauseEvent): boolean {
   return true;
 }
 
-// ── only work on the diagram is followed; done, it goes home ──
-
-export type Where = "node" | "route" | "tray" | "think" | "idle";
-
-/**
- * Where the followed run is, for the camera: on a node working on a file (`seg.path`), on the way (a trip in
- * progress), through a door of a sub-diagram, in the tray outside the diagram, thinking (no file in hand: nothing
- * on the diagram changes), or not at work.
- */
-export function whereOf(st: { present: boolean; at: string; trip: unknown; w: number; seg?: { path?: string } | null; portalPhase?: string }, outside: string, running: boolean): Where {
-  if (!running) return "idle";
-  if (st.portalPhase) return "node"; // through a door of a sub-diagram
-  if (st.at === outside) return "tray";
-  if (st.trip && st.w < 1) return "route";
-  return st.seg?.path ? "node" : "think";
-}
-/** The camera pushes in on the diagram's work only: not on the tray, not on an idle run. */
-export const followsWhere = (w: Where) => w === "node" || w === "route";
-
 /** After the turn has ended (the run is not at work) this long, the camera goes back to the view it started from. */
 export const HOME_AFTER_MS = 3000;
 /** A different canvas (into a sub-diagram, or back out) is only gone to after the agent has been wanted there this long without a break. */
@@ -77,23 +59,31 @@ export const MOUNT_GRACE_MS = 6000;
 export function isWorking(run: { running: boolean; segs: readonly { start: number; end: number }[] }, now: number): boolean {
   return run.running || run.segs.some((s) => s.start <= now && now < s.end);
 }
-/** When the run's latest call began (≤ now), or null. */
-export function lastWorkStart(run: { segs: readonly { start: number }[] }, now: number): number | null {
-  let last: number | null = null;
-  for (const s of run.segs) if (s.start <= now) last = Math.max(last ?? 0, s.start);
-  return last;
+// ── whether the camera has a turn to follow ──
+/** A run first seen this long after the page opened is a new turn (its session had nothing on the page before); sooner, it may be one that was going already. */
+export const SPELL_FIRST_SIGHT_MS = 8000;
+/** What the camera has seen of the followed run's turns: `seen` a tick of it at all, `was` working the tick before, `followed` this turn is the camera's to follow. */
+export type Spell = { seen: boolean; was: boolean; followed: boolean };
+export const newSpell = (): Spell => ({ seen: false, was: false, followed: false });
+/**
+ * One tick. A turn is followed from the moment it begins — the person's message, before its first call — through thinking, the tray and
+ * waiting, until it ends (the turn is what counts, not a call in hand). A turn that was already going when the page opened is not: it
+ * is followed when it does something new. An agent the person chose is followed while it works.
+ */
+export function spellStep(s: Spell, i: { working: boolean; lastWorkStart: number | null; openedAt: number; now: number; chosen: boolean }): Spell {
+  if (!i.working) return { seen: true, was: false, followed: false };
+  const begun = s.seen ? !s.was : i.now - i.openedAt > SPELL_FIRST_SIGHT_MS;
+  const fresh = (i.lastWorkStart ?? -1) >= i.openedAt;
+  return { seen: true, was: true, followed: s.followed || begun || fresh || i.chosen };
 }
 
-// ── the live camera's decisions, as a state machine fed one tick at a time ──
-export type LiveMachine = { endedAt: number | null; want: { canvas: string; since: number } | null; mismatch: number; lastGoAt: number };
-export const newLiveMachine = (): LiveMachine => ({ endedAt: null, want: null, mismatch: 0, lastGoAt: -Infinity });
-export type LiveIn = {
+// ── which canvas the camera shows: into a sub-diagram, home again, the person's own doing, fed one tick at a time ──
+export type CanvasMachine = { endedAt: number | null; want: { canvas: string; since: number } | null; mismatch: number; lastGoAt: number };
+export const newCanvasMachine = (): CanvasMachine => ({ endedAt: null, want: null, mismatch: 0, lastGoAt: -Infinity });
+export type CanvasIn = {
   now: number;
-  /** `isWorking` of the followed run: the turn is running. Thinking counts: it is not a reason to go home or to go in. */
+  /** The camera has a turn to follow (`spellStep`). Thinking counts: it is not a reason to go home or to go in. */
   working: boolean;
-  lastWorkStart: number | null;
-  /** When the page opened: only work that begins after it is followed. */
-  openedAt: number;
   /** The canvas the agent's door path wants shown (`cameraCanvas`), the canvas shown, the person's canvas (home), the canvas in front of them (null while it mounts). */
   want: string;
   shown: string;
@@ -106,10 +96,10 @@ export type LiveIn = {
   /** The view is away from what the person had (another canvas, or moved on it). */
   displaced: boolean;
 };
-export type LiveAct = { type: "none" } | { type: "go"; to: string } | { type: "home" } | { type: "user-moved"; to: string };
+export type CanvasAct = { type: "none" } | { type: "go"; to: string } | { type: "home" } | { type: "user-moved"; to: string };
 
-/** One tick: mutates `m`, returns what the camera does. */
-export function liveStep(m: LiveMachine, i: LiveIn): LiveAct {
+/** One tick: mutates `m`, returns what the camera does about the canvas. */
+export function canvasStep(m: CanvasMachine, i: CanvasIn): CanvasAct {
   if (i.busy) return { type: "none" };
   // the person went to another canvas themself (not a canvas that is still mounting after the camera's own switch)
   if (i.cur && i.cur !== i.shown && i.now - m.lastGoAt > MOUNT_GRACE_MS) {
@@ -137,7 +127,6 @@ export function liveStep(m: LiveMachine, i: LiveIn): LiveAct {
     return { type: "none" };
   }
   m.endedAt = null;
-  if (i.lastWorkStart == null || i.lastWorkStart < i.openedAt) return { type: "none" }; // work from before the page opened is not followed
   if (i.want === i.shown) {
     m.want = null;
     return { type: "none" };
