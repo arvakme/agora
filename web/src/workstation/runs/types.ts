@@ -26,6 +26,8 @@ export type RunSeg = {
   itemId?: string;
   /** Project-relative file read or written. */
   path?: string;
+  /** The call reported no real length (a Codex command with the same start and end): `end` is a padded minimum, so it is not a short read. */
+  durationKnown?: false;
   /** Command line (exec). */
   cmd?: string;
   /** What it asked the person (wait). */

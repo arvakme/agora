@@ -19,6 +19,8 @@ export type Seg = {
   itemId?: string;
   /** Project-relative file it read or wrote, when known. */
   path?: string;
+  /** The call reported no real length (`durationMs` missing or 0): `end` is the padded minimum. */
+  durationKnown?: false;
   label: string;
   /** Command line (exec), question (wait), task (delegate): the call's one-line input. */
   input?: string;
@@ -93,7 +95,7 @@ export function buildLane(sessionId: string, items: readonly Item[], opts: { liv
         const path = kind === "write" ? file : kind === "read" ? (it.tool?.reads?.[0] ?? readPath(it.tool?.input, opts.root)) : (file ?? (kind === "exec" ? it.tool?.on?.[0] : undefined));
         const verb = SEG_NAMES[kind];
         const input = (it.tool?.input ?? "").replace(/\s+/g, " ").trim();
-        return { sessionId, kind, start: r.at, end: r.at + Math.max(dur, MIN_TOOL_MS), turn: t.n, itemId: it.id, ...(path ? { path } : {}), ...(input && (!path || kind === "exec") ? { input } : {}), ...on, label: path ? `${verb} ${base(path)}` : `${verb} · ${it.tool?.name ?? "工具"} ${it.tool?.input ?? ""}`.trim() } as Seg;
+        return { sessionId, kind, start: r.at, end: r.at + Math.max(dur, MIN_TOOL_MS), turn: t.n, itemId: it.id, ...(path ? { path } : {}), ...(!r.running && !(r.durationMs && r.durationMs > 0) ? { durationKnown: false as const } : {}), ...(input && (!path || kind === "exec") ? { input } : {}), ...on, label: path ? `${verb} ${base(path)}` : `${verb} · ${it.tool?.name ?? "工具"} ${it.tool?.input ?? ""}`.trim() } as Seg;
       })
       .sort((a, b) => a.start - b.start);
     // Parallel calls in one step are shown one after another: a worker does one thing at a time.
