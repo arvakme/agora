@@ -255,7 +255,7 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
 }
 
 /** What each agent is good for, in one line (the picker's cards). */
-const AGENT_BLURB: Record<string, string> = { pi: "快，适合边画边聊", claude: "擅长大改动，能派子代理", codex: "适合按清单写代码和测试" };
+const AGENT_BLURB: Record<string, string> = { pi: "快，适合边画边聊", claude: "擅长大改动，能派子代理", codex: "适合按清单写代码和测试", grok: "xAI 出品，读写代码，能派子代理", cursor: "多种模型可选，读写代码，能派子代理", devin: "Cognition 出品，读写代码，工具默认不用批准" };
 
 function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTitles: Record<string, string> }) {
   const { sessions: all, turns: canvasTurns } = useSessions();

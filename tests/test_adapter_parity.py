@@ -253,16 +253,17 @@ def test_interactive_argv_is_identical(home):
 
 
 def test_registry_constants_are_identical(monkeypatch):
-    assert agents.KINDS == agents_v0.KINDS
-    assert agents.NAMES == agents_v0.NAMES
-    assert agents.SKILL_DIRS == agents_v0.SKILL_DIRS
+    # the three CLIs the legacy module knew are unchanged; CLIs made T1 since are additions
+    assert agents.KINDS[: len(agents_v0.KINDS)] == agents_v0.KINDS
+    assert {k: agents.NAMES[k] for k in agents_v0.KINDS} == agents_v0.NAMES
+    assert {k: v for k, v in agents.SKILL_DIRS.items() if k in agents_v0.KINDS} == agents_v0.SKILL_DIRS
     from server.canvas import agent_models
 
     monkeypatch.setattr(agent_models, "SOURCES", {k: (lambda env, root, k=k: {"default": f"{k}-m", "models": [f"{k}-m"]}) for k in T1})
     monkeypatch.setattr(agents, "_catalog_cache", {})
     monkeypatch.setattr(agents_v0, "_catalog_cache", {})
     new, old = agents.catalog(None), agents_v0.catalog(None)
-    assert new == old
+    assert {k: v for k, v in new.items() if k in old} == old
 
 
 # ——— real logs on this machine (opt-in, read-only) ———

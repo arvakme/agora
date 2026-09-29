@@ -15,8 +15,8 @@ agora dispatch --new codex|claude|pi --task-file task.md [--scope 'server/**'] [
 
 - The task text is all the other agent gets: what to do, where (`--scope` is a hint, not a sandbox), what "done"
   means. Long text: `--task-file` (or `-` for stdin).
-- You are the giver (`$AGORA_SESSION`); you cannot dispatch to yourself. Only Pi, Claude Code and Codex sessions
-  can be given tasks.
+- You are the giver (`$AGORA_SESSION`); you cannot dispatch to yourself. Only session agents (Pi, Claude Code, Codex, Devin …:
+  `agora dispatch --help` lists them) can be given tasks.
 - The output has an `id` and a `state`. Then either carry on with something else, or:
   - `agora dispatch wait <id> [--timeout S]` — waits for the end (exit 0 = done, 1 = ended otherwise,
     4 = still going); `agora dispatch status <id>`; `agora dispatch interrupt <id>` — withdraw it (a queued one

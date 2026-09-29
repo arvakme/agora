@@ -337,7 +337,7 @@ class AgentHub:
             "running": lv.running,
             "waiting": bool(lv.requests),
             "waitingSince": min((r["at"] for r in lv.requests.values()), default=None),  # ms: since when it has waited for the person
-            "mode": {"actual": lv.mode, "asked": ASKED_MODE} if lv.mode else None,
+            "mode": {"actual": lv.mode, "asked": getattr(adapters.get(b["agent"]) if b else None, "asked_mode", ASKED_MODE)} if lv.mode else None,
             "busy": lv.state.busy,
             "queued": len(lv.headless) + len(lv.pane),
             "held": lv.held,
@@ -407,7 +407,8 @@ class AgentHub:
                 self._status(sid)
             if look.path is None:
                 return
-            lv.tail = Tail(look.path)
+            adapter = adapters.need(b["agent"])
+            lv.tail = adapter.tail(look.path) if hasattr(adapter, "tail") else Tail(look.path)  # a database log (Devin) is followed by its adapter
             # Several copies, one of them this project's (Claude after a move or a copy): follow
             # that one, which is also the one the CLI resumes, and say so instead of picking silently.
             lv.native = agents.duplicates_note(b["agent"], b["nativeId"], look)
@@ -906,6 +907,7 @@ class AgentHub:
                 lv.activity = None
                 lv.running = False
                 self._end_turn(sid, lv)
+                self.close_stopped_turn(sid, lv)
                 self.broadcast({"t": "done", "sessionId": sid, "sendId": p.send_id, "text": "", "error": "已停止", "route": "headless"})
                 self._status(sid)
                 raise
@@ -1056,6 +1058,27 @@ class AgentHub:
         lv.control = None
         lv.interrupting = False
         self._marker(sid).unlink(missing_ok=True)
+
+    def close_stopped_turn(self, sid: str, lv: Live) -> None:
+        """A turn the host stopped is over even when the CLI's log never says so (Devin's just ends after a tool
+        call): its open calls end as stopped, the session is idle, and the transcript says why."""
+        if not lv.state.busy and not lv.state.pending:
+            return
+        at = int(time.time() * 1000)
+        changed: list[dict[str, Any]] = []
+        for tid in list(lv.state.pending):
+            it = lv.items.get(tid)
+            if it is not None and isinstance(it.get("tool"), dict):
+                it["endAt"] = at
+                it["tool"] = {**it["tool"], "isError": True, "output": it["tool"].get("output") or "已停止"}
+                changed.append(it)
+        lv.state.pending.clear()
+        lv.state.busy = False
+        note = {"id": f"notice-{sid}-{at}", "kind": "notice", "tone": "interrupted", "at": at, "text": "这一轮被停止了：它没有做完。"}
+        lv.items[note["id"]] = note
+        changed.append(note)
+        self._keep_snapshot(sid, lv, changed)
+        self.broadcast({"t": "transcript", "sessionId": sid, "items": [public_item(i) for i in changed]})
 
     def public_request(self, sid: str, ev: dict[str, Any]) -> dict[str, Any]:
         """A request as the page shows it: a question (with its options) or an approval."""

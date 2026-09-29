@@ -46,6 +46,9 @@ from server.canvas.adapters.codex import CodexStream, codex_home as _codex_home,
 from server.canvas.adapters.codex import rollouts_since as codex_rollouts_since
 from server.canvas.adapters.codex import state_rollout as codex_state_rollout
 from server.canvas.adapters.common import LogLookup, StreamMapper, _hinted, add_usage, text_of  # noqa: F401
+from server.canvas.adapters.cursor import CursorStream
+from server.canvas.adapters.devin import DevinStream
+from server.canvas.adapters.grok import GrokStream
 from server.canvas.adapters.pi import PiStream, pi_usage
 from server.canvas.adapters.pi import dir_name as pi_dir_name
 from server.canvas.adapters.pi import migrate_log as _migrate_pi_log
@@ -395,7 +398,35 @@ class CodexBackend(_CliBackend):
     Mapper = CodexStream
 
 
-BACKEND_CLASSES: dict[str, type[_CliBackend]] = {"claude": ClaudeCodeBackend, "pi": PiBackend, "codex": CodexBackend}
+class GrokBackend(_CliBackend):
+    name = "grok"
+    default_bin = "grok"
+    Mapper = GrokStream
+
+
+BACKEND_CLASSES: dict[str, type[_CliBackend]] = {"claude": ClaudeCodeBackend, "pi": PiBackend, "codex": CodexBackend, "grok": GrokBackend}
+
+
+class DevinBackend(_CliBackend):
+    """``devin -p`` through ``adapters/devin_run.py`` (the adapter's ``headless_args``); the prompt is in the argv."""
+
+    name = "devin"
+    default_bin = "devin"
+    Mapper = DevinStream
+
+
+BACKEND_CLASSES["devin"] = DevinBackend
+
+
+class CursorBackend(_CliBackend):
+    """``cursor-agent -p --output-format stream-json`` (the adapter's ``headless_args``); the prompt is on stdin."""
+
+    name = "cursor"
+    default_bin = "cursor-agent"
+    Mapper = CursorStream
+
+
+BACKEND_CLASSES["cursor"] = CursorBackend
 
 
 # ——— interactive resume (terminal pane) ———
