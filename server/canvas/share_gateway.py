@@ -34,10 +34,10 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
-from server.canvas import nested
+from server.canvas import build_log, nested
 from server.canvas.events import Events
 from server.canvas.project import ID_RE, NotFound, NotYours, ProjectStore
-from server.canvas.share import MAX_NAME, MAX_TEXT, RateLimiter, Share, ShareManager, canvas_titles, clean_anchor, clean_text, export_bundle, finite, guest_canvas, guest_elements, guest_threads, slug
+from server.canvas.share import MAX_NAME, MAX_TEXT, RateLimiter, Share, ShareManager, canvas_titles, clean_anchor, clean_moment, clean_text, export_bundle, finite, guest_canvas, guest_elements, guest_threads, slug
 
 SHARE_COOKIE = "agora_share"
 GUEST_COOKIE = "agora_guest"
@@ -194,7 +194,7 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
             "canvas": {"id": cid, "title": title(cid), "elements": view["elements"]},
             "threads": view["threads"],
             "me": {"id": f"guest:{guest}"} if guest else None,
-            "share": {"expiresAt": share.expiresAt, "root": share.canvasId},
+            "share": {"expiresAt": share.expiresAt, "root": share.canvasId, "buildReplay": share.buildReplay},
             "path": [{"id": c, "title": title(c)} for c in chain],
             # Open comments per canvas, counting everything below it (the marker on its parent node).
             "canvases": {c: {"title": title(c), "open": sum(open_count(x) for x in {c} | nested.descendants(c, sc))} for c in sorted(allowed)},
@@ -206,9 +206,20 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
         share = share_for(request)
         if share is None:
             return forbidden(request)
-        data = export_bundle(store, share.canvasId, share.canvasTitle)
+        data = export_bundle(store, share.canvasId, share.canvasTitle, build=share.buildReplay)
         name = f"{slug(share.canvasTitle or share.canvasId)}.agora-share.json"
         return Response(json.dumps(data, ensure_ascii=False), media_type="application/json", headers={"content-disposition": f'attachment; filename="{name}"'})
+
+    @app.get("/api/guest/build")
+    def build(request: Request):
+        """How the shared canvas was built, from nothing to now (web/docs/share-build-replay.md) — only when the owner allowed it when sharing. Times are counted from the first step."""
+        share = share_for(request)
+        if share is None or not share.buildReplay:
+            return forbidden(request)
+        try:
+            return build_log.build_timeline(store, share.canvasId, relative=True)
+        except ValueError:
+            return forbidden(request)
 
     @app.post("/api/guest/comments")
     async def comment(request: Request):
@@ -241,7 +252,11 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
                 tid = body.get("threadId")
                 if not isinstance(tid, str) or not ID_RE.match(tid) or len(tid) > 32:
                     raise ValueError("threadId must be a short [A-Za-z0-9._-] string")
-                op = {"op": "create", "thread": {"id": tid, "anchor": clean_anchor(body.get("anchor"), element_ids), "resolved": False, "createdAt": now, "createdBy": by, "messages": [msg]}}
+                anchor = None if body.get("anchor") is None else clean_anchor(body.get("anchor"), element_ids)  # None: a comment on the whole canvas
+                moment = None if body.get("moment") is None else clean_moment(body.get("moment"))
+                if moment is not None and not share.buildReplay:
+                    raise ValueError("this share has no build replay to comment on")
+                op = {"op": "create", "thread": {"id": tid, "anchor": anchor, **({"moment": moment} if moment else {}), "resolved": False, "createdAt": now, "createdBy": by, "messages": [msg]}}
             elif kind == "reply":
                 op = {"op": "reply", "threadId": body.get("threadId"), "message": msg}
             elif kind == "edit":

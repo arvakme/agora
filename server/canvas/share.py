@@ -35,7 +35,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from server.canvas import nested
+from server.canvas import buildlog, nested
 from server.canvas.local import state_dir
 from server.canvas.project import ID_RE, ProjectStore, dump_json
 
@@ -49,6 +49,7 @@ MAX_OPENS = 10000
 READY_TIMEOUT_S = 45.0
 MAX_TEXT = 4000
 MAX_NAME = 40
+MAX_REPLAY_STEP = 100_000  # a comment's moment in the build replay: a step index, far past what a timeline keeps
 
 
 def parse_duration(text: str | None) -> int | None:
@@ -141,6 +142,7 @@ class Share:
     opens: int = 0
     admitted: list[str] = field(default_factory=list)
     quick: bool = False  # an account-less trycloudflare.com address; ends with its ``cf`` process
+    buildReplay: bool = False  # the owner let guests watch how the canvas was built (chosen when sharing)
 
     def active(self, now_ms: int) -> bool:
         return self.endedAt is None and (self.expiresAt is None or now_ms < self.expiresAt)
@@ -231,7 +233,7 @@ def guest_threads(file: dict[str, Any] | None) -> dict[str, Any]:
             if m.get("by"):
                 gm["by"] = guest_person(m["by"])
             msgs.append(gm)
-        gt = {k: t[k] for k in ("id", "n", "anchor", "resolved", "createdAt", "updatedAt", "deleted") if k in t}
+        gt = {k: t[k] for k in ("id", "n", "anchor", "moment", "resolved", "createdAt", "updatedAt", "deleted") if k in t}
         if t.get("createdBy"):
             gt["createdBy"] = guest_person(t["createdBy"])
         gt["messages"] = msgs
@@ -276,6 +278,14 @@ def clean_anchor(a: Any, element_ids: set[str]) -> dict[str, Any]:
     }
 
 
+def clean_moment(m: Any) -> dict[str, int]:
+    """The moment of the build replay a comment was made at: the step it was watching (an index into the timeline)."""
+    step = m.get("step") if isinstance(m, dict) else None
+    if not isinstance(step, int) or isinstance(step, bool) or not 0 <= step < MAX_REPLAY_STEP:
+        raise ValueError("moment must name a step of the build replay")
+    return {"step": step}
+
+
 def clean_text(v: Any, n: int, what: str) -> str:
     if not isinstance(v, str) or not v.strip():
         raise ValueError(f"{what} is required")
@@ -307,6 +317,8 @@ MAX_CANVAS_ELEMENTS = 20000
 MAX_BUNDLE_ELEMENTS = 50000
 MAX_CANVAS_THREADS = 2000
 MAX_THREAD_MESSAGES = 200
+MAX_BUILD_RECORDS = 20000
+AGENT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 MAX_TITLE = 120
 # Drawing primitives only: embeddables, iframes and images pull in outside content.
 IMPORT_ELEMENT_TYPES = frozenset({"rectangle", "diamond", "ellipse", "arrow", "line", "freedraw", "text", "frame", "magicframe"})
@@ -316,13 +328,20 @@ class BundleError(ValueError):
     """A bundle that cannot leave (unknown canvas) or must not come in (malformed, too big)."""
 
 
-def export_bundle(store: ProjectStore, root: str, title: str = "") -> dict[str, Any]:
-    """The canvas ``root`` and every canvas below it, as a guest would see them, plus a manifest."""
+def export_bundle(store: ProjectStore, root: str, title: str = "", *, build: bool = True) -> dict[str, Any]:
+    """The canvas ``root`` and every canvas below it, as a guest would see them, plus a manifest. ``build``: with the construction log of each canvas (how it was built, times counted from the first step), so whoever imports it can replay it."""
     if store.read("canvas", root) is None:
         raise BundleError(f"no canvas {root!r} in this project")
     allowed = nested.reachable(store, root)
     titles = canvas_titles(store)
     canvases = {cid: {"title": titles.get(cid) or (title if cid == root else ""), **guest_canvas(store, cid, allowed)} for cid in sorted(allowed) if store.read("canvas", cid) is not None}
+    if build:
+        from server.canvas import build_log
+
+        logs = build_log.portable_logs(store, root)
+        for cid, records in logs.items():
+            if cid in canvases and records:
+                canvases[cid]["build"] = records
     name = store.config().get("project", {}).get("name") or store.root.name
     return {
         "format": BUNDLE_FORMAT,
@@ -338,13 +357,14 @@ def _imported_person(p: Any) -> dict[str, str]:
     return {"id": "imported:" + hashlib.sha256(str(p.get("id") or "").encode()).hexdigest()[:10], "name": str(p.get("name") or "")[:60]}
 
 
-def _import_element(e: Any, kids: dict[str, str]) -> dict[str, Any] | None:
+def _import_element(e: Any, kids: dict[str, str], *, deleted: bool = False) -> dict[str, Any] | None:
+    """One element of a bundle, validated (None: not one that may come in). ``deleted``: an element the construction log shows being deleted is one that may come in."""
     if not isinstance(e, dict):
         raise BundleError("an element is not an object")
     eid = e.get("id")
     if not isinstance(eid, str) or not ID_RE.match(eid) or len(eid) > 64:
         raise BundleError("an element has no valid id")
-    if e.get("isDeleted") or e.get("type") not in IMPORT_ELEMENT_TYPES:
+    if (e.get("isDeleted") and not deleted) or e.get("type") not in IMPORT_ELEMENT_TYPES:
         return None
     try:
         for k in ("x", "y"):
@@ -364,6 +384,43 @@ def _import_element(e: Any, kids: dict[str, str]) -> dict[str, Any] | None:
     return out
 
 
+def _valid_moment(m: Any) -> bool:
+    try:
+        clean_moment(m)
+        return True
+    except ValueError:
+        return False
+
+
+def _import_build(records: Any, kids: dict[str, str]) -> list[dict[str, Any]]:
+    """The construction log of one canvas from a bundle: validated like everything else in it, its links into the bundle's canvases renamed."""
+    if not isinstance(records, list) or len(records) > MAX_BUILD_RECORDS:
+        raise BundleError("a construction log is not a list, or is too long")
+    out: list[dict[str, Any]] = []
+    for r in records:
+        if not isinstance(r, dict) or not isinstance(r.get("t"), int) or isinstance(r["t"], bool):
+            raise BundleError("a construction log record has no time")
+        if not out and "base" not in r:
+            raise BundleError("a construction log starts with its picture")
+        if "base" in r:
+            if out or not isinstance(r["base"], list):
+                raise BundleError("a construction log starts with its picture, once")
+            out.append({"t": int(finite(r["t"], 0, 1e14)), "base": [x for x in (_import_element(e, kids) for e in r["base"]) if x is not None], **({"legacy": True} if r.get("legacy") else {})})
+            continue
+        groups = []
+        for g in r.get("g") or []:
+            by = g.get("by") if isinstance(g, dict) else None
+            if not isinstance(by, dict) or by.get("kind") not in ("you", "agent") or (by["kind"] == "agent" and not AGENT_RE.match(str(by.get("agent") or ""))):
+                raise BundleError("a construction log record has an unknown maker")
+            put = [x for x in (_import_element(e, kids, deleted=True) for e in g.get("put") or []) if x is not None]
+            dels = [i for i in g.get("del") or [] if isinstance(i, str) and ID_RE.match(i)]
+            if put or dels:
+                groups.append({"by": {"kind": "you"} if by["kind"] == "you" else {"kind": "agent", "agent": str(by["agent"])}, **({"put": put} if put else {}), **({"del": dels} if dels else {})})
+        if groups:
+            out.append({"t": int(finite(r["t"], 0, 1e14)), "g": groups})
+    return out
+
+
 def _import_threads(file: Any, element_ids: set[str], source: str) -> tuple[list[dict[str, Any]], int]:
     threads: list[dict[str, Any]] = []
     for t in (file.get("threads") if isinstance(file, dict) else None) or []:
@@ -376,7 +433,7 @@ def _import_threads(file: Any, element_ids: set[str], source: str) -> tuple[list
             raise BundleError("too many messages in one thread")
         tid = t.get("id")
         try:
-            anchor = clean_anchor(t.get("anchor"), element_ids)
+            anchor = None if t.get("anchor") is None else clean_anchor(t.get("anchor"), element_ids)  # None: a comment on the whole canvas
         except ValueError:
             continue  # its element did not come along
         if not isinstance(tid, str) or not ID_RE.match(tid) or len(tid) > 32:
@@ -400,6 +457,7 @@ def _import_threads(file: Any, element_ids: set[str], source: str) -> tuple[list
             "id": tid,
             "n": len(threads) + 1,
             "anchor": anchor,
+            **({"moment": clean_moment(t["moment"])} if t.get("moment") is not None and _valid_moment(t["moment"]) else {}),
             "resolved": bool(t.get("resolved")),
             "createdAt": int(finite(t.get("createdAt"), 0, 1e14)) if t.get("createdAt") is not None else 0,
             "createdBy": kept[0]["by"],
@@ -434,6 +492,7 @@ def import_bundle(store: ProjectStore, data: Any) -> dict[str, Any]:
     ids = {old: f"c-{secrets.token_hex(4)}" for old in src}
     total = 0
     planned: dict[str, tuple[str, dict[str, Any], dict[str, Any] | None]] = {}
+    builds: dict[str, list[dict[str, Any]]] = {}
     n_threads = 0
     for old, c in src.items():
         if not isinstance(c, dict) or not isinstance(c.get("elements"), list):
@@ -448,11 +507,15 @@ def import_bundle(store: ProjectStore, data: Any) -> dict[str, Any]:
         n_threads += n
         title = f"来自 {project} · {str(c.get('title') or '画布')[:MAX_TITLE]}"
         planned[old] = (title, {"elements": els}, {"seq": len(threads), "threads": threads} if threads else None)
+        if c.get("build") is not None:
+            builds[old] = _import_build(c["build"], ids)
     written: list[tuple[str, str]] = []
     try:
         for old, (_, scene, threads) in planned.items():
             store.write("canvas", ids[old], scene, base=None)
             written.append(("canvas", ids[old]))
+            if old in builds and builds[old]:  # how it was built replaces the log its first write started
+                buildlog.write(store.dir, ids[old], builds[old])
             if threads:
                 store.write("threads", ids[old], threads, base=None)
                 written.append(("threads", ids[old]))
@@ -467,8 +530,11 @@ def import_bundle(store: ProjectStore, data: Any) -> dict[str, Any]:
     except Exception:
         for kind, cid in reversed(written):
             store.delete(kind, cid)
+            if kind == "canvas":
+                path_of = buildlog.path_of(store.dir, cid)
+                path_of.unlink(missing_ok=True)
         raise
-    return {"canvasId": ids[root], "canvases": len(planned), "threads": n_threads}
+    return {"canvasId": ids[root], "canvases": len(planned), "threads": n_threads, "builds": len([b for b in builds.values() if b])}
 
 
 # ——— quick share: `cf tunnels quick-start`, no Cloudflare account ———
@@ -738,7 +804,7 @@ class ShareManager:
             self._save()
 
     # ——— create ———
-    def create(self, canvas_id: str, ttl_s: int | None, canvas_title: str = "", max_opens: int | None = None, *, quick: bool = False) -> tuple[dict[str, Any], str]:
+    def create(self, canvas_id: str, ttl_s: int | None, canvas_title: str = "", max_opens: int | None = None, *, quick: bool = False, build_replay: bool = False) -> tuple[dict[str, Any], str]:
         """New share → (public record, full URL with the token). The token is not kept.
         ``quick``: an account-less trycloudflare.com address, one share at a time, gone with its process."""
         check_ttl(ttl_s)
@@ -749,7 +815,7 @@ class ShareManager:
         # share records and is held briefly, so guests are never queued behind a cf call (seconds, up to 45 s).
         with self.ops:
             if quick or any(s.quick for s in self.active()):
-                return self._create_quick(canvas_id, ttl_s, canvas_title, max_opens, quick)
+                return self._create_quick(canvas_id, ttl_s, canvas_title, max_opens, quick, build_replay)
             dns, _ = self.providers()
             host = f"{slug(str(self.store.info()['name']))}-{secrets.token_hex(3)}.{self.domain()}".lower()
             token = secrets.token_urlsafe(32)
@@ -763,6 +829,7 @@ class ShareManager:
                 createdAt=now,
                 expiresAt=None if ttl_s is None else now + ttl_s * 1000,
                 maxOpens=max_opens,
+                buildReplay=build_replay,
             )
             try:
                 tunnel_id = self._ensure_tunnel()
@@ -781,7 +848,7 @@ class ShareManager:
                 self._save()
             return share.public(now), f"https://{host}/s/{token}"
 
-    def _create_quick(self, canvas_id: str, ttl_s: int | None, canvas_title: str, max_opens: int | None, quick: bool) -> tuple[dict[str, Any], str]:
+    def _create_quick(self, canvas_id: str, ttl_s: int | None, canvas_title: str, max_opens: int | None, quick: bool, build_replay: bool = False) -> tuple[dict[str, Any], str]:
         """Called with ``ops`` held."""
         if self.active():
             raise ShareError("a quick share allows one share at a time: end the current one first (`agora share revoke --all`)" if quick else "a quick share is running and takes the only slot; end it first (`agora share revoke --all`)")
@@ -796,7 +863,7 @@ class ShareManager:
         now = self.now_ms()
         share = Share(
             id=secrets.token_hex(4), canvasId=canvas_id, canvasTitle=canvas_title, host=proc.host.lower(), tokenHash=token_hash(token),
-            createdAt=now, expiresAt=None if ttl_s is None else now + ttl_s * 1000, maxOpens=max_opens, quick=True,
+            createdAt=now, expiresAt=None if ttl_s is None else now + ttl_s * 1000, maxOpens=max_opens, quick=True, buildReplay=build_replay,
         )
         with self.lock:
             self.shares.append(share)

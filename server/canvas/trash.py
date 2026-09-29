@@ -8,7 +8,7 @@ own names plus ``manifest.json``:
 
 - ``entry`` / ``place``: the workspace.json entry and where its tab was (the page sends them, it
   owns workspace.json); restoring hands them back so the page puts it where it was.
-- canvas: ``canvases/<id>.excalidraw`` and ``threads/<id>.json`` (code paths of the progress pointer
+- canvas: ``canvases/<id>.excalidraw``, ``threads/<id>.json`` and its construction log ``buildlog/<id>.jsonl`` (code paths of the progress pointer
   live in the scene, so they come back with it). Its sessions stay where they are.
 - session: ``sessions/<id>.jsonl`` / ``.agent.json``, its trajectory snapshot ``sessions/snapshots/<id>.jsonl``
   and ``run/usage/<id>.jsonl``.
@@ -48,7 +48,7 @@ class TrashError(ValueError):
 def _files(kind: str, id: str) -> list[str]:
     """What an item consists of, relative to ``.agora/``."""
     if kind == "canvas":
-        return [f"canvases/{id}.excalidraw", f"threads/{id}.json"]
+        return [f"canvases/{id}.excalidraw", f"threads/{id}.json", f"buildlog/{id}.jsonl"]
     return [f"sessions/{id}.jsonl", f"sessions/{id}.agent.json", f"sessions/snapshots/{id}.jsonl", f"run/usage/{id}.jsonl"]
 
 

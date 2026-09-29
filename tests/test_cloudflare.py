@@ -390,7 +390,7 @@ def test_the_command_line_lists_the_zones_and_names_the_flag(monkeypatch, capsys
     class P:
         store = None
 
-    a = argparse.Namespace(action="create", duration="1d", canvas=None, max_opens=None, quick=False, domain=None, json=False)
+    a = argparse.Namespace(action="create", duration="1d", canvas=None, max_opens=None, quick=False, domain=None, json=False, build_replay=False)
     assert cli.cmd_share(P(), a) == 1
     out = capsys.readouterr().out
     assert "--domain" in out and "a.test" in out and "b.test" in out and "--quick" in out

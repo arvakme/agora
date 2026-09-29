@@ -53,6 +53,7 @@ def test_gitignore_is_honoured_by_git(tmp_path):
     tracked = sorted(l[3:] for l in out.splitlines())
     assert tracked == [
         ".agora/.gitignore",
+        ".agora/buildlog/c1.jsonl",  # the construction log is committed with its canvas
         ".agora/canvases/c1.excalidraw",
         ".agora/config.toml",
         ".agora/threads/c1.json",

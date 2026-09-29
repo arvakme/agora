@@ -12,6 +12,7 @@
   workspace.json           画布与会话清单（含已关闭）、tab、分屏    提交
   canvases/<id>.excalidraw Excalidraw 原生场景                提交
   threads/<canvasId>.json  这块画布的评论线程                   提交
+  buildlog/<canvasId>.jsonl 施工日志：这块画布每次保存的元素增删改（[施工回放 §3](share-build-replay.md#3-施工日志)）   提交
   sessions/<id>.jsonl      会话里的画布修改（含撤销数据），追加写   不提交
   sessions/<id>.agent.json 会话绑定的 agent / 模型 / 强度 / 原生 id  不提交
   sessions/snapshots/<id>.jsonl  Agora 保存的轨迹快照（原生日志没了时只读查看、生成摘要）  不提交
@@ -96,6 +97,7 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
 }
 ```
 
+- `anchor` 为 `null` = 对**整张图**的评论，不钉在元素上（评论列表和画布右下角的「整张图」按钮里出现，不是一个钉子）；可选 `moment: {step}` = 写它时在看搭建回放的第几步（点它回到那一刻）。
 - `author` 是角色：`human` / `agent` / `system`。人写的消息带 `by`（作者 id 与显示名），所以一条线程可以有多个人参与；`participants` 是 `createdBy` 与各条 `by` 的去重列表，读取时重新推导，写它只为方便人和工具直接读文件。
 - 本机用户：`git config user.email` 有值时 id 为 `mailto:<email>`，否则 `local:<登录名>`；显示名取 `git config user.name`，没有就用登录名。由服务端在 `/api/project` 的 `me` 里给出。
 - Agent 回复用 `turnId` 指向会话里的那一轮；会话记录不提交时，别人克隆后看得到回复文字，看不到那一轮的步骤。
@@ -135,7 +137,7 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
   "linked": ["s-…"], "sharesEnded": ["a1b2c3d4"] }
 ```
 
-- 画布：`canvases/<id>.excalidraw`、`threads/<id>.json`。会话：`sessions/<id>.jsonl`、`sessions/<id>.agent.json`、`sessions/snapshots/<id>.jsonl`、`run/usage/<id>.jsonl`；manifest 的 `native` 记着原生日志在哪（Agora 从不删它）。
+- 画布：`canvases/<id>.excalidraw`、`threads/<id>.json`、`buildlog/<id>.jsonl`（施工日志跟着画布走）。会话：`sessions/<id>.jsonl`、`sessions/<id>.agent.json`、`sessions/snapshots/<id>.jsonl`、`run/usage/<id>.jsonl`；manifest 的 `native` 记着原生日志在哪（Agora 从不删它）。
 - manifest 先写、文件后挪：中途崩溃留下的条目照样能恢复。恢复时目标 id 已被占用（git 带回了同 id 的画布）就换成 `<id>-r1`，绝不覆盖；页面随后把指向旧 id 的东西改过来：它的会话（manifest 的 `linked`）和父节点上的子画布链接（`customData.childCanvas`）。
 - 只认自己写得出来的 manifest：目录名里的时间、kind、id 与 manifest 一致，每个文件都是这个 kind 的固定文件、名字是 `rel` 把 `/` 换成 `__`；不跟随符号链接，目标必须落在 `.agora/` 里。回收站只在本机：被 git 跟踪的条目（`git add -f`、别人的仓库带来的）不列出、不恢复，`agora doctor` 会提示移出 git。
 - 保留 30 天：服务启动时和之后每小时清扫一次，过期的删掉；每次进、出、彻底删除都记进本机注册表。
@@ -180,7 +182,8 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
 | GET | `/health` | `{ok, root, pid}`，`agora up` 用来确认端口上是不是这个项目 |
 | GET | `/snapshot` | 全部内容与版本：workspace、canvases（scene + threads）、sessions（折叠后）、bindings、errors、`local`（实例 id 与待提示的变化）、`origins`（不能直接续接的会话） |
 | POST | `/local/ack` | 页面已经提示过移动 / 复制 / 新 clone，清掉 |
-| PUT | `/workspace`、`/canvases/{id}`、`/threads/{id}` | `{data, base, force?}` → `{version}` 或 409 |
+| PUT | `/workspace`、`/canvases/{id}`、`/threads/{id}` | `{data, base, force?}` → `{version}` 或 409。写画布同时往它的施工日志追加一条（副作用，失败不影响保存） |
+| GET | `/build?canvas=<id>` | 这块画布（和它下面的子画布）是怎么一步步搭起来的：`agora-build-timeline`（[施工回放 §4](share-build-replay.md#4-时间线的格式)） |
 | POST | `/threads/{id}/merge` | `{data}` → `{version, data}`：按 id 合并进磁盘上的线程文件，从不 409。页面保存线程走这个（分享访客会同时写同一个文件，见 [分享 §4](sharing.md#4-两方同时写评论按操作合并)） |
 | GET | `/events` | SSE：`threads`（别人写入后的整份线程文件与版本）、`shares`（分享列表变了）、`trash`（回收站变了） |
 | POST | `/sessions/{id}/append` | `{records, base, force?}` |

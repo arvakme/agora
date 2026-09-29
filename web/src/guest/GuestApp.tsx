@@ -7,8 +7,10 @@ import { CanvasView, type CanvasHandle } from "../canvas/CanvasView";
 import { createThreadStore, setIdentity, useThreads, type Message, type Thread, type ThreadStore } from "../comments/threads";
 import { threadsFromFile, type ThreadsFile } from "../project/format";
 import { SPRING } from "../comments/motion";
-import { IconComment, IconCopy, IconEye, IconFile, IconList, IconLock, IconPointer, IconUser, IconWorkspace } from "../app/icons";
+import { IconComment, IconCopy, IconEye, IconFile, IconList, IconLock, IconPlay, IconPointer, IconUser, IconWorkspace } from "../app/icons";
 import { ThemeButton } from "../app/ThemeButton";
+import { BuildReplayHost } from "../buildreplay/BuildReplay";
+import { buildReplay } from "../buildreplay/store";
 import type { El } from "../canvas/scene";
 import { Breadcrumb, ChildMarkers } from "../nested/NestedLayer";
 import { canvasFromUrl, urlFor } from "../nested/store";
@@ -20,7 +22,7 @@ type State = {
   canvas: { id: string; title: string; elements: El[] };
   threads: ThreadsFile;
   me: { id: string } | null;
-  share: { expiresAt: number | null; root?: string };
+  share: { expiresAt: number | null; root?: string; /** The owner let guests watch how the canvas was built. */ buildReplay?: boolean };
   /** From the shared canvas down to this one (nested canvases). */
   path?: { id: string; title: string }[];
   /** Every canvas this share reaches: its name and open comments (including those below it). */
@@ -105,7 +107,7 @@ export function GuestApp({ initial }: { initial: State }) {
       setAsking("needed");
     };
     const created = createThreadStore(canvasId, threadsFromFile(st.threads), {
-      create: (t: Thread) => void post({ op: "create", threadId: t.id, id: t.messages[0].id, anchor: t.anchor, text: t.messages[0].text }),
+      create: (t: Thread) => void post({ op: "create", threadId: t.id, id: t.messages[0].id, anchor: t.anchor, ...(t.moment && { moment: t.moment }), text: t.messages[0].text }),
       reply: (threadId: string, m: Message) => void post({ op: "reply", threadId, id: m.id, text: m.text }),
       // Only one's own messages; the gateway checks that again (web/docs/sharing.md §3).
       edit: (threadId: string, m: Message) => void post({ op: "edit", threadId, id: m.id, text: m.text }),
@@ -116,6 +118,19 @@ export function GuestApp({ initial }: { initial: State }) {
     return created;
   };
   const store = storeFor(cur);
+  // a comment made while watching the build replay goes on the shared canvas itself, whichever level the guest is looking at
+  const rootStore = storeFor(initial);
+  const rootRef = useRef(rootStore);
+  rootRef.current = rootStore;
+  const replayOn = !!initial.share.buildReplay;
+  useEffect(() => {
+    if (!replayOn) return;
+    buildReplay.setCommenter((text, step) => {
+      if (!nameRef.current.trim()) return setAsking("needed");
+      rootRef.current.create(null, text, { step });
+    });
+    return () => buildReplay.setCommenter(null);
+  }, [replayOn]);
   const curRef = useRef(cur);
   curRef.current = cur;
   /** Step into a child canvas or back up (the gateway refuses anything the share does not reach). */
@@ -250,6 +265,11 @@ export function GuestApp({ initial }: { initial: State }) {
           <span className="guest-title" title={cur.canvas.title}>{cur.canvas.title || "画布"}</span>
           <span className="guest-project">{initial.project.name}</span>
           <span className="guest-gap" />
+          {replayOn && (
+            <button className="btn quiet" onClick={() => buildReplay.open(initial.share.root ?? initial.canvas.id)} title="看这张图从空白到现在是怎么一步步搭起来的">
+              <IconPlay size={16} /><span>看搭建过程</span>
+            </button>
+          )}
           <span className="guest-note"><IconEye size={16} />只能查看和评论{expires != null && <> · <Remaining at={expires} /></>}</span>
           <button className="btn quiet" onClick={() => setImporting(true)} title="把这块画布和评论下载成文件，导入到你自己的 Agora">
             <IconFile size={16} /><span>导入到我的 Agora</span>
@@ -286,6 +306,7 @@ export function GuestApp({ initial }: { initial: State }) {
         )}
         {toast && <div className="toast" role="status"><span>{toast}</span></div>}
         {importing && <ImportDialog onClose={() => setImporting(false)} />}
+        {replayOn && <BuildReplayHost />}
         {asking && <NameDialog initial={name} welcome={asking === "welcome"} title={cur.canvas.title} onOk={confirmName} onSkip={skipName} />}
       </div>
     </MotionConfig>
@@ -348,7 +369,7 @@ function NameDialog({ initial, welcome, title, onOk, onSkip }: { initial: string
       >
         {welcome && <IconEye size={48} />}
         <h2>{welcome ? `你正在查看「${title || "画布"}」` : "评论前留个名字"}</h2>
-        <p>{welcome ? "可以浏览这块画布，也可以在元素上钉评论；作者会看到并回复。不能修改画图。" : "名字会显示在你的评论旁边，作者靠它认出你。"}</p>
+        <p>{welcome ? "可以浏览这块画布，也可以在元素上钉评论、或评论整张图；作者会看到并回复。不能修改画图。" : "名字会显示在你的评论旁边，作者靠它认出你。"}</p>
         <label>
           <span>显示名</span>
           <input ref={ref} value={v} maxLength={40} placeholder="例如：小王" onChange={(e) => setV(e.target.value)} />
