@@ -105,14 +105,17 @@ const clampV = (x: number, y: number, max: number): [number, number] => {
 };
 
 /** One frame of the camera: `dt` ms since the last, `now` in ms, the pane size, `manual` while the person has the camera. Pure. */
-export function cameraStep(s: CameraState, goal: CameraGoal, o: { dt: number; now: number; pane: Pane; manual?: boolean }): CameraOut {
+export function cameraStep(s: CameraState, goal: CameraGoal, o: { dt: number; now: number; pane: Pane; manual?: boolean; /** The zoom range, when not the live camera's (the build replay fits a whole diagram, down to 0.55). */ zoom?: { min: number; max: number }; /** The figure was cut across this frame (the build replay's hop): the shot changes with it, whatever the distance. */ cut?: boolean }): CameraOut {
   const dt = Math.min(o.dt, 100) / 1000;
   if (o.manual) return { state: s, view: viewAt(s.at, s.at.zoom, o.pane), mode: "manual", cut: false };
   const gc = goal ? centreOf(goal.view, o.pane) : null;
-  const gz = goal ? Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, goal.view.zoom)) : s.at.zoom;
+  const zmin = o.zoom?.min ?? ZOOM_MIN;
+  const zmax = o.zoom?.max ?? ZOOM_MAX;
+  const gz = goal ? Math.max(zmin, Math.min(zmax, goal.view.zoom)) : s.at.zoom;
   let following = !!goal && (goal.move || s.following);
   // a shot over CUT_DISTANCE away is cut to, once; the picture cross-fades in the driver, the view is simply there
-  if (following && gc && Math.hypot(gc.x - s.at.x, gc.y - s.at.y) > CUT_DISTANCE && o.now - s.lastCutAt >= CUT_COOLDOWN_MS) {
+  const far = !!gc && Math.hypot(gc.x - s.at.x, gc.y - s.at.y) > CUT_DISTANCE && o.now - s.lastCutAt >= CUT_COOLDOWN_MS;
+  if (gc && following && (far || o.cut)) {
     const at = { x: gc.x, y: gc.y, zoom: gz };
     return { state: { at, v: { x: 0, y: 0, z: 0 }, carrot: { ...at }, following: true, lastCutAt: o.now }, view: viewAt(at, gz, o.pane), mode: "cut", cut: true };
   }
@@ -132,7 +135,7 @@ export function cameraStep(s: CameraState, goal: CameraGoal, o: { dt: number; no
   const [y, vy] = spring(s.at.y, s.v.y, carrot.y, dt);
   const [z, vz0] = spring(s.at.zoom, s.v.z, carrot.zoom, dt);
   // the spring may run a hair past its carrot; the zoom never leaves the range (a view that starts outside it, a play's overview, eases in)
-  const zoom = Math.max(Math.min(ZOOM_MIN, s.at.zoom), Math.min(Math.max(ZOOM_MAX, s.at.zoom), z));
+  const zoom = Math.max(Math.min(zmin, s.at.zoom), Math.min(Math.max(zmax, s.at.zoom), z));
   const vz = zoom === z ? vz0 : 0;
   if (following && gc && Math.hypot(gc.x - x, gc.y - y) < 2 && Math.hypot(vx, vy) < 5 && Math.abs(gz - zoom) < 0.005) following = false;
   const state: CameraState = { at: { x, y, zoom }, v: { x: vx, y: vy, z: vz }, carrot, following, lastCutAt: s.lastCutAt };

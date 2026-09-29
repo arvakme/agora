@@ -216,7 +216,7 @@ export const arrivalOf = (m: Move, ctx: Pick<Ctx, "dock" | "route" | "reduced">)
  * coming out, or still walking to the last place) is not taken yet: it waits for that. `ret`: a sub-agent's walk back to hand over (a
  * move even to the same place, as the handover needs one).
  */
-function step(ctx: Ctx, s: Walk, w: Here, t0: number, t: number, o: { run?: WorkRun; sub?: boolean; ret?: boolean; next?: number } = {}): "moved" | "waiting" | "stayed" {
+function step(ctx: Ctx, s: Walk, w: Here, t0: number, t: number, o: { run?: WorkRun; sub?: boolean; ret?: boolean; next?: number; cut?: boolean } = {}): "moved" | "waiting" | "stayed" {
   const behind = !!w.behind;
   // still on its way to a door when it has to go elsewhere: it never went in (more work behind the same door does not change that: it goes in when it gets there)
   if (s.behind && t0 < s.inAt && !(behind && w.place === s.at)) {
@@ -264,7 +264,8 @@ function step(ctx: Ctx, s: Walk, w: Here, t0: number, t: number, o: { run?: Work
     if (o.next != null && !take.resume && t1 > o.next) return "waiting";
     if (t1 > t) return "waiting";
     const m: Move = { ...take, to: w.place, t: t1, slot: 0, ...(o.ret ? { ret: true } : {}), ...(o.sub ? { sub: true } : {}) };
-    if (s.appear && !s.moves.length && farStart(m, ctx, o)) cutMoves.add(m);
+    // a stretch's first move when far, or a move its call says is a cut (the build replay: `RunSeg.cut`); never with reduced motion
+    if (((s.appear && !s.moves.length && farStart(m, ctx, o)) || (o.cut && !ctx.reduced))) cutMoves.add(m);
     s.moves.push(m);
     if (behind) through(ctx, s, ctx.reduced ? t1 : arrivalOf(m, ctx), true, w.place, w.portal);
     r = "moved";
@@ -296,7 +297,7 @@ function follow(ctx: Ctx, run: WorkRun, segs: readonly RunSeg[], t: number, from
         break;
       }
     }
-    step(ctx, s, w, startOf(g), t, { run, sub, next });
+    step(ctx, s, w, startOf(g), t, { run, sub, next, ...(g.cut ? { cut: true } : {}) });
   }
   return s;
 }

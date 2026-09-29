@@ -1,6 +1,6 @@
 // One canvas of the replay: its picture (Excalidraw's SVG export of the scene as it is at the moment shown) under the ordinary 工位视图
-// overlay — the figures walk its bridges, climb its ladders, go through its doors — seen by a camera that glides after the figure
-// (web/docs/share-build-replay.md §5). The same idea as the old follow pane's stage, on the replay's own world (./sources.ts).
+// overlay — the figures walk its bridges, climb its ladders, go through its doors — seen by the director's camera (../workstation/director.ts `cameraStep`,
+// the shot is ./camera.ts; web/docs/share-build-replay.md §5) on the replay's own world (./sources.ts).
 import { exportToSvg, getCommonBounds, hashElementsVersion } from "@excalidraw/excalidraw";
 import type { NonDeletedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -10,17 +10,27 @@ import type { Box } from "../canvas/clearance";
 import { byId, type El } from "../canvas/scene";
 import { viewport } from "../canvas/viewport";
 import { useNested } from "../nested/store";
-import { prefersReducedMotion } from "../workstation/clock";
+import { clock, prefersReducedMotion } from "../workstation/clock";
+import { cameraStart, viewAt, type CameraState } from "../workstation/director";
 import { figurePositions } from "../workstation/focus";
 import { frame } from "../workstation/frame";
 import { WorkstationOverlay } from "../workstation/Overlay";
 import { canvasWhere } from "../workstation/place";
+import { jumped, shotOf, stepOf } from "./camera";
 import type { BuildWorld } from "./sources";
 import "./buildreplay.css";
 
 const NO_CHROME: Box[] = [];
 const PAD = 16;
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+/** A view put on the stage as a cut: the picture cross-fades into it (a view transition, as the live camera's cut); with reduced motion, or where there is none, it is simply there. */
+function cutTo(apply: () => void, reduced: boolean) {
+  const vt = (document as Document & { startViewTransition?: (f: () => Promise<void>) => unknown }).startViewTransition;
+  if (reduced || !vt) return apply();
+  vt.call(document, async () => {
+    apply();
+    await new Promise((r) => setTimeout(r, 60));
+  });
+}
 
 /** The drawing's extent (scene coordinates). */
 function boundsOf(elements: readonly El[]): Box {
@@ -92,41 +102,43 @@ export function BuildStage({ world, canvasId, run, size, out, only }: { world: B
     [canvasId, version, elements, size.w, size.h],
   );
   const scene = useRef<HTMLDivElement>(null);
-  const live = useRef({ size, run, bounds, svg, reduced });
-  live.current = { size, run, bounds, svg, reduced };
+  const live = useRef({ size, run, bounds, svg, reduced, out });
+  live.current = { size, run, bounds, svg, reduced, out };
   const placeScene = () => {
     const v = viewport.get(canvasId);
     const s = live.current.svg;
     if (v && s && scene.current) scene.current.style.transform = `matrix(${v.zoom},0,0,${v.zoom},${((s.x + v.scrollX) * v.zoom).toFixed(2)},${((s.y + v.scrollY) * v.zoom).toFixed(2)})`;
   };
-  // The camera: registered before the overlay's own frame job, so the picture and the figures move by the same view in the same frame.
+  // The camera: registered before the overlay's own frame job, so the picture and the figures move by the same view in the same frame. The director's camera
+  // (a rate-limited carrot and a critically damped spring) runs in play time, so a faster replay has a quicker camera as it has quicker figures; a jump in the
+  // clock (the scrubber) puts it on the shot; a figure cut across (a hop) is a cut of the view too, at the same moment; a layer that is fading out holds.
   useLayoutEffect(() => {
-    let cam: { x: number; y: number } | null = null;
+    let cam: CameraState | null = null;
     let last = 0;
+    let gen = clock.gen();
+    let prev: { x: number; y: number } | null = null;
     const job = (now: number) => {
       const L = live.current;
       const { w, h } = L.size;
-      const b = L.bounds;
       if (!w || !h) return;
-      const z = clamp(Math.min((w - 32) / (b.w + 96), (h - 32) / (b.h + 96)), 0.55, 1);
-      const p = figurePositions.get(canvasId, L.run);
-      const want = p ? { x: p.x, y: p.y - 40 / z } : { x: b.x + b.w / 2, y: b.y + b.h / 2 };
-      let r = { x0: b.x - 48, y0: b.y - 48, x1: b.x + b.w + 48, y1: b.y + b.h + 48 };
-      if (p) r = { x0: Math.min(r.x0, p.x - 90), y0: Math.min(r.y0, p.y - 130), x1: Math.max(r.x1, p.x + 90), y1: Math.max(r.y1, p.y + 30) };
-      const vw = w / z;
-      const vh = h / z;
-      const fit = (c: number, lo: number, hi: number, ext: number) => (hi - lo <= ext ? (lo + hi) / 2 : clamp(c, lo + ext / 2, hi - ext / 2));
-      const to = { x: fit(want.x, r.x0, r.x1, vw), y: fit(want.y, r.y0, r.y1, vh) };
-      const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
+      const p = figurePositions.get(canvasId, L.run) ?? null;
+      const shot = shotOf({ size: L.size, bounds: L.bounds, figure: p });
+      const dt = last ? Math.min(100, now - last) : 0;
       last = now;
-      if (!cam || L.reduced) cam = to;
-      else {
-        const a = 1 - Math.exp(-dt / 0.35);
-        cam = { x: cam.x + (to.x - cam.x) * a, y: cam.y + (to.y - cam.y) * a };
-        if (Math.abs(to.x - cam.x) < 0.05 && Math.abs(to.y - cam.y) < 0.05) cam = to;
-      }
-      viewport.set(canvasId, { scrollX: vw / 2 - cam.x, scrollY: vh / 2 - cam.y, zoom: z, width: w, height: h });
-      placeScene();
+      const c = clock.get();
+      const k = c?.playing ? Math.min(4, c.speed) : 1;
+      if (clock.gen() !== gen) ((gen = clock.gen()), (cam = null), (prev = null));
+      if (!cam || L.reduced) cam = cameraStart(viewAt(shot.centre, shot.zoom, L.size), L.size);
+      const out = stepOf(cam, L.out ? null : shot, { dt: dt * k, now: clock.time(), pane: L.size, cut: !L.out && jumped(prev, p) });
+      prev = p ?? prev;
+      cam = L.reduced ? cameraStart(viewAt(shot.centre, shot.zoom, L.size), L.size) : out.state;
+      const v = L.reduced ? viewAt(shot.centre, shot.zoom, L.size) : out.view;
+      const apply = () => {
+        viewport.set(canvasId, { scrollX: v.scrollX, scrollY: v.scrollY, zoom: v.zoom, width: w, height: h });
+        placeScene();
+      };
+      if (out.cut && !L.reduced) cutTo(apply, false);
+      else apply();
     };
     job(performance.timeOrigin + performance.now());
     const off = frame.add(job);

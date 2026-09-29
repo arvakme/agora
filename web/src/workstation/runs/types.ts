@@ -41,6 +41,8 @@ export type RunSeg = {
   verifies?: string;
   /** Its turn works on a canvas comment (every segment of that turn carries it). */
   comment?: TurnComment;
+  /** The move to this call's place is a cut (a cross-fade, ./place.ts `isCut`) whatever the distance: the build replay skips a long walk this way (../../buildreplay/plan.ts `hop`). */
+  cut?: true;
   /** What the bubble says for this stretch, in words (the build replay, ../../buildreplay/plan.ts: there is no file or command to name). */
   say?: string;
   label: string;

@@ -3,6 +3,7 @@
 // A beat's figure work is an ordinary WorkRun segment (so the walking, the bridges, the ladders and the doors of
 // the 工位视图 do the rest: ../workstation/place.ts); its words are the segment's `say`. Pure, so it runs under vitest.
 import type { El } from "../canvas/scene";
+import { CUT_MS } from "../workstation/place";
 import { DOOR_MS } from "../workstation/rig";
 import type { RunSeg, WorkRun } from "../workstation/runs/types";
 import type { Actor, BuildItem, BuildTimeline, ItemKind } from "./types";
@@ -29,9 +30,8 @@ export const REACH_PX = 420;
 /** In brief mode the time a beat lasts is this fraction of a step-by-step one when the figure did not have to walk to it. */
 const BRIEF_DWELL = 0.6;
 const BRIEF_LEAD_MS = 120;
-/** Brief mode: a walk on one canvas that would take longer than this is cut instead — the figure is gone from where it was and stands, faded in, where the next thing is drawn. */
+/** Brief mode: a walk on one canvas that would take longer than this is cut instead — the same figure fades out where it was while it fades in where the next thing is drawn (the director's cut, ../workstation/director.ts; its time is `CUT_MS`). */
 export const HOP_MS = 8000;
-const HOP_APPEAR_MS = 320;
 
 export type Beat = {
   i: number;
@@ -52,10 +52,8 @@ export type Beat = {
   fromCanvas: string | null;
   walkMs: number;
   dist: number;
-  /** The figure did not walk here (brief): it was cut there, a new figure fades in (its own group of runs, `runsOf`). */
+  /** The figure did not walk here (brief): it was cut there (the call is marked `cut`, `runsOf`). */
   hop: boolean;
-  /** Which figure of the actor does this: it changes at every cut. */
-  group: number;
   quiet: boolean;
   /** Play time (ms from the opening): the figure sets off, gets there and the canvas changes, the beat is over. */
   start: number;
@@ -141,7 +139,6 @@ export function planBuild(tl: BuildTimeline, opts: PlanOptions = {}): Plan {
   const entrance = opts.entrance ?? (() => null);
   const beats: Beat[] = [];
   const where = new Map<string, { canvas: string; place: string | null }>();
-  const groups = new Map<string, number>();
   const actors = new Map<string, ActorInfo>();
   let t = OPENING_MS;
   for (const s of tl.steps) {
@@ -167,8 +164,7 @@ export function planBuild(tl: BuildTimeline, opts: PlanOptions = {}): Plan {
       let ms = 0;
       let hop = false;
       if (stand && here && !stays) ms = here.canvas !== s.canvas ? journeyMs(tl, here.canvas, here.place, s.canvas, stand, walk, entrance) : here.place === stand ? 0 : walk(s.canvas, here.place, stand);
-      if (brief && ms > (opts.hop ?? HOP_MS) && here && here.canvas === s.canvas) [ms, hop] = [HOP_APPEAR_MS, true];
-      if (hop) groups.set(key, (groups.get(key) ?? 0) + 1);
+      if (brief && ms > (opts.hop ?? HOP_MS) && here && here.canvas === s.canvas) [ms, hop] = [CUT_MS, true];
       const a = here?.place ? at.get(`${here.canvas}/${here.place}`) : undefined;
       const b = stand ? at.get(`${s.canvas}/${stand}`) : undefined;
       const dist = a && b && here!.canvas === s.canvas ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
@@ -192,7 +188,6 @@ export function planBuild(tl: BuildTimeline, opts: PlanOptions = {}): Plan {
         walkMs: hop ? 0 : ms,
         dist,
         hop,
-        group: groups.get(key) ?? 0,
         quiet: it.quiet,
         start,
         land,
@@ -383,29 +378,17 @@ export function withPlaces(canvas: string, els: readonly El[]): El[] {
   return els.map((e) => (NODE_TYPES.has(e.type) && !(e as { containerId?: string | null }).containerId ? ({ ...e, customData: { ...(e.customData ?? {}), codePaths: [pathFor(canvas, e.id)] } } as El) : e));
 }
 
-/** The id of the run of one figure: an actor has a new one at every cut (brief mode), so that the one before is gone and the next fades in where it is needed. */
-export const runId = (actor: string, group: number) => (group ? `build:${actor}~${group}` : `build:${actor}`);
+/** The id of an actor's figure: one for the whole replay (a hop is a cut of the same figure, not a new one). */
+export const runId = (actor: string) => `build:${actor}`;
 
-/** One run per figure (an actor has one for as long as it walks; a cut starts the next): every beat is a segment of "writing" at its node, with the words it says. */
+/** One run per actor: every beat is a segment of "writing" at its node, with the words it says; a hop's segment is marked `cut`. */
 export function runsOf(plan: Plan, epoch: number): WorkRun[] {
-  const out: WorkRun[] = [];
-  for (const a of plan.actors) {
-    const mine = plan.beats.filter((b) => b.actor === a.key);
-    for (const group of [...new Set(mine.map((b) => b.group))]) {
-      const segs: RunSeg[] = mine
-        .filter((b) => b.group === group)
-        .map((b) => ({ kind: b.quiet ? "think" : "write", start: epoch + b.start, end: epoch + b.end, label: b.say, say: b.say, ...(b.at && !b.quiet && !b.reach ? { path: pathFor(b.canvas, b.at) } : {}) }));
-      out.push({ id: runId(a.key, group), agent: a.agent, name: a.name, segs, receipts: [], running: false, lastAt: epoch + plan.length, children: [] });
-    }
-  }
-  return out;
-}
-
-/** The figure of each actor that is on the canvas at play time `t`: the one whose beats it is in (the first before the opening, the last after the end). */
-export function figuresAt(plan: Plan, t: number): Map<string, string> {
-  const out = new Map<string, string>();
-  for (const b of plan.beats) if (b.start <= t || !out.has(b.actor)) out.set(b.actor, runId(b.actor, b.group));
-  return out;
+  return plan.actors.map((a) => {
+    const segs: RunSeg[] = plan.beats
+      .filter((b) => b.actor === a.key)
+      .map((b) => ({ kind: b.quiet ? "think" : "write", start: epoch + b.start, end: epoch + b.end, label: b.say, say: b.say, ...(b.at && !b.quiet && !b.reach ? { path: pathFor(b.canvas, b.at) } : {}), ...(b.hop ? { cut: true as const } : {}) }));
+    return { id: runId(a.key), agent: a.agent, name: a.name, segs, receipts: [], running: false, lastAt: epoch + plan.length, children: [] };
+  });
 }
 
 /** The first beat of step `step` of the timeline (a comment's moment), or the last one when the timeline is shorter now. */

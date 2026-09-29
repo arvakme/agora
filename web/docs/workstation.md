@@ -370,3 +370,8 @@ BP1 在真实页面逐帧测出「走路时两只肘每 0.2 秒各翻一次，�
 mock（`?mock=runs`，两次进出子图）：小人在窗格外 5.7 → 0.2 秒，缩放最低 0.3 → 1.0（0.3 是根因 6：切画布走整图），除两次切画布和两次切镜外没有速度突变（`04-mock-after-curve.png`）。
 
 曲线 `01-real-claude-before-curve.png` / `02-real-claude-after-curve.png`（缩放、视图中心和小人位置、小人到窗格中心的距离、速度）。回家发生在一轮结束后约 3 秒；小人这时还在走回托盘，所以窗格外的最后那一截是它的回程。
+
+### 施工回放也走这套（DR5）
+
+施工回放（`buildreplay/`，`share-build-replay.md` §16）用同一个 `cameraStep` 和同一个切镜：`RunSeg.cut`（调用标了 `cut`：去它那里的一步是切镜，不看距离；减少动效不切）让 `place.ts` 把那一步做成切镜，小人淡出淡入；`cameraStep` 的 `cut` 选项让镜头在同一帧换取景，`zoom` 选项放宽缩放范围（回放放下整张图，最低 0.55）。`trace.ts`：切镜的一步没有长路线，到达在 `CUT_MS` 之后（原来按走完长路算，`traceCut.test.ts`）。`replayFit.ts` 的 `viewShowsContent` 已无人用，删了。
+

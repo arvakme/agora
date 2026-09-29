@@ -9,7 +9,7 @@
 //   - where each of its sub-agents was sent from, the places it went and where it handed back.
 // Only the stretch of work t is in (the figure is on the canvas for that stretch only; a sub-agent's is
 // its whole errand). In replay what comes after t in that stretch is listed too, not yet reached.
-import { bursts, outsideProject, OUTSIDE, planFor, stateAt, type Ctx } from "./place";
+import { arrivalOf, bursts, isCut, outsideProject, OUTSIDE, planFor, stateAt, type Ctx } from "./place";
 import { rawRoot, type Move, type Pt, type Trip } from "./rig";
 import type { Leg } from "./route";
 import type { RunSeg, WorkRun } from "./runs/types";
@@ -73,9 +73,11 @@ export function traceAt(run: WorkRun, t: number, ctx: Ctx, known = Infinity, win
   // where it appeared: the first move sets off from there (no move: it stays where it is — for a turn, where it stood as the turn began)
   out.stops.push({ place: moves[0]?.from ?? (win ? stateAt(run, win.start, ctx).at : (end.moves[0]?.from ?? end.at)), t0: span.start, at: span.start, done: span.start <= t, calls: [] });
   for (const m of moves) {
-    const trip = ctx.reduced ? null : planFor(m, ctx);
-    const at = trip ? trip.t1 : m.t;
-    const legs = legsOf(m, ctx);
+    // a cut (./place.ts `isCut`: the figure is across in CUT_MS, no walk) has no route and arrives when the cut is over
+    const cut = isCut(m, ctx);
+    const trip = ctx.reduced || cut ? null : planFor(m, ctx);
+    const at = cut ? arrivalOf(m, ctx) : trip ? trip.t1 : m.t;
+    const legs = cut ? [] : legsOf(m, ctx);
     out.ways.push({ from: out.stops.length - 1, to: out.stops.length, t0: m.t, t1: at, legs, len: lengthOf(legs), trip });
     out.stops.push({ place: m.to, t0: m.t, at, done: at <= t, calls: [] });
   }

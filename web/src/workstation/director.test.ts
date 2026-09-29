@@ -395,3 +395,58 @@ describe("the shot: the place the figure is going to is framed with it only when
     expect(SHOT_REACH).toBe(520);
   });
 });
+
+// ── the build replay's hop (web/docs/share-build-replay.md): a call that says its move is a cut, whatever the distance ──
+describe("a call marked `cut` (the build replay skips a long walk): the move to it is a cut, drawn as one cross-fade", () => {
+  const r = (cut: boolean) => run([seg("write", 0, 2, "server/app.py"), { ...seg("write", 2, 4, "server/db/x.py"), ...(cut ? { cut: true as const } : {}) }]);
+  it("marked: at the new place from the moment it sets off, a cut for CUT_MS, no trip", () => {
+    const c = ctx([r(true)]);
+    const st = stateAt(r(true), 2.1 * S, c);
+    expect(st).toMatchObject({ at: "db", from: "api", trip: null, w: 1 });
+    expect(st.cut).toMatchObject({ from: "api", to: "db" });
+    expect(stateAt(r(true), 2 * S + CUT_MS + 5, c).cut).toBeUndefined();
+  });
+  it("the two opacities add up to the fade all through it, and the old place is where it stood", () => {
+    const c = ctx([r(true)]);
+    const fr = scan(r(true), c, 1.9 * S, 2.6 * S).filter((f) => f.ghost);
+    expect(fr.length).toBeGreaterThan(10);
+    for (const f of fr) expect(f.alpha * f.state.fade + f.ghost!.alpha * f.state.fade).toBeCloseTo(f.state.fade, 5);
+    expect(fr[0].ghost!.place).toBe("api");
+  });
+  it("not marked: the same 400 is a walk (under CUT_DISTANCE), so the mark is what makes the cut", () => {
+    const st = stateAt(r(false), 2.1 * S, ctx([r(false)]));
+    expect(st.cut).toBeUndefined();
+    expect(st.trip).not.toBeNull();
+  });
+  it("reduced motion walks nowhere at all: never a cut", () => {
+    const c = { ...ctx([r(true)]), reduced: true };
+    expect(stateAt(r(true), 2.1 * S, c).cut).toBeUndefined();
+  });
+});
+
+describe("the camera's zoom range can be widened (the build replay fits a whole diagram: 0.55)", () => {
+  it("a goal at 0.6 is reached with `zoom` {min: 0.55}; without it the range is [0.7, 1]", () => {
+    let s = cameraStart(viewAt({ x: 0, y: 0 }, 1, PANE), PANE);
+    let t = 0;
+    for (let i = 0; i < 60 * 5; i++, t += FRAME) s = cameraStep(s, goalAt(0, 0, 0.6), { dt: FRAME, now: t, pane: PANE, zoom: { min: 0.55, max: 1 } }).state;
+    expect(s.at.zoom).toBeCloseTo(0.6, 2);
+    let d = cameraStart(viewAt({ x: 0, y: 0 }, 1, PANE), PANE);
+    for (let i = 0; i < 60 * 5; i++, t += FRAME) d = cameraStep(d, goalAt(0, 0, 0.6), { dt: FRAME, now: t, pane: PANE }).state;
+    expect(d.at.zoom).toBeCloseTo(0.7, 2);
+  });
+});
+
+describe("a cut the caller asks for (the figure was cut across: the build replay's hop)", () => {
+  it("the shot changes with it whatever the distance and however soon after the last cut; the view is at the shot from that frame", () => {
+    let s = cameraStart(viewAt({ x: 0, y: 0 }, 1, PANE), PANE);
+    const near = goalAt(300, 100);
+    const a = cameraStep(s, near, { dt: FRAME, now: 0, pane: PANE, cut: true });
+    expect(a).toMatchObject({ cut: true, mode: "cut" });
+    expect(centreOf(a.view, PANE)).toEqual({ x: 300, y: 100 });
+    s = a.state;
+    const b = cameraStep(s, goalAt(700, 100), { dt: FRAME, now: 500, pane: PANE, cut: true }); // 500 ms later: a cut again — the figure was
+    expect(b.cut).toBe(true);
+    const c = cameraStep(b.state, goalAt(900, 100), { dt: FRAME, now: 520, pane: PANE }); // and without the ask, the distance rule and its cool-down still hold
+    expect(c.cut).toBe(false);
+  });
+});
