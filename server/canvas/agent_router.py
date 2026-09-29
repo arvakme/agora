@@ -34,6 +34,15 @@ class Fork(BaseModel):
     source: dict[str, Any] | None = None
 
 
+class PageClaim(BaseModel):
+    sub: str
+
+
+class PageState(BaseModel):
+    visible: bool
+    focusedAt: float = 0.0
+
+
 class Send(BaseModel):
     text: str
     canvasId: str | None = None
@@ -414,11 +423,11 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
 
     @router.get("/events")
     async def events(request: Request, executor: int = 0):
-        sub = hub.subscribe(bool(executor))
+        sub = hub.subscribe(executor)  # 0 no, 1 an old page, 2 a page that claims what it runs
 
         async def stream():
             try:
-                yield f"data: {json.dumps({'t': 'hello', 'at': int(time.time() * 1000)})}\n\n"
+                yield f"data: {json.dumps({'t': 'hello', 'at': int(time.time() * 1000), 'sub': sub.id})}\n\n"
                 while True:
                     if await request.is_disconnected():
                         break
@@ -435,6 +444,16 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
     @router.post("/bridge/{rid}")
     def bridge_result(rid: str, result: dict[str, Any]):
         return {"ok": hub.bridge_result(rid, result)}
+
+    @router.post("/bridge/{rid}/claim")
+    def bridge_claim(rid: str, body: PageClaim):
+        """A page asks to run request ``rid``: only the page it is being offered to gets a yes, once (sessions.py)."""
+        return {"ok": hub.claim_bridge(rid, body.sub)}
+
+    @router.post("/events/{sub}/state")
+    def page_state(sub: str, body: PageState):
+        """A page tells whether it is visible and when it was last focused (the order edits are offered in: executors.py)."""
+        return {"ok": hub.page_state(sub, visible=body.visible, focused_at=body.focusedAt)}
 
     # ——— the `agora canvas` CLI ———
     @router.get("/canvas/list")

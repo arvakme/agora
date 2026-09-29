@@ -34,7 +34,7 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
-from server.canvas import adapters, agents, nested, proctree, schemas
+from server.canvas import adapters, agents, executors as executors_mod, nested, proctree, schemas
 from server.canvas.adapters import drift
 from server.canvas.local import Local
 from server.canvas.model_view import model_view, versions
@@ -217,7 +217,14 @@ class Subscriber:
     def __init__(self) -> None:
         self.q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=2000)
         self.at = time.time()
-        self.executor = False
+        self.id = secrets.token_hex(6)
+        # 0: not an executor; 1: an old page (runs what it is given, no claim); 2: claims a request before it runs it
+        self.executor = 0
+        # What an executor page reports about itself (executors.py ranks by it)
+        self.visible: bool | None = None
+        self.focused_at = 0.0
+        self.answered_at: float | None = None
+        self.failed_at: float | None = None
 
     def put(self, ev: dict[str, Any]) -> None:
         try:
@@ -238,6 +245,7 @@ class AgentHub:
         self.dropped: set[str] = set()
         self.subs: list[Subscriber] = []
         self.bridge_waits: dict[str, asyncio.Future] = {}
+        self.bridge_offers: dict[str, dict[str, Any]] = {}  # rid → which page it is offered to, who claimed it
         self._loop_task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._follow_lock = threading.Lock()
@@ -307,10 +315,10 @@ class AgentHub:
         for fn in list(self.handoff_hooks):
             fn(sid, send_id)
 
-    def subscribe(self, executor: bool) -> Subscriber:
+    def subscribe(self, executor: bool | int) -> Subscriber:
         self.ensure_started()
         sub = Subscriber()
-        sub.executor = executor
+        sub.executor = int(executor)
         self.subs.append(sub)
         for sid in self.store.bindings():
             lv = self._get(sid)
@@ -1289,29 +1297,84 @@ class AgentHub:
         self._status(sid)
 
     # ——— canvas bridge ———
-    def executor(self) -> Subscriber | None:
-        ex = [s for s in self.subs if s.executor]
-        return max(ex, key=lambda s: s.at) if ex else None
+    def executors(self) -> list[Subscriber]:
+        """The open pages that can execute an edit, in the order requests are offered to them (executors.py)."""
+        return list(executors_mod.order(s for s in self.subs if s.executor))
 
-    async def bridge(self, kind: str, payload: dict[str, Any], timeout: float = BRIDGE_TIMEOUT_S) -> dict[str, Any]:
-        sub = self.executor()
+    def executor(self) -> Subscriber | None:
+        ex = self.executors()
+        return ex[0] if ex else None
+
+    def page_state(self, sub_id: str, *, visible: bool, focused_at: float) -> bool:
+        """A page says whether it is visible and when it was last focused (ms since the epoch or seconds: only the order counts)."""
+        sub = next((s for s in self.subs if s.id == sub_id), None)
         if sub is None:
+            return False
+        sub.visible = bool(visible)
+        sub.focused_at = float(focused_at or 0)
+        return True
+
+    def claim_bridge(self, rid: str, sub_id: str) -> bool:
+        """A page asks to run request ``rid``. Granted to the page it is being offered to, once: a page that was
+        skipped (frozen in a background tab) and wakes up later is refused, so an edit is never run twice."""
+        offer = self.bridge_offers.get(rid)
+        sub = next((s for s in self.subs if s.id == sub_id), None)
+        if offer is None or offer["to"] != sub_id or (offer["claimed"] and offer["claimed"] != sub_id):
+            return False
+        if not offer["claimed"]:
+            offer["claimed"] = sub_id
+            offer["claim"].set()
+        if sub is not None:
+            sub.answered_at = time.time()
+        return True
+
+    async def bridge(self, kind: str, payload: dict[str, Any], timeout: float = BRIDGE_TIMEOUT_S, reply_s: float = executors_mod.PAGE_REPLY_S) -> dict[str, Any]:
+        """Have a page execute ``kind``. The request goes to the first page in the order; if it does not take it within
+        ``reply_s`` it is offered to the next, and so on, all inside ``timeout``. A page that took it is waited for —
+        never replaced: its edit may already be on its canvas."""
+        pages = self.executors()
+        if not pages:
             raise NoPage("没有打开的 Agora 页面：改图要在页面里执行（它持有画布、做校验、记撤销）。先 `agora open`。")
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
         rid = f"b-{secrets.token_hex(5)}"
-        fut: asyncio.Future = asyncio.get_running_loop().create_future()
+        fut: asyncio.Future = loop.create_future()
+        offer: dict[str, Any] = {"to": None, "claimed": None, "claim": asyncio.Event()}
         self.bridge_waits[rid] = fut
-        sub.put({"t": "bridge", "rid": rid, "kind": kind, **payload})
+        self.bridge_offers[rid] = offer
         try:
-            return await asyncio.wait_for(fut, timeout)
-        except TimeoutError:
-            raise NoPage(f"页面 {timeout:.0f}s 内没有回应（页面可能在后台或已关闭）") from None
+            for i, sub in enumerate(pages):
+                left = deadline - loop.time()
+                if left <= 0:
+                    break
+                offer["to"] = sub.id
+                sub.put({"t": "bridge", "rid": rid, "kind": kind, **payload})
+                if sub.executor < 2:  # an old page does not claim: it runs what it is given, as before
+                    offer["claimed"] = sub.id
+                    offer["claim"].set()
+                waiter = asyncio.ensure_future(offer["claim"].wait())
+                try:
+                    await asyncio.wait({waiter, fut}, timeout=left if i == len(pages) - 1 else min(reply_s, left), return_when=asyncio.FIRST_COMPLETED)
+                finally:
+                    waiter.cancel()
+                if fut.done():
+                    return fut.result()
+                if offer["claimed"]:
+                    try:
+                        return await asyncio.wait_for(fut, max(deadline - loop.time(), 0.01))
+                    except TimeoutError:
+                        raise NoPage("页面已接手这次改图但没有回报：图上可能已经改了，先看一眼图，再决定要不要重试。") from None
+                sub.failed_at = time.time()  # did not take it: behind the others until it does
+                offer["to"] = None
+            raise NoPage("开着的 Agora 页面都没有回应：把 Agora 的标签页切到前台再试一次。")
         finally:
             self.bridge_waits.pop(rid, None)
+            self.bridge_offers.pop(rid, None)
 
     def bridge_result(self, rid: str, result: dict[str, Any]) -> bool:
         fut = self.bridge_waits.get(rid)
         if fut is None or fut.done():
-            return False
+            return False  # late: the request was given to another page, or is over
         fut.set_result(result)
         return True
 
