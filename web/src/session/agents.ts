@@ -3,6 +3,7 @@
 // /api/agent/events — the binding (agent, model, effort, native id; fixed once chosen),
 // the transcript read from the CLI's own log, and live status — and sends messages.
 // Canvas bridge requests from `agora canvas …` are executed by ./agentBridge.ts.
+import { retryable } from "./retryable";
 import { sendable } from "./pickSession";
 import { removeRequest, upsertRequest, type Decision, type HostRequest } from "./requestModel";
 import { useSyncExternalStore } from "react";
@@ -390,7 +391,8 @@ const json = async (r: Response) => {
   return body;
 };
 
-let catalogP: Promise<Catalog> | null = null;
+// A failed read is not remembered (session/retryable.ts): the chooser asks again when opened or on 「重试」.
+const loadCatalog = retryable(() => fetch("/api/agent/catalog").then(json) as Promise<Catalog>);
 export const agents = {
   get: () => state,
   subscribe: (l: () => void) => (listeners.add(l), () => void listeners.delete(l)),
@@ -415,7 +417,7 @@ export const agents = {
     set({ bindings: { ...state.bindings, [sessionId]: b }, origins });
     return b;
   },
-  catalog: () => (catalogP ??= fetch("/api/agent/catalog").then(json) as Promise<Catalog>),
+  catalog: loadCatalog,
 
   /** Fix the session's agent, model and effort (once; the server refuses a different choice). */
   async bind(sessionId: string, agent: AgentKind, model: string, effort: string, nativeId?: string | null, started?: boolean): Promise<Binding> {

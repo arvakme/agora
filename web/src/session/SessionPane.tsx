@@ -8,6 +8,7 @@
 // with the answer below it — and 轨迹 — timeline overview plus turn → step → record ledger
 // (Trajectory.tsx; structure from DeepSeek Harness, MIT). Every tool call opens to its input and
 // output; every turn shows model, effort, tokens, time and cost when the log has them.
+import { chooserView, type CatalogState } from "./chooserModel";
 import { ConflictNotice } from "../multi/ConflictNotice";
 import { AnimatePresence, motion } from "motion/react";
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
@@ -161,6 +162,8 @@ function CanvasChoice({ canvasId, canvasTitles, onPick }: { canvasId: string; ca
 /** Pick the session's agent, model and effort. Once started this never changes. */
 function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: string }) {
   const [cat, setCat] = useState<Catalog | null>(null);
+  // the model list: loading, failed (the session then starts on the CLI's defaults) or ready — session/chooserModel.ts
+  const [catState, setCatState] = useState<CatalogState>("loading");
   const [kind, setKind] = useState<AgentKind>("claude");
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
@@ -169,8 +172,13 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
   const waiting = agentChoice.pending(sessionId);
   // The session agents (tier T1) from the server's adapter registry; the built-in three until it answers.
   const [kinds, setKinds] = useState<AgentKind[]>(sessionKinds());
+  const loadCatalog = () => {
+    setCatState("loading");
+    setErr(null);
+    agents.catalog().then((c) => (setCat(c), setCatState("ready")), () => setCatState("failed"));
+  };
   useEffect(() => {
-    void agents.catalog().then(setCat).catch((e) => setErr(String(e)));
+    loadCatalog();
     void loadAdapters().then(() => setKinds(sessionKinds()));
   }, []);
   useEffect(() => {
@@ -179,6 +187,7 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
   const c = cat?.[kind];
   // The levels this model really takes (from the CLI's own catalog); switching model starts on its default.
   const eff = effortChoices(c, model);
+  const view = chooserView(catState, { hasLevels: eff.levels.length > 0 });
   useEffect(() => {
     setEffort(eff.initial);
   }, [c, model]);
@@ -231,21 +240,28 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
           })}
         </div>
         <div className="sp-choose-row">
-          <Picker label="模型" value={model} onChange={setModel} groups={models} disabled={!c} placeholder="搜索模型或 provider" />
+          <Picker label="模型" value={model} onChange={setModel} groups={view.fields ? models : []} disabled={!c || !view.fields} valueLabel={view.model} placeholder="搜索模型或 provider" />
           <Picker
             label="强度"
             value={effort}
             onChange={setEffort}
-            groups={efforts}
-            disabled={!c || !eff.levels.length}
+            groups={view.fields ? efforts : []}
+            disabled={!c || !view.fields || !eff.levels.length}
             compact
-            title={eff.levels.length ? `${model || "默认模型"} 支持：${eff.levels.join(" / ")}` : "这个模型没有强度选项"}
+            valueLabel={view.effort}
+            title={eff.levels.length ? `${model || "默认模型"} 支持：${eff.levels.join(" / ")}` : view.fields ? "这个 CLI 不分强度：不传强度参数" : undefined}
           />
         </div>
+        {view.note && (
+          <p className="sp-choose-note" role="status">
+            {view.note}
+            {view.retry && <button className="btn sm ghost" onClick={loadCatalog}>重试</button>}
+          </p>
+        )}
         {scopeNote && <p className="sp-choose-note" title={scopeNote.title}>{scopeNote.text}</p>}
         {err && <p className="sp-warn">{err}</p>}
         <div className="sp-choose-go">
-          <button className="btn primary" disabled={busy || !cat} onClick={() => void start()}>用 {AGENT_NAMES[kind]} 开始</button>
+          <button className="btn primary" disabled={busy || !view.canStart} onClick={() => void start()}>用 {AGENT_NAMES[kind]} 开始</button>
           {waiting && <button className="btn ghost" onClick={() => agentChoice.resolve(sessionId, undefined)}>先不交</button>}
         </div>
         <p className="sp-choose-later">也可以直接在右边画，之后再开会话。</p>

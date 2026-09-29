@@ -46,7 +46,7 @@ export function modelGroups(entry: CatalogEntry | undefined): PickGroup[] {
 /** The effort picker's one group: the levels this model takes, "CLI 默认" when Agora knows no default. */
 export function effortGroups(eff: { levels: string[]; initial: string; cliDefault: boolean }): PickGroup[] {
   const options: PickOption[] = [];
-  if (eff.cliDefault || !eff.levels.length) options.push({ value: "", label: eff.levels.length ? "CLI 默认" : "不支持", detail: eff.levels.length ? "不传强度参数" : "这个模型没有强度选项" });
+  if (eff.cliDefault || !eff.levels.length) options.push({ value: "", label: eff.levels.length ? "CLI 默认" : "这个 CLI 不分强度", detail: eff.levels.length ? "不传强度参数" : "没有强度可选，不传强度参数" });
   for (const x of eff.levels) options.push({ value: x, label: x, note: x === eff.initial ? "默认" : undefined });
   return [{ id: "effort", label: "强度", options }];
 }

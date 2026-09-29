@@ -1,15 +1,14 @@
-// An agent run's avatar: the three known agents through AgentAvatar, any other CLI (or a worker
+// An agent run's avatar: the six known agents through AgentAvatar, any other CLI (or a worker
 // known only by its receipts) as a letter on the same tile. Also the SVG symbols the figures'
 // heads use (<WorkerDefs/>, mounted once by the app shell).
 import { ClaudeMark, PiMark } from "../app/agents/marks";
 import { AgentAvatar, type AvatarSize } from "../session/AgentAvatar";
+import { hasOwnMark } from "../session/agentMarks";
 import type { AgentKind } from "../session/agents";
-
-const KNOWN = new Set(["pi", "claude", "codex"]);
 
 export function RunAvatar({ agent, size = 16, parent }: { agent: string; size?: AvatarSize | 14 | 18 | 22; parent?: string }) {
   const s = size as AvatarSize;
-  const face = KNOWN.has(agent) ? (
+  const face = hasOwnMark(agent) ? (
     <AgentAvatar kind={agent as AgentKind} size={s} />
   ) : (
     <span className="agent-avatar run-letter" style={{ "--av": `${size}px` } as React.CSSProperties} aria-hidden>
@@ -21,7 +20,7 @@ export function RunAvatar({ agent, size = 16, parent }: { agent: string; size?: 
     <span className="run-av-wrap">
       {face}
       <span className="run-pbadge" aria-hidden>
-        {KNOWN.has(parent) ? <AgentAvatar kind={parent as AgentKind} size={16} /> : null}
+        {hasOwnMark(parent) ? <AgentAvatar kind={parent as AgentKind} size={16} /> : null}
       </span>
     </span>
   );
