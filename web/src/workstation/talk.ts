@@ -57,9 +57,17 @@ export function pickTalkHost(views: readonly TalkView[], prev: string | null): s
   return drawn.find((v) => v.id === prev)?.id ?? drawn.find((v) => !v.id.startsWith("follow:"))?.id ?? drawn[0].id;
 }
 
-/** The placeholder: while a turn runs the words wait for its end. */
-export const talkPlaceholder = (name: string, working: boolean, sub = false) =>
-  working ? `对 ${name} 说…（这一轮结束后送达）` : sub ? `对 ${name} 说…` : `对 ${name} 说…（回车发送）`;
+/**
+ * Whom the words go to and how the box says so. A run with a session of its own is talked to directly: 「对 X 说…」.
+ * A sub-agent or an outside worker (Seedmux) cannot be talked to: the box says from the start that the words go to the
+ * session that dispatched it — 「对 Claude Code 说（关于 T-ed3070）…」 —, the message gets 「关于你派的 T-ed3070：」 in front,
+ * and one grey line under the box says so. `working`: a turn is running, the words wait for its end.
+ */
+export function talkTarget(o: { name: string; hasSession: boolean; rootName: string; working: boolean }): { direct: boolean; placeholder: string; prefix: string; note: string | null } {
+  const tail = o.working ? "（这一轮结束后送达）" : "";
+  if (o.hasSession) return { direct: true, placeholder: `对 ${o.name} 说…${tail || "（回车发送）"}`, prefix: "", note: null };
+  return { direct: false, placeholder: `对 ${o.rootName} 说（关于 ${o.name}）…${tail}`, prefix: `关于你派的 ${o.name}：`, note: `${o.name} 是 ${o.rootName} 派的，话会发给 ${o.rootName}` };
+}
 
 export type Side = "below" | "above" | "right" | "left";
 const overlap = (a: TBox, b: TBox) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));

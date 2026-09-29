@@ -1,6 +1,6 @@
 // 对小人说话: which view hosts the one box, where it goes, what it says while a turn runs (workstation/talk.ts).
 import { describe, expect, it } from "vitest";
-import { pickTalkHost, placeTalk, talkPlaceholder, type TBox } from "./talk.ts";
+import { pickTalkHost, placeTalk, talkTarget, type TBox } from "./talk.ts";
 
 describe("pickTalkHost: the view that really draws the figure hosts the one box", () => {
   const main = { id: "c1", drawn: false };
@@ -59,12 +59,19 @@ describe("placeTalk: under the feet, else where it covers no node", () => {
   });
 });
 
-describe("talkPlaceholder", () => {
-  it("while a turn runs it says when the words arrive", () => {
-    expect(talkPlaceholder("Claude Code", true)).toBe("对 Claude Code 说…（这一轮结束后送达）");
+describe("talkTarget: whom the words go to, said from the start", () => {
+  const base = { name: "Claude Code", hasSession: true, rootName: "Claude Code" };
+  it("a session of its own: 「对 X 说…」, sent as is", () => {
+    const t = talkTarget({ ...base, working: false });
+    expect(t).toEqual({ direct: true, placeholder: "对 Claude Code 说…（回车发送）", prefix: "", note: null });
   });
-  it("idle: send with Enter", () => {
-    expect(talkPlaceholder("Claude Code", false)).toBe("对 Claude Code 说…（回车发送）");
-    expect(talkPlaceholder("worker-3", false, true)).toBe("对 worker-3 说…");
+  it("while a turn runs it says when the words arrive", () => expect(talkTarget({ ...base, working: true }).placeholder).toBe("对 Claude Code 说…（这一轮结束后送达）"));
+  it("a worker that cannot be talked to: the box names the session it goes to and what it is about", () => {
+    const t = talkTarget({ name: "T-ed3070", hasSession: false, rootName: "Claude Code", working: false });
+    expect(t.direct).toBe(false);
+    expect(t.placeholder).toBe("对 Claude Code 说（关于 T-ed3070）…");
+    expect(t.prefix).toBe("关于你派的 T-ed3070：");
+    expect(t.note).toBe("T-ed3070 是 Claude Code 派的，话会发给 Claude Code");
   });
+  it("…and waits for the turn to end when one is running", () => expect(talkTarget({ name: "T-1", hasSession: false, rootName: "Pi", working: true }).placeholder).toBe("对 Pi 说（关于 T-1）…（这一轮结束后送达）"));
 });

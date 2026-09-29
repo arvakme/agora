@@ -28,3 +28,6 @@ export function yieldView(o: { view: { zoom: number; scrollX: number; scrollY: n
   if (bottom <= o.pane.h - o.occupied.bottom - 8) return null;
   return fitView({ pane: o.pane, occupied: o.occupied, margin: 28, above: 0, maxZoom: o.view.zoom, bounds: o.bounds });
 }
+
+/** The short name on the 「跟随 …」 button: the agent, not its task (the full name is the tooltip). */
+export const shortAgentName = (name: string) => name.split(" · ")[0];
