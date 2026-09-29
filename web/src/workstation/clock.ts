@@ -160,5 +160,15 @@ export type ReplayGesture = "click" | "click-track" | "drag" | "play" | "replay-
 export const entersReplay = (g: ReplayGesture) => g === "drag" || g === "play" || g === "replay-here";
 /** The follow tab opens by itself only when the person turned that on (⋯, off by default) and live; during a replay only one the person opened stays. */
 export const autoFollowTabAllowed = (replaying: boolean, pref: boolean) => pref && !replaying;
-/** The session panel keeps the view the person chose, replaying or not. */
-export const panelViewDuring = <V extends string>(view: V, _replaying: boolean): V => view;
+/** What moves the session panel between 对话 and 轨迹: its own toggle, a link to a turn, a link to the trajectory, a stop clicked on the canvas. Nothing else — entering a replay does not. */
+export type PanelEvent = "toggle" | "turn" | "trajectory" | "step";
+export type PanelView = "chat" | "trajectory";
+export const panelView = (view: PanelView, ev: PanelEvent | ReplayGesture): PanelView => {
+  switch (ev) {
+    case "toggle": return view === "trajectory" ? "chat" : "trajectory";
+    case "turn": return "chat";
+    case "trajectory":
+    case "step": return "trajectory";
+    default: return view;
+  }
+};

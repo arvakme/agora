@@ -2,7 +2,8 @@
 // needs of them: while it plays its camera navigates between canvases, which changes the layout the app
 // would save (`root.active`) — that is the replay's own temporary view, so the workspace's saves are
 // paused for it: what was pending is written first (the layout as it was), nothing is written while
-// paused, and saving is back as it was afterwards.
+// paused, and what changed meanwhile is written once on resume (the layout as it is then — a tab opened
+// while the camera was away must not be lost); saving is back as it was afterwards.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSaveQueue } from "./saveQueue.ts";
 
@@ -40,7 +41,7 @@ describe("debounced saves", () => {
 });
 
 describe("paused saves (a played turn's temporary view is not the project's layout)", () => {
-  it("nothing is written for a paused key while it is paused, however the layout changes", () => {
+  it("nothing is written while it is paused; on resume one write, with the latest layout", () => {
     const { write, q } = setup();
     q.pause("workspace");
     q.save("workspace", () => "in the sub-diagram");
@@ -49,6 +50,46 @@ describe("paused saves (a played turn's temporary view is not the project's layo
     vi.advanceTimersByTime(5000);
     q.flushAll();
     expect(write).not.toHaveBeenCalled();
+    q.resume("workspace");
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledWith("workspace", "back in c1");
+    vi.advanceTimersByTime(5000);
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+  it("resuming with nothing changed writes nothing", () => {
+    const { write, q } = setup();
+    q.pause("workspace");
+    q.resume("workspace");
+    expect(write).not.toHaveBeenCalled();
+  });
+  it("pausing the same key again does not double the write", () => {
+    const { write, q } = setup();
+    q.pause("workspace");
+    q.save("workspace", () => "x");
+    q.pause("workspace");
+    q.save("workspace", () => "y");
+    q.resume("workspace");
+    q.resume("workspace");
+    expect(write.mock.calls).toEqual([["workspace", "y"]]);
+  });
+  it("the camera is away, the person opens a tab, the camera goes home: the written layout has the tab", () => {
+    const { write, q } = setup();
+    const layout = { tabs: ["c1"], active: "c1" };
+    const save = () => q.save("workspace", () => structuredClone(layout));
+    save();
+    q.pause("workspace"); // the camera goes into a sub-diagram: the layout as it was is written
+    layout.active = "c-sub";
+    save();
+    layout.tabs.push("c2"); // the person opens a new tab meanwhile
+    layout.active = "c2";
+    save();
+    layout.active = "c1"; // the camera returns home
+    save();
+    q.resume("workspace");
+    expect(write.mock.calls).toEqual([
+      ["workspace", { tabs: ["c1"], active: "c1" }],
+      ["workspace", { tabs: ["c1", "c2"], active: "c1" }],
+    ]);
   });
   it("other keys are saved as usual meanwhile", () => {
     const { write, q } = setup();
@@ -72,9 +113,9 @@ describe("paused saves (a played turn's temporary view is not the project's layo
     q.pause("workspace");
     q.save("workspace", () => "x");
     q.resume("workspace");
-    expect(write).not.toHaveBeenCalled();
+    expect(write.mock.calls).toEqual([["workspace", "x"]]); // what was deferred
     q.save("workspace", () => "y");
     vi.advanceTimersByTime(500);
-    expect(write).toHaveBeenCalledWith("workspace", "y");
+    expect(write).toHaveBeenLastCalledWith("workspace", "y"); // then debounced as usual
   });
 });

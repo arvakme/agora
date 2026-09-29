@@ -12,7 +12,7 @@ import { ConflictNotice } from "../multi/ConflictNotice";
 import { AnimatePresence, motion } from "motion/react";
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { IconCheck, IconChevron, IconCode, IconCommentSolid, IconCopy, IconLayers, IconLock, IconMore, IconPath, IconTarget, IconUndo } from "../app/icons";
-import { useReplay, useReplayAt, useTick } from "../workstation/clock";
+import { panelView, useReplay, useReplayAt, useTick, type PanelView } from "../workstation/clock";
 import { hhmmss } from "../workstation/axis";
 import { useRuns } from "../workstation/runs/store";
 import { Markdown } from "./markdown";
@@ -244,7 +244,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   const [flash, setFlash] = useState<string | null>(null);
   const [termMsg, setTermMsg] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [view, setView] = useState<"chat" | "trajectory">("chat");
+  const [view, setView] = useState<PanelView>("chat");
   // Replay (the timeline dragged into the past): the pane keeps the view you chose; in the trajectory later steps are greyed.
   const replay = useReplay();
   const replayAt = useReplayAt();
@@ -263,7 +263,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
     const on = (e: Event) => {
       const id = (e as CustomEvent<string>).detail;
       if (!session.turnIds.includes(id)) return;
-      setView("chat");
+      setView((v) => panelView(v, "turn"));
       setTimeout(() => {
         document.querySelector(`[data-turn="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
         setFlash(id);
@@ -273,14 +273,14 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
     const onTraj = (e: Event) => {
       const d = (e as CustomEvent<{ sessionId: string; turn: number }>).detail;
       if (d.sessionId !== sessionId) return;
-      setView("trajectory");
+      setView((v) => panelView(v, "trajectory"));
       setFocusTurn({ n: d.turn, key: Date.now() });
     };
     // a stop clicked on the canvas: the trajectory scrolls to its step (or the turn's head when it has none)
     const onStep = (e: Event) => {
       const d = (e as CustomEvent<{ sessionId: string; itemId: string | null; turn?: number }>).detail;
       if (d.sessionId !== sessionId) return;
-      setView("trajectory");
+      setView((v) => panelView(v, "step"));
       if (d.itemId) setFocusItem({ id: d.itemId, n: d.turn, key: Date.now() });
       else if (d.turn != null) setFocusTurn({ n: d.turn, key: Date.now() });
     };
@@ -388,7 +388,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           </select>
         </label>
         <span className="grow" />
-        <button className="icon-btn sm" aria-pressed={view === "trajectory"} data-on={view === "trajectory"} onClick={() => setView(view === "trajectory" ? "chat" : "trajectory")} title={view === "trajectory" ? "回到对话" : "轨迹：每一步做了什么"} aria-label="轨迹">
+        <button className="icon-btn sm" aria-pressed={view === "trajectory"} data-on={view === "trajectory"} onClick={() => setView((v) => panelView(v, "toggle"))} title={view === "trajectory" ? "回到对话" : "轨迹：每一步做了什么"} aria-label="轨迹">
           <IconPath size={16} />
         </button>
         <button
@@ -493,7 +493,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
               </ol>
             </div>
           )}
-          <Conversation sessionId={sessionId} turns={turns} changes={changes} canvasTitles={canvasTitles} flash={flash} onTrajectory={(n) => (setView("trajectory"), setFocusTurn({ n, key: Date.now() }))} />
+          <Conversation sessionId={sessionId} turns={turns} changes={changes} canvasTitles={canvasTitles} flash={flash} onTrajectory={(n) => (setView((v) => panelView(v, "trajectory")), setFocusTurn({ n, key: Date.now() }))} />
           {working && <LiveLine sessionId={sessionId} />}
         </div>
         <JumpPill show={jump.show} unread={jump.unread} running={working} onJump={jump.jump} />

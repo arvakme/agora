@@ -4,9 +4,6 @@
 import { layoutSaves } from "../layoutSaves";
 import { backHintQuiet } from "../nested/up";
 
-/** 「可能过时」 is quiet while a camera has taken the canvas away by itself (as the 「在子图里」 hint is): the sub-diagram is not one the person went to. */
-export const staleVisible = (files: number, quiet: boolean) => files > 0 && !quiet;
-
 const holds = new Set<string>();
 
 export const quiet = {

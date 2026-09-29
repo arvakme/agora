@@ -1,10 +1,11 @@
-// 「可能过时」 is a small dot by the sub-diagram's name in the breadcrumb (the words and 「让 AI 更新」 open on hover), and the
+// 「可能过时」 is a small dot by the sub-diagram's name in the breadcrumb (the words and 「让 AI 更新」 open on hover). It does not
+// follow the camera's silence (replayQuiet.ts quiets the layout saves and the hint below, not the dot): whoever went there, files changed → dot. The
 // one-time 「在子图里」 hint is once per browser: it counts as seen once it has been on screen for a while, not only when dismissed.
 import { describe, expect, it } from "vitest";
 import { BACK_HINT_MS, backHintDue, staleDot, staleNote } from "./up.ts";
 
 describe("staleDot: the dot by the name", () => {
-  it("files changed since the sub-diagram was drawn: a dot, whoever went there (you or the camera's quiet does not hide a dot the words are not on)", () => {
+  it("files changed since the sub-diagram was drawn: a dot, whoever went there (you or the camera; the camera's silence does not hide it)", () => {
     expect(staleDot(2)).toBe(true);
   });
   it("nothing changed: no dot", () => expect(staleDot(0)).toBe(false));

@@ -37,17 +37,20 @@ const failure = (m: Message) => m.author === "system" && !!m.tone;
 
 /**
  * A hand-off that failed (no agent chosen, would not send, did not finish) is history once an agent has answered
- * later in the thread: those system notes before the last answer fold into one line, 「之前未交出，已重新交给 X」.
+ * later in the thread: those system notes before the last answer fold into one line, 「之前未交出，已重新交给 X」, X being the
+ * agent that replied (`to` resolves a reply's session to its name; a plain string is the fallback name).
  * A failure with no answer after it is the current state and stays (with its 换一个会话 button).
  */
-export function collapseSuperseded(messages: Message[], to?: string): (Message | Folded)[] {
+export function collapseSuperseded(messages: Message[], to?: string | ((sessionId?: string) => string | undefined)): (Message | Folded)[] {
   const lastAnswer = messages.map((m, i) => (m.author === "agent" && live(m) ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
+  // the agent that actually answered (the last live reply), by its session — not whoever the comment would go to now
+  const name = typeof to === "function" ? to(messages[lastAnswer]?.sessionId) : to;
   const out: (Message | Folded)[] = [];
   messages.forEach((m, i) => {
     if (i < lastAnswer && failure(m)) {
       const prev = out.at(-1);
       if (prev && "folded" in prev) prev.count++;
-      else out.push({ id: `folded-${m.id}`, folded: true, text: `之前未交出，已重新交给 ${to ?? "Agent"}`, count: 1 });
+      else out.push({ id: `folded-${m.id}`, folded: true, text: `之前未交出，已重新交给 ${name ?? "Agent"}`, count: 1 });
     } else out.push(m);
   });
   return out;
