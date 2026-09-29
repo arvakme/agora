@@ -221,10 +221,18 @@
 .ws-tl .lname:hover .lacts, .ws-tl .lname:focus-within .lacts { display: inline-flex; }
 /* a top-level lane: the menu takes the row's second line (over the 「在做什么」 words), never the name, and long names end in … */
 .ws-tl .lname .t { overflow: hidden; }
+/* the first line: the name (ends in … when long, never squeezed by the mark) and one state mark; the actions come on hover or focus */
+.ws-tl .lname .l1 { display: flex; align-items: center; gap: 6px; min-width: 0; height: 16px; }
+.ws-tl .lname .l1 .trk { height: 14px; line-height: 14px; padding: 0 5px; margin-top: 0; vertical-align: baseline; }
+.ws-tl .lname .l1 b { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-tl .lname .l1 .trk, .ws-tl .lname .l1 .fold { flex: none; margin-left: 0; }
 .ws-tl .lname:not(.sub) b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-tl .lname:not(.sub) { overflow: hidden; }
-.ws-tl .lname:not(.sub) .lacts { position: absolute; left: 36px; right: 2px; bottom: 1px; }
-.ws-tl .lname:not(.sub) .lacts button { height: 16px; line-height: 16px; padding: 0 6px; }
+.ws-tl .lname:not(.sub) .lacts { position: absolute; left: 36px; right: 2px; bottom: 0; }
+.ws-tl .lname:not(.sub) .lacts button { height: 14px; line-height: 14px; padding: 0 6px; font-size: 10.5px; }
+.ws-tl .lname:not(.sub) .lacts { gap: 4px; flex-wrap: nowrap; }
+/* 新建会话 in the strip: quiet, at the end of the words */
+.ws-bar .ws-new { flex: none; height: 22px; padding: 0 8px; border-radius: var(--r-xs); box-shadow: var(--box); font-size: var(--text-xs); white-space: nowrap; }
 .ws-tl .lname:not(.sub):hover .now, .ws-tl .lname:not(.sub):focus-within .now { visibility: hidden; }
 .ws-tl .lname .lacts button { height: 20px; padding: 0 7px; border-radius: var(--r-xs); box-shadow: var(--box); color: var(--fg); font-size: var(--text-xs); white-space: nowrap; }
 .ws-tl .lname .lacts button:hover { background: var(--raised); }

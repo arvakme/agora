@@ -18,6 +18,7 @@ import { ui } from "../session/ui";
 import { pointerFollow } from "../pointer/follow";
 import { ancestry, childOf, descendants, openThreads, staleness, type Staleness } from "./graph";
 import { blankChild, nav, nested, useNested } from "./store";
+import { staleVisible } from "../workstation/replayQuiet";
 import { backHintQuiet, backHintSeen, backHintVisible, markBackHintSeen, onBackHintSeen, upKeyLabel } from "./up";
 import { writeChildLink } from "./writeChild";
 import "./nested.css";
@@ -172,6 +173,8 @@ export function OwnerBreadcrumb({ canvasId }: { canvasId: string }) {
   const [sent, setSent] = useState(false);
   useEffect(() => setSent(false), [canvasId]);
   const files = [...new Set(stale?.files.map((f) => f.path) ?? [])];
+  // not while a camera has taken the canvas here by itself (live follow, ▶ 放一轮): the sub-diagram is not one you went to
+  const camQuiet = useSyncExternalStore(backHintQuiet.subscribe, backHintQuiet.get);
   const keyLabel = upKeyLabel();
   return (
     <Breadcrumb
@@ -181,7 +184,7 @@ export function OwnerBreadcrumb({ canvasId }: { canvasId: string }) {
       keyLabel={keyLabel}
       hint={<BackHint keyLabel={keyLabel} />}
       extra={
-        files.length > 0 && (
+        staleVisible(files.length, camQuiet) && (
           <span className="nest-stale" role="status">
             <span className="nest-dot" aria-hidden />
             <span title={files.join("\n")}>可能过时：子图画好之后改过 {files.length} 个文件</span>
