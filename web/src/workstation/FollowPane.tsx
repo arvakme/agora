@@ -57,7 +57,10 @@ function useFollowing(main: string) {
   // a played turn has its own camera (./replayView.ts): no follow view while it plays
   const playing = !!usePlay().play;
   const replaying = !!useReplay();
-  const on = useWorkstation() && !playing && autoFollowTabAllowed(replaying, usePrefs().autoFollowTab);
+  // hooks first, unconditionally: a hook skipped by `&&` changes the hook order the moment ▶ starts playing
+  const workstation = useWorkstation();
+  const autoFollowTab = usePrefs().autoFollowTab;
+  const on = workstation && !playing && autoFollowTabAllowed(replaying, autoFollowTab);
   useTick(250);
   const t = clock.time();
   const ctx = useMemo(() => subviewCtx(main, nst.scenes, nst.titles, (id) => runs.byId.get(id), () => canvasWhere.get(main)?.ctx), [main, nst.scenes, nst.titles, runs]);
