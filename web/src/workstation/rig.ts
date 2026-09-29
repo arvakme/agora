@@ -108,7 +108,8 @@ export class Glide {
   }
 }
 
-export type Bone = { jx: number; jy: number; ex: number; ey: number };
+/** `over`: how far the target was out of the limb's reach (too far, or too near), which `ik` then clamps: 0 when it was reachable. */
+export type Bone = { jx: number; jy: number; ex: number; ey: number; over: number };
 /** Two-bone IK by the law of cosines: root (rx, ry) → target (tx, ty), bones a and b. bend +1 bends clockwise (y down). */
 export function ik(rx: number, ry: number, tx: number, ty: number, a: number, b: number, bend: number): Bone {
   const dx = tx - rx;
@@ -118,7 +119,7 @@ export function ik(rx: number, ry: number, tx: number, ty: number, a: number, b:
   const base = Math.atan2(dy, dx);
   const A = Math.acos(Math.max(-1, Math.min(1, (a * a + d * d - b * b) / (2 * a * d))));
   const ang = base + bend * A;
-  return { jx: rx + a * Math.cos(ang), jy: ry + a * Math.sin(ang), ex: rx + (dx / d0) * d, ey: ry + (dy / d0) * d };
+  return { jx: rx + a * Math.cos(ang), jy: ry + a * Math.sin(ang), ex: rx + (dx / d0) * d, ey: ry + (dy / d0) * d, over: Math.max(0, d0 - (a + b), Math.abs(a - b) - d0) };
 }
 
 /**
@@ -132,6 +133,8 @@ export const RIG = { hip: 25.45, thigh: 12.54, shin: 13.76, ankle: 1.4, foot: 5.
 const smooth = (u: number) => u * u * (3 - 2 * u);
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 const mix = (a: number, b: number, u: number) => a + (b - a) * u;
+/** An angle difference brought into −π … π (the short way round). */
+const wrapAngle = (d: number) => d - 2 * Math.PI * Math.round(d / (2 * Math.PI));
 
 /** One trip from one place to another, starting at t (ms). `slot` is the spot at the destination; `sub`: a sub-agent's (drawn SUB_SCALE smaller). */
 export type Move = {
@@ -188,7 +191,7 @@ type Swing = { foot: 0 | 1; t0: number; t1: number; from: Pt; to: Pt; up: number
 /** One ladder's holds: rung j at y = bot − j·sp (0 the lower floor, n the upper one, top the rails' ends).
  * A limb holds every R-th rung, a diagonal pair moving while the other holds; hands hold m rungs over
  * the feet; `hip`: the hips' height above the feet on it (figure units, knees bent). */
-type Rungs = { bot: number; sp: number; n: number; top: number; R: number; m: number; hip: number };
+type Rungs = { bot: number; sp: number; n: number; top: number; R: number; m: number; hip: number; /** The hands hold this far ahead of the feet's line (figure units): a door's ladder runs through the body, so without it a hand on a rung passes the shoulder within a unit and the elbow whips round (web/docs/workstation.md §16). */ ahead: number };
 /** `ramp`: the share of its time a walk or climb spends gathering speed, and again slowing. */
 type Span = { t0: number; t1: number; a: Pt; b: Pt; f: 1 | -1; ramp: number };
 type WalkPhase = Span & { kind: "walk"; feet: [Foot, Foot]; steps: Swing[]; bumps: { lo: number; hi: number; dy: number }[] };
@@ -248,11 +251,11 @@ function holdAt(z: number, from: number, R: number, lo: number, hi: number): { j
  * the far hand with the near foot, the pairs taking turns; a limb between rungs comes off toward the body. */
 function holds(r: Rungs, x: number, f: 1 | -1, y: number, k: number): { feet: [Foot, Foot]; hands: [Foot, Foot] } {
   const z = (r.bot - y) / r.sp;
-  const at = (h: { j: number; up: number; lift: number }): Foot => ({ x: x - f * h.up * LIFT * k, y: r.bot - h.j * r.sp, lift: h.lift });
+  const at = (h: { j: number; up: number; lift: number }, ahead = 0): Foot => ({ x: x + f * (ahead - h.up * LIFT) * k, y: r.bot - h.j * r.sp, lift: h.lift });
   const half = r.R / 2;
   return {
     feet: [at(holdAt(z, 0, r.R, 0, r.n)), at(holdAt(z, half, r.R, 0, r.n))],
-    hands: [at(holdAt(z + r.m, (half + r.m) % r.R, r.R, 1, r.top)), at(holdAt(z + r.m, r.m % r.R, r.R, 1, r.top))],
+    hands: [at(holdAt(z + r.m, (half + r.m) % r.R, r.R, 1, r.top), r.ahead), at(holdAt(z + r.m, r.m % r.R, r.R, 1, r.top), r.ahead)],
   };
 }
 
@@ -265,7 +268,7 @@ function rungsOf(y0: number, y1: number, k: number, R: number): Rungs {
   // hips low enough that a foot at the bottom of its reach (R/4 rungs under the body) still gets there
   const hip = Math.min(0.8 * RIG.hip, 0.97 * (RIG.thigh + RIG.shin) - (R / 4) * (sp / k));
   const hand = hip + RIG.torso - SHOULDER + 0.5 * (RIG.upper + RIG.fore);
-  return { bot, sp, n, top: n + Math.max(1, Math.round((POST * k) / sp)), R, m: Math.max(1, Math.round((hand * k) / sp)), hip };
+  return { bot, sp, n, top: n + Math.max(1, Math.round((POST * k) / sp)), R, m: Math.max(1, Math.round((hand * k) / sp)), hip, ahead: 0 };
 }
 
 /** A walk from a to b (root) over level legs and steps: footsteps, and the body's rise over each step. */
@@ -455,6 +458,8 @@ export const DOOR_H = 50;
 const DOOR_GRAB = 100;
 /** The climb's share of its time spent gathering speed, and again slowing (its top speed is CLIMB_SPEED). */
 const DOOR_RAMP = 0.2;
+/** Hands reach this far ahead of the body's line to a door's rails (the ladder runs through the body: `GAP`, as a ladder beside a node's wall is kept off it). */
+const DOOR_AHEAD = 4;
 const DOOR_CLIMB_MS = Math.round((DOOR_H * REF_K) / (CLIMB_SPEED * (1 - DOOR_RAMP)));
 /** Going through a door — down (or up) its ladder, from the floor to all the way out of sight, or back — takes this long; a smaller figure takes as long over a shorter way. */
 export const DOOR_MS = DOOR_GRAB + DOOR_CLIMB_MS;
@@ -470,7 +475,7 @@ export function planDoor(k: number, dir: 1 | -1, leaving: boolean, f: 1 | -1 = 1
   const far: Pt = { x: 0, y: dir * DOOR_H * k };
   const floor: Pt = { x: 0, y: 0 };
   const [a, b] = leaving ? [floor, far] : [far, floor];
-  const rungs = rungsOf(a.y, b.y, k, 4);
+  const rungs = { ...rungsOf(a.y, b.y, k, 4), ahead: DOOR_AHEAD };
   const st = RIG.stance * k;
   const home = (foot: 0 | 1): Pt => ({ x: (foot ? -st : st) * f, y: 0 });
   const hold: [Foot, Foot] = [{ ...home(0), lift: 0 }, { ...home(1), lift: 0 }];
@@ -546,6 +551,8 @@ export function tripAt(p: Trip, t: number): TripPose {
   return poseAt(p, i, t);
 }
 
+/** A raised hand (Loom's arm units, from the shoulder, along the facing): beside the head, clear of its circle — 5.6 put the hand's centre 3.6 inside it. */
+export const RAISED: readonly [number, number] = [8.4, -16.3];
 export type Pose = "walk" | "read" | "write" | "exec" | "think" | "wait" | "idle" | "delegate" | "handoff" | "unknown";
 export type Prop = "laptop" | "terminal" | "sheet" | "carry" | null;
 export type Targets = { near: [number, number]; far: [number, number]; lean: number; tilt: number; sway: number; prop: Prop; mark: "?" | "!" | null; markMuted?: boolean; facing: 1 | -1 };
@@ -600,7 +607,7 @@ export function poseTargets(pose: Pose, t: number, since: number, o: { still: bo
       T.lean = -1.5;
       break;
     case "wait": // a raised hand, held still: ./gestures.ts waves it every 6–8 s
-      T.near = [5.6, -17.2];
+      T.near = [...RAISED];
       T.far = [-0.4, 18.2];
       T.tilt = -8;
       T.lean = -2;
@@ -672,9 +679,11 @@ export type Springs = { t: number | null; nx: Spring; ny: Spring; fx: Spring; fy
   turnFrom: number; turnAt: number; f: 1 | -1 | 0; prop: Spring; propKind: Prop };
 export function makeSprings(): Springs {
   const hand = () => new Spring(3.2, 0.55, 0.4);
+  // a hand's angle about its shoulder turns on a slower spring than its distance: the arc is longer than the chord it replaces, so the swing keeps the pace it had
+  const swing = () => new Spring(2.5, 0.55, 0.4);
   // The body settles with a small, damped overshoot (arriving, standing up from a pose).
   const body = () => new Spring(2.2, 0.5, 0.3);
-  return { t: null, nx: hand(), ny: hand(), fx: hand(), fy: hand(), lean: body(), tilt: new Spring(3, 0.45, 1.2), sway: body(), turnFrom: 1, turnAt: -Infinity, f: 0, prop: new Spring(4, 0.9, 0), propKind: null };
+  return { t: null, nx: swing(), ny: hand(), fx: swing(), fy: hand(), lean: body(), tilt: new Spring(3, 0.45, 1.2), sway: body(), turnFrom: 1, turnAt: -Infinity, f: 0, prop: new Spring(4, 0.9, 0), propKind: null };
 }
 
 /** Where a turn is at wall time `wall`: −1 … 1, eased (smoothstep), 1 when done. */
@@ -789,8 +798,19 @@ export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolea
   sp.t = t;
   const step = Math.min(dt, 0.05);
   const S = (s: Spring, x: number) => (jump ? s.reset(x) : s.step(step, x));
-  const near = [S(sp.nx, T.near[0]), S(sp.ny, T.near[1])];
-  const far = [S(sp.fx, T.far[0]), S(sp.fy, T.far[1])];
+  // A hand moves along an arc about its shoulder, not along the chord: the springs run on its angle and its distance from the shoulder
+  // (the same four springs). An elbow is placed by the angle of the hand (`ik`), and a hand that crosses over the shoulder — from
+  // hanging to raised, or onto a rung — on a straight line swings that angle half a circle within a few frames and the elbow with it,
+  // 10–19 units in one frame (web/docs/workstation.md §16). On the arc the distance stays what the two ends give it and the angle turns steadily.
+  const swing = (sa: Spring, sr: Spring, h: readonly [number, number]): number[] => {
+    const r = Math.hypot(h[0], h[1]);
+    const a = Math.atan2(h[1], h[0]);
+    const ang = jump || sa.xp == null ? sa.reset(a) : sa.step(step, sa.y + wrapAngle(a - sa.y));
+    const rad = S(sr, r);
+    return [rad * Math.cos(ang), rad * Math.sin(ang)];
+  };
+  const near = swing(sp.nx, sp.ny, T.near);
+  const far = swing(sp.fx, sp.fy, T.far);
   const lean = S(sp.lean, T.lean);
   const tilt = S(sp.tilt, T.tilt);
   const sway = S(sp.sway, T.sway);
@@ -843,7 +863,14 @@ export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolea
   const reach = (h: number[], at: Pt | undefined): [number, number] => {
     const x = shx + L(h[0]);
     const y = shy + h[1];
-    return at ? [mix(x, at.x, climb), mix(y, at.y, climb)] : [x, y];
+    if (!at) return [x, y];
+    // onto the rung along an arc about the shoulder too (same reason as `swing`); the angles are from the facing (0 = straight ahead), so
+    // from hanging (+90°) to a rung overhead (−90°) it goes through ahead, never round behind the body
+    const a0 = Math.atan2(y - shy, (x - shx) * f);
+    const a1 = Math.atan2(at.y - shy, (at.x - shx) * f);
+    const a = mix(a0, a1, climb);
+    const r = mix(Math.hypot(x - shx, y - shy), Math.hypot(at.x - shx, at.y - shy), climb);
+    return [shx + f * r * Math.cos(a), shy + r * Math.sin(a)];
   };
   const [nhx, nhy] = reach(near, hold?.[0]);
   const [fhx, fhy] = reach(far, hold?.[1]);

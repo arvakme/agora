@@ -17,7 +17,7 @@ import { attention } from "./attention";
 import { focus } from "./focus";
 import { execResults, type ExecResult } from "./outcome";
 import { HANDOFF_MS, IDLE_LEAVE_MS, OUTSIDE, stateAt, type Ctx, type RunState, type WriteConflict } from "./place";
-import { RIG, type Pose, type Prop, type Pt } from "./rig";
+import { RAISED, RIG, type Pose, type Prop, type Pt } from "./rig";
 import type { RunSeg, WorkRun } from "./runs/types";
 import { talk } from "./talk";
 
@@ -123,6 +123,8 @@ const FLASH_MS = 300;
 const RESULT_MS = 1000;
 const NOD_MS = 700;
 
+/** How far forward (figure units) a hand swings out on its way from hanging to raised, at the middle of the way (weight 0.5 → sin = 1). */
+const ARC = 10;
 /** Loom's hand positions are for its arm (19.4 long): scaled to ours. */
 const ARM = (RIG.upper + RIG.fore) / 19.4;
 const L = (x: number, y: number): [number, number] => [x * ARM, y * ARM];
@@ -272,6 +274,10 @@ export function gesture(g: GestureIn): Gesture {
       if (w > 0) {
         hand(G, "near", L(2.6, -19), w);
         hand(G, "far", L(0.6, -19), w);
+        // the hands go up in front of the face, not through it: each target is a straight line from hanging to overhead, and the
+        // springs follow it, so without this the arms fold across the chest and the hands cross the head (pose check, `head`)
+        nudge(G, "near", ARC * Math.sin(Math.PI * w), 0);
+        nudge(G, "far", ARC * Math.sin(Math.PI * w), 0);
         add(G, "lean", -4 * w);
         add(G, "tilt", -12 * w);
       }
@@ -292,7 +298,8 @@ export function gesture(g: GestureIn): Gesture {
   if (anim && g.clickAt != null) {
     const a = g.wall - g.clickAt;
     if (a >= 0 && a < HELLO_MS) {
-      hand(G, "near", L(5.6, -17.2), env(a, 0, 220, HELLO_MS - 250, HELLO_MS));
+      hand(G, "near", L(...RAISED), env(a, 0, 220, HELLO_MS - 250, HELLO_MS));
+      nudge(G, "near", ARC * Math.sin(Math.PI * env(a, 0, 220, HELLO_MS - 250, HELLO_MS)), 0);
       nudge(G, "near", 3 * Math.sin((2 * Math.PI * a) / 400) * hump(a, 150, HELLO_MS - 100), 0);
     }
   }
