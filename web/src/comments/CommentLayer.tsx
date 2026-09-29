@@ -177,7 +177,7 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
             onSubmit={(text, mention) => {
               const t = store.create(draft.anchor, text);
               const route = routeMessage({ guest: GUEST, mention, handoff: undefined });
-              if (route.kind === "hand") void handOff(api, store, t.id, route.to, mention?.type === "session" ? { bound: false, name: mention.label } : { bound: false });
+              if (route.kind === "hand") void handOff(api, store, t.id, route.to, { bound: false, ...(mention?.type === "session" && { name: mention.label }), ...(mention && { mention: mention.label }) });
               setDraft(null);
               onCreated();
             }}

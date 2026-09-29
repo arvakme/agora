@@ -83,7 +83,7 @@ async function adoptConversation(sid: string): Promise<void> {
  * of this page loses nothing; here it starts it and shows it running.
  * `bound`: the thread was already this conversation's, so a conversation that is gone ends the hand-off.
  */
-export async function handOff(api: ExcalidrawImperativeAPI, threads: ThreadStore, threadId: string, to: { sid: string } | { agent: string }, opts: { bound: boolean; name?: string }): Promise<void> {
+export async function handOff(api: ExcalidrawImperativeAPI, threads: ThreadStore, threadId: string, to: { sid: string } | { agent: string }, opts: { bound: boolean; name?: string; mention?: string }): Promise<void> {
   const thread = threads.thread(threadId)!;
   const canvasId = threads.canvasId;
   const anchors = resolveAnchor(thread.anchor, byId(api.getSceneElementsIncludingDeleted())).names.map((n) => ({ id: n.id, name: n.name }));
@@ -93,7 +93,9 @@ export async function handOff(api: ExcalidrawImperativeAPI, threads: ThreadStore
   try {
     let sent;
     try {
-      sent = await agents.dispatchComment("sid" in to ? to.sid : { new: to.agent }, commentMessage(thread, anchors, { followUp: opts.bound }), { canvasId, threadId, threadN: thread.n, anchor, name });
+      const mention = opts.mention ?? ("sid" in to ? opts.name : undefined); // the @name is left out of what the conversation is told
+      sent = await agents.dispatchComment("sid" in to ? to.sid : { new: to.agent }, commentMessage(thread, anchors, { followUp: opts.bound, ...(mention && { mention }) }), { canvasId, threadId, threadN: thread.n, anchor, name });
+      if ("sid" in to && sent.dispatch.target.sessionId !== to.sid) threads.reply(threadId, { author: "system", text: `注意：这条评论交给了会话 ${sent.dispatch.target.sessionId}，不是你 @ 的 ${to.sid}。`, tone: "warn" });
     } catch (e) {
       const gone = opts.bound && /no agent|不在/.test((e as Error).message);
       if (gone) threads.endHandoff(threadId);

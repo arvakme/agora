@@ -66,4 +66,12 @@ describe("parseCommentMessage", () => {
     expect(parseCommentMessage("画布评论 是什么")).toBeUndefined();
     expect(parseCommentMessage(undefined)).toBeUndefined();
   });
+
+  it("the @name of the conversation it goes to is not part of what it is told", () => {
+    const thread = { n: 7, messages: [msg("you", "@Claude Code · 画出这个项目的架构 再补一张子图", { id: "user:me", name: "我" })] };
+    const t = commentMessage(thread, [], { mention: "Claude Code · 画出这个项目的架构" });
+    expect(t).toContain("- 我：再补一张子图");
+    expect(t).not.toContain("@Claude Code");
+    expect(commentMessage(thread, [])).toContain("@Claude Code"); // (without a mention given it goes as it is)
+  });
 });
