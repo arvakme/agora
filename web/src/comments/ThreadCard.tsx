@@ -49,6 +49,7 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
   const [first, ...rest] = t.messages;
   const running = t.agent === "running";
   const to = useHandTarget(store.canvasId);
+  const ag = useAgents();
   const lastId = t.messages.at(-1)?.id;
   return (
     <motion.div
@@ -106,7 +107,7 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
         )}
         <AnimatePresence initial={false}>
           {full &&
-            collapseSuperseded(rest, to.name).map((m) => "folded" in m ? (
+            collapseSuperseded(rest, (sid) => (sid && ag.bindings[sid] ? agentName(ag.bindings[sid].agent) : to.name)).map((m) => "folded" in m ? (
               <Reveal key={m.id}>
                 <div className="tfolded" title="这条之前没能交出去，后来已经重新交给 Agent 并有了答复">{m.text}</div>
               </Reveal>

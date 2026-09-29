@@ -52,7 +52,7 @@ describe("handLabel: the 交给 … button", () => {
 
 describe("collapseSuperseded: an old failed hand-off next to the answer that came later", () => {
   it("the failure (no agent chosen, or the agent did not finish) folds into one grey line once an agent has answered", () => {
-    const out = collapseSuperseded([you, failed, answer], "Claude Code");
+    const out = collapseSuperseded([you, failed, answer], () => "Claude Code");
     expect(out.map((m) => m.id)).toEqual(["m1", "folded-m2", "m3"]);
     expect((out[1] as Folded).text).toBe("之前未交出，已重新交给 Claude Code");
     expect(collapseSuperseded([you, failed, errored, answer]).length).toBe(3); // two failures, one line
@@ -62,6 +62,18 @@ describe("collapseSuperseded: an old failed hand-off next to the answer that cam
     expect(collapseSuperseded([you, failed])).toEqual([you, failed]);
     expect(collapseSuperseded([you, failed, { ...you, id: "m5", at: 9 }])).toEqual([you, failed, { ...you, id: "m5", at: 9 }]);
     expect(collapseSuperseded([you, answer])).toEqual([you, answer]);
+  });
+  it("the line names the agent that actually answered in the thread, not the one the comment would go to now", () => {
+    const name = (sessionId?: string) => (sessionId === "s-codex" ? "Codex" : "Claude Code");
+    const byCodex: Message = { ...answer, sessionId: "s-codex" };
+    const out = collapseSuperseded([you, failed, byCodex], name);
+    expect((out[1] as Folded).text).toBe("之前未交出，已重新交给 Codex");
+    // several answers: the last one counts
+    const byClaude: Message = { ...answer, id: "m8", at: 8, sessionId: "s-claude" };
+    expect((collapseSuperseded([you, failed, byCodex, byClaude], name)[1] as Folded).text).toBe("之前未交出，已重新交给 Claude Code");
+    // a deleted answer did not answer
+    const gone: Message = { ...byClaude, deleted: true };
+    expect((collapseSuperseded([you, failed, byCodex, gone], name)[1] as Folded).text).toBe("之前未交出，已重新交给 Codex");
   });
   it("only failures before the last answer fold; one after it stays", () => {
     const later: Message = { ...failed, id: "m9", at: 10 };
