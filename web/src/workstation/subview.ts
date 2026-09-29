@@ -12,7 +12,7 @@
 // opens for newcomers (`arrivals`) and follows the latest. Pure; memoised per scenes and context.
 import { effectiveLinks, type NestedLink, type Scenes } from "../nested/graph";
 import { elementFor } from "../pointer/codeLinks";
-import { bursts, OUTSIDE, stateAt, type Ctx } from "./place";
+import { bursts, DOOR_MS, OUTSIDE, stateAt, type Ctx } from "./place";
 import type { RunSeg, WorkRun } from "./runs/types";
 
 export type Titles = Readonly<Record<string, string>>;
@@ -57,10 +57,13 @@ export type SubviewCtx = {
   state: Ctx;
   /** Where each run stood as each of its segments started (by index): the glance test, memoised. */
   starts: WeakMap<WorkRun, Map<number, string>>;
+  /** The main canvas's own context (walking, doors), when its overlay has published one: the run is below the main canvas
+   * from the moment it is through the door there, and back on it from the moment it comes out (not from when its work started). */
+  outer?: () => Ctx | undefined;
 };
 
 /** The context for one main canvas, one set of scenes and one set of runs (keep it while they stay the same: it memoises). */
-export function subviewCtx(main: string, scenes: Scenes, titles: Titles, run: (id: string) => WorkRun | undefined): SubviewCtx {
+export function subviewCtx(main: string, scenes: Scenes, titles: Titles, run: (id: string) => WorkRun | undefined, outer?: () => Ctx | undefined): SubviewCtx {
   const byPath = new Map<string, string>();
   const byPlace = new Map<string, Level[]>();
   const place = (path: string) => {
@@ -83,7 +86,7 @@ export function subviewCtx(main: string, scenes: Scenes, titles: Titles, run: (i
     reduced: true,
     run,
   };
-  return { main, place, levels: (k) => byPlace.get(k) ?? null, state, starts: new WeakMap() };
+  return { main, place, levels: (k) => byPlace.get(k) ?? null, state, starts: new WeakMap(), outer };
 }
 
 export type Presence = {
@@ -103,8 +106,22 @@ export type Presence = {
 export function presenceAt(run: WorkRun, t: number, c: SubviewCtx): Presence | null {
   const st = stateAt(run, t, c.state);
   if (!st.present) return null;
-  const levels = st.at === OUTSIDE ? null : c.levels(st.at);
+  let levels = st.at === OUTSIDE ? null : c.levels(st.at);
   const ended = st.pose === "idle" || st.handoff || (!!run.parentId && run.doneAt != null && t >= run.doneAt);
+  const mc = c.outer?.();
+  if (mc?.door && !ended) {
+    // The main canvas has the say: below it from the moment the worker is through the door there, until it is out again
+    const ms = stateAt(run, t, mc);
+    const inside = ms.portalPhase === "behind";
+    if (inside && (levels?.length ?? 0) < 2) levels = lastBelow(run, t, c) ?? levels;
+    else if (!inside && levels && levels.length > 1) levels = levels.slice(0, 1);
+    if (inside && levels && levels.length > 1) {
+      const e = entry(run, t, c);
+      const d = e == null ? undefined : ms.doorsIn.find((x) => x >= e - 1);
+      return { levels, entered: d == null ? e : Math.min(t, d + DOOR_MS), ended };
+    }
+    return { levels, entered: null, ended };
+  }
   return { levels, entered: ended || !levels || levels.length < 2 ? null : entry(run, t, c), ended };
 }
 
@@ -117,6 +134,17 @@ function stretchStart(run: WorkRun, t: number): number {
   let from = -Infinity;
   for (const b of bs) if (b[0].start <= t) from = b[0].start;
   return from;
+}
+
+/** The levels of the last file below the main canvas the run went to by t (it may already be on its way out). */
+function lastBelow(run: WorkRun, t: number, c: SubviewCtx): Level[] | null {
+  for (let i = run.segs.length - 1; i >= 0; i--) {
+    const g = run.segs[i];
+    if (g.start > t || !g.path) continue;
+    const ls = c.levels(c.place(g.path));
+    if (ls && ls.length > 1) return ls;
+  }
+  return null;
 }
 
 /** Where the run stood as segment i started (after the move it may start). */
