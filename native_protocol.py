@@ -38,7 +38,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-AdapterKind = Literal["pi", "claude_code", "codex"]
+AdapterKind = Literal["pi", "claude_code", "codex", "devin", "cursor", "grok"]
 
 EvidenceKind = Literal[
     "native_hook",

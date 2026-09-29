@@ -1,15 +1,15 @@
-"""Grok adapter: registered by default since its contract held against the installed 1.0.41 (2026-09-29),
-observed only (T2). Its recorded fixture runs through the shared contract test."""
+"""Grok adapter: registered by default since its contract held against the installed 1.0.41 (2026-09-29);
+a session agent (T1) since the user's decision of 2026-09-29. Its recorded fixture runs through the shared contract test."""
 
 from server.canvas import adapters
 from server.canvas.adapters import registry
 from server.canvas.adapters.grok import enc_cwd
 
 
-def test_grok_is_registered_and_observed_only():
+def test_grok_is_registered_and_a_session_agent():
     registry.refresh()
     g = adapters.need("grok")
-    assert adapters.implemented_tier(g) == "T2" and "grok" not in adapters.session_kinds()
+    assert adapters.implemented_tier(g) == "T1" and "grok" in adapters.session_kinds()
     assert enc_cwd("/private/tmp/x y") == "%2Fprivate%2Ftmp%2Fx%20y"
 
 

@@ -10,18 +10,17 @@ from server.canvas.project_router import create_project_app
 
 
 def test_session_agents_are_the_t1_adapters():
-    assert adapters.session_kinds() == agents.KINDS == AGENT_KINDS == ("pi", "claude", "codex")
+    assert adapters.session_kinds() == agents.KINDS == AGENT_KINDS
+    assert AGENT_KINDS[:3] == ("pi", "claude", "codex") and "grok" in AGENT_KINDS  # Grok became a session agent (T1) on 2026-09-29
     for k in AGENT_KINDS:
         assert adapters.implemented_tier(adapters.need(k)) == "T1"
 
 
 def test_observed_clis_are_registered_but_never_session_agents():
-    """User decision 2026-09-28: Grok, Cursor and Devin are observed (T2) — trajectory and workstation
-    figure for their sub-agents — never picked for an Agora session."""
+    """Grok, Cursor and Devin were observed (T2) by the user's decision of 2026-09-28 and became session agents (T1) on
+    2026-09-29: every registered CLI is a session agent now, in the order the picker shows them."""
     assert [a["kind"] for a in registry.adapter_infos(with_versions=False)] == ["pi", "claude", "codex", "grok", "cursor", "devin"]
-    for k in ("grok", "cursor", "devin"):
-        a = adapters.need(k)
-        assert adapters.implemented_tier(a) == "T2" and a.max_tier == "T2" and k not in adapters.session_kinds()
+    assert "cursor" in adapters.session_kinds() and adapters.implemented_tier(adapters.need("cursor")) == "T1"
 
 
 def test_tier_follows_capabilities_and_max_tier():
@@ -71,7 +70,7 @@ def test_adapters_endpoint(tmp_path, monkeypatch):
     c = TestClient(create_project_app(s.root))
     got = c.get("/api/agent/adapters?versions=0&catalog=1").json()
     by = {a["kind"]: a for a in got}
-    assert [a["kind"] for a in got if a["tier"] == "T1"] == ["pi", "claude", "codex"]
+    assert [a["kind"] for a in got if a["tier"] == "T1"][:3] == ["pi", "claude", "codex"] and by["grok"]["tier"] == "T1"
     assert by["codex"]["caps"]["forkHeadless"] is False and by["codex"]["deleteCommand"] == "codex delete {id}"
     assert by["claude"]["logDir"] == "~/.claude/projects/" and by["claude"]["catalog"] == {"kind": "claude", "default": "m"}
     assert "version" not in by["pi"]

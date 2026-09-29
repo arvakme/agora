@@ -57,12 +57,15 @@ from server.canvas.project import NotFound
 from server.canvas.sessions import AgentHub, agora_prompt, canvas_names
 
 NS = UUID("6f0b1e52-3a7c-4d1e-9b8a-2c5d7e9f0a13")
-ADAPTER = {"claude": "claude_code", "codex": "codex", "pi": "pi"}
+ADAPTER = {"claude": "claude_code", "codex": "codex", "pi": "pi", "devin": "devin", "cursor": "cursor", "grok": "grok"}
 REPLY_MAX = 600  # characters of the receipt told to the source; the rest is in reply.md
 PERMISSION = {
     "claude": {"mode": "headless", "detail": "claude -p: only `agora canvas|reply|dispatch` run without asking; other tools follow the user's Claude settings"},
     "codex": {"mode": "user-config", "detail": "codex exec / codex: the user's own Codex configuration"},
     "pi": {"mode": "user-config", "detail": "pi: the user's own Pi configuration"},
+    "devin": {"mode": "headless", "detail": "devin -p --permission-mode dangerous: every tool runs without asking (no boundary)"},
+    "cursor": {"mode": "headless", "detail": "cursor-agent -p --force: every tool runs without asking (no boundary)"},
+    "grok": {"mode": "headless", "detail": "grok --always-approve: every tool runs without asking (no boundary)"},
 }
 
 

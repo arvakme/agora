@@ -21,7 +21,7 @@ const count = (r: WorkRun): number => r.children.reduce((n, c) => n + 1 + count(
 /** The tags of the top-level runs: working, waiting, thinking, then the most recently idle. */
 export function agentTags(tops: readonly WorkRun[], now: number): AgentTag[] {
   return tops
-    .map((r) => ({ runId: r.id, sessionId: r.sessionId, agent: r.agent, name: r.name, state: tagState(r, now), kids: count(r), lastAt: r.lastAt }))
+    .map((r) => ({ runId: r.id, sessionId: r.sessionId, agent: r.agent, name: r.name || r.agent, state: tagState(r, now), kids: count(r), lastAt: r.lastAt }))
     .sort((a, b) => RANK[a.state] - RANK[b.state] || b.lastAt - a.lastAt);
 }
 
@@ -49,7 +49,7 @@ export function splitTags(tags: readonly AgentTag[], max: number, keep?: string)
 
 /** The name on a tag: the agent, or (several of one agent) what the session is about, cut to `TAG_NAME_MAX` characters with 「…」. */
 export function tagLabel(name: string, sameAgent: boolean): string {
-  const [who, ...topic] = name.split(" · ");
+  const [who, ...topic] = (name || "").split(" · ");
   const text = sameAgent && topic.length ? topic.join(" · ") : who;
   const chars = [...text];
   return chars.length > TAG_NAME_MAX ? `${chars.slice(0, TAG_NAME_MAX).join("")}…` : text;

@@ -1,0 +1,4 @@
+{"type": "init", "mode": "dangerous", "model": "swe-2-medium"}
+{"type": "session", "id": "piquant-aquarius"}
+{"type": "text", "text": "这是一个统计文本文件单词数的极简演示项目。"}
+{"type": "turn_end", "code": 0, "stderr": ""}

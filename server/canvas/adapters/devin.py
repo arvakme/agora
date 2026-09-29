@@ -1,4 +1,16 @@
-"""Devin (``devin`` CLI, Cognition) — T2, observed only (user decision 2026-09-28: never a session agent).
+"""Devin (``devin`` CLI, Cognition) — T1 (a session agent since 2026-09-29; before that T2, observed only).
+
+- Headless: ``devin -p --permission-mode dangerous --respect-workspace-trust false [-r <id>] [--model <m>] -- <prompt>``,
+  run through ``devin_run.py``. ``devin -p`` prints only the final answer and takes the prompt from its argument
+  (not stdin), so the wrapper turns "the id Devin gave a new session, the answer, the exit code, an interrupt" into
+  JSON lines (``DevinStream``) and stops the tool processes Devin leaves behind; the turn itself is followed in the
+  database (``DevinTail``). ``dangerous`` = the user's "no boundary" default (approves every tool); the header says so.
+  The strength of a model is part of its name (``claude-opus-5-5-high``): no separate effort.
+- Interactive: ``devin --permission-mode dangerous --respect-workspace-trust false [-r <id>]`` (the flag also skips the
+  first-run "do you trust this directory" dialog). A bracketed paste plus Enter reaches its input box. The pane's
+  process holds no file that names its session, so a new one is claimed by "the directory's session created after the
+  start" (``new_since``). A session id does not survive the project moving (``-r`` from another directory fails, and
+  the CLI rewrites its ``working_directory``), and Agora never writes to its database.
 
 - Log: one SQLite database for all sessions, ``~/.local/share/devin/cli/sessions.db`` (WAL, GBs),
   opened read-only (``mode=ro``) and queried by session id only (user decision: read-only queries,
@@ -28,17 +40,23 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import subprocess
+import sys
 import urllib.parse
 from contextlib import closing
 from pathlib import Path
 from typing import Any
 
 from server.canvas.adapters.base import Adapter, VersionRange, tool_facts, valid_id
-from server.canvas.adapters.common import MAX_TEXT, LogLookup, Out, State, _clip, _end, _full, _ms, _start, _summary, _usage, rel_path, text_of, user_item
+from server.canvas.adapters.common import MAX_TEXT, LogLookup, Out, State, StreamMapper, _clip, _end, _full, _ms, _start, _summary, _usage, rel_path, text_of, user_item
 from server.canvas.adapters.shell_files import shell_tool
 from server.canvas.adapters.tools import activity_of
 
 DB = "sessions.db"
+WRAPPER = Path(__file__).with_name("devin_run.py")
+# "No boundary" (the user's default): every tool approved; ``--respect-workspace-trust false`` skips the trust
+# dialog the CLI cannot show in print mode and shows once in a new directory otherwise.
+NO_BOUNDARY = ["--permission-mode", "dangerous", "--respect-workspace-trust", "false"]
 TICKET_PAD_S = 120  # a worker session is active after its ticket was created (minus this)
 ACTIVITY = {"get_output": "commands", "kill_shell": "commands", "write_to_process": "commands", "find_file_by_name": "search", "todo_write": "plan", "webfetch": "webFetch", "web_search": "webSearch", "run_subagent": "subagents", "read_subagent": "subagents", "notebook_read": "read", "notebook_edit": "edit", "request_scope": "questions"}
 WRITES = {"write": "write", "edit": "edit", "notebook_edit": "edit"}
@@ -167,12 +185,102 @@ def project(rec: dict[str, Any], st: State) -> Out:
     return items, turns
 
 
+class DevinStream(StreamMapper):
+    """The lines ``devin_run.py`` prints (see its docstring): the mode, the session id, the answer, how the turn ended."""
+
+    interrupted = False
+
+    def feed(self, d: dict[str, Any], at: int) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        t = d.get("type")
+        if t == "init":
+            out.append({"t": "mode", "at": at, "mode": str(d.get("mode") or ""), "model": d.get("model") or self.model})
+        elif t == "session":
+            self.session = str(d.get("id") or "") or self.session
+            if self.session:
+                out.append({"t": "session", "at": at, "session": self.session})  # the host follows the database from here on
+        elif t == "text":
+            text = str(d.get("text") or "")
+            if text.strip():
+                self.text = text
+                out.append({"t": "text", "at": at, "text": text})
+        elif t == "interrupted":
+            self.interrupted = True
+            self.done = True
+        elif t == "turn_end":
+            self.done = True
+            if d.get("code") not in (0, None):
+                said = next((ln.strip() for ln in str(d.get("stderr") or "").splitlines() if ln.strip()), "")
+                self.error = f"devin: {said[:300] or 'exit ' + str(d.get('code'))}"
+        return out
+
+
+def catalog_from(models: dict[str, Any] | None, config: dict[str, Any]) -> dict[str, Any]:
+    """The models ``devin models list --format json`` offers: every variant's ``model_uid`` is what ``--model``
+    takes (the strength is part of it: no separate effort levels)."""
+    names: dict[str, str] = {}
+    order: list[str] = []
+    featured: list[str] = []
+    for fam in (models or {}).get("families") or []:
+        uids = []
+        for v in fam.get("variants") or []:
+            uid = v.get("model_uid")
+            if isinstance(uid, str) and uid:
+                uids.append(uid)
+                names[uid] = str(v.get("label") or uid)
+        order += uids
+        if uids:  # the picker's short list: each family once, at its medium strength when it has one
+            featured.append(next((u for u in uids if u.endswith("-medium")), uids[0]))
+    order = list(dict.fromkeys(order))
+    default = str(config.get("model") or "")
+    default = default if default in order else ""
+    source = "devin models list" if order else "none"
+    return {
+        "default": default,
+        "models": order,
+        "featured": list(dict.fromkeys(featured))[:6],
+        "names": names,
+        "providers": {},
+        "allowed": list(order) if order else None,
+        "scope": {"kind": "cli", "source": source},
+        "efforts": [],
+        "modelEfforts": {"": []},
+        "modelDefaultEffort": {"": ""},
+        "defaultEffort": "",
+        "effortSource": "none",
+    }
+
+
+class DevinTail:
+    """Follow a session in the database like a file: ``read()`` gives the messages it gained since the last call
+    (a message is one record, however often the CLI re-saves it)."""
+
+    def __init__(self, adapter: "DevinAdapter", path: Path) -> None:
+        self.adapter = adapter
+        self.path = path
+        self.sig: tuple[Any, ...] | None = None
+        self.seen: set[str] = set()
+
+    def read(self) -> list[dict[str, Any]]:
+        sig = self.adapter.log_stat(self.path)
+        if sig is None or sig == self.sig:
+            return []
+        self.sig = sig
+        out = []
+        for rec in self.adapter.read_records(self.path):
+            key = str(rec.get("message_id") or json.dumps(rec, sort_keys=True, default=str)[:200])
+            if key not in self.seen:
+                self.seen.add(key)
+                out.append(rec)
+        return out
+
+
 class DevinAdapter(Adapter):
     kind = "devin"
     name = "Devin"
     binaries = ("devin",)
     tested = VersionRange(">=3000.10.21,<3000.11")
-    max_tier = "T2"
+    max_tier = "T1"
     icon = "devin"
     log_hint = "~/.local/share/devin/cli/sessions.db（SQLite，只读查询）"
     log_dir = "~/.local/share/devin/cli/sessions.db"
@@ -248,6 +356,72 @@ class DevinAdapter(Adapter):
     # ——— ToolVocab ———
     def classify(self, name: str, args: Any, root: str | None = None) -> dict[str, Any]:
         return classify(name, args, root)
+
+
+    # ——— T1: a session agent ———
+    assigns_id = "cli"  # the id is Devin's own slug, found in the database after the start
+    can_fork_headless = False
+    terminal_fork = ""
+    Mapper = DevinStream
+    asked_mode = "dangerous"  # what the header compares the CLI's reported mode with
+    project_skill_dir = ".agents/skills"  # `devin skills paths`: .devin/, .cognition/ and .agents/skills
+    # Binding: ``-r <id>`` from another directory fails ("failed to start ACP agent session"), and the CLI then
+    # rewrites the session's working_directory. There is no log file to carry along: nothing to migrate.
+    survives_move = False
+
+    def log_dir_name(self, root: Path | str) -> str:
+        return ""  # a moved project has no folder of this CLI's to look for (local.py skips it)
+
+    def tail(self, path: Path) -> DevinTail:
+        return DevinTail(self, path)
+
+    def new_since(self, root: Path | str, since: float, taken: set[str], home: Path | None = None) -> str | None:
+        """A session of the directory created at/after ``since`` that no Agora session owns yet: what a first
+        interactive run made (the pane's process holds no file that names it)."""
+        want = list(dict.fromkeys([str(root), os.path.realpath(str(root))]))
+        rows = _query(db_path(home), f"select id from sessions where working_directory in ({','.join('?' * len(want))}) and created_at >= ? order by created_at, rowid", [*want, int(since)])
+        return next((sid for (sid,) in rows if valid_id(sid) and sid not in taken), None)
+
+    # ——— Headless ———
+    def headless_args(self, cmd: list[str], req: Any, *, log_exists: Any = False, skill_dir: Path | None = None) -> list[str]:
+        o = req.options
+        if o.fork_from:
+            raise ValueError("Devin 不支持分叉会话")
+        args = [sys.executable, str(WRAPPER), *cmd, "-p", *NO_BOUNDARY]
+        if o.session:
+            args += ["-r", o.session]
+        if o.model:
+            args += ["--model", o.model]
+        return [*args, "--", req.prompt]
+
+    def headless_stdin(self, req: Any) -> bytes | None:
+        return None  # ``devin -p`` does not read stdin: the prompt is in the argv
+
+    # ——— Interactive ———
+    def interactive_argv(self, native_id: str | None, model: str | None, effort: str | None, *, new: bool = False, has_log: Any = False, skill_dir: Path | None = None) -> list[str]:
+        args = ["devin", *NO_BOUNDARY]
+        if native_id and not new:
+            args += ["-r", native_id]
+        if model:
+            args += ["--model", model]
+        return args
+
+    # ——— Catalog ———
+    def catalog(self, env: dict[str, str], root: Path | None) -> dict[str, Any]:
+        exe = self.installed()
+        models: dict[str, Any] | None = None
+        if exe:
+            try:
+                r = subprocess.run([exe, "models", "list", "--format", "json"], capture_output=True, text=True, timeout=30, env=env or None)
+                got = json.loads(r.stdout) if r.returncode == 0 else None
+                models = got if isinstance(got, dict) else None
+            except (OSError, subprocess.SubprocessError, ValueError):
+                models = None
+        try:
+            config = json.loads((Path((env or {}).get("HOME") or Path.home()) / ".config" / "devin" / "config.json").read_text())
+        except (OSError, ValueError):
+            config = {}
+        return catalog_from(models, config if isinstance(config, dict) else {})
 
     # ——— fixtures (tests/test_adapter_contracts.py) ———
     def fixture_place(self, folder: Path, home: Path, cwd: str, nid: str) -> Path:
