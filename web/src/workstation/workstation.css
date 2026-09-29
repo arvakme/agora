@@ -312,3 +312,7 @@
 .ws-tl .tl-body { contain: layout paint; will-change: transform; }
 .ws-tl .ws-warm { position: absolute; left: 0; top: 0; visibility: hidden; pointer-events: none; white-space: nowrap; font-size: var(--text-sm); }
 .ws-tl .ws-warm::after { content: "正在回放 回到实时"; font-size: var(--text-xs); font-weight: 600; }
+
+/* 「+N 个子代理」: the sub-agents a run has more than 8 of, folded out of the lanes */
+.ws-tl .lname.rest { align-items: center; padding-top: 0; }
+.ws-tl .lname.rest .fold { margin-left: 0; height: 18px; padding: 0 8px; font-size: var(--text-xs); }

@@ -8,6 +8,7 @@ import { AGENT_NAMES, agents, fetchRuns, type AgentKind } from "../../session/ag
 import { sessionNames } from "../../multi/writes";
 import { fromTree, runFromTranscript } from "./derive";
 import { longWindow, scenario, scratchRun } from "./fixtures";
+import { replays } from "../replayMode";
 import { flatten, type WorkRun, type FlatRun } from "./types";
 
 export type Runs = { roots: WorkRun[]; flat: FlatRun[]; byId: Map<string, WorkRun>; at: number };
@@ -41,6 +42,12 @@ export function runName(sessionId: string, bound: Record<string, { agent: AgentK
 
 function compute(): Runs {
   const now = Date.now();
+  // a PR being replayed stands in for every session (./replayMode.ts)
+  if (replays.active()) {
+    const pr = replays.run();
+    const roots = pr ? [pr] : [];
+    return { roots, flat: flatten(roots), byId: new Map(flatten(roots).map((f) => [f.run.id, f.run])), at: now };
+  }
   if (MOCK) {
     const roots = params.has("long") ? longWindow(now, 5, Number(params.get("long")) || 100) : [...scenario(mockBase, now), ...(params.has("scratch") ? [scratchRun(mockBase)] : [])];
     return { roots, flat: flatten(roots), byId: new Map(flatten(roots).map((f) => [f.run.id, f.run])), at: now };
@@ -117,12 +124,13 @@ function start() {
   if (timer) return;
   const offA = agents.subscribe(refresh);
   const offN = sessionNames.subscribe(refresh);
+  const offR = replays.subscribe(refresh);
   // Running turns end at "now": refresh once a second while anything runs (or the mock plays).
   timer = window.setInterval(() => {
-    if (MOCK || value.flat.some((f) => f.run.running)) refresh();
+    if (MOCK || replays.active() || value.flat.some((f) => f.run.running)) refresh();
   }, 1000);
   value = compute();
-  stop = () => (offA(), offN(), clearInterval(timer), (timer = 0));
+  stop = () => (offA(), offN(), offR(), clearInterval(timer), (timer = 0));
 }
 let stop = () => {};
 
