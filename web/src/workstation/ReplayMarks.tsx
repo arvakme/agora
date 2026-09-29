@@ -1,39 +1,46 @@
-// The nodes a PR replay changes (web/docs/workstation.md「PR 回放」): a purple frame round each node
-// that has been written so far, and 「+N」 at its top right — how many of the PR's files landed there by
+// The nodes a played turn changes (web/docs/workstation.md §11 按轮追踪): a purple frame round each node
+// that has been written so far, and 「+N」 at its top right — how many of the turn's files landed there by
 // this moment, counting up as the writes go. A parent node shows its sub-diagram's total (the canvas's
-// own `locate` puts every file of a sub-diagram on the node that opens it), and the follow pane's
-// picture of the sub-diagram shows its own nodes. Mounted while a PR plays (./Overlay.tsx); rebuilt
-// ≤ 4 Hz, moved by the frame loop with the view. Reduced motion: the frame and the number, no fade.
+// own `locate` puts every file of a sub-diagram on the node that opens it), and the follow view's
+// picture of the sub-diagram shows its own nodes. At the end, the summary (「这一轮改了 X 个节点、Y 个文件」)
+// as a badge over the node last written, off the connectors' labels. Mounted while a turn plays
+// (./Overlay.tsx); rebuilt ≤ 4 Hz, moved by the frame loop with the view. Reduced motion: the frame and the number, no fade.
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { excalidrawEl, occupiedOf } from "./replayDom";
 import { placeBadge } from "./replayFit";
-import { replays } from "./replayMode";
+import { plays, usePlay } from "./replayMode";
 import type { CanvasViewState } from "../canvas/CanvasView";
 import type { Box } from "../canvas/clearance";
 import { nodeBox } from "../canvas/nodes";
 import { viewport } from "../canvas/viewport";
 import { clock, useReplay, useTick } from "./clock";
 import { frame } from "./frame";
-import { OUTSIDE, stateAt, type Ctx } from "./place";
-import { fileCounts } from "./replay";
+import { OUTSIDE, type Ctx } from "./place";
+import { fileCounts, turnWrites } from "./playCounts";
 import { useRuns } from "./runs/store";
 import "./replay.css";
 
 export function ReplayMarks({ view, ctx }: { view: CanvasViewState; ctx: Ctx }) {
-  const runs = useRuns();
+  useRuns();
   useReplay();
   useTick(250);
   const t = clock.time();
-  const run = runs.roots[0];
-  const counts = run ? fileCounts(run, t, (p) => {
+  const win = usePlay().play?.win;
+  const run = plays.run();
+  const counts = run && win ? fileCounts(run, win, t, (p) => {
     const at = ctx.locate(p)?.place;
     return at && at !== OUTSIDE ? at : null;
   }) : new Map<string, number>();
-  // The summary at the end is on the whole diagram; when the figure is still behind a node's door (its last
-  // files were in that sub-diagram) it cannot say it itself, so the node says it for it.
-  const sum = run?.segs[run.segs.length - 1];
-  const lastWrite = run ? [...run.segs].reverse().find((s) => s.kind === "write" && s.path) : undefined;
-  const sumNode = run && sum?.note && t >= sum.start && lastWrite && !stateAt(run, t, ctx).present ? ctx.locate(lastWrite.path!)?.place : undefined;
+  // The summary at the end is on the whole diagram, over the node the turn wrote last.
+  const total = run && win && win.end != null && t >= win.end ? plays.summary() : null;
+  const sumText = total ? `这一轮改了 ${total.nodes} 个节点、${total.files} 个文件` : null;
+  // the node the turn wrote last on this diagram (a write off it, in notes/ say, has no node)
+  const lastWrite = run && win && sumText ? turnWrites(run, win).sort((a, b) => b.start - a.start).find((w) => {
+    const at = ctx.locate(w.path)?.place;
+    return at && at !== OUTSIDE;
+  }) : undefined;
+  const sumNode = sumText && lastWrite ? ctx.locate(lastWrite.path)?.place : undefined;
+  const sum = sumText ? { note: sumText } : null;
   const nodes0 = [...counts].flatMap(([id, n]) => {
     const el = view.map.get(id);
     return el && !el.isDeleted ? [{ id, n, box: nodeBox(el, view.map, view.elements) }] : [];
@@ -56,9 +63,9 @@ export function ReplayMarks({ view, ctx }: { view: CanvasViewState; ctx: Ctx }) 
     const at = placeBadge({ node, size, obstacles, view: { x: -v0.scrollX, y: -v0.scrollY + top / v0.zoom, w: v0.width / v0.zoom, h: v0.height / v0.zoom - top / v0.zoom } });
     return at ? { ...at, id: sumNode } : null;
   })();
-  const barNote = sumNode && sum?.note && !badge ? sum.note : null;
-  useEffect(() => void replays.setBarNote(barNote), [barNote]);
-  useEffect(() => () => replays.setBarNote(null), []);
+  const barNote = sum && !badge ? sum.note : null;
+  useEffect(() => void plays.setBarNote(barNote), [barNote]);
+  useEffect(() => () => plays.setBarNote(null), []);
   const nodes = [...counts].flatMap(([id, n]) => {
     const el = view.map.get(id);
     return el && !el.isDeleted ? [{ id, n, box: nodeBox(el, view.map, view.elements) }] : [];
@@ -95,8 +102,8 @@ export function ReplayMarks({ view, ctx }: { view: CanvasViewState; ctx: Ctx }) 
   useLayoutEffect(() => sync.current());
   useEffect(() => frame.add(() => sync.current()), []);
   return (
-    <div className="ws-pr-marks" aria-hidden={!nodes.length}>
-      <svg className="ws-pr-frames">
+    <div className="ws-play-marks" aria-hidden={!nodes.length}>
+      <svg className="ws-play-frames">
         <g ref={world}>
           {nodes.map((d) => (
             <rect key={d.id} x={d.box.x - 4} y={d.box.y - 4} width={d.box.w + 8} height={d.box.h + 8} rx={12} vectorEffect="non-scaling-stroke" />
@@ -106,12 +113,12 @@ export function ReplayMarks({ view, ctx }: { view: CanvasViewState; ctx: Ctx }) 
       {nodes.map((d) => (
         <span
           key={d.id}
-          className="ws-pr-n"
+          className="ws-play-n"
           ref={(el) => {
             if (el) (marks.current.set(d.id, el), place(d.id, el));
             else marks.current.delete(d.id);
           }}
-          title={`这个 PR 到这一刻改了这里的 ${d.n} 个文件`}
+          title={`这一轮到这一刻改了这里的 ${d.n} 个文件`}
         >
           +{d.n}
         </span>
@@ -119,7 +126,7 @@ export function ReplayMarks({ view, ctx }: { view: CanvasViewState; ctx: Ctx }) 
       {badge && sumNode && nodes.some((d) => d.id === sumNode) && (
         <span
           key="sum"
-          className="ws-pr-n ws-pr-sum"
+          className="ws-play-n ws-play-sum"
           ref={(el) => {
             if (el) (marks.current.set(`sum:${sumNode}`, el), place(sumNode, el, true));
             else marks.current.delete(`sum:${sumNode}`);

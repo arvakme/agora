@@ -1,25 +1,20 @@
-// The bar over the canvas while a PR plays (web/docs/workstation.md「PR 回放」): which PR, that it is
-// made from git and not what an agent did, 第 k/N 个 in a 连播, and previous / next / leave (Esc too).
-// Mounted in the canvas overlay (./Overlay.tsx), in the place of the replay banner.
-import { IconBack, IconClose } from "../app/icons";
-import { replays, useReplays } from "./replayMode";
+// The bar over the canvas while a turn plays (web/docs/workstation.md §11 按轮追踪): 「第 N 轮 · <会话名>」,
+// the summary when the badge over the node has no clear place, 「跟随小人」 after the person has taken the
+// camera, and leave (Esc too). Mounted in the canvas overlay (./Overlay.tsx), in the place of the replay banner.
+import { IconClose } from "../app/icons";
+import { plays, usePlay } from "./replayMode";
 
 export function ReplayBar() {
-  const st = useReplays();
-  const pos = replays.position();
-  if (!st.id) return null;
-  const n = st.spec?.number ?? Number(st.id.replace(/\D+/g, ""));
+  const st = usePlay();
+  const p = st.play;
+  if (!p) return null;
   return (
-    <div className="ws-banner ws-pr-bar" role="status">
-      {pos && <b className="k">第 {pos.k}/{pos.n} 个</b>}
-      <span>
-        PR #{n} 回放 · 按 git 提交生成（不是 agent 的真实操作）
-      </span>
-      {st.barNote ? <b className="k">{st.barNote}</b> : st.spec && <span className="ttl" title={st.spec.title}>{st.spec.title}</span>}
-      {st.manual && <button className="btn sm primary" onClick={() => replays.resumeFollow()}>跟随小人</button>}
-      <button className="icon-btn sm" onClick={() => replays.step(-1)} aria-label="上一个 PR" title="上一个 PR"><IconBack size={14} /></button>
-      <button className="icon-btn sm" onClick={() => replays.step(1)} aria-label="下一个 PR" title="下一个 PR"><span style={{ display: "inline-flex", transform: "scaleX(-1)" }}><IconBack size={14} /></span></button>
-      <button className="icon-btn sm" onClick={() => replays.exit()} aria-label="退出回放（Esc）" title="退出回放（Esc）"><IconClose size={14} /></button>
+    <div className="ws-banner ws-play-bar" role="status">
+      <b className="k">第 {p.n} 轮</b>
+      <span className="ttl" title={p.name}>· {p.name}</span>
+      {st.barNote && <b className="k">{st.barNote}</b>}
+      {st.manual && <button className="btn sm primary" onClick={() => plays.resumeFollow()}>跟随小人</button>}
+      <button className="icon-btn sm" onClick={() => plays.exit()} aria-label="退出回放（Esc）" title="退出回放（Esc）"><IconClose size={14} /></button>
     </div>
   );
 }

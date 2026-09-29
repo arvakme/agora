@@ -1,6 +1,6 @@
 // Debounced saves, one pending value per key, the latest wins (persist.ts writes them to the project).
 // A key can be paused: nothing is written for it meanwhile, and what was pending is written at the moment
-// it is paused (as the value then is). A PR replay pauses the workspace's layout this way: its camera
+// it is paused (as the value then is). A played turn pauses the workspace's layout this way: its camera
 // switches canvas by itself, and that temporary view must not become the project's layout.
 export type SaveQueue = {
   save: (key: string, value: () => unknown, ms?: number) => void;

@@ -17,7 +17,7 @@ export const viewport = {
 export const toScreen = (v: Viewport, x: number, y: number) => ({ x: (x + v.scrollX) * v.zoom, y: (y + v.scrollY) * v.zoom });
 
 /**
- * A view for a canvas's first mount, in place of the one it fits itself to (CanvasView): the PR replay's
+ * A view for a canvas's first mount, in place of the one it fits itself to (CanvasView): a played turn's
  * camera (workstation/replayView.ts) puts it there before switching to a sub-diagram, so the picture that
  * fades in is already the right one and the canvas's own fit cannot come after it. Taken once.
  */

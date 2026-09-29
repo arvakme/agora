@@ -1,5 +1,5 @@
-// PR 回放's camera (web/docs/workstation.md「PR 回放」): which canvas the main view shows at a moment of
-// the replay — the parent while the figure walks in it, a sub-diagram from the moment the figure has gone
+// The camera of a played turn (web/docs/workstation.md §11 按轮追踪): which canvas the main view shows at a moment of
+// the play — the parent while the figure walks in it, a sub-diagram from the moment the figure has gone
 // in at a node's door (it is behind it) until it comes out, the whole diagram again for the summary.
 // Pure: `cameraCanvas(root, stateOf)`; `stateOf(canvas)` says whether the figure is behind a door on that
 // canvas and into which canvas the door leads.

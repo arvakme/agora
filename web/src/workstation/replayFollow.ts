@@ -1,4 +1,4 @@
-// PR 回放's follow camera (web/docs/workstation.md「PR 回放」): the view that shows the figure, the node
+// The follow camera of a played turn (web/docs/workstation.md §11 按轮追踪): the view that shows the figure, the node
 // it is going to and the room its head and bubble take, near 100 % and not below 70 % — and whether
 // the camera has to move at all (a dead zone: while the figure stays near the middle it does not).
 // Pure; ./replayView.ts moves the canvas toward the view it returns, smoothly.

@@ -1,8 +1,8 @@
-// PR 回放's camera driver (web/docs/workstation.md「PR 回放」): while a PR plays the main view follows the
+// The camera driver of a played turn (web/docs/workstation.md §11 按轮追踪): while a turn plays the main view follows the
 // figure — it goes into a sub-diagram when the figure goes in at a node's door, exactly as a click into the
 // sub-diagram does (`nav.go`: the breadcrumb leads back), fits it to the pane, and returns to the parent
-// when the figure comes out, and to the whole diagram for the summary and before each PR of a 连播. Leaving
-// the replay puts back the canvas and the view it was entered from. Each switch is a cross-fade of the old
+// when the figure comes out, and to the whole diagram for the summary. Leaving
+// the play puts back the canvas and the view it was entered from. Each switch is a cross-fade of the old
 // picture into the new one (a view transition, ~400 ms with the mount; never through a blank frame); with
 // reduced motion, or where the browser has no view transitions, it is a cut. Imperative, no React: it outlives the canvases it switches.
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
@@ -18,7 +18,7 @@ import { occupiedOf, excalidrawEl } from "./replayDom";
 import { fitView, type Box } from "./replayFit";
 import { followView } from "./replayFollow";
 import { figurePositions } from "./focus";
-import { replacingPush, withoutReplayParam } from "./replayHistory";
+import { replacingPush } from "./replayHistory";
 import { scenePlaces } from "./scenePlaces";
 import type { WorkRun } from "./runs/types";
 
@@ -59,10 +59,10 @@ export type Camera = { tick: () => void; frame: (dtMs: number) => void; resume: 
 export type CameraHooks = { /** The person moved the canvas themself: the camera stops following until told to (the bar's 「跟随小人」). */ setManual: (on: boolean) => void };
 
 /**
- * `origin`: the canvas the replay was started from; `run`: the PR's run (null while it loads). Call
+ * `origin`: the canvas the replay was started from; `run`: the traced agent's run. Call
  * `tick` a few times a second; `exit` when leaving the replay.
  */
-export function createCamera(origin: () => string | null, run: () => WorkRun | null, hooks: CameraHooks = { setManual: () => {} }): Camera {
+export function createCamera(origin: () => string | null, run: () => WorkRun | null, getWindow: () => { start: number; end: number | null } | null, hooks: CameraHooks = { setManual: () => {} }): Camera {
   let manual = false;
   let chasing = false;
   let lastSample = 0;
@@ -76,7 +76,7 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
   let barCovers = 0;
   const measureBar = () => {
     const ex = excalidrawEl();
-    const bar = ex?.closest("[data-pane]")?.querySelector<HTMLElement>(".ws-pr-bar");
+    const bar = ex?.closest("[data-pane]")?.querySelector<HTMLElement>(".ws-play-bar");
     if (ex && bar && bar.offsetWidth) barCovers = Math.max(0, bar.getBoundingClientRect().bottom - ex.getBoundingClientRect().top);
   };
   /** The address and history state the replay was entered with: put back on leaving (minus ?replay=). */
@@ -104,7 +104,7 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
   }
   const setView = (api: ExcalidrawImperativeAPI, v: { scrollX: number; scrollY: number; zoom: number }) => api.updateScene({ appState: { scrollX: v.scrollX, scrollY: v.scrollY, zoom: { value: v.zoom } } as never });
   /** Whole diagram (the first moment of a replay, the summary, when the person has taken over) or the figure close up. */
-  const overviewAt = (r: WorkRun, t: number) => manual || t < r.segs[0].start + OVERVIEW_MS || t >= r.segs[r.segs.length - 1].start;
+  const overviewAt = (w: { start: number; end: number | null }, t: number) => manual || t < w.start + OVERVIEW_MS || (w.end != null && t >= w.end);
   /** The follow view on canvas `id` at time `t`: the figure, the node it is going to and its bubble. */
   function followOf(api: ExcalidrawImperativeAPI, id: string, r: WorkRun, t: number, current: { zoom: number; scrollX: number; scrollY: number } | null) {
     const ctx = ctxFor(id);
@@ -124,7 +124,8 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     let v: { zoom: number; scrollX: number; scrollY: number } | null = restore && id === home ? homeView : null;
     if (!v && !restore) {
       const r = run();
-      v = r && !overviewAt(r, clock.time()) ? (followOf(api, id, r, clock.time(), null)?.view ?? null) : null;
+      const w = getWindow();
+      v = r && w && !overviewAt(w, clock.time()) ? (followOf(api, id, r, clock.time(), null)?.view ?? null) : null;
     }
     v ??= restore && id === home ? homeView : fitOf(api);
     if (v) setView(api, v);
@@ -162,7 +163,7 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
   // the person's own pan or zoom of the canvas takes the camera from us until they hand it back
   const takeOver = (e: Event) => {
     const el = e.target as HTMLElement | null;
-    if (!el?.closest?.(".excalidraw") || el.closest?.(".ws-pr-bar")) return;
+    if (!el?.closest?.(".excalidraw") || el.closest?.(".ws-play-bar")) return;
     if (el.tagName === "CANVAS" || el.closest(".zoom-actions")) (manual = true), hooks.setManual(true);
   };
   const listen = (on: boolean) => {
@@ -180,13 +181,14 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     frame(dtMs) {
       if (!home || !shown || busy || manual) return;
       const r = run();
+      const w = getWindow();
       const api = canvases.get(shown)?.api;
       const v = viewport.get(shown);
-      if (!r || !api || !v || !v.width) return;
+      if (!r || !w || !api || !v || !v.width) return;
       const t = clock.time();
       const cur = { zoom: v.zoom, scrollX: v.scrollX, scrollY: v.scrollY };
       let target: { zoom: number; scrollX: number; scrollY: number } | null = null;
-      if (overviewAt(r, t)) target = fitOf(api);
+      if (overviewAt(w, t)) target = fitOf(api);
       else {
         const f = followOf(api, shown, r, t, cur);
         if (f && (f.move || chasing)) target = f.view;
@@ -216,17 +218,17 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
         return;
       }
       const r = run();
+      const w = getWindow();
       let want = o;
-      if (r) {
+      if (r && w) {
         const t = clock.time();
-        if (t >= r.segs[0].start) {
-          const sum = r.segs[r.segs.length - 1];
+        if (t >= w.start) {
           want = cameraCanvas(o, (c) => {
             const ctx = ctxFor(c);
             if (!ctx) return { behind: false, into: null };
             const st = stateAt(r, t, ctx);
             return { behind: !st.present && st.portalPhase === "behind", into: st.portal?.canvasId ?? null };
-          }, { summary: t >= sum.start });
+          }, { summary: w.end != null && t >= w.end });
         }
       }
       if (want !== shown) void go(want);
@@ -238,8 +240,8 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
         const api = canvases.get(home)?.api;
         if (api) viewFor(home, true)(api);
       }
-      // the history is what it was: this entry, with the address it had (the replay's own ?replay= left out)
-      if (entry) history.replaceState(entry.state, "", withoutReplayParam(entry.href));
+      // the history is what it was: this entry, with the address it had
+      if (entry) history.replaceState(entry.state, "", entry.href);
       entry = null;
       listen(false);
       manual = chasing = false;

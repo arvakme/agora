@@ -1,4 +1,4 @@
-// PR 回放's camera fits a sub-diagram to the pane leaving out what the toolbar and the replay bar cover at
+// The camera of a played turn fits a sub-diagram to the pane leaving out what the toolbar and the replay bar cover at
 // the top, with room above the top nodes for the figure that stands there and its bubble, and a margin
 // at the sides and bottom (`fitView`); and the summary badge finds a spot for itself that does not lie on a
 // connector's label (`placeBadge`). Pure.

@@ -21,10 +21,10 @@ import { nav } from "../nested/store";
 import { WorkstationOverlay } from "../workstation/Overlay";
 import { Timeline, timelineResize } from "../workstation/Timeline";
 import { useWorkstation } from "../workstation/clock";
+import { glideTo } from "./glide";
 import { firstView, viewport } from "./viewport";
 import { BENCH_BARE } from "../bench/bench";
 import { figurePositions } from "../workstation/focus";
-import { prefersReducedMotion } from "../workstation/clock";
 import { useChrome } from "./useChrome";
 import type { Box } from "./clearance";
 import { AnimatePresence, motion } from "motion/react";
@@ -339,27 +339,7 @@ function EmptyCanvas({ onSample }: { onSample: () => void }) {
  */
 function locate(api: ExcalidrawImperativeAPI, canvasId: string, runId: string) {
   const p = figurePositions.get(canvasId, runId);
-  if (!p) return;
-  const a = api.getAppState();
-  const z = a.zoom.value;
-  const to = { x: a.width / 2 / z - p.x, y: a.height / 2 / z - (p.y - 30) };
-  if (prefersReducedMotion()) return api.updateScene({ appState: { scrollX: to.x, scrollY: to.y } });
-  const from = { x: a.scrollX, y: a.scrollY };
-  const t0 = performance.now();
-  const D = 420;
-  let stop = false;
-  const cancel = () => (stop = true);
-  addEventListener("pointerdown", cancel, { capture: true, once: true });
-  addEventListener("wheel", cancel, { capture: true, once: true });
-  const step = () => {
-    if (stop) return;
-    const u = Math.min(1, (performance.now() - t0) / D);
-    const e = 1 - (1 - u) ** 3;
-    api.updateScene({ appState: { scrollX: from.x + (to.x - from.x) * e, scrollY: from.y + (to.y - from.y) * e } });
-    if (u < 1) requestAnimationFrame(step);
-    else (removeEventListener("pointerdown", cancel, { capture: true }), removeEventListener("wheel", cancel, { capture: true }));
-  };
-  requestAnimationFrame(step);
+  if (p) glideTo(api, { x: p.x, y: p.y - 30 });
 }
 
 const canvasBg = () => getComputedStyle(document.documentElement).getPropertyValue("--canvas-bg").trim() || "white";

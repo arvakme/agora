@@ -1,11 +1,14 @@
 // 「在图上看这一轮」 and ▶ (web/docs/workstation.md §11 按轮追踪): in a turn's head, in the conversation and in
 // the trajectory view. The first traces this turn of the session's agent on the canvas — stops, route and
 // sub-agents are this turn's only — and glides the canvas to its first stop (once, only on this click).
-// ▶ plays the turn through the timeline's replay (its speed buttons slow it down) with the trace kept; no
-// camera follows it. A running turn ends "now", so its stops grow with the tool calls.
-import { clock } from "../workstation/clock";
+// ▶ plays the turn again on the diagram (the timeline's replay: its speed buttons slow it down) with the trace
+// kept, and here — the person asked for it — the camera follows the agent close up, in and out of sub-diagrams
+// (workstation/replayMode.ts). A running turn ends "now", so its stops grow with the tool calls.
+import { sessionNames } from "../multi/writes";
 import { focus } from "../workstation/focus";
+import { plays } from "../workstation/replayMode";
 import { useRuns } from "../workstation/runs/store";
+import { sessions } from "./store";
 import type { TurnWindow } from "../workstation/trace";
 import type { TrajTurn } from "./trajectoryModel";
 import "./traceTurn.css";
@@ -27,13 +30,12 @@ export function TraceTurn({ sessionId, turn }: { sessionId: string; turn: TrajTu
         className="ds-trace-btn"
         disabled={off}
         aria-label="在图上回放这一轮"
-        title={why ?? "在图上回放这一轮（用时间线的回放，可以慢放）"}
+        title={why ?? "在图上回放这一轮：镜头跟着 agent 走（用时间线的回放，可以慢放）"}
         onClick={() => {
           if (!run) return;
           focus.trace(run.id, win);
           focus.select(run.id);
-          const now = Date.now();
-          clock.play(win.start, win.end ?? now, 1, clock.get()?.gaps);
+          plays.start({ runId: run.id, n: turn.n, name: sessionNames.get()[sessionId] || run.name, win, canvasId: sessions.get().sessions[sessionId]?.canvasId });
         }}
       >
         ▶

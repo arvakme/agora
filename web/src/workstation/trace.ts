@@ -101,7 +101,7 @@ function callLabel(run: WorkRun, g: RunSeg): string | null {
     case "read":
       return `Read ${g.path ?? ""}`.trim();
     case "write":
-      return `Edit ${g.path ?? g.files?.[0]?.path ?? ""}`.trim();
+      return `Edit ${g.path ?? ""}`.trim();
     case "exec":
       return `Bash ${clip(g.cmd ?? "")}`.trim();
     case "wait":

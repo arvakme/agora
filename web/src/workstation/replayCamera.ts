@@ -1,5 +1,5 @@
-// PR 回放's camera (web/docs/workstation.md「PR 回放」): which canvas the main view shows at a moment of
-// the replay. Pure; ./replayMode.ts asks it every 250 ms and switches the view (as a click into a
+// The camera of a played turn (web/docs/workstation.md §11 按轮追踪): which canvas the main view shows at a moment of
+// the play. Pure; ./replayMode.ts asks it every 250 ms and switches the view (as a click into a
 // sub-diagram does) when the answer changes.
 
 /** What the figure is doing on one canvas: behind the door of a node (gone in, out of sight), and the canvas that door leads to. */

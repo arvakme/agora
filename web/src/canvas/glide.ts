@@ -1,8 +1,8 @@
-// Glide a canvas so a scene point sits in the middle of its pane (≈420 ms, eased), once — the same move a
-// lane name makes to find its agent (canvas/CanvasView.tsx `locate`), for a trace's stop or a trajectory
-// row's node. Only ever on a click: the person's own pan / zoom / click stops it at once.
+// Glide a canvas so a scene point sits in the middle of its pane (≈420 ms, eased), once: what a lane name does to
+// find its agent (CanvasView `locate`), what a trace's stop and a trajectory row's node do. Only ever on a click:
+// the person's own pan / zoom / click stops it at once.
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { prefersReducedMotion } from "./clock";
+import { prefersReducedMotion } from "../workstation/clock";
 
 export function glideTo(api: ExcalidrawImperativeAPI, at: { x: number; y: number }) {
   const a = api.getAppState();

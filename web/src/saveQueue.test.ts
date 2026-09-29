@@ -1,4 +1,4 @@
-// The debounced saves of persist.ts (one pending value per key, the latest wins), and what a PR replay
+// The debounced saves of persist.ts (one pending value per key, the latest wins), and what a played turn
 // needs of them: while it plays its camera navigates between canvases, which changes the layout the app
 // would save (`root.active`) — that is the replay's own temporary view, so the workspace's saves are
 // paused for it: what was pending is written first (the layout as it was), nothing is written while
@@ -39,7 +39,7 @@ describe("debounced saves", () => {
   });
 });
 
-describe("paused saves (a PR replay's temporary view is not the project's layout)", () => {
+describe("paused saves (a played turn's temporary view is not the project's layout)", () => {
   it("nothing is written for a paused key while it is paused, however the layout changes", () => {
     const { write, q } = setup();
     q.pause("workspace");
