@@ -444,9 +444,10 @@ class Dispatches:
                 # ended, but the source may never have been told (a crash in between, a send that failed)
                 if state != "interrupted" and d.notified != state:
                     self._notify_soon(d.id, state, restarted=True)
-                elif state != "interrupted" and d.source.get("kind") == "session" and not self._already_told(d, state):
+                elif state != "interrupted" and d.source.get("kind") == "session" and self._marked(d, state) and not self._already_told(d, state):
                     # "notified" only says the note was queued: if the server died before it reached the source's own
-                    # log, the source is still waiting. Look for it there; send again only when it is not.
+                    # log, the source is still waiting. Look for it there — but only for a note the record says carried
+                    # the marker; a record from before the marker has none in any log, and was long since delivered.
                     self._notify_soon(d.id, state, restarted=True, again=True)
                 continue
             action = plan_recovery(d.delivery)
@@ -532,11 +533,18 @@ class Dispatches:
                 if d is not None:
                     d.delivery = d.delivery if not (d.delivery.note or "").startswith("通知没有发出") else replace(d.delivery, note=None)
                     d.notified = state
+                    if d.source.get("kind") == "session":  # (a comment's answer is posted into its thread: no marker)
+                        d.notice = {"state": state, "mark": True, "at": _ms()}
                     self.files.write(d)
                     self._open.pop(rid, None)
         finally:
             with self.lock:
                 self._notifying.discard((rid, state))
+
+    @staticmethod
+    def _marked(d: Dispatch, state: str) -> bool:
+        """The record says the note for ``state`` went out with its marker."""
+        return bool(d.notice and d.notice.get("mark") and d.notice.get("state") == state)
 
     def _already_told(self, d: Dispatch, state: str) -> bool:
         """The source's own log already shows this note (the server died after sending, before writing ``notified``)."""

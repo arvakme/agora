@@ -78,6 +78,7 @@
   "created_at": 1790000000000,
   "updated_at": 1790000000000,
   "notified": "done",
+  "notice": null,
   "history": [
     {
       "at": 1790000000000,

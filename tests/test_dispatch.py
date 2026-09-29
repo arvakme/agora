@@ -679,3 +679,48 @@ async def test_the_log_followers_items_are_read_under_the_follow_lock(rig):
     rig.dp._open[rid] = "s-b"
     rig.dp._on_event({"t": "transcript", "sessionId": "s-b", "items": []})
     assert held and all(held)
+
+
+# ——— RVF-D round 2: only a note that was sent with a marker can be missed for lack of one ———
+async def test_an_old_record_without_the_marker_field_is_not_told_again_after_a_restart(rig, store):
+    """Records from before the receipt marker existed have no `notice`: their log has no marker whatever happened to them."""
+    rid, _ = await go(rig)
+    await finish(rig, rid)
+    await asyncio.sleep(0.8)
+    d = rig.dp.get(rid)
+    d.notice = None  # what an old record looks like: told (`notified`), nothing about a marker
+    d.notified = "done"
+    rig.dp.files.write(d)
+    hub2 = AgentHub(store, terminals=FakeTerms("s-a", "s-b"))
+    dp2 = Dispatches(hub2)
+    dp2.recover()
+    await asyncio.sleep(0.8)
+    assert [t for sid, t in hub2.terms.pastes if sid == "s-a"] == []  # the source's log has no marker, and never will
+
+
+async def test_a_record_that_says_it_sent_a_marker_that_the_log_lacks_is_told_once_more(rig, store):
+    rid, _ = await go(rig)
+    await finish(rig, rid)
+    await asyncio.sleep(0.8)
+    d = rig.dp.get(rid)
+    d.notified = "done"
+    d.notice = {"state": "done", "mark": True, "at": 1}  # the note went out with `agora-receipt-<id>:done`
+    rig.dp.files.write(d)
+    assert rig.dp.get(rid).notice == {"state": "done", "mark": True, "at": 1}  # it is in the record, not only in memory
+    hub2 = AgentHub(store, terminals=FakeTerms("s-a", "s-b"))
+    dp2 = Dispatches(hub2)
+    dp2.recover()
+    await asyncio.sleep(0.8)
+    assert len([t for sid, t in hub2.terms.pastes if sid == "s-a"]) == 1
+    hub2._get("s-a").items["n1"] = {"id": "n1", "kind": "user", "text": "[Agora 派发回执]", "at": 1, "source": "agora", "receipt": f"{rid}:done"}
+    dp2.recover()
+    await asyncio.sleep(0.5)
+    assert len([t for sid, t in hub2.terms.pastes if sid == "s-a"]) == 1  # once
+
+
+async def test_a_note_sent_now_records_that_it_carried_the_marker(rig):
+    rid, _ = await go(rig)
+    await finish(rig, rid)
+    await asyncio.sleep(0.8)
+    n = rig.dp.get(rid).notice
+    assert n and n["state"] == "done" and n["mark"] is True and n["at"] > 0
