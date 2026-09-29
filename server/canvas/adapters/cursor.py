@@ -15,9 +15,6 @@
 - Tool names follow the model (Read / Write / StrReplace / Delete / Shell / Grep / Glob / Task …;
   Codex-family models: ApplyPatch with the patch text as input, Bash, rg): a table here, then
   ``tools.activity_of``. Shell commands go through ``tools.shell_reads`` from their ``working_directory``.
-- Seedmux starts it as ``cursor-agent --yolo --sandbox disabled --trust -- <prompt>`` and never
-  learns its chat id (no hooks): ``worker_for_ticket`` finds the transcript in the ticket's cwd that
-  was given the ticket.
 """
 
 from __future__ import annotations
@@ -34,7 +31,7 @@ from typing import Any
 from server.canvas.adapters.base import Adapter, NativeRef, ParentLink, VersionRange, tool_facts, valid_id
 from server.canvas.adapters.common import MAX_TEXT, LogLookup, Out, State, _clip, _end, _full, _start, _summary, read_jsonl, rel_path, user_item
 from server.canvas.adapters.shell_files import shell_tool
-from server.canvas.adapters.tools import activity_of, patch_files, prompt_names_ticket, replies_to_ticket
+from server.canvas.adapters.tools import activity_of, patch_files
 
 STEP_MS = 20_000  # inferred time between two records of a turn, at most
 TICKET_PAD_S = 120  # a worker's transcript is written to after its ticket was created (minus this)
@@ -203,7 +200,6 @@ class CursorAdapter(Adapter):
     binaries = ("cursor-agent",)
     tested = VersionRange(">=2026.09.26,<2026.11")
     max_tier = "T2"
-    seedmux_names = ("cursor-agent",)
     icon = "cursor"
     log_hint = "~/.cursor/projects/<工作区>/agent-transcripts/<id>/<id>.jsonl"
     log_dir = "~/.cursor/projects/"
@@ -316,32 +312,6 @@ class CursorAdapter(Adapter):
             ))
         return out
 
-    # ——— Seedmux workers (receipts.worker_ref) ———
-    def worker_for_ticket(self, rc: dict[str, Any], home: Path | None = None) -> tuple[str, Path, str] | None:
-        """The transcript in the ticket's cwd, alive while the ticket was open (created before its
-        reply, written to after its dispatch), whose first prompt names the ticket or which ran
-        ``smx-team ack/reply`` for it: (chat id, path, why)."""
-        task, cwd = rc.get("taskId"), rc.get("cwd")
-        if not task or not cwd:
-            return None
-        created = (rc.get("createdAt") or 0) / 1000
-        until = (rc.get("repliedAt") or time.time() * 1000) / 1000
-        cands: list[tuple[float, Path]] = []
-        for d in transcript_dirs(str(cwd), home):
-            for p in d.glob("*/*.jsonl"):
-                try:
-                    st = p.stat()
-                except OSError:
-                    continue
-                born = getattr(st, "st_birthtime", None)
-                if p.stem == p.parent.name and valid_id(p.stem) and st.st_mtime >= created - TICKET_PAD_S and (born is None or born <= until + TICKET_PAD_S):
-                    cands.append((abs((born or st.st_mtime) - created), p))
-        for _, p in sorted(cands):
-            why = gave_ticket(read_jsonl(p), task)
-            if why:
-                return p.stem, p, why
-        return None
-
     # ——— fixtures (tests/test_adapter_contracts.py) ———
     def fixture_place(self, folder: Path, home: Path, cwd: str, nid: str) -> Path:
         import shutil
@@ -353,16 +323,3 @@ class CursorAdapter(Adapter):
             shutil.copytree(folder / "subagents", d / "subagents")
         return d / f"{nid}.jsonl"
 
-
-def gave_ticket(recs: list[dict[str, Any]], task: str) -> str | None:
-    """Why a transcript is the ticket's worker, or None: its first prompt names the ticket (Seedmux's
-    worker envelope), or it ran ``smx-team ack/reply <ticket>``."""
-    first = next((p for p in (prompt_of(r) for r in recs) if p is not None), None)
-    if first is not None and prompt_names_ticket(first, task):
-        return f"（第一条提示就是工单 {task}）"
-    for r in recs:
-        for b in _blocks(r) if r.get("role") == "assistant" else []:
-            if isinstance(b, dict) and b.get("type") == "tool_use" and str(b.get("name") or "").lower() in SHELLS:
-                if replies_to_ticket((b.get("input") or {}).get("command") if isinstance(b.get("input"), dict) else None, task):
-                    return f"（它运行了 smx-team ack/reply {task}）"
-    return None

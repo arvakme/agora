@@ -142,14 +142,14 @@ def test_runs_endpoint(home, tmp_path, monkeypatch):
     s.bind("s-1", agent="claude", model="haiku", native_id=P, started=True)
     s.write("canvas", "c1", {"elements": [{"id": "api", "type": "rectangle", "customData": {"codePaths": ["server/**"]}}]}, base=None)
     c = TestClient(create_project_app(s.root))
-    got = c.get("/api/agent/runs", params={"session": "s-1", "canvas": "c1", "receipts": 0}).json()
+    got = c.get("/api/agent/runs", params={"session": "s-1", "canvas": "c1"}).json()
     r = by_id(got)
     assert got["root"] == f"claude:{P}" and r[f"claude:{P}"]["sessionId"] == "s-1" and r[f"claude:{P}"]["tier"] == "T1"
     assert r[f"claude:{P}/aaa"]["tier"] == "T2"
     assert r[f"claude:{P}/aaa"]["timeline"]["segments"][0]["node"] == "api"
     assert c.get("/api/agent/runs", params={"session": "nope"}).status_code == 404
     assert c.get("/api/agent/runs").status_code == 400
-    assert c.get("/api/agent/runs", params={"kind": "claude", "native": P, "depth": "all", "receipts": 0}).json()["folded"] == {}
+    assert c.get("/api/agent/runs", params={"kind": "claude", "native": P, "depth": "all"}).json()["folded"] == {}
 
 
 def test_glob_port_matches_the_page():

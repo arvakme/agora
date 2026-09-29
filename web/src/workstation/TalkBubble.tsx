@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { viewport } from "../canvas/viewport";
 import { agentName, agents } from "../session/agents";
+import { InputRight } from "../session/InputRight";
 import { figurePositions, useFocus } from "./focus";
 import { frame } from "./frame";
 import { occupiedOf } from "./replayDom";
@@ -134,6 +135,7 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
       )}
       {target.note && !sent && <p className="ws-talk-sub">{target.note}</p>}
       {err && <p className="ws-talk-err" role="alert">{err}</p>}
+      {to.sessionId && <InputRight sessionId={to.sessionId} />}
     </div>
   );
 }

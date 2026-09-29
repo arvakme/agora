@@ -240,7 +240,7 @@ def test_copy_gets_its_own_instance_and_its_sessions_are_read_only_until_forked(
     b = hub.fork("s-cc")
     assert b["pendingFork"]["from"] == "c-1" and "s-cc" not in loc.copies()
     req = RunRequest(schema=None, system=None, prompt="hi", options=ExecOptions(backend="claude", fork_from="c-1"), cwd=str(copy.root))
-    assert ClaudeCodeBackend().args(req)[5:8] == ["--resume", "c-1", "--fork-session"]
+    assert ClaudeCodeBackend().args(req)[11:14] == ["--resume", "c-1", "--fork-session"]
     assert interactive_argv("claude", "c-1", "haiku", None, fork=b["pendingFork"])[:4] == ["claude", "--resume", "c-1", "--fork-session"]
     assert interactive_argv("codex", "x", None, None, fork={"from": "x"})[:3] == ["codex", "fork", "x"]
     hub.adopt_fork("s-cc", "c-2")

@@ -73,7 +73,7 @@ def test_binding_api_locks_and_goes_with_the_session(store):
     assert c.put("/api/agent/sessions/s-a", json={"agent": "codex"}).json()["locked"] is True
     assert c.put("/api/agent/sessions/s-a", json={"agent": "claude", "model": "opus", "effort": "high"}).status_code == 409
     assert c.put("/api/agent/sessions/s-b", json={"agent": "codex"}).json()["nativeId"] is None  # Codex assigns its own
-    assert (store.root / ".claude" / "skills" / "agora-canvas").exists()  # skill linked on demand
+    assert (store.root / ".claude" / "skills" / "agora").exists()  # skill linked on demand
     native = store.read_binding("s-a")["nativeId"]
     m = c.post("/api/project/trash/session/s-a", json={}).json()
     assert m["terminalClosed"] is False and store.read_binding("s-a") is None  # the binding goes to the trash with it
@@ -249,154 +249,6 @@ async def test_terminal_pane_both_directions(store, tmp_path, monkeypatch):
     assert hub.terms.sessions() == [] and not hub.terms.socket_path().exists()
 
 
-class FakeSeedmux:
-    """Seedmux's team bridge (``GET /panes``, ``POST /spawn``) over a private tmux server: a spawned
-    pane is a tmux session ``smx-<id>`` whose shell gets ``launch`` typed in, like the app does."""
-
-    def __init__(self, tmux: str):
-        import tempfile
-        import threading
-        import uuid
-        from http.server import BaseHTTPRequestHandler, HTTPServer
-
-        self.dir = Path(tempfile.mkdtemp(prefix="smx", dir="/tmp"))  # tmux socket paths must be short
-        self.sock, self.tmux, self.spawned = self.dir / "s.sock", tmux, []
-        fake = self
-
-        class H(BaseHTTPRequestHandler):
-            def log_message(self, *a):
-                pass
-
-            def _send(self, code, body):
-                data = json.dumps(body).encode()
-                self.send_response(code)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(data)
-
-            def do_GET(self):
-                if self.headers.get("X-Token") != "tok":
-                    return self._send(401, {"ok": False})
-                self._send(200, {"ok": True, "panes": [{"paneId": p} for p in fake.spawned]})
-
-            def do_POST(self):
-                if self.headers.get("X-Token") != "tok" or self.path != "/spawn":
-                    return self._send(401, {"ok": False})
-                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                pane = str(uuid.uuid4()).upper()
-                t = [fake.tmux, "-S", str(fake.sock), "-f", "/dev/null"]
-                subprocess.run([*t, "new-session", "-d", "-s", f"smx-{pane}", "-x", "160", "-y", "40", "-c", body["cwd"], "/bin/sh"], check=True)
-                subprocess.run([*t, "send-keys", "-t", f"=smx-{pane}:", "-l", body["launch"]], check=True)
-                subprocess.run([*t, "send-keys", "-t", f"=smx-{pane}:", "Enter"], check=True)
-                fake.spawned.append(pane)
-                fake.bodies.append(body)
-                self._send(200, {"ok": True, "paneId": pane})
-
-        self.bodies: list[dict] = []
-        self.http = HTTPServer(("127.0.0.1", 0), H)
-        threading.Thread(target=self.http.serve_forever, daemon=True).start()
-        self.cfg = self.dir / "team-bridge.json"
-        self.cfg.write_text(json.dumps({"port": self.http.server_address[1], "token": "tok"}))
-
-    def sessions(self) -> list[str]:
-        r = subprocess.run([self.tmux, "-S", str(self.sock), "list-sessions", "-F", "#{session_name}"], capture_output=True)
-        return r.stdout.decode().split() if r.returncode == 0 else []
-
-    def close(self):
-        self.http.shutdown()
-        subprocess.run([self.tmux, "-S", str(self.sock), "kill-server"], capture_output=True)
-        shutil.rmtree(self.dir, ignore_errors=True)
-
-
-@pytest.mark.skipif(shutil.which("tmux") is None, reason="needs tmux")
-async def test_terminal_in_seedmux_both_directions(store, tmp_path, monkeypatch):
-    from server.canvas.seedmux import Seedmux
-    from server.canvas.terminal import Terminals
-
-    log = tmp_path / "native.jsonl"
-    monkeypatch.setattr(agents, "locate_log", lambda kind, nid, root=None, home=None, hint=None: agents.LogLookup("found", log, (log,)) if nid else agents.LogLookup("missing"))
-    monkeypatch.setattr(agents, "interactive_argv", lambda *a, **k: [sys.executable, str(TUI), str(log)])
-    fake = FakeSeedmux(shutil.which("tmux"))
-    terms = Terminals(store.root, store.run_dir, seedmux=Seedmux(fake.cfg, fake.sock, fake.tmux))
-    hub = AgentHub(store, terminals=terms)
-    store.bind("s-x", agent="pi", native_id="n-1")
-    sub = hub.subscribe(executor=False)
-    hub.ensure_started()
-    try:
-        assert terms.seedmux_status() == {"available": True}
-        opened = await asyncio.to_thread(hub.open_terminal, "s-x", launch=True, app="seedmux")
-        pane = opened["paneId"]
-        assert opened["launched"] == "seedmux" and opened["created"] and fake.spawned == [pane]
-        # The launch line: in the project, becomes the CLI (exec), Agora's env, the pane's own PATH kept.
-        launch = fake.bodies[0]["launch"]
-        assert fake.bodies[0]["cwd"] == str(store.root) and " exec env " in launch and 'AGORA_SESSION=s-x' in launch and ':"$PATH"' in launch
-        # No pane in Agora's own tmux server: the Seedmux pane is the only holder.
-        assert "agora-s-x" not in terms.sessions()
-        for _ in range(80):
-            if "fake agent ready" in terms.capture("s-x"):
-                break
-            await asyncio.sleep(0.1)
-        assert terms.holder("s-x") == {"app": "seedmux", "paneId": pane}
-        st = hub.status("s-x")["terminal"]
-        assert st["alive"] and st["app"] == "seedmux" and st["paneId"] == pane
-
-        # Agora → Seedmux pane.
-        r = hub.send("s-x", agora_prompt("发到 Seedmux 的一句", canvas_id="c1", canvas_name="架构图"))
-        assert r["route"] == "terminal"
-        evs = await drain(sub.q, lambda e: e.get("t") == "done", timeout=20)
-        assert evs[-1]["text"] == "echo: 发到 Seedmux 的一句" and evs[-1]["route"] == "terminal"
-
-        # Seedmux pane → Agora.
-        t = [fake.tmux, "-S", str(fake.sock)]
-        subprocess.run([*t, "send-keys", "-t", f"=smx-{pane}:", "-l", "在 Seedmux 里打的字"], check=True)
-        subprocess.run([*t, "send-keys", "-t", f"=smx-{pane}:", "Enter"], check=True)
-        evs = await drain(sub.q, lambda e: e.get("t") == "transcript" and any(i.get("text") == "echo: 在 Seedmux 里打的字" for i in e["items"]), timeout=20)
-        typed = [i for e in evs if e["t"] == "transcript" for i in e["items"] if i["kind"] == "user"]
-        assert typed[-1]["text"] == "在 Seedmux 里打的字" and typed[-1]["source"] == "terminal"
-
-        # Opening again reuses the pane; Kitty can't open a second CLI on the same session.
-        again = await asyncio.to_thread(hub.open_terminal, "s-x", launch=False, app="seedmux")
-        assert again["paneId"] == pane and not again["created"] and len(fake.spawned) == 1
-        with pytest.raises(Exception, match="Seedmux"):
-            await asyncio.to_thread(hub.open_terminal, "s-x", launch=False)
-
-        # Review P2-6: `agora down` after .agora/run/ was lost (git clean -fdx) still closes the
-        # Seedmux pane: its holder record is mirrored under $AGORA_STATE_DIR.
-        shutil.rmtree(store.run_dir / "seedmux")
-        down = Terminals(store.root, store.run_dir, seedmux=Seedmux(fake.cfg, fake.sock, fake.tmux))
-        assert down.holder("s-x") == {"app": "seedmux", "paneId": pane}
-        down.shutdown()
-        assert f"smx-{pane}" not in fake.sessions() and not terms.alive("s-x")
-        pane = (await asyncio.to_thread(hub.open_terminal, "s-x", launch=False, app="seedmux"))["paneId"]
-
-        # Closing from Agora ends only that pane.
-        await asyncio.to_thread(hub.close_terminal, "s-x")
-        assert f"smx-{pane}" not in fake.sessions() and not terms.alive("s-x")
-        assert not (store.run_dir / "seedmux").exists() or not list((store.run_dir / "seedmux").iterdir())
-
-        # Agora's tmux pane holds it → Seedmux opens one more window attached to it (no second CLI).
-        await asyncio.to_thread(hub.open_terminal, "s-x", launch=False)
-        viewer = await asyncio.to_thread(hub.open_terminal, "s-x", launch=True, app="seedmux")
-        assert viewer["attached"] and not viewer["created"] and "attach -t agora-s-x" in fake.bodies[-1]["launch"] and "-u TMUX" in fake.bodies[-1]["launch"]
-        assert terms.holder("s-x") == {"app": "tmux"}
-    finally:
-        await hub.close()
-        terms.shutdown()
-        fake.close()
-    assert terms.sessions() == []
-
-
-def test_seedmux_unavailable_is_reported(tmp_path):
-    from server.canvas.seedmux import Seedmux, SeedmuxError
-
-    smx = Seedmux(tmp_path / "missing.json", tmp_path / "s.sock", "tmux")
-    st = smx.check()
-    assert st["available"] is False and "Seedmux" in st["reason"]
-    with pytest.raises(SeedmuxError):
-        smx.spawn("true", tmp_path)
-    assert smx.state("NOPE") == "gone"
-
-
 # ——— the `agora canvas` / `agora skill` CLI ———
 def agora(*args, cwd, env=None):
     e = {**os.environ, "PYTHONPATH": str(REPO), **(env or {})}
@@ -425,5 +277,5 @@ def test_skill_install_cli(store):
     r = agora("skill", "install", "--agent", "codex", cwd=store.root)
     assert r.returncode == 0, r.stderr
     got = json.loads(r.stdout)["installed"]
-    assert got[0]["path"].endswith(".agents/skills/agora-canvas") and got[0]["state"] == "created"
-    assert (store.root / ".agents" / "skills" / "agora-canvas" / "references" / "ops.md").exists()
+    assert got[0]["path"].endswith(".agents/skills/agora") and got[0]["state"] == "created"
+    assert (store.root / ".agents" / "skills" / "agora" / "references" / "canvas-ops.md").exists()

@@ -1,6 +1,6 @@
 # Agora 本地 Agent 工作台计划
 
-> 2026-09-28 起的当前模型：没有 Pi Master / worker 之分，会话就是用户自选的 Pi / Claude Code / Codex 原生会话，画布能力走 agora-canvas skill，见 [web/docs/agent-sessions.md](../web/docs/agent-sessions.md)。下文的 Master/Worker 编排是早先的计划。
+> 2026-09-28 起的当前模型：没有 Pi Master / worker 之分，会话就是用户自选的 Pi / Claude Code / Codex 原生会话，画布能力走 agora skill，见 [web/docs/agent-sessions.md](../web/docs/agent-sessions.md)。下文的 Master/Worker 编排是早先的计划。
 
 产品方向已确认，实施按阶段依赖和对应 Issue 的授权推进。本文描述目标，当前可运行能力见 [README](../README.md)。工单与进度以 [Agora Project](https://github.com/users/arvakme/projects/2) 关联的 Issues 为准，开发流程见[协作规则](development.md)。
 
@@ -11,7 +11,7 @@ Pi 是 Master；Worker 是用户本机已安装的 Claude Code、Kimi、Cursor �
 - Docker 只承载后端。本机启动入口管理专属 tmux 与宿主连接，复用用户自己的 Agent、登录态和模型配置。
 - 一个工作房间由一个 Pi Master 协调。Worker 可交换事实、提出问题和返回结果；新任务、续派及最终验收由 Master 负责。
 - Worker 从开始就是独立 CLI 进程，不采用 Firecode 的进程内 Pi 子会话，也不通过重开 JSONL 模拟实时 attach。
-- 产品使用自己的 tmux socket 和配置，不依赖 Seedmux GUI；Seedmux 仅用于本次开发团队协作。
+- 产品使用自己的 tmux socket 和配置，不依赖任何外部的终端或 agent 编排应用。
 - 本轮不实现前端、Web 终端或画布接入。画布问答的呈现、修改权限、复用范围与 tldraw 许可须另行决定。
 
 先交付的产品闭环是：**一个 Pi Master 指挥至少两种不同的原生 CLI，隐藏时继续工作，可进入原现场，结果可靠回到 Agora。** 不以两个 Pi SDK 子会话代替异构 CLI 验收。
@@ -91,7 +91,7 @@ detach 不是取消，也不自动归还输入权。控制连接异常中断时�
 
 ## 4. 留存与可靠交付
 
-专属 socket、配置和部署身份彼此绑定；所有 tmux 操作显式指定 socket，不借用默认 server 或 Seedmux 的 socket。启动与恢复由同部署单实例锁保护，先发现已有现场，再决定是否创建。使用适合原生终端的 detach 与切换操作，不照搬 Seedmux 的 GUI 按键配置。
+专属 socket、配置和部署身份彼此绑定；所有 tmux 操作显式指定 socket，不借用默认 server 或别的应用的 socket。启动与恢复由同部署单实例锁保护，先发现已有现场，再决定是否创建。使用适合原生终端的 detach 与切换操作，不照搬别的终端应用的 GUI 按键配置。
 
 | 事件 | 预期行为 |
 | --- | --- |
@@ -155,9 +155,9 @@ P2 必测：重复启动不创建第二 Master；后端和宿主重启不杀存�
 ## 8. 证据入口
 
 - 原生控制契约：[`native_protocol.py`](../native_protocol.py) 与[行为契约](native-control.md)；P0 实测结论记在后者，不在本文重复。
-- Agora 当前实现：[设计说明](design.md)、[测试入口](testing.md)、`server/scheduler.py`、`server/db.py`、`server/auth.py`、`daemon/main.py`、`brain/world.py` 与 Compose。原有文档描述现状，不构成保留旧执行路径的要求。
+- Agora 当前实现：[测试入口](testing.md)、`server/canvas/`。早期房间调度（`server/scheduler.py`、`brain/`、`daemon/`、`k8s/`、Compose）已删除，见提交 `b6e9789`。
 - canvas-agent：检查提交 `119ee5124408264424f3c1ce96ab9fdb8bd473e4` 的[内部契约](https://github.com/arvakme/canvas-agent/blob/119ee5124408264424f3c1ce96ab9fdb8bd473e4/docs/api-contract.md)和实际 runner/同步实现；再次复用时核对差异与授权。
-- tmux：[官方手册](https://man.openbsd.org/tmux.1)、[Control Mode](https://github.com/tmux/tmux/wiki/Control-Mode)。本机 Seedmux 配置仅作为隔离和事件实现的只读参考。
+- tmux：[官方手册](https://man.openbsd.org/tmux.1)、[Control Mode](https://github.com/tmux/tmux/wiki/Control-Mode)。
 - Pi：[扩展接口](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md)；以本机安装版本自带的 `docs/extensions.md` 为准。各 CLI 的安装版本、hooks、精确模型与恢复能力在 P0 实测，未实测到的能力按未证实记录，不把命令名称视为能力保证。
 
 [L1]: https://github.com/tldraw/tldraw/blob/v5.4.0/LICENSE.md

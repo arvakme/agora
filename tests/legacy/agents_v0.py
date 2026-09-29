@@ -50,7 +50,7 @@ from server.canvas.runner import (
 )
 
 REPO = Path(__file__).resolve().parents[2]
-SKILL_DIR = REPO / "skills" / "agora-canvas"
+SKILL_DIR = REPO / "skills" / "agora"
 AGENT_BIN = REPO / "bin"
 
 KINDS = ("pi", "claude", "codex")
@@ -791,7 +791,7 @@ SKILL_DIRS = {"claude": ".claude/skills", "codex": ".agents/skills"}
 
 # ——— project skill install ———
 def install_skill(root: Path, agents: list[str], copy: bool = False) -> list[dict[str, str]]:
-    """Link (or copy) skills/agora-canvas into the project dirs the chosen CLIs read.
+    """Link (or copy) skills/agora into the project dirs the chosen CLIs read.
 
     Never touches user-global config. Links are listed in .git/info/exclude so they do not
     show up as untracked files."""

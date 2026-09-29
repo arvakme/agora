@@ -17,7 +17,7 @@
     "model_reasoning_effort=\"low\"",
     "<prompt>"
   ],
-  "prompt": "Do not read or use any skill, smx-team or Seedmux. Call your built-in collaboration tool spawn_agent exactly once to start one worker sub-agent whose task is: create the file hello.txt containing the single word hi in the current directory. Then call wait_agent until it has finished. Then run `ls` yourself. Reply with one word: done.",
+  "prompt": "Do not read or use any skill or team tooling. Call your built-in collaboration tool spawn_agent exactly once to start one worker sub-agent whose task is: create the file hello.txt containing the single word hi in the current directory. Then call wait_agent until it has finished. Then run `ls` yourself. Reply with one word: done.",
   "cwd": "/work/project",
   "native_id": "01a0e786-a7e2-7660-bb09-12d03fd49a0b",
   "expected": {

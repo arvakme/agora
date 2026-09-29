@@ -12,12 +12,8 @@ and argument keys); what they share lives here:
 - ``shell_tool``: ``shell_reads`` plus the files a shell command *writes* (``sed -i``, redirects, ``tee``,
   ``cp``/``mv`` targets, scripts that open a file for writing) and the files it *runs on* (a test or
   script path in the command) — an agent that edits through the shell walks the diagram too.
-- ``spawn_in_output``: a Seedmux dispatch printed by ``smx-team spawn/assign``
-  (``task=T-xx pane=<UUID>``) in a tool's output.
 - ``patch_files``: the files a ``*** Begin Patch`` text writes (Cursor records Codex-family models'
   ``ApplyPatch`` with the patch as its input).
-- ``names_ticket``: whether a worker was given a Seedmux ticket (its prompt names it, or it ran
-  ``smx-team ack/reply`` for it) — how a worker whose sid Seedmux never learns is recognised.
 """
 
 from __future__ import annotations
@@ -291,57 +287,20 @@ def patch_files(patch: Any, root: str | None = None) -> list[dict[str, str]]:
     return out
 
 
-SPAWN = re.compile(r"\btask=(T-[0-9a-zA-Z]+)\s+pane=([0-9A-Fa-f-]{36})")
-
-
-def spawn_in_output(text: Any, command: Any = None) -> dict[str, str] | None:
-    """A Seedmux dispatch in a tool's output: ``smx-team spawn/assign`` prints ``task=T-xx pane=<UUID>``.
-    Only trusted when the call's own command ran ``smx-team`` (a ``cat`` / ``grep`` of an old log
-    that happens to contain the line is not a dispatch); ``command=None`` = unknown → not trusted."""
-    if not isinstance(text, str):
-        return None
-    if not is_dispatch(command):
-        return None
-    m = SPAWN.search(text)
-    return {"taskId": m.group(1), "pane": m.group(2).upper(), "via": "seedmux"} if m else None
-
-
-def is_dispatch(command: Any) -> bool:
-    """Whether a shell command runs ``smx-team spawn`` or ``smx-team assign`` (parsed, not a substring:
-    ``echo smx-team spawn`` or ``grep smx-team`` are not dispatches)."""
+def dispatches_a_task(command: Any) -> bool:
+    """Whether a shell command runs ``agora dispatch`` to give a task (not ``status`` / ``wait`` /
+    ``interrupt`` / ``list`` of one): parsed, so ``echo agora dispatch`` is not a dispatch. Such a call is
+    the agent handing work to another session: its activity is ``subagents``."""
     if isinstance(command, list):
         command = command[-1] if command else ""
-    if not isinstance(command, str) or "smx-team" not in command:
+    if not isinstance(command, str) or "dispatch" not in command:
         return False
     for words in _simple_commands(command.strip()):
         words = _program(_redirects(words)[0])
-        if not words or os.path.basename(words[0]) not in ("smx-team", "smx-team.py"):
-            continue
-        sub = next((w for w in words[1:] if not w.startswith("-")), None)
-        if sub in ("spawn", "assign"):
-            return True
-    return False
-
-
-# ——— a worker's ticket (Seedmux never learns the sid of a CLI without hooks: Devin, Cursor) ———
-def prompt_names_ticket(text: Any, task_id: str) -> bool:
-    """Whether a prompt names the ticket as a whole word (Seedmux's worker envelope: ``任务 T-xx``,
-    ``task=T-xx``, ``tasks/T-xx/prompt.md``)."""
-    return isinstance(text, str) and re.search(rf"(?<![\w-]){re.escape(task_id)}(?![\w-])", text) is not None
-
-
-def replies_to_ticket(command: Any, task_id: str) -> bool:
-    """Whether a shell command runs ``smx-team ack|reply <T-xx>`` — what only the ticket's worker does
-    (a dispatcher runs ``spawn`` / ``verify``; printing the id is not replying to it)."""
-    if isinstance(command, list):
-        command = command[-1] if command else ""
-    if not isinstance(command, str) or task_id not in command:
-        return False
-    for words in _simple_commands(command.strip()):
-        words = _program(_redirects(words)[0])
-        if not words or os.path.basename(words[0]) not in ("smx-team", "smx-team.py"):
+        if not words or os.path.basename(words[0]) not in ("agora", "agora.py"):
             continue
         args = [w for w in words[1:] if not w.startswith("-")]
-        if args[:1] in (["ack"], ["reply"]) and task_id in args[1:]:
+        if args[:1] == ["dispatch"] and args[1:2] not in (["status"], ["wait"], ["interrupt"], ["list"]):
             return True
     return False
+

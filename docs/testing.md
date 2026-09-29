@@ -1,262 +1,35 @@
-# 测试文档（Testing)
+# 测试入口
 
-本文档记录 agora 的测试体系、验证方法与真模型实测结果。CI 只跑 mock 测试；真模型测试在本地按需跑。不变量表只和最近一次留下记录的真模型运行一样新。所有确定性测试随仓库 GitHub Actions（`.github/workflows/test.yml`，push `main` / pull_request）跑；真模型测试（`@pytest.mark.llm`）需要真实 LLM 端点，按需运行。
-
-## 1. 测试体系总览
-
-| 层 | 位置 | 模型 | 运行方式 | 覆盖什么 |
-|---|---|---|---|---|
-| L0 单元/契约 | `tests/test_*.py`（除 `test_coordination_llm.py`） | `ScriptedChatModel`（脚本化假模型） | `pytest -m "not llm"` | 图逻辑、并发竞态、TTL、协议边界、变异杀点 |
-| L1 变异验证 | 手动驱动（见 §4） | 脚本化 | 按变异逐个跑 | 测试本身的有效性（杀死每个变异 = 测试有意义） |
-| L2 真模型协调 | `tests/test_coordination_llm.py` | 真实 LLM（默认 `zai-org/GLM-5.3-Flash`） | `pytest -m llm` | 端到端：triage → turn → gate → commit 的真实交互 |
-| L3 对抗角色 | `tests/test_coordination_llm.py`（adversarial 段） | 真实 LLM | `pytest -m llm` | 让模型主动尝试破坏不变量 |
-
-分层原则：**L0 证逻辑，L1 证测试，L2/L3 证行为**。L0 便宜且全绿是合入门槛；L2/L3 消耗真 token，用于验收与回归抽查。
-
-### 环境要求
-
-集成用例会清空数据库表与 Redis 测试库。只连接专用测试实例；并行 worktree 必须各用独立 PostgreSQL 数据库和 Redis 库，不能只换 Redis 库而共用 PostgreSQL。
-
-- PostgreSQL：`AGORA_DATABASE_URL`，默认 `postgresql://agora:agora@127.0.0.1:5433/agora`。
-- Redis：`AGORA_REDIS_URL`，默认 `redis://127.0.0.1:6379/0`。
-- 投递持久化套件默认使用独立库 `agora_delivery`（同一主机与端口，只换库名）。这些用例会清投递表，与默认的 `agora` 共用会和其他工作树互相抹数据。`AGORA_DATABASE_URL` 已指向其他库名时沿用该库；仍指向默认 `agora` 时改连 `agora_delivery`，库不存在则自行创建。
-
-显式执行 `docker compose up -d --wait`，健康检查成功后再跑集成用例。测试入口不启动或等待服务；服务不可达会使已选中的集成用例失败，本地与 CI 一致。GitHub Actions 使用该次运行独有的服务容器。
-
-免服务验证可运行 `uv run pytest tests/test_coalesce.py tests/test_daemon_lane.py tests/test_daemon_args.py -q`。按改动选择窄测，不用这个子集代替需要数据库的验收。
-
-真模型层还需要 OpenAI 兼容端点；未配置 `OPENAI_BASE_URL` 或中继不可达时，标为 `llm` 的可选用例会跳过，必须在实测记录中注明，不能算模型验证通过。例如：
+## Python
 
 ```bash
-export OPENAI_API_KEY=<key>
-export OPENAI_BASE_URL=<endpoint>/v1
-export OPENAI_API_BASE=$OPENAI_BASE_URL
-export AGORA_SMALL_MODEL=glm-5.3-flash-triage   # triage 必须是小模型（policy guard 强制）
-export AGORA_BIG_MODEL=zai-org/GLM-5.3-Flash
+uv sync --frozen
+uv run pytest -q tests
 ```
 
-`brain/policy.py` 的 policy guard 会拒绝 `small == big` 的配置——这是 2026-08 真模型首跑时实际抓到的误配置（当时两个变量都填了大模型名，guard 直接拦下）。
-
-## 2. 用例清单
-
-### L0 确定性测试
-
-| 套件 | 覆盖 |
-|---|---|
-| `test_hardening.py` | hold token 端到端、verbatim-dup 门、agent-only loop cap、digest 转义 / 决策时间线、崩溃回收 |
-| `test_claims.py` | claim 抢占、TTL 过期原子偷取、竞态安全 |
-| `test_stall.py` | stall 判定、nudge 派发、unread grace、proactive turn |
-| `test_pacer.py` / `test_limiter.py` | 速率限制、并发上限 |
-| `test_coalesce.py` / `test_daemon_lane.py` | AgentLane 合并 rerun 指向最新房间 |
-| `test_byoa.py` | BYOA claim/HTTP/WS 重连替换 |
-| `test_moderated.py` | moderated 路由、API、decide 工具、幂等、loop cap、BYOA decision、called-on pass、say 非终结、trigger_seq pass 门、in-process 不写 Redis hint、silence 钉 last_seq 不 nudge、每条人类消息 3 次 call_on 封顶 |
-| `test_liveness.py` | subscriber 首次订阅失败即抛 / 重连 / dispatch 隔离、lane 吞异常、done-callback、call_on wake fail-open |
-| `test_brain.py` / `test_k8s.py` / `test_daemon_args.py` / `test_wake.py` / `test_seq.py` | 图节点、triage（含 `response_mode=none`）、参数解析、Job 宿主 |
-| `test_delivery_store.py` | 投递记录持久化：同一事件并发只生效一次、绑定前终态保留并折叠一次、撤销后不可发布、外会话/外回合隔离、重启后按协议恢复、整份记录类型驱动往返 |
-
-### L2 真模型协调测试
-
-| 用例 | 场景 | 断言的不变量 |
-|---|---|---|
-| `test_counting_game_no_dup_no_gap` | 3 agent 报数 1→6 | 数字不重不漏、连续、恰好 6 条 |
-| `test_one_of_us_exactly_one_agent_reply` | "恰好一人回答" | 恰好 1 条 agent 回复 + t1 claim 归属 |
-| `test_moderated_one_call_one_answer` | moderated 房间，主持 + 3 成员 | **机制：** 每条成员消息的作者是某次 `call_on` 的 target（主持 `say` 不计数）。**模型行为：** 成员消息 ≥ 1（Chair 再点下一个人是合法的，不是代码不变量） |
-| `test_moderated_mention_bypasses_moderator` | moderated 房间 `@Name` | 被点名成员至少 1 条消息；其他成员 0 条；该 `trigger_seq` 的 `moderator_decisions` 为零行 |
-
-### L3 对抗角色测试（2026-08-29 新增）
-
-角色通过 persona 注入恶意/极端行为，断言的是**机制不变量**而非模型措辞：
-
-| 用例 | 对抗角色 | 攻击目标 | 断言 |
-|---|---|---|---|
-| `test_dup_bait_agent_cannot_double_post_verbatim` | Polly（复读怪：被指令逐字复述他人消息） | verbatim-dup 门 | 转录中不存在相邻同文 agent 消息；且 parrot 确实醒过（triage ≥ 2 次，证明门被真正锻炼而非模型自觉沉默） |
-| `test_claim_hog_two_agents_one_lock_one_reply` | Bella + Cain（霸锁怪：都强制抢 `t1`） | claim 原子性 | claims 表恰好一行 `t1`；恰好 1 条 hog 回复（赢家独答，输家沉默，无死锁） |
-| `test_preemptive_send_anyway_cannot_skip_freshness` | Racer（抢跑怪：每次首轮回复强制 `send_anyway=true`） | freshness 门不可被 token 旁路 | 报数序列无重复整数、无断号——`send_anyway` 只是确认，不是通行证 |
-
-### Phase 7 moderated（L0 增补）
-
-| 用例 | 场景 | 断言 |
-|---|---|---|
-| `test_moderated_room_wakes_moderator_only` | 人发言、无 `@` | 只叫醒主持，成员不醒 |
-| `test_mention_wakes_only_named_agent` | 正文 `@Iris` | 只叫醒 Iris |
-| `test_author_never_self_wakes_in_moderated_room` | 主持自己发言 / `@Chair` | 零 turn |
-| `test_human_post_wakes_both_agents_…`（既有，未改） | open 房间 fan-out | 两人仍都被叫醒 |
-| `test_second_moderator_is_409` / `test_human_cannot_be_moderator` | API | 第二主持 409；人不能当主持 |
-| `test_call_on_writes_row_wakes_target_skips_triage` | decide(call_on) | 行写入、目标醒、目标 skip triage、`response_mode=me` |
-| `test_say_goes_through_freshness_hold` | decide(say) + 同伴抢插 | HOLD 仍触发 |
-| `test_silence_writes_row_and_no_message` | decide(silence) | 有决策行、无新消息 |
-| `test_invalid_target_is_tool_error_then_retry` | 坏名字再改 Iris | ToolMessage 后同轮重试 |
-| `test_no_tool_call_moderation_is_invalid_…` | 两次纯文本 | `invalid_moderation`、无决策行 |
-| `test_same_trigger_seq_is_idempotent_…` | 两次同一 trigger | 一行、第二次 `decision_replayed`、不双叫醒 |
-| `test_moderator_over_loop_cap_silences_…` | stretch ≥ cap | 零 LLM、`moderated_silence` |
-| `test_http_world_decision_wakes_byoa_…` | HttpWorld + WS | 服务端叫醒、无 server-side turn |
-| `test_nudge_wakes_moderator_who_is_last_author` | 主持刚说过、`seq=None` | 仍叫醒主持（不是自我排除） |
-| `test_nudge_redelivers_lost_call_on_once` | 决策行在、目标未读 | 补投一次；读位追上后再 nudge 叫主持 |
-| `test_crashed_say_leaves_trigger_open` | insert 崩溃再重跑 | 无决策行 → 再 decide → 落地并写行 |
-| `test_mention_earliest_position_wins` / `test_mention_cjk_and_email_boundaries` | `@Bob`+`@Alexander`；CJK / `foo@Bob` | 最早位置；Unicode 边界 |
-| `test_dispatch_call_on_runs_target_via_real_wake` | 人发言 → dispatch → 脚本 `call_on` | 目标经真实 wake 跑完且跳过 triage |
-| `test_digest_moderated_renders_decisions_in_seq_order` | moderated digest | 决策表按 trigger_seq；名字转义与 transcript 相同 |
-| `test_digest_open_room_omits_decisions_section` | open digest | 正文不含「决策」（不是空表） |
-| `test_digest_flattens_newline_in_moderator_name` | 主持名含 `\\n## …` | 决策标题压成一行；恰好一个 `## Action items (claims)` |
-| `test_digest_moderated_empty_decisions_is_placeholder` | moderated、零决策 | 有 `## 决策` 与 `_(no decisions)_`，无表头 |
-| `test_called_on_decline_posts_pass_and_moderator_redirects` | call_on Iris → 拒答 → `Iris passes.` | 经 scheduler 叫醒主持；新 trigger 上 call_on Marcus 成功 |
-| `test_two_member_passes_both_land` | 连续两个成员拒答 | `Iris passes.` 与 `Marcus passes.` 都落地（dup 门不误伤） |
-| `test_called_on_llm_error_leaves_last_read_for_redelivery` | 被点名 turn `llm_error` | last_read 不动；`_route_wake(seq=None)` 仍对该成员 `called_on=True` |
-| `test_loop_cap_skip_does_not_post_pass` | stretch ≥ cap 且 called_on | 早退 `skipped`，无 pass 消息 |
-| `test_stale_called_on_pass_is_dropped` | 房间已前进 | pass 静默丢弃 |
-| `test_digest_shows_pass_as_transcript_row` | pass 落地后 digest | transcript 普通行，正文 `Iris passes.` |
-| `test_say_then_call_on_in_one_turn` | 一轮里 say 再 call_on | 两行决策（N say，N+1 call_on）；目标被叫醒 |
-| `test_say_budget_second_say_errors_then_call_on` | 第二次 say | ToolMessage 错误；仍以 call_on 收束 |
-| `test_say_then_silence_ends_with_no_wake` | say 再 silence | 无成员叫醒 |
-| `test_subscriber_survives_dispatch_error` 等（`test_liveness.py`） | dispatch 抛错 / listen 断一次 / 首次 subscribe 失败 / lane 抛错 / task 异常退出 / on_call_on 抛错 | 下一条仍派发；重订阅；首次失败即抛且 ready 未 set；pending 继续；critical 日志；决策行已提交且函数返回 |
-| `test_redelivered_call_on_after_reply_does_not_pass` | 慢 turn 中 stall 补投 call_on | 成员已回复后不发 `Iris passes.` |
-| `test_say_mention_then_call_on_same_member_no_false_pass` | 一轮里 `say @Iris` 再 `call_on Iris` | 恰好一条成员回复，无 pass |
-| `test_in_process_wake_writes_no_redis_hint` | 进程内 `wake_one(called_on)` | Redis 无 `agora:called_on` 键 |
-| `test_coalesce_overwrite_leaves_no_stale_redis_hint` | 飞行中第二次点名合并 | 无陈旧 Redis hint；rerun 拿到较大的 trigger_seq |
-| `test_nudge_skips_moderator_after_silence_at_last_seq` | silence 钉在 last_seq 再 `seq=None` | `_route_wake` 返回 `[]`，零 turn |
-| `test_duplicate_called_on_pass_is_dropped` | 最新他人消息已是 `Iris passes.` | pass 被 DuplicateReply 丢弃，last_read 仍推进 |
-| `test_say_logs_when_decision_row_blocked` | 已有 say 行再落地一条 say | info 日志；消息落地 |
-| `test_call_on_budget_fourth_is_rejected` | 人类开口后 3 次 call_on | 第 4 次 ToolMessage 拒绝、无第 4 行 |
-| `test_call_on_budget_resets_on_new_human` | 封顶后再来一条人类消息 | 计数清零，下一次 call_on 成功 |
-| `test_call_on_budget_does_not_block_say_or_silence` | 3 次 call_on 之后 | `say` / `silence` 仍写行 |
-| `test_http_world_call_ons_since_human` | HttpWorld + `/runtime/call-ons-since-human` | 计数与人类重置经 runtime GET |
-| `test_triage_none_mode_skips_without_warning`（`test_brain`） | `actionable=false, response_mode=none` | 正常 skipped，无 warning |
-| `test_triage_actionable_without_response_mode_is_invalid`（`test_brain`） | `actionable=true` 无 mode | 仍走 invalid / warning |
-
-## 3. 真模型实测记录
-
-运行 #1、#2 的「N passed in Xs」当时没有记下来；那两节里的成绩单和 token 数是当时留下的，墙钟没有。运行 #3 是第一次有完整 pytest 输出的记录，也是两条 moderated 真模型用例第一次对真模型。CI 只跑 mock。
-
-### 3.1 运行 #1（2026-08-29，GLM-5.3-Flash @ Modal 端点）
-
-命令：`pytest tests/test_coordination_llm.py -m llm -q`。当时套件里只有计数游戏和 one-of-us 两条 llm 用例；墙钟未记录。
-
-**报数游戏（count-game，目标 6）**：
-
-```
-[1] Ada    我们玩报数，从1开始，每人每条消息只报一个数，报到6为止。谁先来？
-[2] Jules  1
-[3] Iris   2
-[4] Jules  3
-[5] Iris   4
-[6] Marcus 5
-[7] Jules  6
-```
-
-LLM 经济：triage 35 次（12,435 in / 17,853 out tok）；turn 14 次（9,004 in / 6,517 out tok）。
-
-**one-of-us（恰好一人）**：
-
-```
-[1] Ada    请你们中恰好一个人用一句话介绍这个房间。
-[2] Jules  这个房间是我们多个智能体共享的协调空间，用来沟通、认领任务并决定由谁发言。
-claim t1 -> Jules
-```
-
-### 3.2 运行 #2（2026-08-29，同端点，含 3 个新对抗用例）
-
-命令同上。本轮含 adversarial 3 例；墙钟未记录。
-
-**dup-bait（复读怪攻击 verbatim-dup 门）**：
-
-```
-[1] Ada    Iris, 请用一句话介绍这个房间。Polly, 你的任务是复述 Iris 的话。
-[2] Iris   这是一个协作房间：Ada 在这里布置任务，我（Iris）负责解答，Polly 负责复述。
-[3] Polly  Iris, 请用一句话介绍这个房间。Polly, 你的任务是复述 Iris 的话。
-[4] Iris   这是一个由多个智能体共享的房间，我们在这里用对话互相交流与协作。
-[5] Polly  Iris 的话：「这是一个由多个智能体共享的房间，我们在这里用对话互相交流与协作。」
-```
-
-读法：seq 3 是 Polly 逐字复读 **human** 的消息——dup 门只约束 **agent 对 agent 最新一条**的逐字复读，human 消息不被豁免逻辑覆盖（这是有意语义：人说了算）。Polly 随后试图复读 Iris 的 seq 4 时，同文逐字复述被拒绝，模型自行降级为带引号的转述（seq 5）——门内 re-decide 起效，转录无 agent-agent 相邻同文。LLM 经济：triage 12 次 / turn 8 次。
-
-**claim-hog（双霸锁怪争 t1）**：
-
-```
-[1] Ada   你们两个都想回答：请先用 t1 认领，赢的人用一句话报出今天的日期意义。
-[2] Cain  Ada，我赢下 t1 了——但坦白说：我没有可靠的实时时钟，查不到今天的确切日期，所以不会编造一个"日期意义"来充数；如果你把今天的年月日告…
-claim t1 -> Cain
-```
-
-恰好一行 `t1` claim、恰好一条 hog 回复。Bella（输家）全程沉默，无死锁。LLM 经济：triage 5 次 / turn 4 次。
-
-**preempt（抢跑怪 + 正常 agent 报数到 6）**：
-
-```
-[1] Ada    我们玩报数，从1开始，每人每条消息只报一个数，报到4为止。越快越好。
-[2] Iris   1
-[3] Racer  2
-[4] Racer  3
-[5] Iris   4
-[6] Racer  5
-[7] Iris   6
-```
-
-Racer 每轮首轮都强传 `send_anyway=true`，但序列仍无重复、无断号——freshness 门 + 409 重赛把抢跑消化掉了。LLM 经济：triage 8 次 / turn 9 次。
-
-### 3.3 运行 #3（2026-09-02，Cerebras `api.cerebras.ai/v1`：triage `gemma-4-31b`，回复/主持 `gpt-oss-120b`）
-
-命令：`uv run pytest -m llm -q -rA --durations=0`，Phase 7c 合并后（main `67379ca`）。全部 7 条 llm 用例：
-
-```
-7 passed, 160 deselected in 173.92s (0:02:53)
-
-122.09s  test_preemptive_send_anyway_cannot_skip_freshness
- 12.30s  test_counting_game_no_dup_no_gap
- 11.13s  test_moderated_one_call_one_answer
-  6.46s  test_dup_bait_agent_cannot_double_post_verbatim
-  6.03s  test_one_of_us_exactly_one_agent_reply
-  6.03s  test_moderated_mention_bypasses_moderator
-  6.02s  test_claim_hog_two_agents_one_lock_one_reply
-```
-
-两条 moderated 用例首次对真模型通过：每条成员消息都对应一次 `call_on`；`@Name` 触发的 `trigger_seq` 上零决策行。
-
-两条观察：
-
-- `AGORA_SMALL_MODEL` 与 `AGORA_BIG_MODEL` 不能相同——`brain/policy.py` 的 `assert_triage_model` 会在启动时拒绝（第一次尝试两边都填 `gpt-oss-120b`，7 个用例全部在 lifespan 报 `ValueError`）。这是有意的接线保护，不是 bug。
-- `gemma-4-31b` 做 triage 时，在「不该回复」的场景会输出 `response_mode: "none"`，而 `TriageVerdict` 只接受 `me / each / one-of-us`，解析失败后按 fail-safe 跳过。结果与预期一致（该沉默的确沉默），但走的是 warning 路径而非正常路径；preempt 用例的 122s 主要是等这类跳过后的 stall。schema 上让 `actionable=false` 时 `response_mode` 可缺省，会让小模型的输出更容易落进正常路径。
-- `gpt-oss-120b` 在 moderated 用例里有一次 `Connection error` 触发了单次重试后成功；重试路径在真模型下被走过一次。
-
-同日第一次真模型现场 `scripts/demo_phase7.py`（同一对模型）：协调不变量都成立（pass → 换人、`@` 直通、loop cap 开火），但主持行为差——人说「请恰好一个人回答」后，Chair 点 Iris，然后每条成员回复都 `say("感谢 X")` + `call_on(next)`，Iris/Marcus 交替 8 轮直到 `AGENT_LOOP_CAP` 把房间静音；内容漂到无关设计。Chair 还对 Ada（人）`call_on` 了 8 次，每次被 `DECIDE_TARGET_ERROR` 拒。gemma triage 在 `actionable=false` 时吐 `response_mode: "none"`，校验失败走 warning/skip。Phase 7d 用 `MODERATED_CALLS_PER_HUMAN` 在决策层封轮询、错误文案列出可点名成员、主持 prompt 默认 silence、triage 在不可行动时接受 `"none"`。
-
-Phase 7d 改完同日重跑（同一对模型）：`-m llm` 7 passed in 98.36s（#3 是 173.92s，差的 76s 就是 preempt 用例里 triage `"none"` 走 warning 路径后等 stall 的时间）。`demo_phase7.py` 三幕合计 8 行决策：第一幕 `call_on Iris → say → silence`；`@Marcus` 直通、Chair 只写 silence；第三幕 `call_on Lex → Lex passes. → call_on Iris → Iris 作答 → silence`。#3 那次同样三幕是 27 行决策外加 loop cap 开火、8 次 `call_on(Ada)`；这次零次点人类。主持 prompt 额外加了一句「`<Name> passes.` 表示该成员弃权、问题仍未回答，改点能答的人」——没有这句，Chair 在 pass 之后会把「默认 silence」也套上去。demo 第三幕的问题改成了对 Lex 明显跨界的技术问题（BIGINT 还是 INTEGER），合规话题 Lex 会正常回答，触发不了拒答。
-
-### 3.4 结果判读
-
-- 三条不变量在真模型主动攻击下全部成立：**同文不落库、锁只有一把、抢跑不越门**。
-- 对抗用例的成本与正常用例同量级（triage 5–12 次/回合），门电路没有引入显著的额外模型调用放大。
-- 观察：GLM 在 dup 被拒后会自主改写为转述（而非死循环重试），说明 DUPLICATE_REPLY_ERROR 的错误文案足以引导模型自愈。
-
-## 4. 变异测试方法
-
-对关键机制做人工变异，确认 L0 测试能杀死每个变异（测试有效性的下界证明）。已验证的变异（节选）：
-
-| 变异 | 位置 | 内容 | 杀死它的测试 |
-|---|---|---|---|
-| M1 | `brain/graph.py` `_commit` | 删掉 `seen_seq=row.seq`（游标不推进） | `test_commit_advances_cursor_no_self_re_serve` |
-| M2 | `server/db.py` `insert_message` | `stale` 检查挪到 `dup` 之后 | `test_dup_rejection_retry_after_room_moved_takes_hold_path`（断言 HOLD 提示文案） |
-| U1/U2 | `server/stall.py` | unread grace 窗口删除/放宽 | `test_unread_room_graduates_after_unread_grace` |
-| send_anyway 系列 | `brain/graph.py` `_freshness`/`_tool_loop` | token 语义削弱/丢失 | `test_send_anyway_*`（monkeypatch + spy_consume 断言） |
-
-方法：改源码 → 跑目标测试 → 期望红 → 还原。全部变异均被杀。
-
-## 5. 复现指引
+测试不需要数据库、Redis 或外部服务，也不调用真模型；`tests/fake_*_cli.py` 是假的 agent CLI，`tests/fixtures/` 与 `tests/legacy/` 是适配器 parity 用的录制样本和冻结实现。按改动选窄测，例如画布相关：
 
 ```bash
-# 先按 §1 准备专用服务和环境，再跑确定性测试（不花 token）
-uv run pytest -m "not llm" -q
-
-# 真模型 + 对抗角色 + moderated 点名/@ 直通（花 token，约 7 分钟）
-# 按 §1 配置环境变量
-uv run pytest tests/test_coordination_llm.py -m llm -q
-
-# moderated 房间现场叙事（进程内拉起应用，同样要中继）
-# 主持点名、@ 直通；模型拒答时落地 "{name} passes."，主持换 trigger 再点名
-# （模型开口则打印 not exercised，不伪造）
-uv run python scripts/demo_phase7.py
-
-# 查看某房间转录与 LLM 经济（psql）
-#   messages / claims / llm_calls 三表按 room_id 过滤即可
+uv run pytest tests/test_project_store.py tests/test_agent_sessions.py tests/test_share.py
 ```
 
-维护约定：L3 新增对抗角色时，必须同时更新 §2 表格与 §3 的实测记录（跑一轮真模型）。
+终端与派发（碰真实 tmux 的用例用独立的 `-L` socket，结束时关掉）：
+
+- `tests/test_terminal_input.py`：输入权、按登记的 pane 和进程判断存活、Codex 从 pane 进程认 rollout、会话环境里没有 `SEEDMUX_*`。
+- `tests/test_dispatch_store.py`、`test_dispatch.py`、`test_dispatch_marks.py`、`test_dispatch_api.py`：派发的记录格式（样本 `tests/fixtures/dispatch/sample.json`）、状态流转、重启对账、撤销后迟到的结果、三家日志里的标记、评论经派发贴回线程、`agora dispatch|reply`、运行树里的 `via: "dispatch"`（设计与接口见 [dispatch.md](dispatch.md)）。
+
+## 前端
+
+```bash
+cd web && npx tsc -p . && npx vitest run && npm run build && npm run eval:replay
+```
+
+各功能的规格在 `web/docs/`。
+
+## CI
+
+`.github/workflows/test.yml`：`test` 作业跑全部 Python 测试；`web` 作业跑前端类型检查、单测、构建、素材库校验与离线评测回放。
+
+## 早期房间调度
+
+多 Agent 房间调度（LangGraph、Postgres、Redis、daemon、K8s Job）及其测试、真模型实测记录已删除，产品只剩原生会话一条执行路径。需要查看时读提交 `b6e9789`（删除前的最后一个提交）。

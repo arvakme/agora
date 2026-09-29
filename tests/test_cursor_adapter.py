@@ -1,11 +1,10 @@
 """Cursor (``cursor-agent``) as an observed agent (T2): its agent-transcripts are found by chat id or by
 workspace, projected with inferred times (the transcript has no timestamps, ids or tool results),
-classified into reads / writes / commands, Task sub-agents linked by their prompt, and a Seedmux
-worker linked to its ticket when the transcript names it (web/docs/cli-adapters.md)."""
+classified into reads / writes / commands and Task sub-agents linked by their prompt
+(web/docs/cli-adapters.md)."""
 
 import json
 import os
-import time
 from datetime import datetime, timezone
 
 import pytest
@@ -38,14 +37,13 @@ def cursor():
 def test_cursor_is_observed_only():
     a = cursor()
     assert adapters.implemented_tier(a) == "T2" and a.max_tier == "T2" and "cursor" not in adapters.session_kinds()
-    assert adapters.by_seedmux_name("cursor-agent") is a
     assert a.times_inferred is True
 
 
 def test_workspace_folder_name_is_the_clis_slug():
     # cursor-agent utils/dist/workspace-paths.js: every non-alphanumeric run → "-", trimmed.
     assert slug("/Users/zhijie/Job/agora-wt-workbench") == "Users-zhijie-Job-agora-wt-workbench"
-    assert slug("/Users/z/.seedmux/team/B-guide") == "Users-z-seedmux-team-B-guide"
+    assert slug("/Users/z/.config/team/B-guide") == "Users-z-config-team-B-guide"
     assert slug("/private/tmp/claude-501/-Users-x/scratchpad") == "private-tmp-claude-501-Users-x-scratchpad"
 
 
@@ -192,25 +190,7 @@ def test_task_subagents_are_linked_by_their_prompt(home):
     assert kids["aaa-web"].parent.via == "native" and "subagents/" in kids["aaa-web"].parent.evidence
     assert kids["aaa-web"].label == "审 web" and kids["aaa-web"].meta["role"] == "generalPurpose" and kids["aaa-web"].meta["state"] == "done"
     assert kids["bbb-server"].meta["state"] is None  # no turn_ended yet
-    tree = runs.build(NativeRef("cursor", CHAT, log, ROOT), root=ROOT, home=home, receipts=False)
+    tree = runs.build(NativeRef("cursor", CHAT, log, ROOT), root=ROOT, home=home)
     r = {x["id"]: x for x in tree["runs"]}
     assert r["cursor:aaa-web"]["depth"] == 1 and [(s["kind"], s.get("path")) for s in r["cursor:aaa-web"]["timeline"]["segments"]] == [("read", "web/app.ts")]
     assert {(m["kind"], m["childRunId"]) for m in r[f"cursor:{CHAT}"]["timeline"]["moments"]} >= {("dispatch", "cursor:aaa-web"), ("dispatch", "cursor:bbb-server")}
-
-
-def test_seedmux_worker_is_found_by_its_ticket(home):
-    a = cursor()
-    created = time.time() - 300
-    old = cursor_transcript(home, ROOT, "old-chat", [cursor_user("earlier work")])
-    os.utime(old, (created - 3600, created - 3600))
-    # The dispatcher's own chat in the same workspace printed the ticket id, but never received it as its task.
-    cursor_transcript(home, ROOT, "dispatcher", [cursor_user("派一个 worker"), cursor_says(cursor_tool("Shell", {"command": "smx-team spawn --agent cursor-agent && cat ~/.seedmux/team/tasks/T-7d8a20/meta.json"}))])
-    worker = cursor_transcript(home, ROOT, CHAT, [
-        cursor_user("你是 Seedmux agent team 的 worker,任务 T-7d8a20。先读 /h/.seedmux/team/tasks/T-7d8a20/prompt.md 并按它执行;然后运行: smx-team reply T-7d8a20"),
-        cursor_says(cursor_tool("Shell", {"command": "smx-team ack T-7d8a20 --delivery D-1"})),
-    ])
-    rc = {"taskId": "T-7d8a20", "cwd": ROOT, "createdAt": int(created * 1000), "agent": "cursor-agent"}
-    nid, path, why = a.worker_for_ticket(rc)
-    assert (nid, path) == (CHAT, worker) and "T-7d8a20" in why
-    assert a.worker_for_ticket({**rc, "taskId": "T-000000"}) is None
-    assert a.worker_for_ticket({**rc, "cwd": "/work/other"}) is None

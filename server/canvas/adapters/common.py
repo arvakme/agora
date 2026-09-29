@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -78,9 +79,16 @@ def _summary(inp: Any) -> str:
 PASTE_TAG = re.compile(r"</?pasted_content[^>]*>")
 
 
+# The token a dispatch (dispatch.py) puts in the footer of the message it sends: the CLI's own record of
+# that one user message then names the dispatch, which is how it is known to have arrived.
+DISPATCH_MARK = re.compile(r"agora-req-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
+
+
 def user_item(id: str, text: str, at: int) -> dict[str, Any]:
-    body, from_agora = split_agora(PASTE_TAG.sub("", text).strip())
-    return {"id": id, "kind": "user", "text": _clip(body, MAX_TEXT), "at": at, "source": "agora" if from_agora else "terminal"}
+    clean = PASTE_TAG.sub("", text).strip()
+    body, from_agora = split_agora(clean)
+    mark = DISPATCH_MARK.search(clean[len(body):]) if from_agora else None
+    return {"id": id, "kind": "user", "text": _clip(body, MAX_TEXT), "at": at, "source": "agora" if from_agora else "terminal", **({"dispatch": mark.group(1)} if mark else {})}
 
 
 def _full(v: Any) -> str:
@@ -97,13 +105,26 @@ _layout: dict[str, tuple[float, list[str], set[str]]] = {}
 LAYOUT_TTL_S = 10.0
 
 
+def worktrees(root: str) -> list[str]:
+    """The project root and its git worktrees (``git worktree list --porcelain``, read-only)."""
+    out = [os.path.realpath(root)]
+    try:
+        r = subprocess.run(["git", "-C", root, "worktree", "list", "--porcelain"], capture_output=True, text=True, timeout=5)
+        for line in r.stdout.splitlines():
+            if line.startswith("worktree "):
+                p = os.path.realpath(line[len("worktree ") :].strip())
+                if p not in out:
+                    out.append(p)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return out
+
+
 def _repo_layout(root: str) -> tuple[list[str], set[str]]:
     """The repository's work trees and the project's top-level entries (a few seconds old at most)."""
     hit = _layout.get(root)
     if hit and time.monotonic() - hit[0] < LAYOUT_TTL_S:
         return hit[1], hit[2]
-    from server.canvas.adapters.receipts import worktrees  # receipts imports the adapters
-
     try:
         tops = {n for n in os.listdir(root) if not n.startswith(".")}
     except OSError:

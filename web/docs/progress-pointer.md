@@ -19,7 +19,7 @@
 - **界面**：选中一个节点（方框、frame；素材库图标或编组整组选中也算一个节点，路径写在图标的根元素上），节点旁的操作条上出现「关联代码路径」（已有路径时是「代码路径 · N」），和「子图」并排，弹层同一时间只开一个（[嵌套画布](nested-canvas.md) §3）。点开后一行一个 glob，下面实时提示「会话改过的 N 个文件会落到这里」；保存是画布上的一次修改，⌘Z 可撤销。「清除」去掉这个节点的路径。
 - **agent**：`agora canvas link <元素> <glob…>`，元素写 id 或它的完整标签（不区分大小写；重名时要求用 id）；素材库图标的零件、标签或编组 id 都解析到图标的根元素。默认追加，`--clear` 替换（不带 glob 就是清除），`--json '{"api": ["server/**"], "db": ["db/**"]}'` 一次写多个。经服务转给打开的页面执行，一次可撤销，并在会话里记一张「关联代码路径」卡片（可撤销）。退出码同 `agora canvas`：0 成功 · 1 `invalid`（元素找不到或重名）· 2 用法错误 · 3 没开服务或页面。
 
-agora-canvas skill 教 agent：用户说「按代码结构给架构图关联路径」时，先 `agora canvas read` 拿到节点，再看仓库目录（`git ls-files | cut -d/ -f1-2 | sort -u`），给每个节点定目录或文件，用一条 `--json` 批量写入，最后说明谁对应什么、哪些节点没有关联（`skills/agora-canvas/SKILL.md`「Link diagram elements to code」）。
+agora skill 教 agent：用户说「按代码结构给架构图关联路径」时，先 `agora canvas read` 拿到节点，再看仓库目录（`git ls-files | cut -d/ -f1-2 | sort -u`），给每个节点定目录或文件，用一条 `--json` 批量写入，最后说明谁对应什么、哪些节点没有关联（`skills/agora/references/link.md`）。
 
 ## 2. 从会话里提取改动的文件
 

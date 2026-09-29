@@ -6,7 +6,9 @@
     agora status [--project P]
     agora down   [--project P]          stop it (and this project's terminal panes)
     agora serve  --project P --port N   (internal) run the server in the foreground
-    agora canvas list|read|search|apply|anim|schema   the agora-canvas skill's commands
+    agora canvas list|read|search|apply|anim|schema   the agora skill's commands
+    agora dispatch --to S|--new A --task-file F | status|wait|interrupt|list   give a task to another session
+    agora reply --request R --status done|failed|blocked [-f F]   hand the receipt back (agora_cli/dispatch.py)
     agora skill install [--agent all|claude|pi|codex]  link the skill into the project
     agora share create [--canvas C] [--for 1d] | list | revoke <id>|--all   share a canvas (web/docs/sharing.md)
     agora doctor [--fix] | backup | restore [--from …] | history [<file>]   local safety nets (agora_cli/doctor.py)
@@ -398,7 +400,7 @@ def cmd_down(p: Project, _a) -> int:
     from server.canvas.terminal import Terminals
 
     terms = Terminals(p.root, p.run, socket=p.local.socket())
-    terms.shutdown()  # Seedmux panes this project opened, then Agora's own tmux server
+    terms.shutdown()  # Agora's own tmux server for this project
     # …and tmux servers it had under other names: path-hash sockets of older builds, earlier roots.
     for name in terms.kill_other_servers(p.local.legacy_sockets()):
         print(f"stopped tmux server {name}")
@@ -493,6 +495,9 @@ def main(argv: list[str] | None = None) -> int:
     from agora_cli.canvas import add_parsers, find_root
 
     add_parsers(sub)
+    from agora_cli.dispatch import add_parsers as add_dispatch
+
+    add_dispatch(sub)
     from agora_cli.share import add_parser as add_share
 
     add_share(sub)
@@ -501,7 +506,7 @@ def main(argv: list[str] | None = None) -> int:
     add_doctor(sub)
     a = ap.parse_args(argv)
     try:
-        project = Project(str(find_root(a.project))) if a.cmd in ("canvas", "skill", "share", "doctor", "backup", "restore", "history") else Project(a.project)
+        project = Project(str(find_root(a.project))) if a.cmd in ("canvas", "skill", "share", "import", "doctor", "backup", "restore", "history", "dispatch", "reply") else Project(a.project)
         return a.fn(project, a)
     except RuntimeError as e:
         print(f"agora: {e}", file=sys.stderr)

@@ -58,7 +58,10 @@ def test_pi_stream_mapping():
 def test_codex_stream_mapping():
     m = CodexStream(None, None)
     evs = feed(m, "codex-stream.jsonl")
-    assert [e["t"] for e in evs] == ["text", "tool_use", "tool_result", "text", "usage"]
+    # The thread id is announced as it starts (the host follows the log from the first record), then the turn.
+    assert [e["t"] for e in evs] == ["session", "text", "tool_use", "tool_result", "text", "usage"]
+    assert evs[0]["session"] == "01a0e399-4195-7881-a4a7-b23674d0aa40"
+    evs = evs[1:]
     assert evs[1]["name"] == "shell" and "echo hi" in evs[1]["input"]["command"]
     assert evs[2]["text"] == "hi\n" and evs[2]["isError"] is False
     assert m.session == "01a0e399-4195-7881-a4a7-b23674d0aa40" and m.text == "done" and m.done
@@ -79,18 +82,18 @@ def test_claude_args_new_then_resume(tmp_path, monkeypatch):
     sid = "11111111-2222-3333-4444-555555555555"
     req = RunRequest(schema=None, system=None, prompt="p", options=ExecOptions(backend="claude", model="sonnet", effort="high", session=sid, new_session=True))
     args = ClaudeCodeBackend().args(req)
-    assert args[:5] == ["claude", "-p", "--output-format", "stream-json", "--verbose"]
-    assert ["--session-id", sid] == args[5:7] and "--resume" not in args
+    assert args[:7] == ["claude", "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"]
+    assert ["--session-id", sid] == args[11:13] and "--resume" not in args
     assert "--effort" in args and "Bash(agora canvas *)" in args
     log = tmp_path / ".claude" / "projects" / "-work-project" / f"{sid}.jsonl"
     log.parent.mkdir(parents=True)
     log.write_text("{}\n")
-    assert ["--resume", sid] == ClaudeCodeBackend().args(req)[5:7]
+    assert ["--resume", sid] == ClaudeCodeBackend().args(req)[11:13]
     # A session that already ran is always resumed, even when its log is gone: the CLI then fails
     # ("No conversation found") instead of silently starting a new conversation under the same id.
     log.unlink()
     old = RunRequest(schema=None, system=None, prompt="p", options=ExecOptions(backend="claude", model="sonnet", session=sid))
-    assert ["--resume", sid] == ClaudeCodeBackend().args(old)[5:7]
+    assert ["--resume", sid] == ClaudeCodeBackend().args(old)[11:13]
 
 
 def test_pi_and_codex_args():
@@ -133,6 +136,8 @@ async def test_run_in_project_dir_with_agora_env(tmp_path, monkeypatch, cls, fix
     assert "CLAUDECODE" not in p["env"] and "CLAUDE_CODE_CHILD_SESSION" not in p["env"]
     if cls is PiBackend:
         assert p["argv"][-1] == "把 Redis 改成集群" and p["stdin"] == ""
+    elif cls is ClaudeCodeBackend:
+        assert json.loads(p["stdin"]) == {"type": "user", "message": {"role": "user", "content": "把 Redis 改成集群"}}
     else:
         assert p["stdin"] == "把 Redis 改成集群"
 
@@ -162,14 +167,29 @@ def test_registry_and_interactive_commands(tmp_path, monkeypatch):
 def test_install_skill_links_into_project_only(tmp_path):
     (tmp_path / ".git" / "info").mkdir(parents=True)
     done = agents.install_skill(tmp_path, ["claude", "pi", "codex"])
-    assert (tmp_path / ".claude" / "skills" / "agora-canvas").resolve() == agents.SKILL_DIR.resolve()
-    assert (tmp_path / ".agents" / "skills" / "agora-canvas" / "SKILL.md").exists()
+    assert (tmp_path / ".claude" / "skills" / "agora").resolve() == agents.SKILL_DIR.resolve()
+    assert (tmp_path / ".agents" / "skills" / "agora" / "SKILL.md").exists()
     assert any(d["for"] == "pi" and "--skill" in d["state"] for d in done)
     exclude = (tmp_path / ".git" / "info" / "exclude").read_text()
-    assert "/.claude/skills/agora-canvas" in exclude and "/.agents/skills/agora-canvas" in exclude
+    assert "/.claude/skills/agora" in exclude and "/.agents/skills/agora" in exclude
     again = agents.install_skill(tmp_path, ["claude", "codex"])
     assert {d["state"] for d in again} == {"exists"}
     assert (tmp_path / ".git" / "info" / "exclude").read_text() == exclude  # idempotent
+
+
+def test_install_skill_drops_the_old_agora_canvas_link(tmp_path):
+    (tmp_path / ".git" / "info").mkdir(parents=True)
+    old = tmp_path / ".claude" / "skills" / "agora-canvas"
+    old.parent.mkdir(parents=True)
+    old.symlink_to(agents.REPO / "skills" / "agora-canvas")  # dangling: the skill was renamed
+    (tmp_path / ".git" / "info" / "exclude").write_text("/.claude/skills/agora-canvas\n")
+    mine = tmp_path / ".agents" / "skills" / "agora-canvas"  # a folder the person made is not ours
+    mine.mkdir(parents=True)
+    agents.install_skill(tmp_path, ["claude", "codex"])
+    assert not old.is_symlink() and (tmp_path / ".claude" / "skills" / "agora").is_symlink()
+    assert mine.is_dir()
+    exclude = (tmp_path / ".git" / "info" / "exclude").read_text().splitlines()
+    assert "/.claude/skills/agora-canvas" not in exclude and "/.claude/skills/agora" in exclude
 
 
 async def test_stopping_a_running_turn_kills_its_process_group(tmp_path, monkeypatch):

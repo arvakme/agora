@@ -52,7 +52,9 @@ from server.canvas.adapters.pi import sessions_dir as _pi_sessions  # noqa: F401
 
 
 REPO = Path(__file__).resolve().parents[2]
-SKILL_DIR = REPO / "skills" / "agora-canvas"
+SKILL_NAME = "agora"  # the project link's name; must match the skill's `name:`
+LEGACY_SKILL_NAME = "agora-canvas"  # the skill's old name: reinstalling removes its links
+SKILL_DIR = REPO / "skills" / SKILL_NAME
 AGENT_BIN = REPO / "bin"
 
 SESSION_TIMEOUT_S = 30 * 60
@@ -78,11 +80,21 @@ _NESTED = (
 )
 
 
+# Another product's identity, inherited from the pane the server was started in (or restarted from), would
+# make a session Agora starts report to that pane: none of Seedmux's variables (SEEDMUX_PANE_ID, …) go
+# into a session, a pane or the tmux server Agora starts.
+LEAKED_PREFIXES = ("SEEDMUX_",)
+
+
+def leaked(name: str) -> bool:
+    return name.startswith(LEAKED_PREFIXES)
+
+
 def child_env(extra: dict[str, str] | None = None) -> dict[str, str]:
-    """The environment for an agent CLI: ours minus nesting markers, ``bin/agora`` on PATH."""
-    env = {k: v for k, v in os.environ.items() if k not in _NESTED and not k.startswith("CODEX_SANDBOX")}
+    """The environment for an agent CLI: ours minus nesting markers and other apps' variables, ``bin/agora`` on PATH."""
+    env = {k: v for k, v in os.environ.items() if k not in _NESTED and not leaked(k) and not k.startswith("CODEX_SANDBOX")}
     env["PATH"] = os.pathsep.join([str(AGENT_BIN), env.get("PATH", "")])
-    env.update(extra or {})
+    env.update({k: v for k, v in (extra or {}).items() if not leaked(k)})
     return env
 
 
@@ -246,14 +258,17 @@ class _CliBackend:
                 "session": mapper.session,
                 "prompt": req.prompt,
             }
+            if getattr(mapper, "interrupted", False):
+                out["interrupted"] = True
             if error:
                 out["error"] = error
             return out
 
         data = self.stdin(req)
+        cmd_args = self.args(req)
         try:
             proc = await asyncio.create_subprocess_exec(
-                *self.args(req),
+                *cmd_args,
                 stdin=asyncio.subprocess.PIPE if data is not None else asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -266,6 +281,8 @@ class _CliBackend:
             yield finish(f"spawn: {exc}")
             return
 
+        yield {"t": "spawned", "at": now_ms(), "pid": proc.pid, "argv": [*cmd_args]}
+
         err_chunks: list[bytes] = []
 
         async def drain_stderr() -> None:
@@ -276,8 +293,28 @@ class _CliBackend:
         stderr_task = asyncio.create_task(drain_stderr())
         timed_out = False
         stream_error: str | None = None
+        duplex = bool(getattr(adapters.need(self.name), "duplex", False))
+        writer: asyncio.Task | None = None
+        waiting = 0  # requests the CLI has open with the host: the person's time is not the turn's time limit
+
+        async def write_lines(ctl) -> None:
+            """What the host sends while the turn runs (answers, an interrupt), one JSON line each."""
+            assert proc.stdin is not None
+            while True:
+                line = await ctl.queue.get()
+                try:
+                    proc.stdin.write((json.dumps(line, ensure_ascii=False) + "\n").encode())
+                    await proc.stdin.drain()
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+
+        def close_stdin() -> None:
+            if proc.stdin is not None and not proc.stdin.is_closing():
+                proc.stdin.close()
+
         try:
-            async with asyncio.timeout(self.timeout_s):
+            async with asyncio.timeout(self.timeout_s) as limit:
+                loop = asyncio.get_running_loop()
                 if data is not None:
                     assert proc.stdin is not None
                     try:
@@ -285,7 +322,10 @@ class _CliBackend:
                         await proc.stdin.drain()
                     except (BrokenPipeError, ConnectionResetError):
                         pass
-                    proc.stdin.close()
+                    if duplex and req.control is not None:
+                        writer = asyncio.create_task(write_lines(req.control))
+                    else:
+                        close_stdin()
                 assert proc.stdout is not None
                 try:
                     async for raw_line in proc.stdout:
@@ -298,7 +338,12 @@ class _CliBackend:
                             continue
                         if isinstance(d, dict):
                             for ev in mapper.feed(d, now_ms()):
+                                if ev["t"] in ("request", "request_cancel"):
+                                    waiting = max(0, waiting + (1 if ev["t"] == "request" else -1))
+                                    limit.reschedule(None if waiting else loop.time() + self.timeout_s)
                                 yield ev
+                            if duplex and mapper.done:
+                                close_stdin()  # the turn is over: the CLI exits when its input ends
                 except TimeoutError:
                     raise
                 except Exception as exc:
@@ -309,6 +354,9 @@ class _CliBackend:
             timed_out = True
         finally:
             stderr_task.cancel()
+            if writer is not None:
+                writer.cancel()
+            close_stdin()
             await stop_group(proc)
 
         err = b"".join(err_chunks).decode("utf-8", "replace").strip()
@@ -318,6 +366,8 @@ class _CliBackend:
             yield finish(stream_error)
         elif mapper.error:
             yield finish(mapper.error)
+        elif getattr(mapper, "interrupted", False):
+            yield finish(None)  # the host stopped the turn: the CLI's exit code after an interrupted tool (1) is not a failure
         elif proc.returncode != 0:
             yield finish(f"exit {proc.returncode}: {err[-500:]}")
         elif not mapper.done:
@@ -367,7 +417,7 @@ SKILL_DIRS = {k: a.project_skill_dir for k, a in adapters.ADAPTERS.items() if k 
 
 # ——— project skill install ———
 def install_skill(root: Path, agents: list[str], copy: bool = False) -> list[dict[str, str]]:
-    """Link (or copy) skills/agora-canvas into the project dirs the chosen CLIs read.
+    """Link (or copy) skills/agora into the project dirs the chosen CLIs read; drops the old agora-canvas links.
 
     Never touches user-global config. Links are listed in .git/info/exclude so they do not
     show up as untracked files."""
@@ -380,8 +430,11 @@ def install_skill(root: Path, agents: list[str], copy: bool = False) -> list[dic
             done.append({"path": str(SKILL_DIR), "state": f"{k} loads it with --skill on every launch", "for": k})
     rels = sorted({SKILL_DIRS[x] for x in agents if x in SKILL_DIRS})
     for rel in rels:
-        target = root / rel / "agora-canvas"
+        target = root / rel / SKILL_NAME
         target.parent.mkdir(parents=True, exist_ok=True)
+        old = target.parent / LEGACY_SKILL_NAME
+        if old.is_symlink() and REPO in old.resolve().parents:  # only our own link; a folder the person made stays
+            old.unlink()
         if target.is_symlink() and target.resolve() == SKILL_DIR.resolve():
             state = "exists"
         elif target.exists() or target.is_symlink():
@@ -405,10 +458,12 @@ def install_skill(root: Path, agents: list[str], copy: bool = False) -> list[dic
     exclude = root / ".git" / "info" / "exclude"
     if exclude.parent.is_dir():
         lines = exclude.read_text().splitlines() if exclude.exists() else []
-        want = [f"/{rel}/agora-canvas" for rel in rels]
+        want = [f"/{rel}/{SKILL_NAME}" for rel in rels]
+        stale = {f"/{rel}/{LEGACY_SKILL_NAME}" for rel in rels}
         missing = [w for w in want if w not in lines]
-        if missing:
-            exclude.write_text("\n".join([*lines, "# agora: skill links (agora skill install)", *missing]) + "\n")
+        if missing or stale & set(lines):
+            kept = [l for l in lines if l not in stale]
+            exclude.write_text("\n".join([*kept, *(["# agora: skill links (agora skill install)", *missing] if missing else [])]) + "\n")
     return done
 
 

@@ -89,6 +89,7 @@ class NewShare(BaseModel):
     canvasId: str
     ttl: int | None = None  # seconds; None = until revoked
     maxOpens: int | None = None  # distinct guests that may open it; None = unlimited
+    quick: bool = False  # account-less trycloudflare.com address (one share at a time)
 
 
 def sse(events: Events, request: Request, accept=None, *, tick: float = 15.0) -> StreamingResponse:
@@ -231,7 +232,7 @@ def create_project_router(store: ProjectStore, events: Events | None = None, *, 
     @router.post("/trash/session/{id}")
     async def trash_session(id: str, body: ToTrash):
         """A session goes to the trash with its binding, record, snapshot and usage; its terminal
-        pane (Agora's tmux or Seedmux) and a running headless turn end first. The native log stays."""
+        pane and a running headless turn end first. The native log stays."""
         try:
             store.check_alive()
         except Gone as e:
@@ -350,7 +351,7 @@ def create_share_router(store: ProjectStore, shares: ShareManager, events: Event
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         try:
-            share, url = shares.create(body.canvasId, body.ttl, title_of(body.canvasId), max_opens=body.maxOpens)
+            share, url = shares.create(body.canvasId, body.ttl, title_of(body.canvasId), max_opens=body.maxOpens, quick=body.quick)
         except ShareError as e:
             raise HTTPException(status_code=502, detail=str(e)) from e
         except Exception as e:  # Cloudflare / cloudflared failures: say what failed, keep serving
@@ -462,6 +463,7 @@ def create_project_app(
     local.reconcile(alive=probe.alive)
     hub = hub or AgentHub(store, local=local)
     events = Events()
+    hub.events = events  # a dispatch answering a comment thread tells open pages (dispatch.py)
     shares = shares or ShareManager(store)
     shares.on_change = lambda: events.publish({"t": "shares"})
     dist = dist or WEB / "dist"
@@ -492,6 +494,7 @@ def create_project_app(
                 await asyncio.sleep(TRASH_SWEEP_S)
 
         tasks.append(asyncio.create_task(trash_sweeper()))
+        hub.ensure_started()  # dispatches left open by a restart are reconciled now, not when a page first connects
         if gateway:
             import uvicorn
 

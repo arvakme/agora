@@ -15,6 +15,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any, Callable
@@ -22,7 +23,7 @@ from typing import Any, Callable
 from server.canvas import agent_models
 from server.canvas.adapters.base import first_cwd, valid_id, Adapter, NativeRef, ParentLink, VersionRange, tool_facts
 from server.canvas.adapters.shell_files import shell_tool
-from server.canvas.adapters.tools import activity_of, shell_reads, spawn_in_output
+from server.canvas.adapters.tools import activity_of, shell_reads
 from server.canvas.adapters.common import (
     MAX_FULL,
     MAX_TEXT,
@@ -69,6 +70,8 @@ class CodexStream(StreamMapper):
         t = d.get("type")
         if t == "thread.started":
             self.session = str(d.get("thread_id") or self.session or "") or None
+            if self.session:
+                out.append({"t": "session", "at": at, "session": self.session})  # the host follows the log from the first record on
         elif t in ("item.started", "item.completed"):
             item = d.get("item") or {}
             kind = item.get("type")
@@ -161,14 +164,13 @@ def shell_facts(item: dict[str, Any], root: str | None) -> dict[str, Any]:
         got, reads = shell_reads(cmd[-1] if isinstance(cmd, list) and cmd else cmd, root, cwd)
         kinds = [got or "commands"]
     act = "read" if kinds and all(k == "read" for k in kinds) else "search" if kinds and all(k in ("read", "search") for k in kinds) else "commands"
-    out = str(item.get("formatted_output") or item.get("aggregated_output") or "")
     fs: list[dict[str, str]] = []
     on: list[str] = []
     if act == "commands":  # more than reads: what the command line writes / runs on
         cmd = item.get("command")
-        _, _, fs, on = shell_tool(cmd[-1] if isinstance(cmd, list) and cmd else cmd, root, cwd)
-        act = "edit" if fs else act
-    return tool_facts(act, reads=reads, files=fs, on=on, spawn=spawn_in_output(out, item.get("command")))
+        got, _, fs, on = shell_tool(cmd[-1] if isinstance(cmd, list) and cmd else cmd, root, cwd)
+        act = "subagents" if got == "subagents" else "edit" if fs else act
+    return tool_facts(act, reads=reads, files=fs, on=on)
 
 
 def project(rec: dict[str, Any], st: State) -> Out:
@@ -310,6 +312,15 @@ def rollouts_since(cwd: Path, since: float, home: Path | None = None) -> list[tu
     return [(i, p) for _, i, p in sorted(out)]
 
 
+def rollout_thread(path: Path) -> str | None:
+    """A rollout's thread id: its ``session_meta`` record, else the uuid its file name ends with."""
+    pid = session_meta(path).get("id")
+    if pid:
+        return str(pid)
+    m = re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\.jsonl$)", path.name)
+    return m.group(0) if m else None
+
+
 def session_meta(path: Path | None) -> dict[str, Any]:
     """The first record's payload (``session_meta``): id, cwd, cli_version, source…"""
     if path is None:
@@ -393,7 +404,6 @@ class CodexAdapter(Adapter):
     binaries = ("codex",)
     tested = VersionRange(">=0.149,<0.158")
     max_tier = "T1"
-    seedmux_names = ("codex",)
     icon = "codex"
     log_hint = "~/.codex/sessions/年/月/日/rollout-*-<id>.jsonl"
     log_dir = "~/.codex/sessions/"
@@ -420,6 +430,18 @@ class CodexAdapter(Adapter):
 
     def new_since(self, root: Path | str, since: float, taken: set[str], home: Path | None = None) -> str | None:
         return next((tid for tid, _ in rollouts_since(Path(root), since, home or Path.home()) if tid not in taken), None)
+
+    claims_by_open_file = True
+
+    def native_from_open_files(self, paths: list[str], home: Path | None = None) -> str | None:
+        """The thread of the rollout under ``~/.codex/sessions`` the process has open (its own
+        session's log, which Codex keeps open for appending)."""
+        base = codex_home(home or Path.home()) / "sessions"
+        for raw in paths:
+            p = Path(os.path.realpath(raw))
+            if p.name.startswith("rollout-") and p.suffix == ".jsonl" and base in p.parents:
+                return rollout_thread(p)
+        return None
 
     def sessions_for(self, roots: list[str], home: Path | None = None) -> list[dict[str, Any]]:
         return [{"agent": "codex", **r} for r in index_rows(roots, home or Path.home())]
