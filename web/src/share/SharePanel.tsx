@@ -7,6 +7,7 @@ import { IconCopy, IconLock, IconShare } from "../app/icons";
 import { SPRING } from "../comments/motion";
 import { fmtLeft } from "../guest/GuestApp";
 import { replayText } from "./replayText";
+import { buildSwitch, dnsWait } from "./shareLive";
 import { createPlan, defaultTarget, domainView, type DomainInfo, type ShareTarget } from "./domainChoice";
 import "./share.css";
 
@@ -29,6 +30,8 @@ export type ShareRow = {
   maxOpens: number | null;
   /** Guests may watch how the canvas was built (chosen when the share was made). */
   buildReplay?: boolean;
+  /** A temporary trycloudflare.com address: no DNS record of its own to wait for. */
+  quick?: boolean;
 };
 
 /** "打开 3/5" or "打开 3" (unlimited). */
@@ -112,6 +115,12 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
   const [err, setErr] = useState<string | null>(null);
   const [made, setMade] = useState<{ url: string; row: ShareRow } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!made) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [made]);
   // Which address: the person's own domain (asked when the account has several), or a temporary link (no domain needed).
   const [info, setInfo] = useState<DomainInfo | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
@@ -263,6 +272,7 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
             <code title={made.url}>{made.url}</code>
             <button className="icon-btn sm" onClick={() => void copy(made.url)} aria-label="复制链接" title="复制链接"><IconCopy size={16} /></button>
           </div>
+          {made.row && dnsWait(made.row, now).waiting && <p className="share-wait" role="status">{dnsWait(made.row, now).text}</p>}
           <p>{copied ? "已复制。" : ""}链接只显示这一次（只存了令牌的哈希）；丢了就撤销后重建一个。</p>
         </div>
       )}
@@ -277,6 +287,15 @@ function ShareList({ rows, onChange }: { rows: ShareRow[]; onChange: () => void 
     return () => clearInterval(t);
   }, []);
   const [pending, setPending] = useState<string | null>(null);
+  const flip = async (r: ShareRow) => {
+    setPending(r.id);
+    try {
+      await api("PATCH", `/${r.id}`, buildSwitch(r).body);
+    } finally {
+      setPending(null);
+      onChange();
+    }
+  };
   const live = rows.filter((r) => r.status === "active");
   const ended = rows.filter((r) => r.status !== "active").slice(0, 4);
   const revoke = async (id: string) => {
@@ -301,6 +320,11 @@ function ShareList({ rows, onChange }: { rows: ShareRow[]; onChange: () => void 
               <span className="share-meta">
                 {r.expiresAt == null ? "直到撤销" : `剩 ${fmtLeft(r.expiresAt - now)}`} · <span title={r.maxOpens ? `已有 ${r.opens ?? 0} 个访客打开，最多 ${r.maxOpens} 个` : "已打开的访客数（不限次数）"} data-full={!!r.maxOpens && (r.opens ?? 0) >= r.maxOpens}>{opensText(r)}</span> · 评论 {r.comments}{r.buildReplay ? ` · ${replayText(r)}` : ""}
               </span>
+              {dnsWait(r, now).waiting && <span className="share-wait" role="status">{dnsWait(r, now).text}</span>}
+              <label className="share-check share-flip" title="随时可改，访客那边马上按新的来">
+                <input type="checkbox" checked={buildSwitch(r).on} disabled={pending === r.id} onChange={() => void flip(r)} aria-label="访客看搭建过程" />
+                访客看搭建过程
+              </label>
             </div>
             <button className="btn sm danger" disabled={pending === r.id} onClick={() => void revoke(r.id)} title="立即结束这个分享：链接和它的域名都会失效"><IconLock size={14} />{pending === r.id ? "撤销中…" : "撤销"}</button>
           </li>

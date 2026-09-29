@@ -47,10 +47,12 @@
 }
 
 .share-custom > .share-where { display: grid; gap: var(--space-3); min-width: 0; }
-.share-where select { min-width: 14em; max-width: 100%; }
+.share-where select { min-width: 14em; width: 100%; max-width: 100%; text-overflow: ellipsis; }
+.share-wait { color: var(--caution); font-size: 0.85em; }
+.share-flip { font-size: 0.85em; }
 .share-where small { color: var(--fg-muted); font-size: var(--text-xs); line-height: var(--leading-read); }
 .share-where em { font-style: normal; color: var(--caution); }
-.share-where label { display: inline-flex; align-items: center; gap: var(--space-3); }
+.share-where label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); width: 100%; }
 
 .share-check { display: inline-flex; align-items: center; gap: var(--space-3); font-size: var(--text-sm); cursor: pointer; }
 .share-check input { accent-color: var(--accent); }

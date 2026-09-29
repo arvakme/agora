@@ -20,7 +20,7 @@ from typing import Any
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictBool
 
 from server.canvas import build_log, shutdown
 from server.canvas.backup import Backups, FileHistory
@@ -93,6 +93,12 @@ class NewShare(BaseModel):
     quick: bool = False  # account-less trycloudflare.com address (one share at a time)
     domain: str | None = None  # the zone picked in the share window (remembered; AGORA_SHARE_DOMAIN wins)
     buildReplay: bool = False  # guests may watch how the canvas was built (the owner ticks it in the share window)
+
+
+class ShareEdit(BaseModel):
+    """What the owner may change on a share that exists: whether guests may watch how the canvas was built."""
+
+    buildReplay: StrictBool
 
 
 def sse(events: Events, request: Request, accept=None, *, tick: float = 15.0) -> StreamingResponse:
@@ -380,6 +386,15 @@ def create_share_router(store: ProjectStore, shares: ShareManager, events: Event
                 return JSONResponse({"detail": humanize(zc), "zones": zc.zones}, status_code=409)
             raise HTTPException(status_code=502, detail=humanize(e) if not isinstance(e, ShareError) or e.__cause__ else str(e)) from e
         return {"share": share, "url": url}
+
+    @router.patch("/{id}")
+    def edit_share(id: str, body: ShareEdit):
+        try:
+            return {"share": shares.set_build_replay(id, body.buildReplay)}
+        except KeyError:
+            raise HTTPException(status_code=404, detail="no such share") from None
+        except ValueError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
 
     @router.delete("/{id}")
     def revoke_share(id: str):

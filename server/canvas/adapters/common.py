@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from server.canvas import agora_msg
-from server.canvas.agora_msg import SEL_MARK
+from server.canvas.agora_msg import SEL_MARK, page_card
 from server.canvas.runner import Usage, empty_usage
 
 # Prompts Agora sends end with a context footer starting with this marker; it tells the
@@ -104,6 +104,7 @@ def user_item(id: str, text: str, at: int) -> dict[str, Any]:
         # what Agora wrote into the message (agora_msg.py): a card, or the person's words with a selection picture / list
         extra["card"] = agora_msg.card(body, receipt.group(1).split(":")[1] if receipt else None)
         body, ids = agora_msg.strip_tail_note(body)
+        extra["card"] = extra["card"] or page_card(foot, _clip(body, MAX_TEXT))  # a prompt the page wrote for the person: a card with its source
         sel = SEL_MARK.search(foot)
         extra["selection"] = {"id": sel.group(1)} if sel else {"ids": ids} if ids else None
     return {"id": id, "kind": "user", "text": _clip(body, MAX_TEXT), "at": at, "source": "agora" if from_agora else "terminal", **({"dispatch": mark.group(1)} if mark else {}), **({"receipt": receipt.group(1)} if receipt else {}), **{k: v for k, v in extra.items() if v}}

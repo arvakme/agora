@@ -6,6 +6,7 @@
 import { retryable } from "./retryable";
 import { sendable } from "./pickSession";
 import { steerAbility, type SendMode } from "./steerModel";
+import { withPageMark, type PageMark } from "./pageMessage";
 import type { SelectionPayload } from "./selection";
 import { removeRequest, upsertRequest, type Decision, type HostRequest } from "./requestModel";
 import { useSyncExternalStore } from "react";
@@ -184,7 +185,7 @@ export type Item = {
   msg?: string;
   source?: "agora" | "terminal";
   /** A user message Agora wrote (server/canvas/agora_msg.py): a dispatch receipt or task envelope, drawn as a card, not as words the person said. */
-  card?: { kind: "receipt" | "task" } & Record<string, unknown>;
+  card?: { kind: "receipt" | "task" | "page" } & Record<string, unknown>;
   /** The full id of the dispatch this message belongs to (its task envelope, or a comment hand-off). */
   dispatch?: string;
   /** What was selected on the canvas when the message was sent: a saved picture (`id`), or only the ids (messages from before pictures). */
@@ -502,9 +503,10 @@ export const agents = {
   },
 
   /** Send a message into the native session (terminal pane if one holds it, else a headless turn). */
-  async send(sessionId: string, text: string, opts: { canvasId?: string; context?: string; /** While a turn runs: steer into it, stop it and say this, or wait (server `send` modes). */ mode?: SendMode; /** Canvas elements the words name with # (the server writes them into the footer as 名字（id）). */ refs?: { id: string; name: string }[]; /** What is selected, as names and a picture (./selection.ts): the server keeps it and writes it into the footer. */ selection?: SelectionPayload; thread?: Omit<Inflight, "sendId" | "sessionId" | "turnIds" | "canvasId"> } = {}) {
+  async send(sessionId: string, text0: string, opts: { canvasId?: string; context?: string; /** The page wrote this prompt for the person (./pageMessage.ts): the session shows a card with its source, not the person's bubble. A leading mark on the text does the same. */ page?: PageMark; /** While a turn runs: steer into it, stop it and say this, or wait (server `send` modes). */ mode?: SendMode; /** Canvas elements the words name with # (the server writes them into the footer as 名字（id）). */ refs?: { id: string; name: string }[]; /** What is selected, as names and a picture (./selection.ts): the server keeps it and writes it into the footer. */ selection?: SelectionPayload; thread?: Omit<Inflight, "sendId" | "sessionId" | "turnIds" | "canvasId"> } = {}) {
+    const { text, context } = withPageMark(text0, opts.context, opts.page);
     const r = (await json(
-      await fetch(`/api/agent/sessions/${sessionId}/send`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, canvasId: opts.canvasId, context: opts.context ?? "", ...(opts.mode && { mode: opts.mode }), ...(opts.refs?.length && { refs: opts.refs }), ...(opts.selection && { selection: opts.selection }) }) }),
+      await fetch(`/api/agent/sessions/${sessionId}/send`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, canvasId: opts.canvasId, context, ...(opts.mode && { mode: opts.mode }), ...(opts.refs?.length && { refs: opts.refs }), ...(opts.selection && { selection: opts.selection }) }) }),
     )) as { sendId: string; route: "terminal" | "headless"; how?: "turn" | "steer" | "interrupt" | "queued" };
     // words steered into the running turn are part of it: no turn of their own to follow, and the running one stays what is in flight
     if (r.how === "steer") return { ...r, done: Promise.resolve({ sessionId, sendId: r.sendId, text: "", route: r.route, turnIds: [] as string[] }) };

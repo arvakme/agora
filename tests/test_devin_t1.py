@@ -167,6 +167,19 @@ FAKE = textwrap.dedent(
 )
 
 
+def leftovers(tmp) -> list[int]:
+    """Live processes of a test under `tmp`: any whose command line names it (the wrapper, the fake devin), and the tool process the fake started (its pid is in child.pid)."""
+    out = subprocess.run(["ps", "-A", "-o", "pid=,stat=,command="], capture_output=True, text=True).stdout
+    pids = {int(line.split(None, 2)[0]) for line in out.splitlines() if str(tmp) in line and not line.split(None, 2)[1].startswith("Z") and int(line.split(None, 2)[0]) != os.getpid()}
+    f = Path(tmp) / "child.pid"
+    if f.exists() and f.read_text().strip().isdigit():
+        pid = int(f.read_text())
+        st = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+        if st and not st.startswith("Z"):
+            pids.add(pid)
+    return sorted(pids)
+
+
 @pytest.fixture()
 def fake(tmp_path, monkeypatch):
     home = tmp_path / "home"
@@ -179,7 +192,15 @@ def fake(tmp_path, monkeypatch):
     exe.chmod(0o755)
     monkeypatch.setenv("FAKE_ARGS", str(tmp_path / "args.json"))
     monkeypatch.setenv("FAKE_CHILD", str(tmp_path / "child.pid"))
-    return exe, tmp_path / "proj", tmp_path
+    yield exe, tmp_path / "proj", tmp_path
+    # nothing a test started may outlive it (a wrapper that was not stopped, the tool process devin left in its own group): kill what is left, then fail
+    left = leftovers(tmp_path)
+    for pid in left:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    assert not left, f"the test left processes running: {left}"
 
 
 def run_wrapper(exe, proj, *args, timeout=20):
@@ -214,7 +235,8 @@ def test_wrapper_passes_a_failure_on_with_the_stderr_tail(fake, monkeypatch):
     assert not any(e["type"] == "text" for e in evs)
 
 
-def test_stopping_the_wrapper_stops_devin_and_the_processes_it_left_in_their_own_groups(fake, monkeypatch):
+@pytest.mark.parametrize("offset", [0.0, 0.07, 0.14, 0.21, 0.28])
+def test_stopping_the_wrapper_stops_devin_and_the_processes_it_left_in_their_own_groups(fake, monkeypatch, offset):
     exe, proj, tmp = fake
     monkeypatch.setenv("FAKE_MODE", "hang")
     p = subprocess.Popen([sys.executable, str(WRAPPER), str(exe), "-p", *YES, "--", "hi"], cwd=proj, stdout=subprocess.PIPE, text=True, start_new_session=True)
@@ -223,7 +245,7 @@ def test_stopping_the_wrapper_stops_devin_and_the_processes_it_left_in_their_own
             break
         time.sleep(0.1)
     child = int((tmp / "child.pid").read_text())
-    time.sleep(1.0)  # the wrapper notices the process while the turn runs
+    time.sleep(1.0 + offset)  # the wrapper notices the process while the turn runs; the stop comes at another moment of its 0.3 s round each time
     os.kill(child, 0)  # alive
     t = time.time()
     os.killpg(p.pid, signal.SIGTERM)
