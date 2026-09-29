@@ -66,6 +66,23 @@ function stampSeen(sid: string, run: WorkRun): WorkRun {
   }) };
 }
 
+/** A sub-run that is a session given a task (`dispatchSession`) has that session's canvas changes among its segments, at any depth: its own top-level run is dropped below, so they must be here. */
+function withTouches(children: WorkRun[]): WorkRun[] {
+  let changed = false;
+  const out = children.map((c) => {
+    let n = c;
+    const ts = c.dispatchSession ? touches.of(c.dispatchSession) : [];
+    if (ts.length) n = mergeTouches(n, ts);
+    if (n.children.length) {
+      const kids = withTouches(n.children);
+      if (kids.some((k, i) => k !== n.children[i])) n = { ...n, children: kids, lastAt: Math.max(n.lastAt, ...kids.map((k) => k.lastAt)) };
+    }
+    if (n !== c) changed = true;
+    return n;
+  });
+  return changed ? out : children;
+}
+
 function compute(): Runs {
   const now = Date.now();
   if (MOCK) {
@@ -95,7 +112,7 @@ function compute(): Runs {
     if (tree?.children.length) {
       // the parent's 派 segments name the run they dispatched
       const segs = tree.dispatches.size ? run.segs.map((g) => (g.itemId && tree.dispatches.has(g.itemId) ? { ...g, kind: "delegate" as const, child: tree.dispatches.get(g.itemId) } : g)) : run.segs;
-      run = { ...run, segs, children: tree.children, running: run.running || tree.live, lastAt: Math.max(run.lastAt, ...tree.children.map((c) => c.lastAt)) };
+      run = { ...run, segs, children: withTouches(tree.children), running: run.running || tree.live, lastAt: Math.max(run.lastAt, ...withTouches(tree.children).map((c) => c.lastAt)) };
     }
     roots.push(run);
     maybeFetch(sid, items, running || !!tree?.live);

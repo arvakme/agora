@@ -220,12 +220,22 @@ export async function childFromAgent(req: { op: "create" | "link" | "unlink"; ca
 /** Route bridge requests from the server to the executors above. */
 export function installBridge() {
   setBridgeHandler(async (req) => {
-    if (req.kind === "read") return readCanvas(req.canvasId as string);
-    if (req.kind === "apply") return applyFromAgent(req as unknown as Parameters<typeof applyFromAgent>[0]);
-    if (req.kind === "anim") return animFromAgent(req as unknown as Parameters<typeof animFromAgent>[0]);
-    if (req.kind === "link") return linkFromAgent(req as unknown as Parameters<typeof linkFromAgent>[0]);
-    if (req.kind === "child") return childFromAgent(req as unknown as Parameters<typeof childFromAgent>[0]);
-    return { status: "error", errors: [`unknown bridge request ${req.kind}`] };
+    // the canvas is the call's for as long as it takes (an edit may wait a minute for an asset): the page does not close it meanwhile
+    const release = typeof req.canvasId === "string" ? ui.holdCanvas(req.canvasId) : () => {};
+    try {
+      return await handle(req);
+    } finally {
+      release();
+    }
   });
+}
+
+async function handle(req: Parameters<Parameters<typeof setBridgeHandler>[0]>[0]) {
+  if (req.kind === "read") return readCanvas(req.canvasId as string);
+  if (req.kind === "apply") return applyFromAgent(req as unknown as Parameters<typeof applyFromAgent>[0]);
+  if (req.kind === "anim") return animFromAgent(req as unknown as Parameters<typeof animFromAgent>[0]);
+  if (req.kind === "link") return linkFromAgent(req as unknown as Parameters<typeof linkFromAgent>[0]);
+  if (req.kind === "child") return childFromAgent(req as unknown as Parameters<typeof childFromAgent>[0]);
+  return { status: "error", errors: [`unknown bridge request ${req.kind}`] };
 }
 

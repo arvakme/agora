@@ -1,7 +1,7 @@
 // Entry points for a fresh start: the「+」menu, where a new session lands, and which level a tab shows on first screen.
 import { describe, expect, it } from "vitest";
 import { group, groupOf, groups, moveTab } from "./layout.ts";
-import { firstScreen, openIds, placeDoc, placeQuiet, plusMenu } from "./model.ts";
+import { firstScreen, openIds, placeDoc, placeQuiet, plusMenu, savedWorkspace } from "./model.ts";
 
 const kinds: Record<string, "canvas" | "session"> = { top: "canvas", sub: "canvas", other: "canvas", p1: "session", p2: "session" };
 const kindOf = (id: string) => kinds[id];
@@ -83,5 +83,30 @@ describe("FX2a · #2b: a canvas opened for an agent's read does not take the pan
   it("the ordinary open still takes the pane (the person asked for it)", () => {
     const root = group(["top"], "top");
     expect(groups(placeDoc(root, "child", "canvas", ctx))[0].active).toBe("child");
+  });
+});
+
+describe("FX4 · P2 #3: a quiet tab is not saved into the person's layout", () => {
+  it("opened quietly, saved: the open list has no such tab (docs stay); once the person took it, it is saved", () => {
+    const docs = [
+      { id: "top", kind: "canvas" as const, title: "top" },
+      { id: "child", kind: "canvas" as const, title: "child" },
+    ];
+    const root = placeQuiet(group(["top"], "top"), "child", { kindOf: (t: string) => (t === "child" ? ("canvas" as const) : kindOf(t)), recentCanvas: "top", focused: "top" });
+    expect(openIds(root)).toContain("child");
+    const hidden = savedWorkspace({ docs, root, focused: "top" }, () => false, () => undefined, new Set(["child"]));
+    expect(openIds(hidden.root)).toEqual(["top"]);
+    expect(hidden.docs.map((d) => d.id)).toEqual(["top", "child"]);
+    const owned = savedWorkspace({ docs, root, focused: "top" }, () => false, () => undefined, new Set());
+    expect(openIds(owned.root)).toEqual(["top", "child"]);
+  });
+  it("a focused quiet tab is not the saved focus", () => {
+    const docs = [
+      { id: "top", kind: "canvas" as const, title: "top" },
+      { id: "child", kind: "canvas" as const, title: "child" },
+    ];
+    const root = group(["top", "child"], "top");
+    const out = savedWorkspace({ docs, root, focused: "child" }, () => false, () => undefined, new Set(["child"]));
+    expect(out.focused).toBe("top");
   });
 });

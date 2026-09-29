@@ -54,10 +54,13 @@ export function buildGeometry(canvasId: string, elements: readonly El[], map: Ma
   }
   // Nodes an agent's canvas changes touched are places too (no file claims them: runs/touch.ts), and so are the nodes that open the way down to
   // touched nodes below (the worker stands on them and goes in).
+  /** A node that is there: on a canvas that is there, not deleted (one rule for the way in and for where a path is). */
+  const nodeThere = (canvas: string, id: string) => !!everything.get(canvas)?.some((e) => e.id === id && live(e));
+  const touchedLive = (canvas: string) => [...touchedNodes(canvas)].some((id) => nodeThere(canvas, id));
   const doorTo = (canvas: string, seen: Set<string>): boolean => {
     if (seen.has(canvas)) return false;
     seen.add(canvas);
-    if (anyTouched(canvas)) return true;
+    if (touchedLive(canvas)) return true;
     return (everything.get(canvas) ?? []).some((e) => live(e) && childOfNode(e) && everything.has(childOfNode(e)!) && doorTo(childOfNode(e)!, seen));
   };
   const touched = touchedNodes(canvasId);
@@ -86,7 +89,7 @@ export function buildGeometry(canvasId: string, elements: readonly El[], map: Ma
           for (const e of everything.get(from) ?? []) {
             const ch = live(e) ? childOfNode(e) : null;
             if (!ch || !everything.has(ch)) continue;
-            if (ch === np.canvas || way(ch, seen)) return { node: e.id, child: ch };
+            if (ch === np.canvas ? nodeThere(np.canvas, np.id) : way(ch, seen)) return { node: e.id, child: ch };
           }
           return null;
         };

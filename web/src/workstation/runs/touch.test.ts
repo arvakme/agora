@@ -195,3 +195,31 @@ describe("the figure at work on the edited nodes (stateAt on a context that has 
     expect(() => stateAt(r, r.segs[1].start + 20, ctx(r))).not.toThrow();
   });
 });
+
+describe("FX4 · P2 #8: a burst of changes does not queue up for minutes", () => {
+  const burst = (n: number, gap: number, id = "n") => Array.from({ length: n }, (_, i) => touch({ at: T0 + i * gap, until: T0 + i * gap, nodes: [node(id, 0)] }));
+  it("100 updates of one node in 10 s: the last stop ends within about 8 s of the last update", () => {
+    const b = burst(100, 100);
+    const out = mergeTouches(run([], { running: false }), b);
+    const last = out.segs.filter((s) => s.edit).at(-1)!;
+    expect(last.end).toBeLessThanOrEqual(b.at(-1)!.at + 8 * S);
+    expect(out.segs.filter((s) => s.edit).length).toBeLessThan(30);
+  });
+  it("the final position is kept: the last stop is at the last change's node", () => {
+    const b = [...burst(60, 100, "a"), touch({ at: T0 + 6100, until: T0 + 6100, nodes: [node("z", 900)] })];
+    const out = mergeTouches(run([], { running: false }), b);
+    expect(parseNodePath(out.segs.filter((s) => s.edit).at(-1)!.path!)!.id).toBe("z");
+  });
+  it("a turn that is over is not 'at work' long after its last change (isWorking looks at the segments)", () => {
+    const b = burst(100, 100);
+    const out = mergeTouches(run([], { running: false }), b);
+    const end = out.segs.at(-1)!.end;
+    expect(end).toBeLessThanOrEqual(b.at(-1)!.at + 8 * S);
+    expect(out.running).toBe(false);
+  });
+  it("changes that come at a walking pace (no backlog) are all shown, as before", () => {
+    const b = burst(5, 4000);
+    const out = mergeTouches(run([], { running: false }), b);
+    expect(out.segs.filter((s) => s.edit)).toHaveLength(5);
+  });
+});

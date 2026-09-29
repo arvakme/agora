@@ -7,7 +7,7 @@
 // reduced motion, or where the browser has no view transitions, it is a cut. Imperative, no React: it outlives the canvases it switches.
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { El } from "../canvas/scene";
-import { canvasStep, INPUT_RECENT_MS, nextPaused, newCanvasMachine, type PauseEvent } from "./liveCamera";
+import { canvasStep, nextPaused, newCanvasMachine, type PauseEvent } from "./liveCamera";
 import { cameraResume, cameraStart, cameraStep, inShot, switchView, ZOOM_MAX, ZOOM_MIN, type CameraGoal, type CameraState } from "./director";
 import { firstView, viewport, type Viewport } from "../canvas/viewport";
 import { nav, nested } from "../nested/store";
@@ -21,6 +21,7 @@ import { fitView, type Box, type Fit } from "./replayFit";
 import { followView, trayShotBox } from "./replayFollow";
 import { figurePositions } from "./focus";
 import { replacingPush } from "./replayHistory";
+import { byCamera, userNav } from "./navOrigin";
 import { scenePlaces } from "./scenePlaces";
 import type { WorkRun } from "./runs/types";
 
@@ -190,7 +191,7 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
         const mounted = !!canvases.get(to);
         if (!mounted) firstView.set(to, viewFor(to, restore));
         // the app's navigation pushes a history entry: during a replay it replaces the current one
-        replacingPush(() => nav.go(from, to));
+        replacingPush(() => byCamera(() => nav.go(from, to)));
         shown = to;
         log.push({ at: Date.now(), t: clock.time(), from, to, title: nested.get().titles[to] ?? "" });
         for (let i = 0; i < 60 && !(canvases.get(to) && (viewport.get(to)?.width ?? 0) > 0); i++) await wait(40);
@@ -214,10 +215,9 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
   // the person's own pan or zoom of the canvas takes the camera from us until they hand it back. Live: only a real drag (not a click that
   // selects), a wheel, the zoom buttons, opening the comment dock or typing into the canvas's text editor; Esc alone is not.
   let press: { x: number; y: number } | null = null;
-  /** When the person last pressed, keyed or scrolled (wall ms): a canvas change without it is the app's (./liveCamera.ts `INPUT_RECENT_MS`). */
-  let inputAt = -Infinity;
+  /** How many navigations of the person's the camera has taken account of (./navOrigin.ts): a canvas change seen while there are more is theirs. */
+  let navSeen = userNav.seq();
   const takeOver = (e: Event) => {
-    if (e.type === "pointerdown" || e.type === "wheel") inputAt = Date.now();
     const el = e.target as HTMLElement | null;
     if (live && e.type === "pointerdown" && el?.closest?.(".dock")) return pause("comment");
     if (live && e.type === "pointermove") {
@@ -236,7 +236,6 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
   };
   // live: typing into an element of the canvas (its text editor) pauses it as well
   const onKey = (e: KeyboardEvent) => {
-    inputAt = Date.now();
     const el = e.target as HTMLElement | null;
     const typing = !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
     if (e.key !== "Escape" && typing && el?.closest?.(".excalidraw")) pause("edit");
@@ -246,7 +245,11 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     for (const ev of evs) on ? addEventListener(ev, takeOver, true) : removeEventListener(ev, takeOver, true);
     if (live) on ? addEventListener("keydown", onKey, true) : removeEventListener("keydown", onKey, true);
     if (!on) press = null;
+    // the person navigated (a breadcrumb, back, a tab, a key: ./navOrigin.ts): the camera lets go at that moment, not when the change is seen
+    offNav?.();
+    offNav = live && on ? userNav.subscribe(() => home && pause("select")) : null;
   };
+  let offNav: (() => void) | null = null;
   /** Live: the camera lets go (a play takes over, the switch is off, the timeline is replaying): nothing put back — the person's view is theirs. */
   const release = () => {
     listen(false);
@@ -284,7 +287,9 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     // the figure went in at a door of the canvas shown, and is out of sight on it: nothing to wait for
     const door = doorOf(shown!);
     const behind = want !== shown && door.behind && door.into === want;
-    const act = canvasStep(machine, { now: Date.now(), working: live!.working(), want, shown: shown!, home, cur, busy, manual, displaced: shown !== home || !!homeView, behind, input: Date.now() - inputAt < INPUT_RECENT_MS });
+    const act = canvasStep(machine, { now: Date.now(), working: live!.working(), want, shown: shown!, home, cur, busy, manual, displaced: shown !== home || !!homeView, behind, input: userNav.seq() !== navSeen });
+    if (!cur || cur === shown) navSeen = userNav.seq(); // nothing pending: what was noted led nowhere the camera is not already at
+    if (act.type === "canvas-moved" || act.type === "user-moved") navSeen = userNav.seq();
     if (act.type === "canvas-moved") {
       // the app put another canvas in front (an agent reading a sub-canvas opens it): not the person's doing — go on, on that one
       home = shown = act.to;

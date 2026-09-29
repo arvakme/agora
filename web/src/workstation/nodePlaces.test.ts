@@ -133,3 +133,31 @@ describe("a whole diagram drawn at once (30 nodes, one `agora canvas apply`): wh
     touches.clear();
   });
 });
+
+describe("FX4 · P2 #6: a node that was deleted below is no place, in the parent's geometry either", () => {
+  const scenes: Scenes = new Map<string, El[]>([
+    ["root", [el({ id: "door", type: "rectangle", customData: { childCanvas: "child" } })]],
+    ["child", [el({ id: "gone", type: "rectangle", isDeleted: true }), ...drawn("kept", "在", 0)]],
+  ]);
+  const g = (c: string) => buildGeometry(c, scenes.get(c)!, new Map(scenes.get(c)!.map((e) => [e.id, e])), scenes, () => undefined);
+  it("touched `child/gone` (deleted): the parent's node opens no way, the path locates nowhere, on the parent, the child and by levels", () => {
+    touches.clear();
+    touches.record({ session: "s", canvas: "child", at: 1, until: 1, say: "改图", nodes: [{ id: "gone", x: 80, y: 32 }] });
+    expect(g("root").boxes.has("door")).toBe(false);
+    expect(g("root").locate(nodePath("child", "gone"))).toBeNull();
+    expect(g("child").locate(nodePath("child", "gone"))).toBeNull();
+    expect(levelsOf(nodePath("child", "gone"), "root", scenes, {})).toBeNull();
+  });
+  it("a node that is still there below: the way in is a place as before", () => {
+    touches.clear();
+    touches.record({ session: "s", canvas: "child", at: 1, until: 1, say: "改图", nodes: [{ id: "kept", x: 80, y: 32 }] });
+    const loc = g("root").locate(nodePath("child", "kept"));
+    expect(loc?.place).toBe("door");
+    expect(loc?.portal?.canvasId).toBe("child");
+  });
+  it("a touched node on a canvas that is not there any more: no way either", () => {
+    touches.clear();
+    touches.record({ session: "s", canvas: "nowhere", at: 1, until: 1, say: "改图", nodes: [{ id: "x", x: 0, y: 0 }] });
+    expect(g("root").boxes.has("door")).toBe(false);
+  });
+});
