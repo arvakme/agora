@@ -79,9 +79,16 @@ def _summary(inp: Any) -> str:
 PASTE_TAG = re.compile(r"</?pasted_content[^>]*>")
 
 
+# The token a dispatch (dispatch.py) puts in the footer of the message it sends: the CLI's own record of
+# that one user message then names the dispatch, which is how it is known to have arrived.
+DISPATCH_MARK = re.compile(r"agora-req-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
+
+
 def user_item(id: str, text: str, at: int) -> dict[str, Any]:
-    body, from_agora = split_agora(PASTE_TAG.sub("", text).strip())
-    return {"id": id, "kind": "user", "text": _clip(body, MAX_TEXT), "at": at, "source": "agora" if from_agora else "terminal"}
+    clean = PASTE_TAG.sub("", text).strip()
+    body, from_agora = split_agora(clean)
+    mark = DISPATCH_MARK.search(clean[len(body):]) if from_agora else None
+    return {"id": id, "kind": "user", "text": _clip(body, MAX_TEXT), "at": at, "source": "agora" if from_agora else "terminal", **({"dispatch": mark.group(1)} if mark else {})}
 
 
 def _full(v: Any) -> str:

@@ -43,11 +43,16 @@ from server.canvas.runner import claude_message_usage, claude_result_usage
 
 
 class ClaudeStream(StreamMapper):
-    """``claude -p --output-format stream-json --verbose``."""
+    """``claude -p --input-format stream-json --output-format stream-json --verbose --permission-prompt-tool stdio``.
+
+    Besides the transcript events it reports what needs the host: ``mode`` (the permission mode the
+    CLI really runs in), ``request`` / ``request_cancel`` (a ``can_use_tool`` it wants answered, and
+    its withdrawal) and ``denied`` (actions auto mode blocked inside the CLI, from the result)."""
 
     def __init__(self, model: str | None, session: str | None) -> None:
         super().__init__(model, session)
         self.result: dict[str, Any] | None = None
+        self.interrupted = False  # the turn ended because the host interrupted it (not a failure)
 
     def feed(self, d: dict[str, Any], at: int) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
@@ -55,6 +60,17 @@ class ClaudeStream(StreamMapper):
         if t == "system" and d.get("subtype") == "init":
             self.model = str(d.get("model") or self.model or "") or None
             self.session = str(d.get("session_id") or self.session or "") or None
+            if d.get("permissionMode"):
+                out.append({"t": "mode", "at": at, "mode": str(d["permissionMode"]), "model": self.model})
+        elif t == "control_request" and (d.get("request") or {}).get("subtype") == "can_use_tool":
+            r = d["request"]
+            out.append({
+                "t": "request", "at": at, "id": str(d.get("request_id")), "tool": str(r.get("tool_name")), "toolUseId": str(r.get("tool_use_id") or ""),
+                "input": r.get("input") if isinstance(r.get("input"), dict) else {}, "suggestions": r.get("permission_suggestions") or [],
+                "reason": r.get("decision_reason"), "reasonType": r.get("decision_reason_type"), "description": r.get("description"),
+            })
+        elif t == "control_cancel_request":
+            out.append({"t": "request_cancel", "at": at, "id": str(d.get("request_id"))})
         elif t == "assistant":
             msg = d.get("message") or {}
             texts = []
@@ -76,7 +92,12 @@ class ClaudeStream(StreamMapper):
             self.result = d
             self.done = True
             self.session = str(d.get("session_id") or self.session or "") or None
-            if d.get("is_error"):
+            denials = [x for x in d.get("permission_denials") or [] if isinstance(x, dict)]
+            if denials:
+                out.append({"t": "denied", "at": at, "denials": [{"tool": str(x.get("tool_name")), "toolUseId": str(x.get("tool_use_id") or ""), "summary": _summary(x.get("tool_input"))} for x in denials]})
+            if d.get("terminal_reason") == "aborted_tools":
+                self.interrupted = True  # the host asked for it (control_request interrupt): a clean end
+            elif d.get("is_error"):
                 self.error = f"claude: {d.get('subtype', 'error')} {str(d.get('result') or '')[:300]}".strip()
             elif isinstance(d.get("result"), str) and d["result"].strip():
                 self.text = d["result"]
@@ -86,6 +107,51 @@ class ClaudeStream(StreamMapper):
         if self.result is None:
             return super().final_usage(duration_ms)
         return claude_result_usage(self.result, self.model, duration_ms)
+
+
+# ——— answering the CLI (control_response lines the host writes to stdin) ———
+# Formats as the CLI takes them (recorded 2026-09-29, Claude Code 2.1.284, tests/fixtures/agents/claude-duplex/).
+DENY_DEFAULT = "The person declined this action in Agora."
+
+
+def _reply(request_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    return {"type": "control_response", "response": {"subtype": "success", "request_id": request_id, "response": body}}
+
+
+def answer_response(request_id: str, tool_input: dict[str, Any], answers: dict[str, Any]) -> dict[str, Any]:
+    """An ``AskUserQuestion`` answered: ``answers`` maps each question's text to the chosen option label
+    (several labels of a multi-select are joined with ", "); every question needs one of its own options."""
+    given: dict[str, str] = {}
+    for q in tool_input.get("questions") or []:
+        text = str(q.get("question"))
+        picked = answers.get(text)
+        labels = [str(x) for x in (picked if isinstance(picked, list) else [picked]) if x not in (None, "")]
+        options = {str(o.get("label")) for o in q.get("options") or []}
+        if not labels:
+            raise ValueError(f"没有回答：{text}")
+        bad = [x for x in labels if x not in options]
+        if bad:
+            raise ValueError(f"「{bad[0]}」不是这个问题的选项：{text}")
+        given[text] = ", ".join(labels)
+    return _reply(request_id, {"behavior": "allow", "updatedInput": {**tool_input, "answers": given}})
+
+
+def approve_response(request_id: str, tool_input: dict[str, Any], session_suggestions: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """Allow one call; with ``session_suggestions`` (the request's ``permission_suggestions``) also the rest
+    of this session. Their ``destination`` is forced to ``session``: the CLI's own default (``localSettings``)
+    would write into the project's files."""
+    body: dict[str, Any] = {"behavior": "allow", "updatedInput": tool_input}
+    if session_suggestions:
+        body["updatedPermissions"] = [{**x, "destination": "session"} for x in session_suggestions]
+    return _reply(request_id, body)
+
+
+def deny_response(request_id: str, message: str | None) -> dict[str, Any]:
+    return _reply(request_id, {"behavior": "deny", "message": (message or "").strip() or DENY_DEFAULT})
+
+
+def interrupt_request(request_id: str) -> dict[str, Any]:
+    return {"type": "control_request", "request_id": request_id, "request": {"subtype": "interrupt"}}
 
 
 # ——— files a tool call writes ———
@@ -126,6 +192,13 @@ def classify(name: str, args: Any, root: str | None, cwd: str | None = None) -> 
     elif name in ("AskUserQuestion", "ExitPlanMode"):
         act, waits = "questions", True
     return tool_facts(act, files=fs, reads=reads, waits_user=waits, spawn=spawn, on=on)
+
+
+def ask_text(inp: Any) -> str:
+    """An ``AskUserQuestion`` call as the question it puts (what the person is being waited on for)."""
+    qs = inp.get("questions") if isinstance(inp, dict) else None
+    first = qs[0].get("question") if isinstance(qs, list) and qs and isinstance(qs[0], dict) else None
+    return _clip(str(first), 200) if first else _summary(inp)
 
 
 def result_spawn(rec: dict[str, Any]) -> dict[str, Any] | None:
@@ -192,7 +265,7 @@ def project(rec: dict[str, Any], st: State) -> Out:
                 tid = str(b.get("id"))
                 name = str(b.get("name"))
                 st.pending.add(tid)
-                tool: dict[str, Any] = {"name": name, "input": _summary(b.get("input")), "args": _full(b.get("input"))}
+                tool: dict[str, Any] = {"name": name, "input": ask_text(b.get("input")) if name == "AskUserQuestion" else _summary(b.get("input")), "args": _full(b.get("input"))}
                 facts = classify(name, b.get("input"), st.root, rec.get("cwd") if isinstance(rec.get("cwd"), str) else None)
                 if facts.get("files"):
                     tool["files"] = facts["files"]
@@ -284,6 +357,7 @@ class ClaudeAdapter(Adapter):
     prunes_logs_after_days = 30
 
     # Headless
+    duplex = True  # stdin stays open for the turn: the host answers the CLI's requests and can interrupt
     assigns_id = "agora"
     can_fork_headless = True
     terminal_fork = "claude --fork-session"
@@ -414,7 +488,9 @@ class ClaudeAdapter(Adapter):
     # ——— Headless ———
     def headless_args(self, cmd: list[str], req: Any, *, log_exists: Callable[[str], bool] | bool = False, skill_dir: Path | None = None) -> list[str]:
         o = req.options
-        args = [*cmd, "-p", "--output-format", "stream-json", "--verbose"]
+        # auto mode: the CLI decides what needs asking; what it does ask (a question, an approval when the
+        # model has no auto and falls back to default) comes back as a control_request on stdout.
+        args = [*cmd, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--permission-prompt-tool", "stdio", "--permission-mode", "auto"]
         if o.fork_from:
             args += ["--resume", o.fork_from, "--fork-session"]
         elif o.session:
@@ -427,9 +503,14 @@ class ClaudeAdapter(Adapter):
             args += ["--model", o.model]
         if o.effort:
             args += ["--effort", o.effort]
-        # The canvas skill runs `agora canvas …` through Bash; allow exactly that.
-        args += ["--allowedTools", "Bash(agora canvas *)", "Bash(agora canvas:*)"]
+        # The canvas skill runs `agora canvas …` through Bash, a dispatched task hands its receipt back with
+        # `agora reply …` and may dispatch on with `agora dispatch …`; allow exactly those.
+        args += ["--allowedTools", *(f"Bash(agora {c} {s})" for c in ("canvas", "reply", "dispatch") for s in ("*", ":*"))]
         return args
+
+    def headless_stdin(self, req: Any) -> bytes:
+        """The turn's first message as one stream-json line; the pipe stays open (``duplex``)."""
+        return (json.dumps({"type": "user", "message": {"role": "user", "content": req.prompt}}, ensure_ascii=False) + "\n").encode()
 
     # ——— Interactive ———
     def fork_argv(self, fork: dict[str, Any]) -> list[str]:

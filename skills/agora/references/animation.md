@@ -41,6 +41,5 @@ Each step is `{"actions": [...]}`, primitives that run together:
 | `caption` | `text` — the step's explanation, at most one per step |
 
 Within a step a node moves, highlights and relabels at most once. Run the algorithm
-faithfully on the given input (the real sequence of comparisons/visits), one step per
-meaningful event, ≤ 80 steps, every step captioned in the person's language. Title: short,
-in the person's language, including the input.
+faithfully on the given input, one step per meaningful event, aim for ≤ 80 steps (hard limit 300), each captioned
+in the person's language. Title: short, including the input.

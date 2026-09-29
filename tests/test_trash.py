@@ -102,7 +102,7 @@ def test_session_to_trash_and_back_keeps_binding_record_and_usage_and_resumes_th
 
     b = store.read_binding("s-1")
     req = RunRequest(schema=None, system=None, prompt="x", options=ExecOptions(backend="claude", session=b["nativeId"], new_session=not b["started"]), cwd=str(store.root))
-    assert ClaudeCodeBackend().args(req)[5:7] == ["--resume", NID]
+    assert ClaudeCodeBackend().args(req)[11:13] == ["--resume", NID]
     purge = c.post("/api/project/trash/session/s-1", json={}).json()
     assert c.delete(f"/api/project/trash/{purge['trashId']}").json()["native"]["nativeId"] == NID
     assert log.exists() and not (store.dir / "trash" / purge["trashId"]).exists()

@@ -239,8 +239,8 @@ def test_doctor_puts_back_bindings_and_records_after_git_clean(store, home):
     assert check.returncode == 1 and "agora doctor --fix" in check.stdout, check.stdout
     shutil.rmtree(store.root / ".claude", ignore_errors=True)  # the skill link is an ignored file too
     fixed = agora("doctor", "--fix", cwd=store.root, home=home)
-    assert "放回了" in fixed.stdout and "cleanupPeriodDays" in fixed.stdout and "重新链接了 agora-canvas skill" in fixed.stdout, fixed.stdout
-    assert (store.root / ".claude" / "skills" / "agora-canvas").is_symlink()
+    assert "放回了" in fixed.stdout and "cleanupPeriodDays" in fixed.stdout and "重新链接了 agora skill" in fixed.stdout, fixed.stdout
+    assert (store.root / ".claude" / "skills" / "agora").is_symlink()
     assert Local(ProjectStore(store.root)).instance_id() == iid  # same copy: socket, tunnel, backups line up
     after = {p.name: p.read_bytes() for p in (store.dir / "sessions").glob("*.*")}
     assert after == before  # records and binding exactly as they were

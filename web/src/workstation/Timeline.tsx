@@ -21,7 +21,7 @@ import { bucketize, idleSince, isDense, recentKids } from "./density";
 import { DaySummary } from "./DaySummary";
 import { RunAvatar } from "./RunAvatar";
 import { useRuns } from "./runs/store";
-import { FINAL, RECEIPT_NAMES, receiptAt, receiptView, type WorkRun, type FlatRun, type RunSeg } from "./runs/types";
+import { FINAL, RECEIPT_NAMES, receiptAt, receiptText, receiptView, type WorkRun, type FlatRun, type RunSeg } from "./runs/types";
 
 const MINI_COLORS: Record<string, string> = { write: "--accent-fill", read: "--fg-faint", exec: "--series-3", think: "--line-strong", wait: "--caution", delegate: "--fg", gap: "--line-strong" };
 let miniPalette: { theme: string; c: Record<string, string> } | null = null;
@@ -121,7 +121,7 @@ export function nowText(run: WorkRun, t: number, placeOf?: (path: string) => str
   const g = run.segs.find((s) => s.start <= t && t < s.end);
   if (run.parentId) {
     const r = receiptAt(run, t);
-    return { k: r ?? "idle", text: g ? g.label : r ? RECEIPT_NAMES[r] : "" };
+    return { k: r ?? "idle", text: g ? g.label : r ? receiptText(run, r) : "" };
   }
   if (!g) return { k: "idle", text: "空闲" };
   const where = g.path && placeOf ? placeOf(g.path) : undefined;
@@ -598,12 +598,12 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
         const rc = receiptAt(run, t);
         return (
           <Keyed key={run.id} k={`${r.y}|${r.h}|${rc}|${run.task}|${run.name}|${on}|${fl.run === run.id}`} node={
-          <div className="lname sub" role="button" tabIndex={0} data-trace={on || undefined} style={{ top: r.y, height: r.h }} onClick={() => traceAndLocate(run.id)} onKeyDown={activate(() => traceAndLocate(run.id))} onPointerEnter={() => focus.hover(run.id)} onPointerLeave={() => focus.hover(null)} title={`${run.task ?? ""} · $原生子代理 · 点一下追踪它`}>
+          <div className="lname sub" role="button" tabIndex={0} data-trace={on || undefined} style={{ top: r.y, height: r.h }} onClick={() => traceAndLocate(run.id)} onKeyDown={activate(() => traceAndLocate(run.id))} onPointerEnter={() => focus.hover(run.id)} onPointerLeave={() => focus.hover(null)} title={`${run.task ?? ""} · ${run.via === "dispatch" ? "Agora 派发" : "原生子代理"} · 点一下追踪它`}>
             <RunAvatar agent={run.agent} size={18} parent={r.f.parent?.agent} />
             <span className="t">
               <b>{fullName(r.f)}</b>
               {on && <span className="trk">追踪中</span>}
-              {rc && <span className="now"><span className="rc" data-r={rc}>{RECEIPT_NAMES[rc]}</span></span>}
+              {rc && <span className="now"><span className="rc" data-r={rc}>{receiptText(run, rc)}</span></span>}
             </span>
             <span className="lacts">{laneActs(run.id)}</span>
           </div>} />
@@ -785,7 +785,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
           {place && <><dt>在</dt><dd>{place}</dd></>}
           <dt>时间</dt>
           <dd>{hhmmss(g.start)}–{hhmmss(end)} · {secs(end - g.start)}</dd>
-          {f.parent ? <><dt>任务</dt><dd>{f.run.task ?? "—"}（原生子代理）</dd></> : g.turn != null && <><dt>轮次</dt><dd>第 {g.turn} 轮</dd></>}
+          {f.parent ? <><dt>任务</dt><dd>{f.run.task ?? "—"}（{f.run.via === "dispatch" ? "Agora 派发" : "原生子代理"}）</dd></> : g.turn != null && <><dt>轮次</dt><dd>第 {g.turn} 轮</dd></>}
           {checked && <><dt>验收</dt><dd>{fullName(checked)}</dd></>}
           {c && other && <><dt>冲突</dt><dd className="warn">和 {fullName(other)} 同时写这个文件（{hhmmss(c.start)}–{hhmmss(c.end)}）</dd></>}
           {child && (

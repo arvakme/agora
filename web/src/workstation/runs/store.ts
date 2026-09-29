@@ -70,6 +70,11 @@ function compute(): Runs {
     roots.push(run);
     maybeFetch(sid, items, running || !!tree?.live);
   }
+  // A session another session gave a task to is drawn once, as the run its giver sent (not also on its own).
+  const given = new Set(roots.flatMap((r) => flatten(r.children).map((f) => f.run.dispatchSession)).filter(Boolean));
+  const shown = roots.filter((r) => !(r.sessionId && given.has(r.sessionId)));
+  roots.length = 0;
+  roots.push(...shown);
   roots.sort((a, b) => a.segs[0].start - b.segs[0].start);
   const flat = flatten(roots);
   return { roots, flat, byId: new Map(flat.map((f) => [f.run.id, f.run])), at: now };

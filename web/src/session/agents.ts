@@ -4,6 +4,7 @@
 // the transcript read from the CLI's own log, and live status — and sends messages.
 // Canvas bridge requests from `agora canvas …` are executed by ./agentBridge.ts.
 import { sendable } from "./pickSession";
+import { removeRequest, upsertRequest, type Decision, type HostRequest } from "./requestModel";
 import { useSyncExternalStore } from "react";
 import type { Origin } from "../persist";
 
@@ -38,7 +39,7 @@ export type AgentInfo = {
   catalog?: CatalogEntry;
 };
 /** Unified lifecycle of a run (server/canvas/adapters/runs.py `STATES`). */
-export type RunState = "dispatched" | "acknowledged" | "running" | "waiting" | "idle_no_reply" | "done" | "failed" | "blocked" | "exited" | "session_changed" | "unknown" | "idle";
+export type RunState = "dispatched" | "acknowledged" | "running" | "waiting" | "idle_no_reply" | "done" | "failed" | "blocked" | "exited" | "session_changed" | "unknown" | "idle" | "interrupted";
 /** One lane segment of a run: what it did, when, on which file (and canvas node when `canvas=` was given). */
 export type RunSegment = { kind: "read" | "write" | "exec" | "think" | "wait"; start: number; end: number; itemId: string; turn: number; label: string; path?: string; node?: string; spawn?: NonNullable<Item["tool"]>["spawn"] };
 export type RunMoment = { kind: "dispatch" | "handoff"; at: number; childRunId?: string; toolCallId?: string; taskId?: string; state?: RunState | string };
@@ -52,11 +53,13 @@ export type AgentRun = {
   nativeId?: string;
   tier: Tier;
   sessionId?: string;
+  /** A run a dispatch gave to an Agora session: which one (the session's own transcript is this run, not a second one). */
+  dispatchSession?: string;
   label: string;
   role?: string;
   model?: string;
   depth: number;
-  parent?: { runId: string; via: "native" | "inferred"; toolCallId?: string; taskId?: string; evidence: string };
+  parent?: { runId: string; via: "native" | "dispatch" | "inferred"; toolCallId?: string; taskId?: string; evidence: string };
   cwd?: string;
   worktree?: string;
   state: RunState;
@@ -141,7 +144,9 @@ export type Usage = {
 /** A transcript item from the native log (server/canvas/transcript.py). */
 export type Item = {
   id: string;
-  kind: "user" | "assistant" | "tool" | "usage" | "context" | "end" | "run";
+  kind: "user" | "assistant" | "tool" | "usage" | "context" | "end" | "run" | "notice";
+  /** A `notice` (server: an action auto mode blocked; a turn a restart ended). */
+  tone?: "denied" | "interrupted";
   text?: string;
   at: number;
   endAt?: number;
@@ -197,13 +202,17 @@ export type Status = {
   /** Agora holds a trajectory snapshot of this session (shown read-only if the native log is gone). */
   snapshot?: boolean;
   running: boolean;
+  /** The CLI has a question or an approval open with the person (`requests` has them). */
+  waiting?: boolean;
+  /** The permission mode a two-way CLI really runs in (`asked` is what Agora asked for). */
+  mode?: { actual: string | null; asked: string } | null;
   busy: boolean;
   queued: number;
   held: string | null;
   activity: string | null;
   error: string | null;
   /** The session's terminal: Agora's own tmux pane (Kitty / Terminal attach to it). `inputRight`: who may type into it (a person's takeover pauses delivery). */
-  terminal: { alive: boolean; attach: string; clients: number; app: "tmux" | null; inputRight?: "host" | "human" };
+  terminal: { alive: boolean; attach: string; clients: number; app: "tmux" | null; inputRight?: "host" | "human"; paused?: boolean; writers?: number };
 };
 export type TerminalApps = { kitty: boolean };
 export type CatalogEntry = {
@@ -243,6 +252,24 @@ export function effortChoices(entry: CatalogEntry | undefined, model: string): {
   const initial = levels.includes(def) ? def : "";
   return { levels, initial, cliDefault: initial === "" };
 }
+/**
+ * A dispatch as the server keeps it (server/canvas/dispatch.py `summary`; `GET /api/agent/dispatches/<id>`):
+ * `state` is one of `RunState`, derived from the record on disk. A comment handed to a session is one, with
+ * `source.kind === "comment"`; the server posts the session's answer into the thread when it ends.
+ */
+export type Dispatch = {
+  id: string;
+  state: RunState;
+  source: { kind: "session" | "comment" | "user"; sessionId?: string; canvasId?: string; threadId?: string; threadN?: number };
+  target: { sessionId: string; agent: string; new: boolean };
+  error?: string | null;
+  queuedBecause?: string;
+  reply?: { status: "done" | "failed" | "blocked"; summary: string } | null;
+};
+/** States after which nothing more is expected of a dispatch (a late receipt can still move `idle_no_reply`). */
+export const DISPATCH_OVER: ReadonlySet<string> = new Set(["done", "failed", "blocked", "idle_no_reply", "interrupted"]);
+const dispatchWaiters = new Map<string, ((d: Dispatch) => void)[]>();
+
 /** A message Agora sent that has not finished yet (comment hand-offs wait on it). */
 export type Inflight = { sendId: string; sessionId: string; canvasId: string; threadId?: string; threadN?: number; anchor?: string; turnIds: string[] };
 
@@ -256,9 +283,11 @@ type State = {
   /** Last time something happened in a session (picks the canvas's session for comments). */
   activeAt: Record<string, number>;
   inflight: Record<string, Inflight>;
+  /** Open requests of the sessions' CLIs (questions, approvals): runtime only, the server is the source. */
+  requests: Record<string, HostRequest[]>;
 };
 
-let state: State = { connected: false, bindings: {}, origins: {}, items: {}, status: {}, activeAt: {}, inflight: {} };
+let state: State = { connected: false, bindings: {}, origins: {}, items: {}, status: {}, activeAt: {}, inflight: {}, requests: {} };
 const listeners = new Set<() => void>();
 const set = (patch: Partial<State>) => {
   state = { ...state, ...patch };
@@ -290,12 +319,24 @@ export const setBridgeHandler = (h: BridgeHandler) => void (bridgeHandler = h);
 export async function handleEvent(e: Record<string, unknown> & { t: string }) {
   if (e.t === "hello") return set({ connected: true });
   if (e.t === "transcript") return upsert(e.sessionId as string, e.items as Item[], !!e.reset);
+  if (e.t === "request") {
+    const r = (e as unknown as { request: HostRequest }).request;
+    return set({ requests: { ...state.requests, [r.sessionId]: upsertRequest(state.requests[r.sessionId] ?? [], r) } });
+  }
+  if (e.t === "request_cancel") {
+    const { sessionId, id } = e as unknown as { sessionId: string; id: string };
+    const cur = state.requests[sessionId] ?? [];
+    return set({ requests: { ...state.requests, [sessionId]: removeRequest(cur, id) } });
+  }
   if (e.t === "status") {
     const { binding, sessionId, t: _t, ...status } = e as unknown as { binding: Binding | Record<string, never>; sessionId: string; t: string } & Status;
     set({
       status: { ...state.status, [sessionId]: status },
       bindings: binding && "agent" in binding ? { ...state.bindings, [sessionId]: binding as Binding } : state.bindings,
     });
+    // A page opened while the CLI waits was not there for the request event: ask for what is open.
+    if (status.waiting && !(state.requests[sessionId] ?? []).length) void agents.loadRequests(sessionId);
+    if (!status.waiting && (state.requests[sessionId] ?? []).length) set({ requests: { ...state.requests, [sessionId]: [] } });
     return;
   }
   if (e.t === "done") {
@@ -303,6 +344,12 @@ export async function handleEvent(e: Record<string, unknown> & { t: string }) {
     set({ activeAt: { ...state.activeAt, [d.sessionId]: Date.now() } });
     doneWaiters.get(d.sendId)?.(d);
     doneWaiters.delete(d.sendId);
+    return;
+  }
+  if (e.t === "dispatch") {
+    const d = (e as unknown as { dispatch: Dispatch }).dispatch;
+    if (DISPATCH_OVER.has(d.state)) for (const ok of dispatchWaiters.get(d.id) ?? []) ok(d);
+    if (DISPATCH_OVER.has(d.state)) dispatchWaiters.delete(d.id);
     return;
   }
   if (e.t === "bridge" && bridgeHandler) {
@@ -348,7 +395,7 @@ export const agents = {
   /** The session went to the trash: its binding, status and transcript leave this page (the pointer moves on). */
   forget(sessionId: string) {
     const drop = <T,>(r: Record<string, T>) => Object.fromEntries(Object.entries(r).filter(([k]) => k !== sessionId));
-    set({ bindings: drop(state.bindings), status: drop(state.status), items: drop(state.items), activeAt: drop(state.activeAt), inflight: drop(state.inflight), origins: drop(state.origins) });
+    set({ requests: drop(state.requests), bindings: drop(state.bindings), status: drop(state.status), items: drop(state.items), activeAt: drop(state.activeAt), inflight: drop(state.inflight), origins: drop(state.origins) });
   },
 
   /**
@@ -392,6 +439,43 @@ export const agents = {
     });
     return { ...r, done };
   },
+  /**
+   * Hand a canvas comment to a session as a dispatch the server keeps: it survives a page reload, and the
+   * server posts the session's answer into the thread when the turn ends (this page only starts it and
+   * shows it). `done` resolves when the dispatch is over.
+   */
+  async dispatchComment(sessionId: string, text: string, opts: { canvasId: string; threadId: string; threadN: number; anchor: string }) {
+    const d = (await json(
+      await fetch("/api/agent/dispatches", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source: { kind: "comment", canvasId: opts.canvasId, threadId: opts.threadId, threadN: opts.threadN }, to: sessionId, task: text, inline: true, expectsReply: false, canvasId: opts.canvasId }),
+      }),
+    )) as Dispatch;
+    const inflight: Inflight = { sendId: d.id, sessionId, canvasId: opts.canvasId, turnIds: [], threadId: opts.threadId, threadN: opts.threadN, anchor: opts.anchor };
+    set({ inflight: { ...state.inflight, [sessionId]: inflight }, activeAt: { ...state.activeAt, [sessionId]: Date.now() } });
+    const done = new Promise<Dispatch>((ok) => {
+      if (DISPATCH_OVER.has(d.state)) return ok(d);
+      dispatchWaiters.set(d.id, [...(dispatchWaiters.get(d.id) ?? []), ok]);
+      // The event stream can drop; the record on the server is the truth.
+      const poll = setInterval(async () => {
+        const now = (await fetch(`/api/agent/dispatches/${d.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)) as Dispatch | null;
+        if (now && DISPATCH_OVER.has(now.state)) {
+          clearInterval(poll);
+          dispatchWaiters.get(d.id)?.forEach((f) => f(now));
+          dispatchWaiters.delete(d.id);
+        }
+      }, 3000);
+      dispatchWaiters.set(d.id, [...(dispatchWaiters.get(d.id) ?? []), () => clearInterval(poll)]);
+    }).then((r) => {
+      if (state.inflight[sessionId]?.sendId === d.id) {
+        const { [sessionId]: _, ...rest } = state.inflight;
+        set({ inflight: rest });
+      }
+      return { ...r, turnIds: inflight.turnIds };
+    });
+    return { dispatch: d, done };
+  },
   /** Apply turns created while a send is in flight belong to it (a comment's undo, its reply link). */
   noteTurn(sessionId: string, turnId: string) {
     const f = state.inflight[sessionId];
@@ -408,6 +492,25 @@ export const agents = {
   item: async (sessionId: string, itemId: string) => (await json(await fetch(`/api/agent/sessions/${sessionId}/items/${encodeURIComponent(itemId)}`))) as Item,
   closeTerminal: (sessionId: string) => fetch(`/api/agent/sessions/${sessionId}/terminal`, { method: "DELETE" }),
   interrupt: (sessionId: string) => fetch(`/api/agent/sessions/${sessionId}/interrupt`, { method: "POST" }),
+  /** What the session's CLI has open with the person now. */
+  async loadRequests(sessionId: string) {
+    try {
+      const r = (await json(await fetch(`/api/agent/sessions/${sessionId}/requests`))) as { requests?: HostRequest[] };
+      if (r.requests) set({ requests: { ...state.requests, [sessionId]: r.requests } });
+    } catch {
+      /* the session went away, or the server is restarting: the next status asks again */
+    }
+  },
+  /** Answer a request (a question's choice, allow / allow for the session / deny). The card leaves when the server says it is closed. */
+  async answerRequest(sessionId: string, id: string, d: Decision) {
+    const res = await fetch(`/api/agent/sessions/${sessionId}/requests/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(d) });
+    if (res.status === 404) return set({ requests: { ...state.requests, [sessionId]: removeRequest(state.requests[sessionId] ?? [], id) } }); // already gone
+    await json(res);
+  },
+  /** The input right (server/canvas/terminal.py): take the pane over, give it back to Agora, or send the queued head now. */
+  takeover: async (sessionId: string) => json(await fetch(`/api/agent/sessions/${sessionId}/takeover`, { method: "POST" })),
+  giveBack: async (sessionId: string) => json(await fetch(`/api/agent/sessions/${sessionId}/return`, { method: "POST" })),
+  deliverNow: async (sessionId: string) => json(await fetch(`/api/agent/sessions/${sessionId}/deliver-now`, { method: "POST" })),
   /** What was said so far (from Agora's snapshot), as a message to carry into a new native session. */
   summary: async (sessionId: string) => ((await json(await fetch(`/api/agent/sessions/${sessionId}/summary`))) as { text: string }).text,
   /** The native log is gone: the next message starts a new native session for this same Agora session. */

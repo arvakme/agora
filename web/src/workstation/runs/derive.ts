@@ -39,7 +39,7 @@ export function runFromTranscript(o: { sessionId: string; agent: string; name: s
   };
 }
 
-const FINAL_STATES = new Set(["done", "failed", "blocked", "exited"]);
+const FINAL_STATES = new Set(["done", "failed", "blocked", "exited", "idle_no_reply", "interrupted"]);
 const LIVE_STATES = new Set(["running", "waiting", "dispatched", "acknowledged"]);
 
 /**
@@ -79,7 +79,8 @@ export function fromTree(tree: RunTree, sessionId: string, o: { now: number; roo
       agent: r.kind,
       name: r.label || o.name?.(r.kind) || r.kind,
       parentId: idOf(r.parent.runId),
-      via: "native",
+      via: r.parent.via === "dispatch" ? "dispatch" : "native",
+      ...(r.dispatchSession ? { dispatchSession: r.dispatchSession } : {}),
       evidence: r.parent.via,
       ...(r.role || spawnSeg?.tool?.input ? { task: r.role || spawnSeg?.tool?.input } : {}),
       segs,

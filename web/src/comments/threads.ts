@@ -255,6 +255,8 @@ export function createThreadStore(canvasId: string, initial?: ThreadSnapshot, re
     /** Pin a thread whose element is gone to another element (「重新钉到…」). */
     reanchor: (id: string, anchor: Anchor) => patch(id, (t) => ({ ...t, anchor, updatedAt: Date.now() })),
     setAgent: (id: string, agent: Thread["agent"]) => patch(id, (t) => ({ ...t, agent })),
+    /** Point a message at the session turn that made its change (the server posted the answer; this page knows the turn). */
+    linkTurn: (id: string, msgId: string, turnId: string) => setMsg(id, msgId, (m) => ({ ...m, turnId, updatedAt: Date.now() })),
     /** Opens a thread (idempotent — never toggles). */
     open: (id: string) => state.activeId !== id && commit(all, id),
     close: () => state.activeId !== null && commit(all, null),

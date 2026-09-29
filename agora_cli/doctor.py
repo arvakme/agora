@@ -128,14 +128,14 @@ def diagnose(p, *, fix: bool = False) -> list[dict[str, Any]]:
                 stale.append((sid, int(idle)))
     if stale and not _claude_cleanup_set():
         say("warn", "claude-cleanup", f"{len(stale)} 个 Claude Code 会话超过 {STALE_DAYS} 天没有活动（{', '.join(f'{s} {d} 天' for s, d in stale)}）。Claude Code 默认 30 天后删除会话记录；要保留，在 ~/.claude/settings.json 里设 cleanupPeriodDays。Agora 已为这些会话保存轨迹快照。", sessions=[s for s, _ in stale])
-    # agora-canvas skill links (.claude/skills, .agents/skills) are ignored files: git clean removes them too.
+    # agora skill links (.claude/skills, .agents/skills) are ignored files: git clean removes them too.
     want = sorted({b["agent"] for b in bindings.values() if b.get("agent") in agents.SKILL_DIRS})
-    unlinked = [k for k in want if not (store.root / agents.SKILL_DIRS[k] / "agora-canvas").exists()]
+    unlinked = [k for k in want if not (store.root / agents.SKILL_DIRS[k] / agents.SKILL_NAME).exists()]
     if unlinked and fix:
         agents.install_skill(store.root, unlinked)
-        say("info", "skill", f"重新链接了 agora-canvas skill（{', '.join(agents.NAMES[k] for k in unlinked)}）", fixed=True)
+        say("info", "skill", f"重新链接了 agora skill（{', '.join(agents.NAMES[k] for k in unlinked)}）", fixed=True)
     elif unlinked:
-        say("warn", "skill", f"{', '.join(agents.NAMES[k] for k in unlinked)} 的 agora-canvas skill 链接不在了（git clean？）：终端里的 agent 读不到它；`agora doctor --fix` 或 `agora skill install` 重新链接", fix="skill")
+        say("warn", "skill", f"{', '.join(agents.NAMES[k] for k in unlinked)} 的 agora skill 链接不在了（git clean？）：终端里的 agent 读不到它；`agora doctor --fix` 或 `agora skill install` 重新链接", fix="skill")
     copies = local.copies()
     if copies:
         say("info", "copies", f"{len(copies)} 个会话是从 {next(iter(copies.values())).get('from')} 复制来的，在这里只读，可以在页面上分叉继续", sessions=sorted(copies))

@@ -69,17 +69,21 @@ export async function handToSession(api: ExcalidrawImperativeAPI, threads: Threa
       return;
     }
     const anchor = anchors.length > 1 ? `${anchors[0].name} 等 ${anchors.length} 个` : anchors[0]?.name ?? "";
-    let r;
+    // The server keeps the dispatch and posts the answer into the thread when the turn ends, so a reload
+    // of this page loses nothing; here it only starts it and shows it running.
+    let sent;
     try {
-      r = await agents.send(sid, commentMessage(thread, anchors), { canvasId, context: `这条消息来自画布评论 #${thread.n}。`, thread: { threadId, threadN: thread.n, anchor } });
+      sent = await agents.dispatchComment(sid, commentMessage(thread, anchors), { canvasId, threadId, threadN: thread.n, anchor });
     } catch (e) {
       threads.reply(threadId, { author: "system", text: `没有交出去：${(e as Error).message}`, tone: "error", sessionId: sid, action: "switch-session" });
       return;
     }
-    const d = await r.done;
+    const d = await sent.done;
+    // The answer arrives through the threads file; link it to the change it made (undo) once it is here.
     const turnId = d.turnIds.at(-1);
-    if (d.error) threads.reply(threadId, { author: "system", text: `Agent 没有完成：${d.error}`, tone: "error", sessionId: sid, turnId });
-    else threads.reply(threadId, { author: "agent", text: d.text.trim() || "（Agent 没有文字答复）", sessionId: sid, turnId });
+    const msgId = `m-${d.id.slice(0, 8)}`;
+    if (turnId) for (let i = 0; i < 40 && !threads.thread(threadId)?.messages.some((m) => m.id === msgId); i++) await new Promise((ok) => setTimeout(ok, 250));
+    if (turnId && threads.thread(threadId)?.messages.some((m) => m.id === msgId)) threads.linkTurn(threadId, msgId, turnId);
   } finally {
     threads.setAgent(threadId, "idle");
   }

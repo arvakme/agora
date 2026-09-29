@@ -26,7 +26,7 @@ Agora 把这三件事放到同一张图上：图就在仓库里，agent 能读�
 
 ### 2. 你自己的 coding agent，平级、会话锁定
 
-每个会话开始时从 **Pi / Claude Code / Codex** 里选一个，连同模型和强度一起锁定。会话就是这个 CLI 自己的原生会话，Agora 不另存对话，而是跟随 CLI 的会话日志。agent 通过 `agora-canvas` skill 调 `agora canvas read / apply / link / anim` 读图、改图，每次改图都是一批可撤销的修改。画布上的评论可以直接「交给 Agent」，答复会贴回评论线程。见 [Agent 会话](web/docs/agent-sessions.md)。
+每个会话开始时从 **Pi / Claude Code / Codex** 里选一个，连同模型和强度一起锁定。会话就是这个 CLI 自己的原生会话，Agora 不另存对话，而是跟随 CLI 的会话日志。agent 通过 `agora` skill 调 `agora canvas read / apply / link / anim` 读图、改图，每次改图都是一批可撤销的修改。画布上的评论可以直接「交给 Agent」，答复会贴回评论线程。见 [Agent 会话](web/docs/agent-sessions.md)。
 
 ![新会话先选 agent、模型和强度，选定后不能更改](docs/media/choose-agent.png)
 
@@ -50,7 +50,7 @@ Agora 把这三件事放到同一张图上：图就在仓库里，agent 能读�
 
 ### 6. 经 quietharbor.de 分享给别人只读评论
 
-`agora share create --for 1d`（或顶栏「分享」）经 Cloudflare Tunnel 给一块画布开一个独立子域名，访客只能看图、读评论、发评论和回复；改图、会话、终端、代码路径和本地路径都不下发。到期或撤销后 DNS 记录和隧道一起删除。域名来自你自己的 Cloudflare zone（作者本机用的是 `quietharbor.de`）。见[分享](web/docs/sharing.md)。
+`agora share create --for 1d`（或顶栏「分享」）经 Cloudflare Tunnel 给一块画布开一个独立子域名，访客只能看图、读评论、发评论和回复；改图、会话、终端、代码路径和本地路径都不下发。到期或撤销后 DNS 记录和隧道一起删除。域名来自你自己的 Cloudflare zone（作者本机用的是 `quietharbor.de`）。没有账号也行：`agora share create --quick` 用 `cf tunnels quick-start` 开一个临时 trycloudflare.com 地址（一次一个分享，撤销或 `agora down` 即失效）。想把画布交给别的开发者：`agora share export` 导出分享包（访客页也有「导入到我的 Agora」），对方 `agora import` 就成了他项目里的新画布，评论作为只读历史；**分享包一旦给出去就收不回来**。见[分享](web/docs/sharing.md)。
 
 | 作者：选画布和有效期 | 访客：只读画布，可评论 |
 |---|---|
@@ -82,8 +82,8 @@ flowchart LR
   Server <-->|原子写 + 版本校验| Files
   Server -->|发消息| Headless
   Server -->|粘贴 / 托管| TUI
-  Headless -->|agora-canvas skill<br/>agora canvas read/apply/link| Server
-  TUI -->|agora-canvas skill| Server
+  Headless -->|agora skill<br/>agora canvas read/apply/link| Server
+  TUI -->|agora skill| Server
   Headless --> Logs
   TUI --> Logs
   Logs -->|每 0.4s 跟随| Server
@@ -124,7 +124,7 @@ cd ~/code/my-service                            # 你的项目
 - 仓库移动、`cp -r` 复制、重新 clone 都有处理：移动后 Pi 会话的日志跟着挪；副本里的会话只读、可分叉继续；别的机器建的会话显示成只读卡片。`git clean -fdx` 删掉的本机数据（会话绑定、改图记录、回收站）由仓库外的每日备份和本机注册表兜底：`agora doctor --fix`。见[项目存储](web/docs/project-storage.md)。
 
 - 首次打开会建一块「示例架构图」和一个会话；在会话里选好 agent 就可以开始讨论。
-- 绑定会话时会自动为该 agent 安装 `agora-canvas` skill；也可以手动 `agora skill install --agent claude|codex|pi|all`（Claude Code 链接到 `.claude/skills/`，Codex 链接到 `.agents/skills/`，Pi 每次启动带 `--skill`；链接写进 `.git/info/exclude`，不改全局配置）。
+- 绑定会话时会自动为该 agent 安装 `agora` skill（旧的 `agora-canvas` 链接会被换掉）；也可以手动 `agora skill install --agent claude|codex|pi|all`（Claude Code 链接到 `.claude/skills/`，Codex 链接到 `.agents/skills/`，Pi 每次启动带 `--skill`；链接写进 `.git/info/exclude`，不改全局配置）。
 - 把 `~/code/agora/bin` 加进 `PATH` 后可以直接用 `agora up` / `agora open`。`agora up` 只起服务并打印地址；`agora open --dev` 走 vite 热更新，开发 Agora 本身时用。
 
 分享需要 `cloudflared`，并已 `cloudflared tunnel login`（或设置 `AGORA_CF_API_TOKEN` + `AGORA_CF_ZONE_ID`；`AGORA_SHARE_DOMAIN` 可指定域名）：
@@ -164,7 +164,7 @@ npm run eval:replay          # 离线回放最近一轮的模型输出（validat
 agora_cli/            agora 命令：init / up / open / status / down / canvas / skill / share
 bin/agora             在任意项目目录里调用上面的命令（uv run --project <仓库>）
 server/canvas/        本项目服务：项目存储、三个 agent 后端、会话跟随与终端、画布桥接、分享与网关
-skills/agora-canvas/  给 Pi / Claude Code / Codex 的 skill（读图、改图、关联代码、动画）
+skills/agora/         给 Pi / Claude Code / Codex 的 skill：SKILL.md 是入口路由，references/ 按领域放细节（改图、动画、子图、关联代码、评论、派活）
 web/                  前端（React + Excalidraw）；web/docs/ 是各功能规格，web/eval/ 是评测
 web/libraries/        vendored 素材库（约 6k 个组件，来源与许可见其 NOTICE.md）
 tests/                Python 测试

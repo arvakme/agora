@@ -56,7 +56,7 @@ import { plays, usePlay } from "./replayMode";
 import { RunAvatar } from "./RunAvatar";
 import { scenePlaces } from "./scenePlaces";
 import { useRuns, type Runs } from "./runs/store";
-import { RECEIPT_NAMES, type FlatRun } from "./runs/types";
+import { receiptText, type FlatRun } from "./runs/types";
 import { TalkBubble } from "./TalkBubble";
 import { glideTo } from "../canvas/glide";
 import { itemOfStop, latestTurnWindow, pointAt, spanOf, stopForItem, traceAt, walkedAt, type Trace, type TurnWindow } from "./trace";
@@ -282,7 +282,8 @@ function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflic
   const back = !!par && run.doneAt != null && t >= run.doneAt;
   const el = g ? <span className="el">{secs(t - g.start)}</span> : null;
   const place = (p: string) => (p === OUTSIDE ? "图外" : (geom.labels.get(p) ?? "节点"));
-  let kind: string = st.pose === "walk" ? "walk" : st.pose === "handoff" || st.pose === "unknown" ? st.pose : g ? g.kind : "idle";
+  // A sub-agent between two commands (or sent and not yet taken) is thinking, not idle: only one that is over is.
+  let kind: string = st.pose === "walk" ? "walk" : st.pose === "handoff" || st.pose === "unknown" ? st.pose : g ? g.kind : st.pose === "think" ? "think" : "idle";
   const Ic = KIND_ICON[kind];
   const icon = Ic ? <Ic size={14} /> : null;
   let body: ReactNode;
@@ -290,6 +291,8 @@ function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflic
   else if (kind === "walk") body = <>{icon}<span className="v">走去</span><span>{place(st.at)}</span>{g?.path && <span className="el">要{g.kind === "write" ? "写" : g.kind === "exec" ? "跑" : "读"} {base(g.path)}</span>}</>;
   else if (kind === "handoff") body = <>{icon}<span className="v">交给 {par?.name}</span><span className="el">结果回到父会话</span></>;
   else if (kind === "unknown") body = <span className="el">只有回执，看不到它在做什么</span>;
+  else if (kind === "idle" && par && st.receipt && st.receipt !== "returned" && st.receipt !== "accepted") body = <span className="v">{receiptText(run, st.receipt)}</span>; // stopped without handing back, cut off, failed: no tick, it did not finish well
+  else if (kind === "idle" && par) body = <>{icon}<span className="v">已交回</span><span className="el">结果回到 {par.name}</span></>; // handed back: not "idle"
   else if (kind === "idle") body = <>{icon}<span className="v">空闲</span><span className="el">这一轮做完了</span></>;
   else if (kind === "wait")
     body = (
@@ -300,10 +303,10 @@ function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflic
         <button className="reply" onClick={(e) => (e.stopPropagation(), openRun(f))}>去回复</button>
       </>
     );
-  else if (kind === "think") body = <>{icon}<span className="v">{par && !g ? (st.receipt === "dispatched" ? "等它接单" : "确认任务") : "思考"}</span>{el}</>;
+  else if (kind === "think") body = <>{icon}<span className="v">{par && !g && st.receipt === "dispatched" ? `等 ${run.name} 接手` : "思考"}</span>{el}</>;
   else if (kind === "delegate") {
     const c = g?.child ? byId.get(g.child)?.run : undefined;
-    body = <>{icon}<span className="v">派</span><span>{c ? `${c.name}：${c.task ?? ""}` : g?.label.replace(/^派 /, "")}</span>{c && <span className="el">{c.via === "task" ? "Task 工具" : "原生子代理"}</span>}</>;
+    body = <>{icon}<span className="v">派</span><span>{c ? `${c.name}：${c.task ?? ""}` : g?.label.replace(/^派 /, "")}</span>{c && <span className="el">{c.via === "task" ? "Task 工具" : c.via === "dispatch" ? "Agora 派发" : "原生子代理"}</span>}</>;
   } else if (kind === "exec") body = <>{icon}<span className="v">{g?.verifies ? "验收 · " : ""}跑</span><span className="f">{g?.cmd ?? g?.label}</span>{el}</>;
   else body = <>{icon}<span className="v">{g?.verifies ? "验收 · " : ""}{kind === "write" ? "写" : "读"}</span><span className="f">{g?.path ?? ""}</span>{el}</>;
   const c = conflictAt(conflicts, run.id, t);
@@ -312,7 +315,7 @@ function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflic
     const other = byId.get(c.runs.find((x) => x !== run.id)!)?.run;
     body = <>{body}<span className="warn">{other?.name ?? "另一个 agent"} 也在改</span></>;
   }
-  const verb = CHIP_VERB[kind] ?? "…";
+  const verb = kind === "idle" && par ? (st.receipt === "returned" || st.receipt === "accepted" ? "交回" : "停") : (CHIP_VERB[kind] ?? "…");
   return {
     kind,
     key: `${kind}|${g?.start ?? st.at}|${st.receipt ?? ""}`,
@@ -325,7 +328,7 @@ function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflic
         {par ? <><b className="who">{run.name}</b><span className="par">{par.name} 派的</span></> : <b className="who">{run.name}</b>}
         {body}
         {st.portal && <span className="portal" title={`在子图「${st.portal.label}」里`}>↘ 子图 · {st.portal.label}</span>}
-        {par && st.receipt && <span className="rc" data-r={st.receipt}>{RECEIPT_NAMES[st.receipt]}</span>}
+        {par && st.receipt && <span className="rc" data-r={st.receipt}>{receiptText(run, st.receipt)}</span>}
         {run.children.map((k) => {
           const acc = k.receipts.find((r) => r.accepted);
           return acc && t >= acc.at && t < acc.at + 2500 ? <span key={k.id} className="rc" data-r="accepted">{k.name} 验收通过</span> : null;

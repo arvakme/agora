@@ -12,6 +12,7 @@ Whitelist (everything else is 403):
     POST /api/guest/comments new thread / reply / edit / delete / restore
                              (``{op: create|reply|edit|delete|restore}``), as ``guest:<id>``;
                              edit, delete and restore only on the guest's own messages
+    GET  /api/guest/bundle   the shared canvases and their comments as a file (``agora import``)
     GET  /api/guest/events   SSE: threads and canvas changes, and ``ended`` when the share ends
 
 Every request must come for the hostname of an active share; every request past ``/s/`` must
@@ -24,7 +25,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import math
 import re
 import secrets
 import time
@@ -37,13 +37,11 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from server.canvas import nested
 from server.canvas.events import Events
 from server.canvas.project import ID_RE, NotFound, NotYours, ProjectStore
-from server.canvas.share import RateLimiter, Share, ShareManager, guest_elements, guest_threads
+from server.canvas.share import MAX_NAME, MAX_TEXT, RateLimiter, Share, ShareManager, canvas_titles, clean_anchor, clean_text, export_bundle, finite, guest_canvas, guest_elements, guest_threads, slug
 
 SHARE_COOKIE = "agora_share"
 GUEST_COOKIE = "agora_guest"
 GUEST_ID_RE = re.compile(r"^[a-z0-9]{16}$")
-MAX_TEXT = 4000
-MAX_NAME = 40
 LIMITS = {
     "open": (10, 60.0),  # /s/<token> attempts per address per minute (right or wrong)
     "read": (120, 60.0),
@@ -90,35 +88,6 @@ def client_addr(request: Request) -> str:
     return request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "?")
 
 
-def _finite(v: Any, lo: float = -1e7, hi: float = 1e7) -> float:
-    if not isinstance(v, int | float) or isinstance(v, bool) or not math.isfinite(v) or not lo <= v <= hi:
-        raise ValueError("bad number")
-    return float(v)
-
-
-def clean_anchor(a: Any, element_ids: set[str]) -> dict[str, Any]:
-    if not isinstance(a, dict):
-        raise ValueError("anchor must be an object")
-    ids = a.get("ids")
-    if not isinstance(ids, list) or not 1 <= len(ids) <= 8 or not all(isinstance(i, str) and i in element_ids for i in ids):
-        raise ValueError("anchor must name elements on this canvas")
-    rel, last = a.get("rel") or {}, a.get("last") or {}
-    return {
-        "ids": ids,
-        "rel": {"x": _finite(rel.get("x"), 0, 1), "y": _finite(rel.get("y"), 0, 1)},
-        "last": {"x": _finite(last.get("x")), "y": _finite(last.get("y"))},
-    }
-
-
-def clean_text(v: Any, n: int, what: str) -> str:
-    if not isinstance(v, str) or not v.strip():
-        raise ValueError(f"{what} is required")
-    v = v.strip()
-    if len(v) > n:
-        raise ValueError(f"{what} is longer than {n} characters")
-    return v
-
-
 def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events, *, dist: Path) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     limiter = RateLimiter(LIMITS)
@@ -133,13 +102,6 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
     def guest_of(request: Request) -> str | None:
         g = request.cookies.get(GUEST_COOKIE) or ""
         return g if GUEST_ID_RE.match(g) else None
-
-    def canvas_title(canvas_id: str) -> str:
-        ws = store.read("workspace")
-        for d in ((ws or ({}, ""))[0] or {}).get("docs") or []:
-            if d.get("id") == canvas_id:
-                return str(d.get("title") or "")
-        return ""
 
     @app.middleware("http")
     async def gate(request: Request, call_next):
@@ -220,23 +182,33 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
         cid = canvas or share.canvasId
         if cid not in allowed:
             return forbidden(request)
-        scene = store.read("canvas", cid)
-        threads = store.read("threads", cid)
+        view = guest_canvas(store, cid, allowed)
         guest = guest_of(request)
         sc = nested.scenes(store)
         chain = nested.ancestry(cid, nested.parent_index(sc))
         chain = chain[chain.index(share.canvasId):] if share.canvasId in chain else [cid]
-        title = lambda c: canvas_title(c) or (share.canvasTitle if c == share.canvasId else "")  # noqa: E731
+        titles = canvas_titles(store)
+        title = lambda c: titles.get(c) or (share.canvasTitle if c == share.canvasId else "")  # noqa: E731
         return {
             "project": {"name": store.config().get("project", {}).get("name") or store.root.name},
-            "canvas": {"id": cid, "title": title(cid), "elements": guest_elements((scene or ({}, ""))[0].get("elements") or [], allowed)},
-            "threads": guest_threads(threads[0] if threads else None),
+            "canvas": {"id": cid, "title": title(cid), "elements": view["elements"]},
+            "threads": view["threads"],
             "me": {"id": f"guest:{guest}"} if guest else None,
             "share": {"expiresAt": share.expiresAt, "root": share.canvasId},
             "path": [{"id": c, "title": title(c)} for c in chain],
             # Open comments per canvas, counting everything below it (the marker on its parent node).
             "canvases": {c: {"title": title(c), "open": sum(open_count(x) for x in {c} | nested.descendants(c, sc))} for c in sorted(allowed)},
         }
+
+    @app.get("/api/guest/bundle")
+    def bundle(request: Request):
+        """The whole share as a file (web/docs/sharing.md §9): what ``agora import`` takes."""
+        share = share_for(request)
+        if share is None:
+            return forbidden(request)
+        data = export_bundle(store, share.canvasId, share.canvasTitle)
+        name = f"{slug(share.canvasTitle or share.canvasId)}.agora-share.json"
+        return Response(json.dumps(data, ensure_ascii=False), media_type="application/json", headers={"content-disposition": f'attachment; filename="{name}"'})
 
     @app.post("/api/guest/comments")
     async def comment(request: Request):
@@ -279,7 +251,7 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
             elif kind == "restore":
                 edited = body.get("editedAt")
                 op = {"op": "restore", "threadId": body.get("threadId"), "id": mid, "text": clean_text(body.get("text"), MAX_TEXT, "text"), "actor": actor, "at": now,
-                      **({"editedAt": int(_finite(edited, 0, 1e14))} if edited is not None else {})}
+                      **({"editedAt": int(finite(edited, 0, 1e14))} if edited is not None else {})}
             else:
                 raise ValueError("op must be create, reply, edit, delete or restore")
             data, version, thread = await asyncio.to_thread(store.thread_op, cid, op)

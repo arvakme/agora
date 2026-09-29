@@ -21,6 +21,9 @@ import { TraceTurn } from "./TraceTurn";
 import { buildTurns, fmtCost, fmtDuration, fmtTokens, sumUsage, type TrajTurn } from "./trajectoryModel";
 import { SPRING } from "../comments/motion";
 import { Composer } from "./Composer";
+import { InputRight } from "./InputRight";
+import { RequestCards } from "./RequestCards";
+import { modeLabel, terminalBanner } from "./requestModel";
 import { AGENT_NAMES, agents, effortChoices, forkHeadless, loadAdapters, sessionKinds, useAgents, type AgentKind, type Catalog, type TerminalApps } from "./agents";
 import { AgentAvatar } from "./AgentAvatar";
 import { Picker } from "./Picker";
@@ -354,6 +357,11 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           <IconLock size={12} />
           {binding.model || "默认模型"}{binding.effort ? ` · ${binding.effort}` : ""}
         </span>
+        {modeLabel(status?.mode) && (
+          <span className="sp-mode" data-tone={modeLabel(status?.mode)!.tone} title="Claude 这一轮实际的权限模式：auto 由它自己判断哪些要问你">
+            {modeLabel(status?.mode)!.text}
+          </span>
+        )}
         <span className="sp-sep" aria-hidden>·</span>
         <label className="sp-cv" title="这个会话默认改的画布">
           <i className="sp-cv-sq" aria-hidden />
@@ -423,8 +431,9 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
         <div className="notice sp-attach" data-tone={status?.terminal.alive ? undefined : "caution"}>
           {status?.terminal.alive ? (
             <>
-              <i className="dot" data-tone="ok" />
-              <b>终端已接管</b>
+              <i className="dot" data-tone={terminalBanner(status.terminal) === "attached" ? "ok" : undefined} />
+              <b>{terminalBanner(status.terminal) === "attached" ? "终端已接管" : "终端里的 CLI 在后台"}</b>
+              {terminalBanner(status.terminal) === "background" && <span className="sp-attach-msg">没有窗口连着；空闲后自动关掉，下一句在面板里续接</span>}
               <code title="在任意终端里运行，连到这个会话">{status.terminal.attach}</code>
               <button className="icon-btn sm" onClick={() => void copy()} aria-label={copied ? "已复制" : "复制命令"} title={copied ? "已复制" : "复制命令"}><IconCopy size={16} /></button>
               <button className="btn sm ghost" onClick={() => void agents.closeTerminal(sessionId)} title="结束终端里的 CLI；会话可随时再续接">关闭终端</button>
@@ -482,6 +491,9 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
       ) : stuck && native ? (
         <NativeMissing sessionId={sessionId} canvasId={session.canvasId} problem={native} agent={binding.agent} model={binding.model} effort={binding.effort} snapshot={!!status?.snapshot || items.length > 0} />
       ) : (
+        <>
+        <RequestCards sessionId={sessionId} />
+        <InputRight sessionId={sessionId} />
         <Composer
           key={binding.nativeId ?? "new"}
           initial={takeDraft(sessionId)}
@@ -494,6 +506,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           onStop={status?.running ? () => void agents.interrupt(sessionId) : undefined}
           onTerminal={() => void openTerminal()}
         />
+        </>
       )}
     </div>
   );
@@ -634,7 +647,8 @@ function Conversation({ sessionId, turns, changes, canvasTitles, flash, onTrajec
           <ProcessFold sessionId={sessionId} turn={t} />
           {(byTurn.get(t.n) ?? []).map(card)}
           {t.reply?.text && <Markdown className="ds-say" text={t.reply.text} />}
-          {t.error && !t.running && <p className="ds-say" data-error>这一轮出错：{t.error}</p>}
+          {t.error && !t.running && (t.error === "interrupted" ? <p className="sp-notice">这一轮已停止</p> : <p className="ds-say" data-error>这一轮出错：{t.error}</p>)}
+          {(t.notices ?? []).map((n) => <p key={n.id} className="sp-notice" data-tone={n.tone}>{n.text}</p>)}
         </article>
       ))}
     </div>

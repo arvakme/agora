@@ -22,7 +22,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 Tier = Literal["T1", "T2", "T0"]
 TIERS: tuple[Tier, ...] = ("T1", "T2", "T0")
-Via = Literal["native", "inferred"]
+Via = Literal["native", "dispatch", "inferred"]
 
 # Tool activity vocabulary shared with the page (web/src/session/trajectoryModel.ts `Activity`).
 ACTIVITIES = ("read", "search", "write", "edit", "commands", "webFetch", "webSearch", "subagents", "plan", "questions", "tools")
@@ -89,7 +89,7 @@ class VersionRange:
 @dataclass(frozen=True)
 class ParentLink:
     """Why a run is taken to be another run's child, strongest evidence first:
-    ``native`` (the CLI wrote the link), ``inferred``."""
+    ``native`` (the CLI wrote the link), ``dispatch`` (a dispatch record: dispatch.py), ``inferred``."""
 
     via: Via
     parent_run: str | None = None  # AgentRun id of the parent
@@ -224,6 +224,8 @@ class Adapter:
     # Whether the CLI process keeps its own session log open, so the files a pane's process holds
     # name its native session (``native_from_open_files``).
     claims_by_open_file: bool = False
+    # Two-way headless: the turn's stdin stays open (the host answers the CLI's requests and can interrupt).
+    duplex: bool = False
 
     def native_from_open_files(self, paths: list[str], home: Path | None = None) -> str | None:
         """The native session id named by the files a CLI process has open, None when none does."""
