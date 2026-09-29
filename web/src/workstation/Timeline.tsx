@@ -17,7 +17,10 @@ import { focus, useFocus, type SegRef } from "./focus";
 import { follow, useFollow } from "./follow";
 import { frame } from "./frame";
 import { canvasWhere, OUTSIDE, outsideProject, planFor, stateAt, writeConflicts } from "./place";
+import { bucketize, idleSince, isDense, recentKids } from "./density";
 import { DaySummary } from "./DaySummary";
+import { ReplayButton } from "./ReplayMenu";
+import { replays, useReplays } from "./replayMode";
 import { RunAvatar } from "./RunAvatar";
 import { useRuns } from "./runs/store";
 import { FINAL, RECEIPT_NAMES, receiptAt, receiptView, type WorkRun, type FlatRun, type RunSeg } from "./runs/types";
@@ -47,9 +50,25 @@ function drawMini(cv: HTMLCanvasElement, runs: WorkRun[], A: Axis, prev: Axis | 
   const at = (X: Axis, t: number) => (t <= X.end ? X.toPx(t) : X.toPx(X.end) + (t - X.end) * X.pps);
   const X = (t: number) => (u >= 1 || !prev ? at(A, t) : at(prev, t) + (at(A, t) - at(prev, t)) * u) * sx;
   const n = runs.length;
+  if (!n) return;
   runs.forEach((r, i) => {
     const y = (i * h) / n + 1;
     const rh = h / n - 2;
+    // a crowded row (a segment every few px) is not drawn segment by segment: one mark per ~3 px, its shade how busy that stretch was
+    if (isDense(r.segs.length, w)) {
+      const spans: { x0: number; x1: number }[] = [];
+      for (const s of r.segs) {
+        if (s.start >= now) break;
+        spans.push({ x0: X(s.start), x1: Math.max(X(s.start) + 0.5, X(Math.min(s.end, now))) });
+      }
+      g.fillStyle = c.exec;
+      for (const b of bucketize(spans, w)) {
+        g.globalAlpha = 0.2 + 0.8 * b.level;
+        g.fillRect(b.x, y, b.w, rh);
+      }
+      g.globalAlpha = 1;
+      return;
+    }
     for (const s of r.segs) {
       if (s.start >= now) break;
       const x0 = X(s.start);
@@ -61,9 +80,10 @@ function drawMini(cv: HTMLCanvasElement, runs: WorkRun[], A: Axis, prev: Axis | 
   g.fillStyle = c.gap;
   for (const p of A.pieces) {
     if (p.kind === "act") continue;
+    // a collapsed idle stretch is one thin dotted line at mid height, not a run of ticks: many of them must not read as a barcode
     const x0 = X(p.a + 1);
     const x1 = X(p.b - 1);
-    for (let x = x0; x < x1; x += 4) g.fillRect(x, 0, 1, h);
+    for (let x = x0; x < x1; x += 4) g.fillRect(x, Math.floor(h / 2), 2, 1);
   }
 }
 
@@ -78,6 +98,8 @@ const SPEEDS = [0.25, 0.5, 0.75, 1, 2, 4];
 /** How long the hover card stays after the pointer leaves its segment (time to move into it). */
 const TIP_GRACE_MS = 180;
 const TIP_W = 300;
+/** A run's sub-agents listed in the lanes; the rest fold into one row. */
+const MAX_KIDS = 8;
 /** When the timeline last changed height (lanes added, opened / closed): the canvas above then
  * keeps its top edge instead of re-centring, so the diagram and the figures don't slide. */
 export const timelineResize = { at: -Infinity };
@@ -87,10 +109,14 @@ const dur = (ms: number) => {
   const s = ms / 1000;
   return s < 60 ? `${Math.round(s)} 秒` : s < 3600 ? `${Math.floor(s / 60)} 分 ${String(Math.round(s % 60)).padStart(2, "0")} 秒` : `${Math.floor(s / 3600)} 小时 ${Math.floor((s % 3600) / 60)} 分`;
 };
+const hhmm = (t: number) => {
+  const d = new Date(t);
+  return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
 const secs = (ms: number) => (ms < 10_000 ? `${(ms / 1000).toFixed(1).replace(/\.0$/, "")} 秒` : `${Math.round(ms / 1000)} 秒`);
 const fullName = (f: FlatRun) => (f.parent ? `${f.run.name}（${f.parent.name} 派）` : f.run.name);
 /** A segment's words in the lanes: verb + file (读 app.py, 写 users.py, 跑 pytest, 想, 派 Codex). */
-const segText = (g: RunSeg) => (g.kind === "think" ? "想" : g.kind === "wait" ? "等你" : g.label);
+const segText = (g: RunSeg) => (g.kind === "think" ? (g.note ?? "想") : g.kind === "wait" ? "等你" : g.label);
 
 /** What a run is doing at t, in a few words (lane names, the strip's state). */
 export function nowText(run: WorkRun, t: number, placeOf?: (path: string) => string | undefined): { k: string; text: string } {
@@ -104,7 +130,7 @@ export function nowText(run: WorkRun, t: number, placeOf?: (path: string) => str
   return { k: g.kind, text: `${g.kind === "wait" ? "等你回复" : g.label}${where ? ` · ${where}` : ""}` };
 }
 
-type Row = { f: FlatRun; y: number; h: number; mid: number; sub: boolean };
+type Row = { f: FlatRun; y: number; h: number; mid: number; sub: boolean; /** 「+N 个子代理」: the sub-agents of `f` folded out of the list. */ rest?: number };
 
 /** Renders `node` again only when `k` changes (lane names: same words, no re-render at 4 Hz). */
 const Keyed = memo(({ node }: { node: ReactNode; k: string }) => <>{node}</>, (a, b) => a.k === b.k);
@@ -152,6 +178,11 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
   const replay = useReplay();
   const fo = useFocus();
   const fl = useFollow();
+  const rp = useReplays();
+  const prOn = !!rp.id;
+  // the PR list is asked for once, so the strip can offer it even with no session on the page
+  useEffect(() => replays.load(), []);
+  const [more, setMore] = useState<Record<string, boolean>>({});
   const [open, setOpen] = useState(false);
   const [fold, setFold] = useState<Record<string, boolean>>({});
   const [tip, setTip] = useState<{ ref: SegRef; x: number; y: number } | null>(null);
@@ -236,17 +267,47 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
   const rows = useMemo(() => {
     const out: Row[] = [];
     let y = PX.ruler;
+    // A run with more than 8 sub-agents lists the 8 most recently active at the moment shown; the rest are one 「+N 个子代理」 row.
+    const at = replay ? t : liveNow;
+    const listed = new Map<string, { shown: Set<string>; hidden: number }>();
     for (const f of flat) {
+      if (f.depth !== 0 || more[f.run.id] || fold[f.run.id]) continue;
+      const kids = flat
+        .filter((x) => x.depth === 1 && x.root === f.run && x.run.spawnAt != null && x.run.spawnAt <= liveNow)
+        .map((x) => ({ id: x.run.id, active: Math.min(at, Math.max(x.run.spawnAt ?? 0, ...x.run.segs.filter((g) => g.start <= at).map((g) => g.end), ...x.run.receipts.filter((r) => r.at <= at).map((r) => r.at))) }));
+      if (kids.length > MAX_KIDS) {
+        const r = recentKids(kids, MAX_KIDS);
+        listed.set(f.run.id, { shown: new Set(r.shown.map((k) => k.id)), hidden: r.hidden });
+      }
+    }
+    const closeRest = (root: FlatRun | null) => {
+      const l = root && listed.get(root.run.id);
+      if (root && l && l.hidden) {
+        out.push({ f: root, y, h: PX.sub, mid: y + PX.sub / 2, sub: false, rest: l.hidden });
+        y += PX.sub;
+      }
+    };
+    let prevRoot: FlatRun | null = null;
+    for (const f of flat) {
+      if (f.depth === 0) {
+        closeRest(prevRoot);
+        prevRoot = f;
+      }
       if (traced && f.run.id !== traced && f.parent?.id !== traced) continue;
       if (f.depth >= 2) continue;
       if (f.depth === 1 && fold[f.root.id] && f.run.id !== traced) continue;
       if (f.depth === 1 && (f.run.spawnAt == null || f.run.spawnAt > liveNow)) continue;
+      if (f.depth === 1 && !traced) {
+        const l = listed.get(f.root.id);
+        if (l && !l.shown.has(f.run.id)) continue;
+      }
       const h = f.depth ? PX.sub + PX.rc : PX.lane;
       out.push({ f, y, h, mid: y + (f.depth ? PX.sub / 2 : PX.lane / 2), sub: f.depth > 0 });
       y += h;
     }
+    if (!traced) closeRest(prevRoot);
     return out;
-  }, [flat, fold, liveNow, traced]);
+  }, [flat, fold, more, liveNow, traced, replay ? t : 0]);
   const height = rows.length ? rows[rows.length - 1].y + rows[rows.length - 1].h : PX.ruler + PX.lane;
 
   // ── the playheads: the frame loop moves them by transform ──
@@ -451,12 +512,30 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
     </>
   );
 
-  if (empty || !runs.flat.length) return null;
+  if (empty) return null;
+  if (!runs.flat.length) {
+    // no sessions on the page, but PRs to replay: the strip is just the way in
+    if (!rp.items?.length || prOn) return null;
+    return (
+      <section className="ws-tl" ref={sectionEl} aria-label="工位时间线">
+        <div className="ws-tl-anim" style={{ height: STRIP_H }}>
+          <div className="ws-bar">
+            <span className="ttl"><IconHistory size={14} />工位</span>
+            <span className="stt" data-k="idle"><span>没有 agent 在干活 · 有 {rp.items.length} 个 PR 可以回放</span></span>
+            <span style={{ flex: 1 }} />
+            <ReplayButton canvasId={canvasId} />
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   const tops = runs.flat.filter((f) => f.depth === 0);
   const kidsOf = (id: string) => runs.flat.filter((x) => x.depth === 1 && x.parent?.id === id);
   const tf = traced ? runs.flat.find((x) => x.run.id === traced) : undefined;
-  miniRuns.current = tf ? [tf.run, ...kidsOf(tf.run.id).map((x) => x.run)].slice(0, 3) : tops.slice(0, 3).map((f) => f.run);
+  // every session over for more than 10 minutes: the strip says so and draws no activity
+  const quietAt = !replay && !tf && !prOn ? idleSince(tops.map((f) => f.run), liveNow) : null;
+  miniRuns.current = quietAt != null ? [] : tf ? [tf.run, ...kidsOf(tf.run.id).map((x) => x.run)].slice(0, 3) : tops.slice(0, 3).map((f) => f.run);
 
   // ── the default: the 34 px strip ──
   const strip = () => {
@@ -492,6 +571,11 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
       const on = runs.flat.filter((f) => f.run.running || f.run.segs.some((g) => g.start <= now && now < g.end)).length;
       state = { k: on ? "busy" : "idle", node: <>{on > 0 && <i className="live" />}<span>{on > 0 ? `${on} 个 agent 在干活 · ` : ""}这张图还是空的</span></> };
     }
+    if (prOn && !tf) {
+      const pr = tops[0]?.run;
+      const g = pr?.segs.find((s) => s.start <= t && t < s.end);
+      state = { k: g?.kind ?? "idle", node: <><i className="live" /><b>{pr?.name}</b><span>{g ? (g.note ?? g.label) : "回放结束"}</span></> };
+    } else if (quietAt != null) state = { k: "idle", node: <span>都空闲 · 上次活动 {hhmm(quietAt)}</span> };
     const subs = runs.flat.filter((f) => f.depth > 0).length;
     return (
       <div className="ws-bar">
@@ -499,7 +583,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
           <IconHistory size={14} />
           工位
         </button>
-        <span className="stt" data-k={state.k}>{replay && !tf ? <><b className="rp">回放 {hhmmss(t)}</b><span>比实时晚 {dur(now - t)}</span></> : state.node}</span>
+        <span className="stt" data-k={state.k}>{replay && !tf && !prOn ? <><b className="rp">回放 {hhmmss(t)}</b><span>比实时晚 {dur(now - t)}</span></> : state.node}</span>
         <div className="mini" ref={miniRef} {...scrub(maxis)} title="拖动回看任意时刻" role="slider" aria-label="回放位置" aria-valuemin={maxis.start} aria-valuemax={maxis.end} aria-valuenow={Math.round(t)} aria-valuetext={hhmmss(t)} tabIndex={0} onKeyDown={onKey}>
           <canvas ref={miniCanvas} className="mini-cv" aria-hidden />
           <span className="mph" ref={mph} data-replay={replay ? "" : undefined} />
@@ -511,6 +595,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
           {waiting.length > 0 && <span className="need"><i className="dot-c" />{waiting.length} 等你</span>}
         </span>
         {dayAt && canvasId && <DaySummary canvasId={canvasId} anchor={dayAt} />}
+        <ReplayButton canvasId={canvasId} quiet={quietAt == null} />
         <button className="icon-btn sm muted" data-open onClick={() => toggle(true)} aria-label="展开时间线" title="展开时间线"><IconEnter size={14} /></button>
       </div>
     );
@@ -529,6 +614,13 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
     const laneName = (r: Row) => {
       const run = r.f.run;
       const on = traced === run.id;
+      if (r.rest) {
+        return (
+          <div key={`rest${run.id}`} className="lname sub rest" style={{ top: r.y, height: r.h }}>
+            <button className="fold" onClick={() => setMore((o) => ({ ...o, [run.id]: true }))} title="展开所有子代理（只列当前时间附近最活跃的 8 个）">+{r.rest} 个子代理 ▸</button>
+          </div>
+        );
+      }
       if (r.sub) {
         const rc = receiptAt(run, t);
         return (
@@ -575,6 +667,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
 
     const lane = (r: Row) => {
       const run = r.f.run;
+      if (r.rest) return null;
       const segTop = r.sub ? 3 : 5;
       const segH = r.sub ? PX.sub - 6 : PX.lane - 10;
       const out: ReactNode[] = [];
