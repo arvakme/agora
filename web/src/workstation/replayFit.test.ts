@@ -3,7 +3,7 @@
 // at the sides and bottom (`fitView`); and the summary badge finds a spot for itself that does not lie on a
 // connector's label (`placeBadge`). Pure.
 import { describe, expect, it } from "vitest";
-import { fitView, placeBadge, viewShowsContent } from "./replayFit.ts";
+import { fitView, placeBadge } from "./replayFit.ts";
 
 const pane = { w: 1000, h: 700 };
 const occ = { top: 110, right: 0, bottom: 60, left: 0 };
@@ -78,11 +78,4 @@ describe("placeBadge: above the node, in the clear", () => {
     const wall = { x: 0, y: 0, w: 1000, h: 300 };
     expect(placeBadge({ node, size, obstacles: [wall], view })).toBeNull();
   });
-});
-
-describe("viewShowsContent: the camera does not go to a blank place", () => {
-  const bounds = { x: 100, y: 100, w: 400, h: 300 };
-  it("a view over the content shows it", () => expect(viewShowsContent({ scrollX: 0, scrollY: 0, zoom: 1 }, { w: 800, h: 600 }, bounds)).toBe(true));
-  it("a view far off the content (scrolled past it) does not", () => expect(viewShowsContent({ scrollX: -5000, scrollY: -5000, zoom: 1 }, { w: 800, h: 600 }, bounds)).toBe(false));
-  it("a corner of the content is enough", () => expect(viewShowsContent({ scrollX: -450, scrollY: -350, zoom: 1 }, { w: 800, h: 600 }, bounds)).toBe(true));
 });

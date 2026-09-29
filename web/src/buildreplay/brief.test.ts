@@ -6,7 +6,8 @@ import { describe, expect, it } from "vitest";
 import type { El } from "../canvas/scene";
 import { geometryWalk } from "./geometryWalk";
 import { walkStats } from "./measure";
-import { figuresAt, HOP_MS, planBuild, REACH_PX, runId, runsOf, Scenes, type Beat, type Mode, type Plan } from "./plan";
+import { HOP_MS, planBuild, REACH_PX, runsOf, Scenes, type Beat, type Mode, type Plan } from "./plan";
+import { CUT_MS } from "../workstation/place";
 import type { BuildItem, BuildStep, BuildTimeline } from "./types";
 
 const NAMES = ["agent-history", "demo-history", "whole-diagram-in-one-change"] as const;
@@ -78,17 +79,21 @@ describe.each(NAMES)("%s", (name) => {
     }
   });
 
-  it("brief: every actor has exactly one figure on the canvas at any time, and a cut is a new figure", () => {
-    const runs = runsOf(p.brief, 0);
-    expect(new Set(runs.map((r) => r.id)).size).toBe(runs.length);
-    for (const t of [0, p.brief.length / 3, p.brief.length / 2, p.brief.length]) {
-      const now = figuresAt(p.brief, t);
-      expect([...now.keys()].sort()).toEqual(p.brief.actors.map((a) => a.key).sort());
-      for (const id of now.values()) expect(runs.some((r) => r.id === id)).toBe(true);
+  it("one figure per actor for the whole replay; a hop is a call marked `cut` (the figure fades in where it goes while it fades out where it was: ../workstation/place.ts), step by step has none", () => {
+    for (const mode of ["steps", "brief"] as const) {
+      const runs = runsOf(p[mode], 0);
+      expect(runs.map((r) => r.id).sort()).toEqual(p[mode].actors.map((a) => `build:${a.key}`).sort());
     }
-    const hops = p.brief.beats.filter((b) => b.hop);
-    for (const b of hops) expect(figuresAt(p.brief, b.start + 1).get(b.actor)).toBe(runId(b.actor, b.group));
-    expect(runsOf(p.steps, 0).length).toBe(p.steps.actors.length); // step by step, one figure walks all the way
+    const cuts = runsOf(p.brief, 0).flatMap((r) => r.segs.filter((g) => g.cut));
+    expect(cuts).toHaveLength(p.brief.beats.filter((b) => b.hop).length);
+    expect(runsOf(p.steps, 0).flatMap((r) => r.segs).some((g) => g.cut)).toBe(false);
+  });
+
+  it("a hop takes about a cut's time (CUT_MS) and no walk: it does not add time back", () => {
+    for (const b of p.brief.beats.filter((x) => x.hop)) {
+      expect(b.walkMs).toBe(0);
+      expect(b.land - b.start).toBeLessThanOrEqual(CUT_MS + 250);
+    }
   });
 });
 
@@ -135,16 +140,18 @@ describe("the brief planner", () => {
   it("cuts a walk that would take long instead of walking it, and shows the figure where the thing is drawn", () => {
     const tl = tlOf([step(0, [addNode("a", 0)]), step(1, [addNode("b", 6000)])]);
     const long = planBuild(tl, { mode: "brief", walk: () => HOP_MS + 1 });
-    expect(long.beats[1]).toMatchObject({ hop: true, walkMs: 0, group: 1, at: "b" });
+    expect(long.beats[1]).toMatchObject({ hop: true, walkMs: 0, at: "b" });
+    expect(runsOf(long, 0)).toHaveLength(1); // the same figure: it is cut across, not replaced
+    expect(runsOf(long, 0)[0].segs.map((g) => !!g.cut)).toEqual([false, true]);
     expect(long.beats[1].land - long.beats[1].start).toBeLessThan(600);
     const short = planBuild(tl, { mode: "brief", walk: () => HOP_MS - 1 });
-    expect(short.beats[1]).toMatchObject({ hop: false, walkMs: HOP_MS - 1, group: 0 });
+    expect(short.beats[1]).toMatchObject({ hop: false, walkMs: HOP_MS - 1 });
   });
 
   it("step by step is what it was: every walk is walked", () => {
     const tl = tlOf([step(0, [addNode("a", 0), addNode("b", 300)])]);
     const p = planBuild(tl, { mode: "steps", walk: () => 1200 });
-    expect(p.beats[1]).toMatchObject({ walkMs: 1200, hop: false, group: 0 });
+    expect(p.beats[1]).toMatchObject({ walkMs: 1200, hop: false });
     expect(planBuild(tl, { walk: () => 1200 }).beats.map((b) => b.walkMs)).toEqual(p.beats.map((b) => b.walkMs)); // and it is the default of the planner
   });
 });

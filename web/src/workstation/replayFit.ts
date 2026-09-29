@@ -47,12 +47,3 @@ export function placeBadge(o: { node: Box; size: { w: number; h: number }; obsta
   }
   return null;
 }
-
-/** Whether a view (scroll, zoom) of a pane shows any of the content `bounds` (scene units): the camera does not go to a blank place. */
-export function viewShowsContent(view: { scrollX: number; scrollY: number; zoom: number }, pane: { w: number; h: number }, bounds: Box): boolean {
-  const x0 = -view.scrollX;
-  const y0 = -view.scrollY;
-  const x1 = x0 + pane.w / view.zoom;
-  const y1 = y0 + pane.h / view.zoom;
-  return bounds.x < x1 && bounds.x + bounds.w > x0 && bounds.y < y1 && bounds.y + bounds.h > y0;
-}

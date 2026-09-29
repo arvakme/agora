@@ -14,7 +14,7 @@ import { RunsSource } from "../workstation/runs/store";
 import { presenceAt, subviewCtx } from "../workstation/subview";
 import { BuildStage } from "./BuildStage";
 import { geometryWalk } from "./geometryWalk";
-import { beatAt, beatOfStep, defaultSpeed, figuresAt, planBuild, runId as figureId, SPEEDS, type Mode, type Plan } from "./plan";
+import { beatAt, beatOfStep, defaultSpeed, planBuild, runId as figureId, SPEEDS, type Mode, type Plan } from "./plan";
 import { BuildWorld, realId, worldId } from "./sources";
 import { buildReplay, useBuildReplay } from "./store";
 import type { BuildTimeline } from "./types";
@@ -138,9 +138,7 @@ function Player({ tl, start, onMode, onClose }: { tl: BuildTimeline; start: Star
 
   const beat = beatAt(plan, t);
   const actor = plan.actors.find((a) => a.key === beat?.actor) ?? plan.actors[0];
-  const figures = figuresAt(plan, t);
-  const runId = figureId(actor?.key ?? "", beat?.group ?? 0);
-  const onCanvas = new Set(figures.values());
+  const runId = figureId(actor?.key ?? "");
   const nst = useSyncExternalStore(world.nested.subscribe, world.nested.get);
   const runs = world.runs.get();
 
@@ -196,7 +194,7 @@ function Player({ tl, start, onMode, onClose }: { tl: BuildTimeline; start: Star
                 run={runId}
                 size={size}
                 out={l.out}
-                only={(id) => onCanvas.has(id) && (id === runId || !!ps.get(id)?.levels?.some((lv) => lv.canvasId === l.canvasId))}
+                only={(id) => id === runId || !!ps.get(id)?.levels?.some((lv) => lv.canvasId === l.canvasId)}
               />
             ))}
           </div>
