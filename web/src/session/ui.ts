@@ -20,6 +20,8 @@ export const ui = {
   ensureCanvas: async (id: string): Promise<CanvasEntry | undefined> => canvases.get(id),
   /** No agent session on this canvas yet: open one and let the person pick its agent. Resolves with the bound session. */
   chooseAgent: async (_canvasId: string): Promise<string | undefined> => undefined,
+  /** A fresh session from nothing: a draft with the agent picker, placed like a comment hand-off's (into the session column, else split off the canvas's right). */
+  newSession: () => {},
   /** Move a session to the trash (the shell asks first, in 所有画布). */
   trashSession: (_sessionId: string) => {},
   /** Open 回收站, optionally at one item. */

@@ -3,11 +3,11 @@
 // Canvases live in one flat layer keyed by id, so moving a tab never remounts Excalidraw;
 // they glide to their new rect via CSS transitions.
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { SPRING } from "../comments/motion";
 import { IconClose, IconFolder, IconLayers, IconMessage, IconPencil, IconPlus, IconTrash } from "../app/icons";
 import { activate, equalize, groupOf, groups, layout, moveTab, resize, type Node, type Rect, type Sash, type Zone } from "./layout";
-import { groupKind } from "./model";
+import { groupKind, plusMenu, type NewWhat } from "./model";
 
 // Panes are flush: a 1px gap over the hairline-coloured workspace is the divider (D13).
 const GAP = 1, PAD = 0, HEADER = 36, MIN_PANE = 220;
@@ -15,7 +15,12 @@ const GAP = 1, PAD = 0, HEADER = 36, MIN_PANE = 220;
 type Target = { groupId: string; zone: Zone; index?: number; preview: Rect };
 type Drag = { tab: string; x: number; y: number; ox: number; oy: number; active: boolean; target: Target | null };
 
-type NewWhat = "canvas" | "session" | "sample" | "open";
+const ITEMS: Record<NewWhat, { icon: ReactNode; label: string }> = {
+  canvas: { icon: <IconPlus size={14} />, label: "新建画布" },
+  session: { icon: <IconMessage size={14} />, label: "新建会话" },
+  sample: { icon: <IconLayers size={14} />, label: "从示例新建画布" },
+  open: { icon: <IconFolder size={14} />, label: "打开画布" },
+};
 type Props = {
   root: Node;
   setRoot: (n: Node) => void;
@@ -247,11 +252,14 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
           >
             {"group" in menu ? (
               <>
-                <button role="menuitem" autoFocus onClick={() => (onNew(menu.group, "canvas"), setMenu(null))}><IconPlus size={14} />新建画布</button>
-                {menu.kind === "mixed" && <button role="menuitem" onClick={() => (onNew(menu.group, "session"), setMenu(null))}><IconMessage size={14} />新建会话</button>}
-                <button role="menuitem" onClick={() => (onNew(menu.group, "sample"), setMenu(null))}><IconLayers size={14} />从示例新建画布</button>
-                <hr />
-                <button role="menuitem" onClick={(e) => (onNew(menu.group, "open", e.currentTarget.getBoundingClientRect()), setMenu(null))}><IconFolder size={14} />打开画布<em className="menu-count">{canvasCount}</em></button>
+                {(plusMenu(menu.kind) ?? []).map((what, i) => (
+                  <Fragment key={what}>
+                    {what === "open" && <hr />}
+                    <button role="menuitem" autoFocus={i === 0} onClick={(e) => (onNew(menu.group, what, what === "open" ? e.currentTarget.getBoundingClientRect() : undefined), setMenu(null))}>
+                      {ITEMS[what].icon}{ITEMS[what].label}{what === "open" && <em className="menu-count">{canvasCount}</em>}
+                    </button>
+                  </Fragment>
+                ))}
               </>
             ) : (
               <>

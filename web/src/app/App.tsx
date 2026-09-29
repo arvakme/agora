@@ -22,7 +22,7 @@ import { SessionMark } from "../session/AgentAvatar";
 import { pointerFollow } from "../pointer/follow";
 import { createThreadStore, threadStores, useThreads, type ThreadSnapshot, type ThreadStore } from "../comments/threads";
 import { AllDocs } from "../workspace/AllDocs";
-import { ancestry, descendants, openThreads } from "../nested/graph";
+import { ancestry, descendants, openThreads, parentIndex } from "../nested/graph";
 import { canvasFromUrl, nav, nested, urlFor } from "../nested/store";
 import { isEditableTarget, markBackHintSeen, upOnKey } from "../nested/up";
 import { sessionNames } from "../multi/writes";
@@ -40,7 +40,9 @@ import { activate, groupOf, groups, moveTab, preset, type Node, type Preset } fr
 import {
   canvasTree,
   closeTab,
-  homeGroup,
+  firstScreen,
+  groupKind,
+  placeDoc,
   replaceTab,
   isOpen,
   nextTitle,
@@ -58,6 +60,7 @@ import {
   UNTITLED_CANVAS,
   type CanvasDoc,
   type Doc,
+  type NewWhat,
   type SessionDoc,
 } from "../workspace/model";
 
@@ -95,10 +98,15 @@ export function App({ boot }: { boot: Boot }) {
   const firstRun = !!boot.firstRun;
   const initial = boot.workspace!;
   const [docs, setDocs] = useState<Doc[]>(initial.docs);
-  const [root, setRoot] = useState<Node>(initial.root);
-  const [focused, setFocused] = useState(initial.focused);
+  // Without a ?canvas= link the saved layout opens on each tree's top, not the child level it was left on (workspace-model.md §7).
+  const [screen] = useState(() => {
+    const index = parentIndex(new Map(Object.entries(boot.canvases).map(([k, v]) => [k, v.elements] as const)));
+    return firstScreen({ root: initial.root, focused: initial.focused, urlCanvas: canvasFromUrl(), topOf: (id) => ancestry(id, index)[0], kindOf: (id) => initial.docs.find((d) => d.id === id)?.kind });
+  });
+  const [root, setRoot] = useState<Node>(screen.root);
+  const [focused, setFocused] = useState(screen.focused);
   const [lastCanvas, setLastCanvas] = useState(() =>
-    initial.docs.find((d) => d.id === initial.focused)?.kind === "canvas" ? initial.focused : initial.docs.find((d) => d.kind === "canvas")!.id,
+    initial.docs.find((d) => d.id === screen.focused)?.kind === "canvas" ? screen.focused : initial.docs.find((d) => d.kind === "canvas")!.id,
   );
   const [mode, setMode] = useState<"browse" | "comment">("browse");
   const [drawers, setDrawers] = useState<Record<string, boolean>>({});
@@ -341,22 +349,13 @@ export function App({ boot }: { boot: Boot }) {
     const kind = opts.kind ?? docsRef.current.find((d) => d.id === id)?.kind ?? "canvas";
     setRoot((r) => {
       if (isOpen(r, id) || opts.groupId) return openTab(r, id, opts.groupId);
-      const home = homeGroup(r, kind, {
+      return placeDoc(r, id, kind, {
         kindOf: (t) => docsRef.current.find((d) => d.id === t)?.kind,
         recentCanvas: lastCanvasRef.current,
         linkedCanvas: opts.linkedCanvas,
         focused: focusedRef.current,
+        keepVisible: opts.keepVisible,
       });
-      const next = openTab(r, id, home.groupId);
-      // Opening in the background must not cover the tab the user is on: split beside it instead.
-      if (opts.keepVisible && groupOf(r, opts.keepVisible)?.id === home.groupId) {
-        let beside = moveTab(next, id, home.groupId, "left");
-        beside = activate(beside, groupOf(beside, opts.keepVisible)!.id, opts.keepVisible);
-        return beside.kind === "split" && beside.children.length === 2 ? { ...beside, sizes: [0.6, 0.4] } : beside;
-      }
-      if (!home.split) return next;
-      const split = moveTab(next, id, home.groupId, "right");
-      return split.kind === "split" && split.children.length === 2 ? { ...split, sizes: [0.6, 0.4] } : split;
     });
     if (opts.focus !== false) {
       setFocused(id);
@@ -382,8 +381,13 @@ export function App({ boot }: { boot: Boot }) {
     const s = sessions.create(canvasId, undefined, { draft: true }); // the sync effect adds its doc; saved once an agent is chosen
     openDoc(sessionDocId(s.id), { groupId: opts.groupId, kind: "session", linkedCanvas: canvasId });
   };
-  const onNew = (groupId: string | undefined, what: "canvas" | "session" | "sample" | "open", at?: DOMRect) =>
-    what === "open" ? setListOpen({ at: at ? { x: at.left, y: at.bottom } : undefined }) : what === "session" ? addSession({ groupId }) : addCanvas({ groupId, sample: what === "sample" });
+  /** 「+」: a session group's own session stays in it; from a canvas or mixed group a session is placed like any new one (into the session column, or one split off the canvas's right). */
+  const onNew = (groupId: string | undefined, what: NewWhat, at?: DOMRect) => {
+    if (what === "open") return setListOpen({ at: at ? { x: at.left, y: at.bottom } : undefined });
+    if (what !== "session") return addCanvas({ groupId, sample: what === "sample" });
+    const g = groups(rootRef.current).find((x) => x.id === groupId);
+    addSession({ groupId: g && groupKind(g.tabs, kindOf) === "session" ? groupId : undefined });
+  };
 
   /** Rename. A session renamed to nothing goes back to its automatic name; keeping the shown name changes nothing. */
   const rename = (id: string, title: string) => {
@@ -648,6 +652,8 @@ export function App({ boot }: { boot: Boot }) {
   }, [lost]);
 
   // UI actions sessions can trigger without importing the shell.
+  const addSessionRef = useRef(addSession);
+  addSessionRef.current = addSession;
   const openRef = useRef(openDoc);
   openRef.current = openDoc;
   useEffect(() => {
@@ -682,6 +688,7 @@ export function App({ boot }: { boot: Boot }) {
       ui.openSession(s.id);
       return wait;
     };
+    ui.newSession = () => addSessionRef.current();
     ui.openTrash = (trashId) => (setPanelFocus(trashId), setListOpen(null), setPanel("trash"));
     ui.openHistory = () => (setListOpen(null), setPanel("history"));
     ui.trashSession = (sessionId) => {
