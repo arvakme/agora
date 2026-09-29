@@ -1,3 +1,4 @@
+import { dockBottom, isCompact } from "../canvas/dockPlace";
 import { MotionConfig, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { resolveAnchor } from "../canvas/anchors";
@@ -760,9 +761,11 @@ export function App({ boot }: { boot: Boot }) {
     const place = () => {
       const r = el.getBoundingClientRect();
       // A narrow canvas puts Excalidraw in its compact layout, whose toolbar sits at the bottom: clear it.
-      const compact = !!el.querySelector(".excalidraw--mobile");
+      const compact = isCompact(!!el.querySelector(".excalidraw--mobile"), r.width);
+      // in the compact layout the dock sits in the bottom bar's empty middle (canvas/dockPlace.ts)
+      const bar = el.querySelector<HTMLElement>(".App-bottom-bar .Island")?.getBoundingClientRect();
       setDockAt((d) => {
-        const next = { x: Math.round(r.left + r.width / 2), bottom: Math.round(innerHeight - r.bottom + (compact ? 72 : 14)) };
+        const next = { x: Math.round(r.left + r.width / 2), bottom: dockBottom({ paneBottom: r.bottom, windowHeight: innerHeight, compact, bar: bar ? { top: bar.top, bottom: bar.bottom } : null, dockHeight: document.querySelector<HTMLElement>(".dock")?.offsetHeight }) };
         return d && d.x === next.x && d.bottom === next.bottom ? d : next;
       });
     };

@@ -106,6 +106,7 @@ const MAX_KIDS = 8;
 /** When the timeline last changed height (lanes added, opened / closed): the canvas above then
  * keeps its top edge instead of re-centring, so the diagram and the figures don't slide. */
 export const timelineResize = { at: -Infinity };
+let openShared = false;
 const WARM = "回放比实时晚这时没人在干活回到实时0123456789:·×秒分小时";
 const KIND_NAME: Record<string, string> = { read: "读文件", write: "写文件", exec: "执行命令", think: "思考", wait: "等你回复", delegate: "派子代理" };
 const dur = (ms: number) => {
@@ -133,7 +134,7 @@ export function nowText(run: WorkRun, t: number, placeOf?: (path: string) => str
   return { k: g.kind, text: `${g.kind === "wait" ? "等你回复" : g.label}${where ? ` · ${where}` : ""}` };
 }
 
-type Row = { f: FlatRun; y: number; h: number; mid: number; sub: boolean; /** 「+N 个子代理」: the sub-agents of `f` folded out of the list. */ rest?: number };
+type Row = { f: FlatRun; y: number; h: number; mid: number; sub: boolean; /** 「+N 个子代理」: the sub-agents of `f` folded out of the list. */ rest?: number; };
 
 /** Renders `node` again only when `k` changes (lane names: same words, no re-render at 4 Hz). */
 const Keyed = memo(({ node }: { node: ReactNode; k: string }) => <>{node}</>, (a, b) => a.k === b.k);
@@ -182,7 +183,9 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
   const fo = useFocus();
   const fl = useFollow();
   const [more, setMore] = useState<Record<string, boolean>>({});
-  const [open, setOpen] = useState(false);
+  // open or folded is kept across canvases: the camera switching canvas (a new Timeline mounts) must not fold what you opened
+  const [open, setOpen0] = useState(openShared);
+  const setOpen = (v: boolean) => ((openShared = v), setOpen0(v));
   const [fold, setFold] = useState<Record<string, boolean>>({});
   const [tip, setTip] = useState<{ ref: SegRef; x: number; y: number } | null>(null);
   const [spd, setSpd] = useState(1);

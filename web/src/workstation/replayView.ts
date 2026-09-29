@@ -16,7 +16,7 @@ import { buildGeometry } from "./geometry";
 import { stateAt, type Ctx } from "./place";
 import { cameraCanvas } from "./replayCamera";
 import { occupiedOf, excalidrawEl } from "./replayDom";
-import { fitView, type Box } from "./replayFit";
+import { fitView, viewShowsContent, type Box } from "./replayFit";
 import { followView } from "./replayFollow";
 import { figurePositions } from "./focus";
 import { replacingPush } from "./replayHistory";
@@ -345,6 +345,15 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
         if (f && (f.move || chasing)) target = f.view;
       }
       if (now() - lastSample > 100) (lastSample = now(), zooms.length < 4000 && zooms.push([Date.now(), shown, +v.zoom.toFixed(3)]));
+      // live: never to a place with no diagram in it (the tray, a canvas just switched to): the view stays
+      if (target && live) {
+        const els = api.getSceneElements().filter((e) => !e.isDeleted);
+        if (els.length) {
+          const x0 = Math.min(...els.map((e) => e.x)), y0 = Math.min(...els.map((e) => e.y));
+          const bounds = { x: x0, y: y0, w: Math.max(...els.map((e) => e.x + e.width)) - x0, h: Math.max(...els.map((e) => e.y + e.height)) - y0 };
+          if (!viewShowsContent(target, { w: v.width, h: v.height }, bounds)) target = null;
+        }
+      }
       if (!target) return void (chasing = false);
       const near = Math.abs(target.zoom - cur.zoom) < 0.004 && Math.abs(target.scrollX - cur.scrollX) * cur.zoom < 1.5 && Math.abs(target.scrollY - cur.scrollY) * cur.zoom < 1.5;
       if (near) return void (chasing = false);

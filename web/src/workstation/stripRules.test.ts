@@ -1,6 +1,6 @@
 // The strip when nothing is at work, and a lane's name (workstation/stripRules.ts).
 import { describe, expect, it } from "vitest";
-import { idleStrip, laneLabel, yieldView } from "./stripRules.ts";
+import { idleStrip, laneLabel, shortAgentName, yieldView } from "./stripRules.ts";
 
 describe("idleStrip", () => {
   it("no agent has ever worked: says so and offers 「新建会话」", () => {
@@ -45,4 +45,9 @@ describe("yieldView: the opened strip takes height, the canvas lets the diagram 
   it("everything already clear of the bars: left alone", () => {
     expect(yieldView({ view, pane, occupied, bounds: { x: 50, y: 120, w: 700, h: 300 } })).toBeNull();
   });
+});
+
+describe("shortAgentName", () => {
+  it("the agent, not its task (the full name is the tooltip)", () => expect(shortAgentName("Claude Code · 看看沙箱云电脑在手…")).toBe("Claude Code"));
+  it("a plain name stays", () => expect(shortAgentName("Pi")).toBe("Pi"));
 });

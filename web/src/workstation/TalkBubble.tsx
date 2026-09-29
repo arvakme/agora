@@ -14,7 +14,7 @@ import { frame } from "./frame";
 import { excalidrawEl, occupiedOf } from "./replayDom";
 import { useRuns } from "./runs/store";
 import type { FlatRun } from "./runs/types";
-import { deliveryNote, placeTalk, sendState, talk, talkDismissed, talkHost, talkPlaceholder, watchDelivery, type SendState, type Side, type TBox } from "./talk";
+import { deliveryNote, placeTalk, sendState, talk, talkDismissed, talkHost, talkTarget, watchDelivery, type SendState, type Side, type TBox } from "./talk";
 import "./TalkBubble.css";
 
 /**
@@ -86,9 +86,9 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
     return () => (clearTimeout(t), off());
   }, [shut, id, canvasId]);
   const working = useSyncExternalStore(agents.subscribe, () => !!f.root.sessionId && sendState(f.root.sessionId) === "queued");
+  const target = talkTarget({ name: f.run.name, hasSession: !!f.run.sessionId, rootName: f.root.name, working });
   if (shut) return null;
   // who gets it: the agent's own session, or — for a sub-agent — the session that dispatched it
-  const sub = !f.run.sessionId;
   const to = f.root;
   const send = async () => {
     const words = text.trim();
@@ -99,7 +99,7 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
       const sid = to.sessionId;
       const state = sendState(sid); // before the send: is a turn running now?
       const sentAt = Date.now() - 1500; // the log's clock and the page's are one machine's; a little slack
-      await agents.send(sid, sub ? `关于子代理 ${f.run.name}${f.run.task ? `（${f.run.task}）` : ""}：${words}` : words, { canvasId: canvasId.startsWith("follow:") ? canvasId.slice(7) : canvasId });
+      await agents.send(sid, target.prefix + words, { canvasId: canvasId.startsWith("follow:") ? canvasId.slice(7) : canvasId });
       const agent = agentName(agents.get().bindings[sid]?.agent);
       setSent({ agent, state });
       stop.current = watchDelivery(sid, words, sentAt, () => {
@@ -121,7 +121,7 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
       <input
         ref={input}
         value={text}
-        placeholder={talkPlaceholder(f.run.name, working, sub)}
+        placeholder={target.placeholder}
         aria-label={`对 ${f.run.name} 说`}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
@@ -135,12 +135,7 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
         }}
       />
       )}
-      {sub && !sent && (
-        <p className="ws-talk-sub">
-          子代理不能直接对话，发给派它的 {to.name}？
-          <button disabled={busy || !text.trim()} onClick={() => void send()}>改发给 {to.name}</button>
-        </p>
-      )}
+      {target.note && !sent && <p className="ws-talk-sub">{target.note}</p>}
       {err && <p className="ws-talk-err" role="alert">{err}</p>}
     </div>
   );

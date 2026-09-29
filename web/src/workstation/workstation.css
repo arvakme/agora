@@ -335,3 +335,6 @@
 /* 「+N 个子代理」: the sub-agents a run has more than 8 of, folded out of the lanes */
 .ws-tl .lname.rest { align-items: center; padding-top: 0; }
 .ws-tl .lname.rest .fold { margin-left: 0; height: 18px; padding: 0 8px; font-size: var(--text-xs); }
+
+/* Excalidraw's own 「滚动回到内容」 (bottom centre, when nothing is in view) sits above our 浏览 / 评论 bar, not under it */
+.canvas-view .excalidraw .scroll-back-to-content { bottom: 84px; }
