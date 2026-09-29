@@ -229,3 +229,4 @@
 .sp-card-t b { font-weight: var(--weight-strong); font-size: var(--text-md); }
 .sp-card-t span { color: var(--fg-muted); font-size: var(--text-xs); }
 .sp-choose-later { margin: var(--space-3) 0 0; color: var(--fg-subtle); font-size: var(--text-sm); }
+.sp-hello ol { margin: 0; padding-left: 1.4em; } .sp-hello li { margin: 0 0 var(--space-2); }
