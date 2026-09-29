@@ -430,6 +430,7 @@ def cmd_down(p: Project, _a) -> int:
 def cmd_serve(p: Project, a) -> int:
     import uvicorn
 
+    from server.canvas import shutdown
     from server.canvas.project_router import create_project_app
 
     # One server per copy of the project: the lock lives outside the project, so deleting
@@ -459,7 +460,10 @@ def cmd_serve(p: Project, a) -> int:
 
     atexit.register(forget)
     try:
-        uvicorn.run(create_project_app(p.root, gateway=True), host=HOST, port=a.port, log_level="info")
+        # The first SIGTERM ends the pages' event streams from this side (uvicorn would wait for them for ever), a second
+        # stops all waiting, and open connections are cancelled after a few seconds: shutdown.py.
+        server = shutdown.AgoraServer(uvicorn.Config(create_project_app(p.root, gateway=True), host=HOST, port=a.port, log_level="info", timeout_graceful_shutdown=shutdown.GRACE_S))
+        server.run()
     finally:
         forget()
         lock.close()

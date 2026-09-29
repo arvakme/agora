@@ -22,6 +22,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from server.canvas import shutdown
 from server.canvas.backup import Backups, FileHistory
 from server.canvas.discover import full_text, session_history
 from server.canvas.events import Events
@@ -468,6 +469,7 @@ def create_project_app(
     shares.on_change = lambda: events.publish({"t": "shares"})
     dist = dist or WEB / "dist"
     gateway_app = create_gateway_app(store, shares, events, dist=dist)
+    gateway_app.add_middleware(shutdown.CloseStreamsOnShutdown)
 
     trash = Trash(store)
     # Safety nets outside the project: earlier versions of committed files, daily local backups.
@@ -501,7 +503,9 @@ def create_project_app(
             from agora_cli.main import free_port
 
             port = free_port()
-            server = uvicorn.Server(uvicorn.Config(gateway_app, host="127.0.0.1", port=port, log_level="warning", proxy_headers=False))
+            # its own server must neither take the process's signals from the main one nor wait for a guest's open stream
+            server = shutdown.GatewayServer(uvicorn.Config(gateway_app, host="127.0.0.1", port=port, log_level="warning", proxy_headers=False, timeout_graceful_shutdown=shutdown.GRACE_S))
+            shutdown.on_stop(lambda: setattr(server, "should_exit", True))
             gateway_task = asyncio.create_task(server.serve())  # stops on should_exit, not cancelled
             shares.gateway_port = port
             await asyncio.to_thread(shares.resume)
@@ -516,17 +520,22 @@ def create_project_app(
 
             tasks.append(asyncio.create_task(sweeper()))
         yield
+        # Every step has a limit: one that hangs must not keep the process from ending (shutdown.py).
         if server is not None:
             server.should_exit = True
         for t in tasks:
             t.cancel()
-        await asyncio.to_thread(shares.shutdown)
-        await hub.close()
+        await shutdown.bounded(asyncio.gather(*tasks, return_exceptions=True), 3, "background tasks")
+        if gateway_task is not None:
+            await shutdown.bounded(gateway_task, shutdown.GRACE_S + 2, "share gateway")
+        await shutdown.bounded(asyncio.to_thread(shares.shutdown), 8, "shares.shutdown")
+        await shutdown.bounded(hub.close(), 12, "hub.close")
 
     app = FastAPI(title=f"agora · {store.info()['name']}", lifespan=lifespan)
     # The owner app answers only to local names (DNS rebinding: a page on another origin that resolves
     # its own name to 127.0.0.1 must not reach it). The share gateway is a separate app, unaffected.
     app.add_middleware(LocalHostOnly)
+    app.add_middleware(shutdown.CloseStreamsOnShutdown)  # event streams end when the server is told to stop (shutdown.py)
     app.state.store = store
     app.state.hub = hub
     app.state.shares = shares
