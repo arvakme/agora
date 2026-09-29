@@ -3,6 +3,7 @@ takes the answers, ends them with the turn, and never replays them after a resta
 The CLI is tests/fake_claude_duplex.py; its wire format is pinned in tests/test_claude_duplex.py."""
 
 import asyncio
+import os
 import json
 import subprocess
 import sys
@@ -266,3 +267,80 @@ def test_api_lists_and_answers_requests(store, tmp_path, monkeypatch):
         assert c.post(f"/api/agent/sessions/s-1/requests/{rid}", json={"decision": "deny"}).status_code == 404  # already answered
         assert c.post("/api/agent/sessions/s-1/interrupt").json() in ({"stopped": False}, {"stopped": True})
         assert c.get("/api/agent/sessions/nope/requests").status_code == 404
+
+
+# ——— RVF-C ———
+def pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def marker_pid(store) -> int:
+    return json.loads((store.run_dir / "headless" / "s-1.json").read_text())["pid"]
+
+
+async def test_a_request_nobody_answers_is_waited_for_and_says_for_how_long(store, tmp_path):
+    """No auto-deny: the turn keeps waiting for the person, but the status says since when."""
+    hub = hub_for(store, tmp_path, "ask")
+    sub = hub.subscribe(executor=False)
+    hub.send("s-1", "问我")
+    req = (await until(sub.q, lambda e: e.get("t") == "request"))[-1]["request"]
+    st = hub.status("s-1")
+    assert st["waiting"] is True and st["waitingSince"] == req["at"]  # ms since epoch: the page turns it into 「等你 N 分钟」
+    hub._get("s-1").requests[req["id"]]["at"] -= 7 * 60_000  # seven minutes pass
+    assert hub.status("s-1")["waitingSince"] == req["at"] - 7 * 60_000
+    await asyncio.sleep(1.0)
+    assert hub.status("s-1")["running"] is True and hub.requests("s-1")  # still there, not denied, not ended
+    hub.interrupt("s-1")
+    await until(sub.q, lambda e: e.get("t") == "done")
+    assert hub.status("s-1")["waitingSince"] is None
+
+
+async def test_interrupting_a_waiting_turn_leaves_no_process(store, tmp_path):
+    hub = hub_for(store, tmp_path, "ask")
+    sub = hub.subscribe(executor=False)
+    hub.send("s-1", "问我")
+    await until(sub.q, lambda e: e.get("t") == "request")
+    pid = marker_pid(store)
+    assert pid_alive(pid)
+    hub.interrupt("s-1")
+    await until(sub.q, lambda e: e.get("t") == "done")
+    for _ in range(50):
+        if not pid_alive(pid):
+            break
+        await asyncio.sleep(0.1)
+    assert not pid_alive(pid)
+
+
+async def test_closing_the_hub_with_a_request_open_ends_the_process_before_it_returns(store, tmp_path):
+    """`agora down` closes the hub: the claude process waiting for an answer must be gone by then."""
+    hub = hub_for(store, tmp_path, "ask")
+    sub = hub.subscribe(executor=False)
+    hub.send("s-1", "问我")
+    await until(sub.q, lambda e: e.get("t") == "request")
+    pid = marker_pid(store)
+    await hub.close()
+    assert not pid_alive(pid)
+
+
+async def test_a_hand_off_hook_that_raises_does_not_leave_the_session_running(store, tmp_path):
+    hub = hub_for(store, tmp_path, "ask")
+    sub = hub.subscribe(executor=False)
+
+    def boom(sid, send_id):
+        raise OSError("disk full")
+
+    hub.handoff_hooks.append(boom)
+    hub.send("s-1", "写个文件")
+    got = await until(sub.q, lambda e: e.get("t") == "done")
+    assert "没能交付" in got[-1]["error"] and "disk full" in got[-1]["error"]
+    st = hub.status("s-1")
+    assert st["running"] is False and st["busy"] is False
+    hub.handoff_hooks.clear()  # the queue is not stuck: the next message runs
+    hub.send("s-1", "再来")
+    req = (await until(sub.q, lambda e: e.get("t") == "request"))[-1]["request"]
+    hub.answer_request("s-1", req["id"], {"decision": "deny"})
+    await until(sub.q, lambda e: e.get("t") == "done")

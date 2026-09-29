@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerBody, answered, inputRightNote, modeLabel, pick, removeRequest, terminalBanner, upsertRequest, type HostRequest, type Question } from "./requestModel";
+import { answerBody, answered, inputRightNote, modeLabel, pick, removeRequest, terminalBanner, upsertRequest, waitLabel, type HostRequest, type Question } from "./requestModel";
 
 const q = (over: Partial<Question> = {}): Question => ({ question: "Which fruit?", header: "Fruit", multiSelect: false, options: [{ label: "Apple", description: "" }, { label: "Banana", description: "" }], ...over });
 const ask = (questions: Question[]): HostRequest => ({ id: "r1", sessionId: "s", kind: "question", tool: "AskUserQuestion", at: 1, questions });
@@ -33,6 +33,17 @@ describe("open requests", () => {
     expect(list[0].at).toBe(2);
     expect(removeRequest(list, "r1")).toEqual([]);
     expect(removeRequest(list, "nope")).toBe(list);
+  });
+});
+
+describe("how long it has waited", () => {
+  it("says 等你 for the first minute, then the minutes; nothing when it is not waiting", () => {
+    expect(waitLabel(null, 1_000_000)).toBeNull();
+    expect(waitLabel(undefined, 1_000_000)).toBeNull();
+    expect(waitLabel(1_000_000 - 59_000, 1_000_000)).toBe("等你");
+    expect(waitLabel(1_000_000 - 60_000, 1_000_000)).toBe("等你 1 分钟");
+    expect(waitLabel(1_000_000 - 7 * 60_000 - 30_000, 1_000_000)).toBe("等你 7 分钟");
+    expect(waitLabel(1_000_000 - 130 * 60_000, 1_000_000)).toBe("等你 130 分钟");
   });
 });
 

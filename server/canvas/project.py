@@ -591,6 +591,13 @@ class ProjectStore:
             self._atomic(path, dump_json(data))
             return data
 
+    def discard_session(self, id: str) -> None:
+        """Remove a session that never did anything (its binding and record): the empty one a failed
+        ``dispatch --new`` made. Not for a session with a history: that goes to the trash."""
+        with self._locked():
+            for kind in ("binding", "session"):
+                self._path(kind, id).unlink(missing_ok=True)
+
     def mark_started(self, id: str) -> dict[str, Any] | None:
         """The native session exists now (its log was seen, or a turn ran): from here on it is
         only ever resumed, never created again under the same id."""

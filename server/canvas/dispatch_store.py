@@ -35,7 +35,7 @@ from native_protocol import (
 from server.canvas.project import ProjectStore
 
 FORMAT = 1
-ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+ID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")  # matched with fullmatch: `$` would let a trailing newline through
 REPLY_STATUSES = ("done", "failed", "blocked")
 # States after which nothing more is expected of the dispatch (a late receipt can still move idle_no_reply).
 FINAL = frozenset({"done", "failed", "blocked", "idle_no_reply", "interrupted"})
@@ -168,7 +168,7 @@ class DispatchStore:
         self.dir = project_dir / "dispatch"
 
     def _json(self, id: str) -> Path:
-        if not ID_RE.match(id):
+        if not ID_RE.fullmatch(id):
             raise ValueError(f"not a request id: {id!r}")
         return self.dir / f"{id}.json"
 
@@ -182,13 +182,13 @@ class DispatchStore:
     def read(self, id: str) -> Dispatch | None:
         try:
             return from_json(json.loads(self._json(id).read_text()))
-        except (OSError, ValueError, KeyError):
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):  # unreadable or damaged: not this record (and not the whole listing)
             return None
 
     def all(self) -> list[Dispatch]:
         out = []
         for p in sorted(self.dir.glob("*.json")) if self.dir.is_dir() else []:
-            d = self.read(p.stem) if ID_RE.match(p.stem) else None
+            d = self.read(p.stem) if ID_RE.fullmatch(p.stem) else None
             if d is not None:
                 out.append(d)
         return sorted(out, key=lambda d: d.created_at)

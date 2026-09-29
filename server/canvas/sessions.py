@@ -40,8 +40,8 @@ from server.canvas.local import Local
 from server.canvas.model_view import model_view, versions
 from server.canvas.project import ProjectStore
 from server.canvas.adapters.claude import answer_response, approve_response, deny_response, interrupt_request
-from server.canvas.runner import Control, ExecOptions, RunRequest, make_backend
-from server.canvas.terminal import TerminalError, Terminals, gate_hold
+from server.canvas.runner import KILL_GRACE_S, Control, ExecOptions, RunRequest, make_backend
+from server.canvas.terminal import PasteSubmitFailed, TerminalError, Terminals, gate_hold
 from server.canvas.transcript import MARKER, State, Tail, project, split_agora
 
 TICK_S = 0.4
@@ -260,11 +260,15 @@ class AgentHub:
                     hook()
 
     async def close(self) -> None:
+        """Stop following and end every headless turn — the CLI processes too, and only then return
+        (a process waiting for an answer nobody can give must not outlive `agora down`)."""
         if self._loop_task:
             self._loop_task.cancel()
-        for lv in self.live.values():
-            if lv.run and not lv.run.done():
-                lv.run.cancel()
+        runs = [lv.run for lv in self.live.values() if lv.run and not lv.run.done()]
+        for t in runs:
+            t.cancel()
+        if runs:
+            await asyncio.wait(runs, timeout=2 * KILL_GRACE_S + 2)
 
     def _get(self, sid: str) -> Live:
         if sid not in self.live:
@@ -332,6 +336,7 @@ class AgentHub:
             "snapshot": bool(lv.snap),
             "running": lv.running,
             "waiting": bool(lv.requests),
+            "waitingSince": min((r["at"] for r in lv.requests.values()), default=None),  # ms: since when it has waited for the person
             "mode": {"actual": lv.mode, "asked": ASKED_MODE} if lv.mode else None,
             "busy": lv.state.busy,
             "queued": len(lv.headless) + len(lv.pane),
@@ -716,7 +721,20 @@ class AgentHub:
             lv.held = None
             try:
                 await asyncio.to_thread(self._handoff, sid, head.send_id)
+            except Exception as exc:  # what the hooks persist could not be written: nothing was sent, say so
+                lv.pane.pop(0)
+                self._not_delivered(sid, lv, head, f"没能交付：{exc}", "terminal")
+                continue
+            try:
                 await asyncio.to_thread(self.terms.paste, sid, head.prompt)
+            except PasteSubmitFailed as exc:
+                # It is in the CLI's input box, unsent. Running it again headless would do it twice: it is not known
+                # whether it will be taken (the person may press Enter there), and the page says exactly that.
+                lv.pane.pop(0)
+                lv.last_error = f"已粘贴到终端的输入框，但回车没有成功：{exc}。不知道它会不会被收下，没有另外重发（在终端里按回车即可提交）"
+                self.broadcast({"t": "done", "sessionId": sid, "sendId": head.send_id, "text": "", "error": lv.last_error, "outcome": "unknown", "route": "terminal"})
+                self._status(sid)
+                continue
             except (TerminalError, OSError) as exc:
                 lv.last_error = f"投递到终端失败：{exc}"
                 lv.headless.append(lv.pane.pop(0))
@@ -841,7 +859,14 @@ class AgentHub:
             lv.running = True
             started = time.time()
             self._status(sid)
-            self._handoff(sid, p.send_id)
+            try:
+                self._handoff(sid, p.send_id)
+            except Exception as exc:  # what the hooks persist could not be written: not sent, and the session is not left "running"
+                lv.running = False
+                lv.activity = None
+                self._end_turn(sid, lv)
+                self._not_delivered(sid, lv, p, f"没能交付：{exc}", "headless")
+                continue
             self.broadcast({"t": "delivered", "sessionId": sid, "sendId": p.send_id, "route": "headless"})
             result: dict[str, Any] | None = None
             try:
@@ -927,6 +952,11 @@ class AgentHub:
         lv = self._get(sid)
         self._follow(sid, lv)
         return list(lv.items.values())
+
+    def _not_delivered(self, sid: str, lv: Live, p: Pending, why: str, route: str) -> None:
+        lv.last_error = why
+        self._status(sid)
+        self.broadcast({"t": "done", "sessionId": sid, "sendId": p.send_id, "text": "", "error": why, "route": route})
 
     def interrupt(self, sid: str) -> bool:
         """Stop the turn. A two-way CLI (Claude) is asked to: it ends the turn itself (its ``result``

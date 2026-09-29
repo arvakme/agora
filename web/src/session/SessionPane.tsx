@@ -24,7 +24,9 @@ import { SPRING } from "../comments/motion";
 import { Composer } from "./Composer";
 import { InputRight } from "./InputRight";
 import { RequestCards } from "./RequestCards";
-import { modeLabel, terminalBanner } from "./requestModel";
+import { modeLabel, waitLabel } from "./requestModel";
+import { canvasChoices, topOf } from "./canvasChoices";
+import { useNested } from "../nested/store";
 import { AGENT_NAMES, agents, effortChoices, forkHeadless, loadAdapters, sessionKinds, useAgents, type AgentKind, type Catalog, type TerminalApps } from "./agents";
 import { AgentAvatar } from "./AgentAvatar";
 import { Picker } from "./Picker";
@@ -124,6 +126,35 @@ function OriginCard({ sessionId, origin, canvasTitles }: { sessionId: string; or
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * 「画在：<画布>」: the diagram this session edits, draws its figure on and takes comments from. Only top-level canvases are
+ * choices (a sub-diagram is in the tree of the canvas it opens from); with one there is no dropdown, only the words.
+ */
+function CanvasChoice({ canvasId, canvasTitles, onPick }: { canvasId: string; canvasTitles: Record<string, string>; onPick: (id: string) => void }) {
+  const { index } = useNested();
+  const choices = canvasChoices(canvasTitles, index);
+  const top = topOf(canvasId, index);
+  const gone = !canvasTitles[canvasId];
+  const tip = "这个会话改图、画小人、接评论时用的图";
+  if (choices.length <= 1 && !gone)
+    return (
+      <span className="sp-cv" title={tip}>
+        <i className="sp-cv-sq" aria-hidden />
+        <span className="sp-cv-t">画在：{canvasTitles[top] ?? choices[0]?.title ?? ""}</span>
+      </span>
+    );
+  return (
+    <label className="sp-cv" title={tip}>
+      <i className="sp-cv-sq" aria-hidden />
+      <span className="sp-cv-t">画在：</span>
+      <select value={gone ? canvasId : top} onChange={(e) => onPick(e.target.value)} aria-label="这个会话画在哪张图上">
+        {choices.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+        {gone && <option value={canvasId}>{canvasId ? "已删除的画布" : "未关联画布"}</option>}
+      </select>
+    </label>
   );
 }
 
@@ -235,8 +266,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   const items = ag.items[sessionId] ?? [];
   const scroll = useRef<HTMLDivElement>(null);
   const [flash, setFlash] = useState<string | null>(null);
-  const [termMsg, setTermMsg] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [termNote, setTermNote] = useState<string | null>(null); // what the last 在终端打开 / 复制打开命令 could not do, or did: a few seconds
   const [view, setView] = useState<PanelView>("chat");
   // A turn of this session plays on the diagram (▶ on a turn): the pane goes to the trajectory, which follows the play
   // (later steps greyed, the current one marked, the controls on top), and comes back to the view it had when the play ends.
@@ -250,6 +280,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
     savedView.current = next.saved;
     if (next.view !== view) setView(next.view);
   }, [playing]);
+  const waitNow = useTick(1000, !!status?.waiting); // 「等你 N 分钟」 counts on
   const playNow = useTick(250, playing && !!replay?.playing); // the play moves on the wall clock: re-read it 4 times a second
   const playAt = playing && replay ? replayTime(replay, replay.playing ? playNow : Date.now()) : null;
   const [focusTurn, setFocusTurn] = useState<{ n: number; key: number } | null>(null);
@@ -307,32 +338,33 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
     if (termMenu) void agents.terminalApps().then(setApps).catch(() => setApps(null));
   }, [termMenu]);
   const openTerminal = async () => {
-    setTermMsg(null);
+    setTermNote(null);
     setTermMenu(false);
     try {
       const r = await agents.openTerminal(sessionId, session.canvasId, true);
-      setTermMsg(r.launched ? `已在 ${r.launched === "kitty" ? "Kitty" : "终端"} 中打开` : "没找到可用的终端：复制下面的命令自己打开");
+      // a window that opened says so by itself (the input-right note below); only what did not work needs words
+      setTermNote(r.launched ? null : "没找到可用的终端：用「复制打开命令」在任意终端里打开");
     } catch (e) {
-      setTermMsg((e as Error).message);
+      setTermNote((e as Error).message);
     }
   };
   /** Fallback for any terminal: start Agora's pane, copy the attach command. */
   const copyOpen = async () => {
     setTermMenu(false);
-    setTermMsg(null);
+    setTermNote(null);
     try {
       const r = await agents.openTerminal(sessionId, session.canvasId, false);
       await navigator.clipboard?.writeText(`env -u TMUX ${r.attach}`).catch(() => {});
-      setTermMsg("已复制命令：在任意终端里新开一个窗口粘贴运行");
+      setTermNote("已复制命令：在任意终端里新开一个窗口粘贴运行");
     } catch (e) {
-      setTermMsg((e as Error).message);
+      setTermNote((e as Error).message);
     }
   };
-  const copy = async () => {
-    await navigator.clipboard?.writeText(status?.terminal.attach ? `env -u TMUX ${status.terminal.attach}` : "").catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1400);
-  };
+  useEffect(() => {
+    if (!termNote) return;
+    const t = setTimeout(() => setTermNote(null), 6000);
+    return () => clearTimeout(t);
+  }, [termNote]);
 
   const [staleSeen, setStaleSeen] = useState(() => staleKnown(sessionId));
   // Copied along with the project (cp -r): read-only until forked here. A pending fork: the next
@@ -363,19 +395,14 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           <IconLock size={12} />
           {binding.model || "默认模型"}{binding.effort ? ` · ${binding.effort}` : ""}
         </span>
+        {status?.waiting && <span className="sp-waited" title="它在等你回答；不会自动拒绝，回答或停止之前一直等">{waitLabel(status.waitingSince, waitNow)}</span>}
         {modeLabel(status?.mode) && (
           <span className="sp-mode" data-tone={modeLabel(status?.mode)!.tone} title="Claude 这一轮实际的权限模式：auto 由它自己判断哪些要问你">
             {modeLabel(status?.mode)!.text}
           </span>
         )}
         <span className="sp-sep" aria-hidden>·</span>
-        <label className="sp-cv" title="这个会话默认改的画布">
-          <i className="sp-cv-sq" aria-hidden />
-          <select value={session.canvasId} onChange={(e) => sessions.relink(sessionId, e.target.value)} aria-label="关联画布">
-            {Object.entries(canvasTitles).map(([id, t]) => <option key={id} value={id}>{t}</option>)}
-            {!canvasTitles[session.canvasId] && <option value={session.canvasId}>{session.canvasId ? "已删除的画布" : "未关联画布"}</option>}
-          </select>
-        </label>
+        <CanvasChoice canvasId={session.canvasId} canvasTitles={canvasTitles} onPick={(id) => sessions.relink(sessionId, id)} />
         <span className="grow" />
         <button className="icon-btn sm" aria-pressed={view === "trajectory"} data-on={view === "trajectory"} onClick={() => setView((v) => panelView(v, "toggle"))} title={view === "trajectory" ? "回到对话" : "轨迹：每一步做了什么"} aria-label="轨迹">
           <IconPath size={16} />
@@ -426,6 +453,12 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
                   <IconCopy size={16} />
                   复制打开命令
                 </button>
+                {status?.terminal.alive && (
+                  <button role="menuitem" onClick={() => (setTermMenu(false), void agents.closeTerminal(sessionId))} title="结束终端里的 CLI；会话可随时再续接">
+                    <span className="menu-check" />
+                    关闭终端
+                  </button>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -433,21 +466,9 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
         </div>
       </header>
       <ConflictNotice sessionId={sessionId} />
-      {(status?.terminal.alive || termMsg) && (
-        <div className="notice sp-attach" data-tone={status?.terminal.alive ? undefined : "caution"}>
-          {status?.terminal.alive ? (
-            <>
-              <i className="dot" data-tone={terminalBanner(status.terminal) === "attached" ? "ok" : undefined} />
-              <b>{terminalBanner(status.terminal) === "attached" ? "终端已接管" : "终端里的 CLI 在后台"}</b>
-              {terminalBanner(status.terminal) === "background" && <span className="sp-attach-msg">没有窗口连着；空闲后自动关掉，下一句在面板里续接</span>}
-              <code title="在任意终端里运行，连到这个会话">{status.terminal.attach}</code>
-              <button className="icon-btn sm" onClick={() => void copy()} aria-label={copied ? "已复制" : "复制命令"} title={copied ? "已复制" : "复制命令"}><IconCopy size={16} /></button>
-              <button className="btn sm ghost" onClick={() => void agents.closeTerminal(sessionId)} title="结束终端里的 CLI；会话可随时再续接">关闭终端</button>
-            </>
-          ) : (
-            <span>{termMsg}</span>
-          )}
-          {status?.terminal.alive && termMsg && <span className="sp-attach-msg">{termMsg}{status.terminal.clients ? ` · ${status.terminal.clients} 个窗口` : ""}</span>}
+      {termNote && (
+        <div className="notice sp-attach" data-tone="caution" role="status">
+          <span>{termNote}</span>
         </div>
       )}
       {view === "trajectory" ? (
@@ -512,11 +533,9 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           canvasId={session.canvasId}
           canvasTitle={canvasTitle}
           agentName={AGENT_NAMES[binding.agent]}
-          route={status?.terminal.alive ? "terminal" : "headless"}
           onSend={send}
           working={working}
           onStop={status?.running ? () => void agents.interrupt(sessionId) : undefined}
-          onTerminal={() => void openTerminal()}
         />
         </>
       )}

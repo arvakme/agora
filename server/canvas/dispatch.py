@@ -26,6 +26,7 @@ While a person holds the pane's input (terminal.py), the message just waits in t
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import secrets
 import threading
@@ -91,6 +92,9 @@ class Dispatches:
         self.lock = threading.RLock()
         self._sends: dict[str, str] = {}  # hub send id -> request id (this process only)
         self._send_of: dict[str, str] = {}  # request id -> hub send id
+        # one number per request, never repeated (a record may go away, two may be made at once)
+        self._seq = itertools.count(max((d.delivery.request.origin.request_seq for d in self.files.all()), default=0) + 1)
+        self._notifying: set[tuple[str, str]] = set()  # (request id, state) whose note to the source is being sent
         self._open: dict[str, str] = {d.id: d.target["sessionId"] for d in self.files.all() if not is_final(derive_state(d))}  # request id -> target session, while it can still change
         hub.listeners.append(self._on_event)
         hub.handoff_hooks.append(self._on_handoff)
@@ -208,7 +212,7 @@ class Dispatches:
         body = task.strip() if inline else envelope(rid, name, task_path, scope or [])
         request = DeliveryRequest(
             request_id=UUID(rid),
-            origin=RequestOrigin(room_id=uuid5(NS, self.store.info().get("id") or str(self.store.root)), request_seq=len(self.files.all()) + 1, requested_by=uuid5(NS, f"source:{src_sid or source.get('kind')}")),
+            origin=RequestOrigin(room_id=uuid5(NS, self.store.info().get("id") or str(self.store.root)), request_seq=next(self._seq), requested_by=uuid5(NS, f"source:{src_sid or source.get('kind')}")),
             session=NativeSession(
                 deployment=str(self.store.root),
                 participant_id=uuid5(NS, f"session:{sid}"),
@@ -233,6 +237,9 @@ class Dispatches:
         )
         self._record(d)  # 1. on disk before anything is sent
         self._send(d, body, name, folder)
+        if is_new and self._need(rid).error:  # the new, empty session it made for nothing does not stay behind
+            self.hub.live.pop(sid, None)
+            self.store.discard_session(sid)
         return self.summary(self._need(rid))
 
     def _new_session(self, agent: str, model: str, effort: str, canvas_id: str | None) -> tuple[str, str, bool]:
@@ -292,12 +299,26 @@ class Dispatches:
         t = ev.get("t")
         if t not in ("transcript", "done"):
             return
+        if t == "done" and ev.get("outcome") == "unknown":
+            self._uncertain(ev)  # a message that reached a pane but may or may not have been taken
         sid = ev.get("sessionId")
-        for rid in [r for r, s in self._open.items() if s == sid]:
+        with self.lock:  # `reply()` changes it from a worker thread
+            rids = [r for r, s in self._open.items() if s == sid]
+        for rid in rids:
             live = self.hub.live.get(sid)
             d = self.files.read(rid)
             if d is not None:
                 self._sync(d, list(live.items.values()) if live else ev.get("items") or [])
+
+    def _uncertain(self, ev: dict[str, Any]) -> None:
+        rid = self._sends.get(ev.get("sendId") or "")
+        if rid is None:
+            return
+        with self.lock:
+            d = self.files.read(rid)
+            if d is not None and d.delivery.turn_state == "in_flight" and not d.delivery.withdrawn:
+                d.delivery = mark_uncertain(d.delivery, str(ev.get("error") or "the message may or may not have been taken"))
+                self._record(d)
 
     def _sync(self, d: Dispatch, items: list[dict[str, Any]]) -> Dispatch:
         """Fold what the target's own log shows into the record: the marker (accepted), the turn's end."""
@@ -394,7 +415,11 @@ class Dispatches:
         """After a restart: for every record that is not settled, ``plan_recovery`` says what may be done.
         Never a resend of anything that may have been injected."""
         for d in self.files.all():
-            if d.error or is_final(derive_state(d)):
+            state = derive_state(d)
+            if is_final(state):
+                # ended, but the source may never have been told (a crash in between, a send that failed)
+                if state != "interrupted" and d.notified != state:
+                    self._notify_soon(d.id, state, restarted=True)
                 continue
             action = plan_recovery(d.delivery)
             if action == "deliver":
@@ -431,9 +456,7 @@ class Dispatches:
             self._open[d.id] = d.target["sessionId"]
         self.hub.broadcast({"t": "dispatch", "dispatch": self.summary(d)})
         if is_final(state) and d.notified != state and state != "interrupted":
-            d.notified = state
-            self.files.write(d)
-            self._on_loop(lambda: self._notify(self._need(d.id), state))
+            self._notify_soon(d.id, state)
 
     def _on_loop(self, fn) -> None:
         loop = self.hub._loop
@@ -452,23 +475,66 @@ class Dispatches:
         r = publishable_result(d.delivery)
         return (r.summary if r else "").strip()
 
+    def _notify_soon(self, rid: str, state: str, *, restarted: bool = False) -> None:
+        """Tell the source on the loop, once per (dispatch, state) at a time. ``notified`` is written only
+        after the note went out (``_notice``); until then the record says the source was not told."""
+        with self.lock:
+            if (rid, state) in self._notifying:
+                return
+            self._notifying.add((rid, state))
+        self._on_loop(lambda: self._notice(rid, state, restarted))
+
+    def _notice(self, rid: str, state: str, restarted: bool) -> None:
+        try:
+            d = self.files.read(rid)
+            if d is None or d.notified == state:
+                return
+            try:
+                if not (restarted and self._already_told(d, state)):
+                    self._notify(d, state)
+            except Exception as e:  # a source that cannot take the note (gone, a copy): the record says so, a restart tries once more
+                with self.lock:
+                    d = self.files.read(rid)
+                    if d is not None:
+                        d.delivery = replace(d.delivery, note=f"通知没有发出（{state}）：{e}")
+                        self.files.write(d)
+                return
+            with self.lock:
+                d = self.files.read(rid)
+                if d is not None:
+                    d.delivery = d.delivery if not (d.delivery.note or "").startswith("通知没有发出") else replace(d.delivery, note=None)
+                    d.notified = state
+                    self.files.write(d)
+                    self._open.pop(rid, None)
+        finally:
+            with self.lock:
+                self._notifying.discard((rid, state))
+
+    def _already_told(self, d: Dispatch, state: str) -> bool:
+        """The source's own log already shows this note (the server died after sending, before writing ``notified``)."""
+        sid = d.source.get("sessionId")
+        if d.source.get("kind") != "session" or not sid:
+            return False
+        try:
+            items = self.hub.items(sid)
+        except Exception:
+            return False
+        return any(i.get("kind") == "user" and i.get("receipt") == f"{d.id}:{state}" for i in items)
+
     def _notify(self, d: Dispatch, state: str) -> None:
-        """Tell the source. The record is the fact; this only reaches it sooner."""
+        """Tell the source (raises when it cannot be told). The record is the fact; this only reaches it sooner."""
         if d.delivery.withdrawn or (d.error and d.source.get("kind") == "comment"):
             return  # (a comment that could not even be handed over is refused to the page that asked, not posted)
         target = self._name(d.target["sessionId"])
         answer = self._answer(d)
         src = d.source
-        try:
-            if src.get("kind") == "comment":
-                self._post_thread(d, state, answer)
-            elif src.get("kind") == "session" and src.get("sessionId"):
-                head = {"done": "完成了", "failed": "失败了", "blocked": "受阻", "idle_no_reply": "对方这一轮结束了，但没有交回执"}.get(state, state)
-                more = f"答复：{answer}" if answer else "没有答复内容"
-                msg = f"[Agora 派发回执 {d.id[:8]}] 你派给 {target} 的任务：{head}。{more}（记录 {self.files.folder(d.id)}；`agora dispatch status {d.id}` 查看）（这是通知，不需要回复；有下一步再做。）"
-                self.hub.send(src["sessionId"], agora_prompt(msg, canvas_id=None, canvas_name=None, extra=f"dispatch-receipt={d.id}", session_id=src["sessionId"]))
-        except Exception:  # a source that cannot take the note (gone, a copy) does not undo the record
-            pass
+        if src.get("kind") == "comment":
+            self._post_thread(d, state, answer)
+        elif src.get("kind") == "session" and src.get("sessionId"):
+            head = {"done": "完成了", "failed": "失败了", "blocked": "受阻", "idle_no_reply": "对方这一轮结束了，但没有交回执"}.get(state, state)
+            more = f"答复：{answer}" if answer else "没有答复内容"
+            msg = f"[Agora 派发回执 {d.id[:8]}] 你派给 {target} 的任务：{head}。{more}（记录 {self.files.folder(d.id)}；`agora dispatch status {d.id}` 查看）（这是通知，不需要回复；有下一步再做。）"
+            self.hub.send(src["sessionId"], agora_prompt(msg, canvas_id=None, canvas_name=None, extra=f"dispatch-receipt={d.id} agora-receipt-{d.id}:{state}", session_id=src["sessionId"]))
 
     def _post_thread(self, d: Dispatch, state: str, answer: str) -> None:
         src = d.source

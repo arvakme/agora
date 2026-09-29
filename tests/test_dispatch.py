@@ -18,7 +18,7 @@ from server.canvas.dispatch import Dispatches, DispatchError
 from server.canvas.dispatch_store import derive_state
 from server.canvas.project import ProjectStore
 from server.canvas.sessions import AgentHub
-from server.canvas.terminal import make_gate
+from server.canvas.terminal import PasteSubmitFailed, make_gate
 
 NID_A, NID_B = "44444444-0000-0000-0000-00000000000a", "44444444-0000-0000-0000-00000000000b"
 
@@ -390,3 +390,142 @@ async def test_a_turn_that_was_running_at_the_restart_is_uncertain_until_the_log
     log.append({"id": "end-u1", "kind": "end", "at": 9, "turn": "u1"})  # the process that outlived the restart finished
     dp2._sync(d, log)
     assert dp2.get(rid).delivery.turn_state == "completed" and derive_state(dp2.get(rid)) == "idle_no_reply"
+
+
+# ——— RVF-C: the receipt notification is at-least-once-noticed and exactly-once-sent ———
+def told_a(rig):
+    return [t for sid, t in rig.terms.pastes if sid == "s-a"]
+
+
+async def finish(rig, rid):
+    await rig.deliver(rid)
+    rig.show("s-b", rig.user("s-b", "u1", rid))
+    rig.show("s-b", {"id": "a1", "kind": "assistant", "text": "加好了", "at": 1100}, {"id": "end-u1", "kind": "end", "at": 1200, "turn": "u1"})
+    rig.dp.reply(rid, "done", "已加", session="s-b")
+
+
+async def test_a_failed_notification_is_not_marked_as_sent_and_says_why(rig, monkeypatch):
+    real = rig.hub.send
+
+    def refuse(sid, prompt):
+        if sid == "s-a":
+            raise RuntimeError("s-a 的日志没了")
+        return real(sid, prompt)
+
+    monkeypatch.setattr(rig.hub, "send", refuse)
+    rid, _ = await go(rig)
+    await finish(rig, rid)
+    await asyncio.sleep(0.5)
+    d = rig.dp.get(rid)
+    assert rig.state(rid) == "done" and d.notified is None  # not "told": it was not
+    assert "s-a 的日志没了" in (d.delivery.note or "") and "通知" in d.delivery.note  # the reason is in the record, not swallowed
+    monkeypatch.setattr(rig.hub, "send", real)
+    rig.dp.recover()  # the next start tells it
+    await asyncio.sleep(0.8)
+    assert len(told_a(rig)) == 1 and rig.dp.get(rid).notified == "done"
+    rig.dp.recover()
+    await asyncio.sleep(0.5)
+    assert len(told_a(rig)) == 1  # and only once
+
+
+async def test_a_dispatch_that_ended_but_was_never_told_is_told_once_after_a_restart(rig, store):
+    rid, _ = await go(rig)
+    await finish(rig, rid)
+    await asyncio.sleep(0.8)
+    assert len(told_a(rig)) == 1
+    d = rig.dp.get(rid)
+    d.notified = None  # the server died between "it ended" and "the source was told"
+    rig.dp.files.write(d)
+    hub2 = AgentHub(store, terminals=FakeTerms("s-a", "s-b"))
+    dp2 = Dispatches(hub2)
+    lv = hub2._get("s-a")
+    dp2.recover()
+    await asyncio.sleep(0.8)
+    told2 = [t for sid, t in hub2.terms.pastes if sid == "s-a"]
+    assert len(told2) == 1 and "完成了" in told2[0] and dp2.get(rid).notified == "done"
+    dp2.recover()
+    await asyncio.sleep(0.4)
+    assert len([t for sid, t in hub2.terms.pastes if sid == "s-a"]) == 1
+
+
+async def test_a_note_the_source_already_shows_in_its_log_is_not_sent_again(rig, store):
+    rid, _ = await go(rig)
+    await finish(rig, rid)
+    await asyncio.sleep(0.8)
+    d = rig.dp.get(rid)
+    d.notified = None  # sent, but the crash came before "notified" was written
+    rig.dp.files.write(d)
+    hub2 = AgentHub(store, terminals=FakeTerms("s-a", "s-b"))
+    dp2 = Dispatches(hub2)
+    hub2._get("s-a").items["n1"] = {"id": "n1", "kind": "user", "text": "[Agora 派发回执]", "at": 1, "source": "agora", "receipt": f"{rid}:done"}
+    dp2.recover()
+    await asyncio.sleep(0.6)
+    assert [t for sid, t in hub2.terms.pastes if sid == "s-a"] == [] and dp2.get(rid).notified == "done"
+
+
+async def test_the_open_set_is_read_under_the_lock(rig):
+    """`reply()` (a worker thread) changes `_open` under the lock; `_on_event` must not walk it without it."""
+    held = []
+
+    class Watching(dict):
+        def items(self):
+            held.append(rig.dp.lock._is_owned())
+            return super().items()
+
+    rid, _ = await go(rig)
+    rig.dp._open = Watching(rig.dp._open)
+    rig.dp._on_event({"t": "done", "sessionId": "s-b"})
+    assert held and all(held)
+
+
+async def test_request_seq_never_repeats(rig):
+    seqs = []
+    for i in range(3):
+        rid, _ = await go(rig)
+        seqs.append(rig.dp.get(rid).delivery.request.origin.request_seq)
+        if i == 0:
+            (rig.store.dir / "dispatch" / f"{rid}.json").unlink()  # a record went away: `len(all()) + 1` would repeat
+    assert len(set(seqs)) == 3 and seqs == sorted(seqs)
+
+
+async def test_a_new_session_whose_send_failed_does_not_stay_behind(rig, store, monkeypatch):
+    def refuse(sid, prompt):
+        raise RuntimeError("cannot send")
+
+    monkeypatch.setattr(rig.hub, "send", refuse)
+    before = set(store.bindings())
+    s = await rig.dp.dispatch(source=SRC, task="加一行", new="codex", model="", effort="")
+    assert s["state"] == "failed" and "cannot send" in s["error"]
+    assert set(store.bindings()) == before  # no empty session left over
+    assert not (store.dir / "sessions" / f"{s['target']['sessionId']}.jsonl").exists()
+
+
+# ——— RVF-C: pasted, but Enter failed ———
+class PasteThenFail(FakeTerms):
+    def paste(self, sid, text, **_):
+        self.pastes.append((sid, text))
+        raise PasteSubmitFailed("send-keys Enter failed")
+
+
+async def test_a_paste_whose_enter_failed_is_not_run_again_by_the_headless_path(store):
+    terms = PasteThenFail("s-a", "s-b")
+    hub = AgentHub(store, terminals=terms, backend_factory=lambda kind: (_ for _ in ()).throw(AssertionError("must not run headless")))
+    dp = Dispatches(hub)
+    hub.ensure_started()
+    try:
+        s = await dp.dispatch(source=SRC, task="加一行", to="s-b")
+        rid = s["id"]
+        sub = hub.subscribe(executor=False)
+        for _ in range(100):
+            d = dp.get(rid)
+            if d.delivery.turn_state == "uncertain":
+                break
+            await asyncio.sleep(0.05)
+        d = dp.get(rid)
+        assert d.delivery.turn_state == "uncertain" and derive_state(d) == "unknown"  # not "failed", not run twice
+        assert "输入框" in d.delivery.note or "已粘贴" in d.delivery.note
+        lv = hub._get("s-b")
+        assert not lv.headless and not lv.pane and not lv.running  # nothing was sent the headless way
+        assert len(terms.pastes) == 1
+    finally:
+        await hub.close()
