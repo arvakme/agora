@@ -1,189 +1,147 @@
-"""The real share providers: Cloudflare DNS over its v4 API, tunnels through ``cloudflared``.
+"""The real share providers: Cloudflare reached through the ``cf`` CLI (``npx cf`` when it is not
+installed). ``cf`` owns login and credentials (``cf auth login``); Agora keeps none of its own and
+never reads them. Each call runs ``cf … `` and parses its JSON output.
 
-Credentials (never written into the project or ``.agora/``):
-
-- DNS: ``AGORA_CF_API_TOKEN`` + ``AGORA_CF_ZONE_ID``; otherwise the zone-scoped token inside
-  ``cloudflared``'s origin certificate (``TUNNEL_ORIGIN_CERT`` or ``~/.cloudflared/cert.pem``,
-  created by ``cloudflared tunnel login``) — the same token ``cloudflared tunnel route dns``
-  uses. The share domain defaults to that zone's name.
-- Tunnels: ``cloudflared`` with its default origin certificate; each tunnel's credentials file is
-  written to ``~/.config/agora/tunnels/<id>.json`` (mode 600).
+- DNS: ``cf dns records create|get|delete`` in the zone named by ``AGORA_SHARE_DOMAIN`` (or the
+  account's only zone).
+- Tunnels: ``cf tunnels create|list|delete``. A tunnel is remotely configured
+  (``config_src: cloudflare``): its single ingress — the local share gateway — is set with
+  ``cf tunnels config update`` on every start, and the connector is ``cf tunnels run --token``
+  (cf's own cloudflared). The token exists only in that call's arguments; it is never written
+  anywhere.
 """
 
 from __future__ import annotations
 
-import base64
 import json
 import os
-import re
-import shutil
-import signal
 import subprocess
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Any
 
-API = "https://api.cloudflare.com/client/v4"
+from server.canvas.share import CfProcess, cf_command, cf_cwd
+
+LOGIN_HINT = "not logged in to Cloudflare: run `npx cf auth login` first"
+CLEANUP_TRIES = 4
 
 
 class CloudflareError(RuntimeError):
     pass
 
 
-def origin_cert() -> Path:
-    return Path(os.environ.get("TUNNEL_ORIGIN_CERT") or Path.home() / ".cloudflared" / "cert.pem")
+class CfCli:
+    """Both providers (``DnsProvider`` and ``TunnelProvider`` in share.py) over the ``cf`` CLI."""
 
+    def __init__(self, domain: str | None = None, command: list[str] | None = None) -> None:
+        self.cmd = command or cf_command()
+        self._domain = domain or os.environ.get("AGORA_SHARE_DOMAIN") or None
 
-def _cert_token(path: Path) -> dict[str, str]:
-    raw = path.read_text()
-    m = re.search(r"-----BEGIN ARGO TUNNEL TOKEN-----(.*?)-----END ARGO TUNNEL TOKEN-----", raw, re.S)
-    if not m:
-        raise CloudflareError(f"{path} has no tunnel token; run `cloudflared tunnel login`")
-    return json.loads(base64.b64decode("".join(m.group(1).split())))
-
-
-class CloudflareDNS:
-    def __init__(self, token: str, zone_id: str) -> None:
-        self._token = token
-        self.zone_id = zone_id
-        self._zone_name: str | None = None
-
-    @classmethod
-    def from_env(cls) -> CloudflareDNS:
-        if os.environ.get("AGORA_CF_API_TOKEN") and os.environ.get("AGORA_CF_ZONE_ID"):
-            return cls(os.environ["AGORA_CF_API_TOKEN"], os.environ["AGORA_CF_ZONE_ID"])
-        cert = origin_cert()
-        if not cert.exists():
-            raise CloudflareError("no Cloudflare credentials: set AGORA_CF_API_TOKEN and AGORA_CF_ZONE_ID, or run `cloudflared tunnel login`")
-        tok = _cert_token(cert)
-        return cls(tok["apiToken"], tok["zoneID"])
-
-    def _call(self, method: str, path: str, body: dict[str, Any] | None = None) -> Any:
-        req = urllib.request.Request(
-            API + path,
-            method=method,
-            data=None if body is None else json.dumps(body).encode(),
-            headers={"Authorization": f"Bearer {self._token}", "Content-Type": "application/json"},
-        )
+    # ——— running cf ———
+    def _run(self, *args: str, zone: bool = False, secret: bool = False, text_ok: bool = False) -> Any:
+        argv = [*self.cmd, *args, *(["-z", self._domain] if zone and self._domain else [])]
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=90, stdin=subprocess.DEVNULL, cwd=cf_cwd())
+        if r.returncode != 0:
+            text = (r.stderr or r.stdout).strip()
+            if "auth login" in text or "not authenticated" in text.lower() or "unauthorized" in text.lower():
+                raise CloudflareError(LOGIN_HINT)
+            what = " ".join(args[:3])
+            raise CloudflareError(f"cf {what}: {'(output withheld)' if secret else text[-400:]}")
+        out = r.stdout.strip()
         try:
-            with urllib.request.urlopen(req, timeout=20) as r:
-                data = json.loads(r.read() or b"{}")
-        except urllib.error.HTTPError as e:
-            try:
-                data = json.loads(e.read() or b"{}")
-            except json.JSONDecodeError:
-                data = {}
-            errs = "; ".join(str(x.get("message")) for x in data.get("errors") or []) or str(e)
-            raise CloudflareError(f"{method} {path.split('?')[0]}: {e.code} {errs}") from None
-        if not data.get("success", True):
-            raise CloudflareError(f"{method} {path}: {data.get('errors')}")
-        return data.get("result")
+            return json.loads(out) if out else None
+        except json.JSONDecodeError:
+            if text_ok:
+                return out
+            raise CloudflareError(f"cf {' '.join(args[:3])}: output is not JSON") from None
 
+    def check_login(self) -> None:
+        me = self._run("auth", "whoami")
+        if not (isinstance(me, dict) and me.get("authenticated")):
+            raise CloudflareError(LOGIN_HINT)
+
+    # ——— DnsProvider ———
     def zone_name(self) -> str:
-        if self._zone_name is None:
-            self._zone_name = str(self._call("GET", f"/zones/{self.zone_id}")["name"])
-        return self._zone_name
+        if self._domain:
+            return self._domain
+        zones = self._run("zones", "list") or []
+        if len(zones) != 1:
+            raise CloudflareError("set AGORA_SHARE_DOMAIN to the Cloudflare zone to share under (the account has " + ("none" if not zones else f"{len(zones)} zones") + ")")
+        self._domain = str(zones[0]["name"])
+        return self._domain
 
     def create_cname(self, name: str, target: str, comment: str) -> str:
-        r = self._call("POST", f"/zones/{self.zone_id}/dns_records", {"type": "CNAME", "name": name, "content": target, "proxied": True, "ttl": 1, "comment": comment[:100]})
-        return str(r["id"])
+        self.zone_name()
+        body = {"type": "CNAME", "name": name, "content": target, "proxied": True, "ttl": 1, "comment": comment[:100]}
+        return str(self._run("dns", "records", "create", "--body", json.dumps(body), zone=True)["id"])
 
     def delete(self, record_id: str) -> None:
+        """A record that is already gone is fine."""
         try:
-            self._call("DELETE", f"/zones/{self.zone_id}/dns_records/{record_id}")
+            self._run("dns", "records", "delete", record_id, "--force", zone=True)
         except CloudflareError as e:
-            if " 404 " not in str(e) and "not found" not in str(e).lower():
+            if "not found" not in str(e).lower() and "81044" not in str(e):
                 raise
 
     def exists(self, record_id: str) -> bool:
         try:
-            self._call("GET", f"/zones/{self.zone_id}/dns_records/{record_id}")
+            self._run("dns", "records", "get", record_id, zone=True)
             return True
         except CloudflareError as e:
-            if " 404 " in str(e) or "not found" in str(e).lower():
+            if "not found" in str(e).lower() or "81044" in str(e):
                 return False
             raise
 
-    def find(self, name: str) -> list[dict[str, Any]]:
-        """Records with exactly this name (for verification after cleanup)."""
-        return list(self._call("GET", f"/zones/{self.zone_id}/dns_records?name={name}") or [])
-
-
-class CloudflaredProcess:
-    def __init__(self, proc: subprocess.Popen, log: Path, start_size: int) -> None:
-        self.proc = proc
-        self.pid = proc.pid
-        self.log = log
-        self.start_size = start_size
-
-    def alive(self) -> bool:
-        return self.proc.poll() is None
-
-    def wait_ready(self, timeout: float) -> bool:
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            if not self.alive():
-                return False
-            try:
-                with open(self.log, "rb") as fh:
-                    fh.seek(self.start_size)
-                    if b"Registered tunnel connection" in fh.read():
-                        return True
-            except FileNotFoundError:
-                pass
-            time.sleep(0.25)
-        return False
-
-    def stop(self) -> None:
-        if not self.alive():
-            return
-        self.proc.send_signal(signal.SIGTERM)
-        try:
-            self.proc.wait(8)
-        except subprocess.TimeoutExpired:
-            self.proc.kill()
-            self.proc.wait(3)
-
-
-class CloudflaredTunnels:
-    def __init__(self, binary: str | None = None) -> None:
-        self.bin = binary or shutil.which("cloudflared") or "cloudflared"
-
-    def _run(self, *args: str, timeout: float = 60) -> str:
-        r = subprocess.run([self.bin, "--no-autoupdate", "tunnel", *args], capture_output=True, text=True, timeout=timeout)
-        if r.returncode != 0:
-            raise CloudflareError(f"cloudflared tunnel {args[0]}: {r.stderr.strip()[-400:]}")
-        return r.stdout
-
+    # ——— TunnelProvider ———
     def find(self, name: str) -> str | None:
-        rows = json.loads(self._run("list", "--output", "json", "--name", name) or "[]") or []
-        live = [r for r in rows if r.get("name") == name and not r.get("deleted_at", "").startswith(("1", "2"))]
+        rows = self._run("tunnels", "list", "--name", name, "--is-deleted", "false") or []
+        live = [r for r in rows if r.get("name") == name and not r.get("deleted_at")]
         return str(live[0]["id"]) if live else None
 
-    def create(self, name: str, credentials: Path) -> str:
-        out = self._run("create", "--output", "json", "--credentials-file", str(credentials), name)
-        return str(json.loads(out)["id"])
+    def create(self, name: str) -> str:
+        return str(self._run("tunnels", "create", "--name", name, "--config-src", "cloudflare")["id"])
 
-    def delete(self, tunnel_id: str) -> None:
-        self._run("delete", "-f", tunnel_id)
+    def delete_tunnel(self, tunnel_id: str) -> None:
+        """Drop the connections first (a tunnel with live connectors cannot be deleted), then the tunnel."""
+        err: CloudflareError | None = None
+        for _ in range(CLEANUP_TRIES):
+            try:
+                self._run("tunnels", "connections", "cleanup", tunnel_id, "--force")
+                self._run("tunnels", "delete", tunnel_id, "--force")
+                return
+            except CloudflareError as e:
+                err = e
+                time.sleep(2)
+        raise err or CloudflareError("tunnel not deleted")
 
-    def start(self, tunnel_id: str, credentials: Path, config: Path, log: Path) -> CloudflaredProcess:
+    def start(self, tunnel_id: str, port: int, log: Path) -> CfProcess:
+        body = {"config": {"ingress": [{"service": f"http://127.0.0.1:{port}"}]}}
+        self._run("tunnels", "config", "update", tunnel_id, "--body", json.dumps(body))
+        token = self._run("tunnels", "token", "get", tunnel_id, secret=True, text_ok=True)
+        if not isinstance(token, str) or not token:
+            raise CloudflareError("cf tunnels token get: no token")
         log.parent.mkdir(parents=True, exist_ok=True)
         start = log.stat().st_size if log.exists() else 0
-        fh = open(log, "ab")
-        # Same process group as the project server: `agora down` stops it with the server.
-        proc = subprocess.Popen(
-            [self.bin, "tunnel", "--no-autoupdate", "--config", str(config), "--metrics", "127.0.0.1:0", "run", tunnel_id],
-            stdout=fh,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL,
-        )
-        return CloudflaredProcess(proc, log, start)
+        env = {**os.environ, "TUNNEL_TRANSPORT_PROTOCOL": os.environ.get("AGORA_TUNNEL_PROTOCOL") or "http2"}  # QUIC (UDP 7844) is blocked on many networks
+        with open(log, "ab") as fh:
+            # Same process group as the project server: `agora down` stops it with the server.
+            proc = subprocess.Popen([*self.cmd, "tunnels", "run", "--token", token], stdout=fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env, cwd=cf_cwd())
+        return CfProcess(proc, log, start, "")
 
 
-def default_providers() -> tuple[CloudflareDNS, CloudflaredTunnels]:
-    if not shutil.which("cloudflared"):
-        raise CloudflareError("cloudflared is not installed (brew install cloudflared)")
-    return CloudflareDNS.from_env(), CloudflaredTunnels()
+class CfDns:
+    def __init__(self, cf: CfCli) -> None:
+        self.cf = cf
+        self.zone_name, self.create_cname, self.delete, self.exists = cf.zone_name, cf.create_cname, cf.delete, cf.exists
+
+
+class CfTunnels:
+    def __init__(self, cf: CfCli) -> None:
+        self.cf = cf
+        self.find, self.create, self.delete, self.start = cf.find, cf.create, cf.delete_tunnel, cf.start
+
+
+def default_providers() -> tuple[CfDns, CfTunnels]:
+    cf = CfCli()
+    cf.check_login()
+    return CfDns(cf), CfTunnels(cf)

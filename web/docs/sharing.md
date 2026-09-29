@@ -2,7 +2,7 @@
 
 作者把一块画布分享出去，拿到链接的人（访客）只能**看这块画布、读评论、发评论和回复，以及编辑、删除自己发的消息**。改图、会话、Agent、终端、项目文件一律只属于作者本机。分享走作者自己的公开域名（本机是 `quietharbor.de`），有效期由作者选，也可以限制最多被打开几次；到期或撤销后链接立即失效，Cloudflare 上为它建的东西随之删除。
 
-实现：`server/canvas/share.py`（分享记录、令牌、生命周期、限流、访客可见内容）、`server/canvas/share_gateway.py`（访客唯一能到达的网关）、`server/canvas/cloudflare.py`（真实的 DNS / 隧道提供者）、`server/canvas/project_router.py`（`/api/share`、评论合并、推送、网关与清扫的启动）、`agora_cli/share.py`（命令）；前端 `web/src/share/SharePanel.tsx`（作者的分享按钮与列表）、`web/src/guest/`（访客页）、`web/src/persist.ts` 的 `followProject`（作者页收访客评论）。测试 `tests/test_share.py`、`tests/test_share_bundle.py`（分享包、临时分享）、`web/src/guest/live.test.ts`、`web/src/comments/threads.test.ts`。
+实现：`server/canvas/share.py`（分享记录、令牌、生命周期、限流、访客可见内容）、`server/canvas/share_gateway.py`（访客唯一能到达的网关）、`server/canvas/cloudflare.py`（`cf` 命令行封装：DNS / 隧道提供者）、`server/canvas/project_router.py`（`/api/share`、评论合并、推送、网关与清扫的启动）、`agora_cli/share.py`（命令）；前端 `web/src/share/SharePanel.tsx`（作者的分享按钮与列表）、`web/src/guest/`（访客页）、`web/src/persist.ts` 的 `followProject`（作者页收访客评论）。测试 `tests/test_share.py`、`tests/test_share_bundle.py`（分享包、临时分享）、`web/src/guest/live.test.ts`、`web/src/comments/threads.test.ts`。
 
 ## 1. 用法
 
@@ -26,15 +26,15 @@ agora import x.agora-share.json        # 把别人给的分享包（文件、分
 
 ```
 访客浏览器 ──https──> <项目名>-<6 位随机>.quietharbor.de  (Cloudflare 代理的 CNAME → <隧道 id>.cfargotunnel.com)
-         ──> cloudflared（本项目一个命名隧道 agora-share-<项目 id 前 8 位>，只有一条 ingress）
+         ──> cf tunnels run（本项目一个命名隧道 agora-share-<项目 id 前 8 位>，只有一条 ingress）
          ──> 127.0.0.1:<网关端口>  share_gateway（白名单）──> 项目存储 / 事件
 作者浏览器 ──> 127.0.0.1:<项目端口>  项目应用（不经过隧道）
 ```
 
 - **子域名**：每个分享新建一条代理的 CNAME `<slug>-<随机>.<域名>`（一级子域名，Cloudflare 的通用证书覆盖 `*.<域名>`，不用单独签证书）。撤销或到期时按记录 id 删掉它，名字本身就不存在了（权威 DNS 返回 NXDOMAIN），不只是令牌失效。
 - **令牌**：链接是 `https://<主机名>/s/<令牌>`，令牌 32 字节随机（`secrets.token_urlsafe(32)`）。网关验证后把它放进 `HttpOnly; Secure; SameSite=Lax` 的 cookie（有效期不超过分享本身），再 303 跳到 `/`，地址栏里就不再有令牌；`Referrer-Policy: no-referrer` 防止经 Referer 外泄。
-- **隧道**：每份项目（每个实例，见 [项目存储 §1](project-storage.md#本机状态localagora-之外的注册表)）一个命名隧道 `agora-share-<项目 id 前 8 位>-<实例 id 前 6 位>`：同一项目的两个克隆或 worktree 各用各的，撤销一边的最后一个分享不会拆掉另一边正在用的隧道。第一次分享时创建，凭据写在 `~/.config/agora/tunnels/<隧道 id>.json`（600），配置 `.yml` 在同一目录，里面只有一条 ingress：本项目的分享网关。所有分享的主机名都指向这一个隧道，网关按 Host 区分分享，所以增删分享不用重启 cloudflared。协议固定 HTTP/2（`AGORA_TUNNEL_PROTOCOL` 可改）：QUIC 用的 UDP 7844 在很多网络被挡，cloudflared 会一直重试 QUIC 连不上。
-- **进程**：cloudflared 是项目服务的子进程，和它在同一个进程组，`agora down` 一起停掉；pid、隧道 id、网关端口写在 `.agora/run/share-tunnel.json`，日志 `.agora/run/cloudflared.log`。
+- **隧道**：每份项目（每个实例，见 [项目存储 §1](project-storage.md#本机状态localagora-之外的注册表)）一个命名隧道 `agora-share-<项目 id 前 8 位>-<实例 id 前 6 位>`：同一项目的两个克隆或 worktree 各用各的，撤销一边的最后一个分享不会拆掉另一边正在用的隧道。第一次分享时用 `cf tunnels create --config-src cloudflare` 创建（远程配置的隧道，Agora 不存任何隧道凭据）；每次启动连接器前 `cf tunnels config update` 写入唯一的一条 ingress：本项目的分享网关；连接器是 `cf tunnels run --token <令牌>`（令牌由 `cf tunnels token get` 现取，只在这条子进程的参数里，不落盘、不进日志）。所有分享的主机名都指向这一个隧道，网关按 Host 区分分享，所以增删分享不用重启连接器。协议固定 HTTP/2（`AGORA_TUNNEL_PROTOCOL` 可改）：QUIC 用的 UDP 7844 在很多网络被挡，cloudflared 会一直重试 QUIC 连不上。DNS 记录用 `cf dns records create`（CNAME 指向 `<隧道 id>.cfargotunnel.com`，走代理），撤销用 `cf dns records delete`。没登录时报「先运行 `npx cf auth login`」。
+- **进程**：`cf tunnels run`（cf → node → cloudflared）是项目服务的子进程，和它在同一个进程组，`agora down` 一起停掉；pid、隧道 id、网关端口写在 `.agora/run/share-tunnel.json`，日志 `.agora/run/cloudflared.log`。
 
 **取舍**：另一种做法是一个固定主机名 + 路径令牌（整台机器一条 DNS 记录，分享之间只靠令牌区分）。它少了每次分享一次 DNS 写入（多一两秒），但撤销只能靠令牌检查，名字一直公开可探测；所有分享同源，一个分享页里的 cookie / 本地存储对其他分享可见；多个项目同时分享时还要一个机器级的进程统一路由。每个分享一个子域名把「撤销」做成了「这个名字不存在了」，也让分享之间天然隔离，所以选它。代价：每个分享要一次 Cloudflare API 调用；刚删掉的名字在别人的递归 DNS 缓存里可能还会留几分钟（这时它指向的隧道已删，Cloudflare 返回 530；网关也已不认这个主机名）。
 
@@ -85,8 +85,8 @@ agora import x.agora-share.json        # 把别人给的分享包（文件、分
 - **判定**：令牌检查本身就看到期时间，到点那一刻起所有请求 403，不依赖清扫。
 - **清扫**：项目服务每 5 秒清扫一次：结束到期的分享，重试没做完的清理。
 - **结束一个分享**（撤销或到期）：先把 `endedAt / endReason` 写盘（此后令牌必然无效，Cloudflare 那边出什么错都不影响），通知在线访客页（`ended`），再按记录 id 删 DNS 记录；删失败记在 `cleanup: ["dns"]` 里，下次清扫重试（列表里显示「DNS 记录待清理」）。
-- **没有有效分享时**：停 cloudflared，按名字 `agora-share-<项目 id 前 8 位>-<实例 id 前 6 位>` 找到这份项目的隧道并删除（`cloudflared tunnel delete -f <id>`），删掉它的凭据和配置文件。旧版本用的是不带实例的名字 `agora-share-<项目 id 前 8 位>`（所有副本同名）：这个名字的隧道只在这份项目自己的分享记录里出现过它的 id 时才删。账号里其他隧道不碰。
-- **服务停止**（`agora down`）：cloudflared 一起停；有效分享留在记录里，下次 `agora up` 时先结束期间到期的，再为剩下的重新连上隧道。服务停着的这段时间，访客会看到 Cloudflare 的 530。
+- **没有有效分享时**：停连接器，按名字 `agora-share-<项目 id 前 8 位>-<实例 id 前 6 位>` 找到这份项目的隧道并删除（先 `cf tunnels connections cleanup <id> --force` 断开连接，再 `cf tunnels delete <id> --force`；连接刚断时删除可能要重试几次）。旧版本用的是不带实例的名字 `agora-share-<项目 id 前 8 位>`（所有副本同名）：这个名字的隧道只在这份项目自己的分享记录里出现过它的 id 时才删。账号里其他隧道不碰。
+- **服务停止**（`agora down`）：连接器一起停；有效分享留在记录里，下次 `agora up` 时先结束期间到期的，再为剩下的重新连上隧道。服务停着的这段时间，访客会看到 Cloudflare 的 530。
 - **创建失败**：隧道连不上或 DNS 建不了时不留分享记录，已建的隧道由下一次清扫删除。
 
 ## 6. 记录与密钥放在哪
@@ -95,9 +95,8 @@ agora import x.agora-share.json        # 把别人给的分享包（文件、分
 |---|---|---|
 | 分享记录：id、画布、主机名、**令牌的 sha256**、创建/到期/结束时间、访问/访客/评论数、打开次数与上限、进来过的访客 id 哈希、DNS 记录 id、隧道 id、待清理项 | `.agora/shares/shares.json` | 否：模板 `.gitignore` 有 `shares/`，目录里另有一个 `*` 的 `.gitignore`（旧项目的 `.agora/.gitignore` 没有这一行也照样忽略） |
 | 令牌原文 | 不存。只在创建时返回一次 | — |
-| 隧道凭据与配置 | `~/.config/agora/tunnels/`（目录 700，凭据 600；`AGORA_CONFIG_DIR` 可改） | 否（不在项目里） |
-| Cloudflare API 凭据 | `AGORA_CF_API_TOKEN` + `AGORA_CF_ZONE_ID`；没有就用 `cloudflared tunnel login` 生成的 `~/.cloudflared/cert.pem` 里那个 zone 范围的令牌（与 `cloudflared tunnel route dns` 用的是同一个），Agora 不复制它 | 否 |
-| 分享域名 | `AGORA_SHARE_DOMAIN`；不设就用上面那个 zone 的名字 | — |
+| Cloudflare 凭据 | 归 `cf` 管（`npx cf auth login`）；Agora 不存、不读、不复制 | 否 |
+| 分享域名 | `AGORA_SHARE_DOMAIN`；不设且账号里只有一个 zone 时用它的名字，否则报错要求设置 | — |
 
 ## 7. 威胁模型
 
@@ -117,7 +116,7 @@ agora import x.agora-share.json        # 把别人给的分享包（文件、分
 | quick 地址是公网地址、没有独立主机名隔离 | 同一时间只有一个分享；令牌、cookie、白名单和限流与普通分享一致；撤销 / `agora down` 停整棵进程树，地址随后返回 530 |
 | Cloudflare 清理失败留下 DNS 记录 | 令牌已先失效；记录 id 留在 `cleanup` 里，清扫重试，列表可见 |
 
-不防：拿到作者机器本身的人；作者自己把 `cert.pem` 或隧道凭据放进仓库。
+不防：拿到作者机器本身的人；作者自己把 `cf` 的登录凭据放进仓库。
 
 ## 8. 验收记录
 
@@ -139,6 +138,8 @@ agora import x.agora-share.json        # 把别人给的分享包（文件、分
 
 7. `agora share export` → 在另一个空项目 `agora import` → 页面上画布、子图（点节点右下角进入）、两个评论钉都在；导出文件里没有 `codePaths`、邮箱、会话 id、本机路径。
 8. `agora share create --quick` 约 8 秒给出地址；访客页正常显示、能评论，评论落进 `sh-proj/.agora/threads`；SSE 被缓冲，页面 5 秒后改为轮询，作者新评论约 8 秒内出现；第二个 quick 分享被拒；`agora share revoke --all` 与 `agora down` 之后进程都没了、地址 530。
+
+2026-09-29 改用 `cf`（`tests/test_cloudflare.py` 用桩 `cf` 覆盖建、撤、未登录、失败回滚），在真实的 `quietharbor.de` 上端到端：`agora share create` 建出 `sh2-proj-<随机>.quietharbor.de`（代理的 CNAME 加一个远程配置的隧道，4 个连接）→ 访客用 Playwright 打开、评论落进 `.agora/threads` → `agora share revoke` 约 16 秒结束：`cf dns records list` 和 `cf tunnels list` 里都没有了，地址返回 530，连接器进程没了；quietharbor.de 的记录和账号的隧道列表回到测试前。第一次撤销暴露了 `connections cleanup` 也要 `--force`，已修。证据在 delivery-verify 的 `round-02/evidence/SH2/`。
 
 ## 9. 分享包：让别的开发者带走、导入到自己的 Agora
 

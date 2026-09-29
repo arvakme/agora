@@ -7,10 +7,10 @@ canvas and comment on it, for as long as the owner chose. Design: web/docs/shari
 - Each share gets its own first-level hostname ``<project>-<random>.<domain>`` (a proxied CNAME
   to this project's named tunnel), so the universal certificate covers it and revoking it
   removes the name itself, not only the token.
-- One ``cloudflared`` connector per project runs while at least one share is active; its only
+- One ``cf tunnels run`` connector per project runs while at least one share is active; its only
   ingress is the local share gateway (share_gateway.py), never the owner's app.
 - Ending a share (revoke or expiry) invalidates the token at once, deletes its DNS record, and
-  when no share is left stops the connector and deletes the tunnel and its credentials.
+  when no share is left stops the connector and deletes the tunnel.
 
 Cloudflare is reached through two small providers (``DnsProvider``, ``TunnelProvider``) so the
 lifecycle is tested with fakes; the real ones live in cloudflare.py.
@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from server.canvas import nested
+from server.canvas.local import state_dir
 from server.canvas.project import ID_RE, ProjectStore, dump_json
 
 SHARES_DIR = "shares"
@@ -109,9 +110,9 @@ class TunnelProcess(Protocol):
 
 class TunnelProvider(Protocol):
     def find(self, name: str) -> str | None: ...
-    def create(self, name: str, credentials: Path) -> str: ...
+    def create(self, name: str) -> str: ...
     def delete(self, tunnel_id: str) -> None: ...
-    def start(self, tunnel_id: str, credentials: Path, config: Path, log: Path) -> TunnelProcess: ...
+    def start(self, tunnel_id: str, port: int, log: Path) -> TunnelProcess: ...
 
 
 # ——— records ———
@@ -472,7 +473,7 @@ def import_bundle(store: ProjectStore, data: Any) -> dict[str, Any]:
 
 # ——— quick share: `cf tunnels quick-start`, no Cloudflare account ———
 QUICK_URL_RE = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
-QUICK_READY = b"Registered tunnel connection"
+TUNNEL_READY = b"Registered tunnel connection"
 
 
 def _descendants(pid: int) -> list[int]:
@@ -481,9 +482,9 @@ def _descendants(pid: int) -> list[int]:
     return [d for k in kids for d in _descendants(k)] + kids
 
 
-class QuickTunnel:
-    """A running ``cf tunnels quick-start``: the address it printed, and its process tree
-    (cf → node → cloudflared) that has to end with it."""
+class CfProcess:
+    """A running ``cf`` tunnel command (quick-start or run): the address it printed (quick only), and
+    its process tree (cf → node → cloudflared) that has to end with it."""
 
     def __init__(self, proc: subprocess.Popen, log: Path, start_size: int, host: str) -> None:
         self.proc, self.pid, self.log, self.start_size, self.host = proc, proc.pid, log, start_size, host
@@ -494,7 +495,7 @@ class QuickTunnel:
     def wait_ready(self, timeout: float) -> bool:
         deadline = time.time() + timeout
         while time.time() < deadline and self.alive():
-            if QUICK_READY in _tail(self.log, self.start_size):
+            if TUNNEL_READY in _tail(self.log, self.start_size):
                 return True
             time.sleep(0.25)
         return False
@@ -532,22 +533,34 @@ def _tail(log: Path, start: int) -> bytes:
         return b""
 
 
-def start_quick_tunnel(port: int, log: Path, timeout: float = READY_TIMEOUT_S) -> QuickTunnel:
+def cf_command() -> list[str]:
+    """``cf`` when it is installed, otherwise ``npx --yes cf``."""
+    return [shutil.which("cf") or "npx", *([] if shutil.which("cf") else ["--yes", "cf"])]
+
+
+def cf_cwd() -> str:
+    """Where every ``cf`` runs: it caches the account in ``./.cloudflare/``, which must not land in the user's project."""
+    d = state_dir() / "cf"
+    d.mkdir(parents=True, exist_ok=True)
+    return str(d)
+
+
+def start_quick_tunnel(port: int, log: Path, timeout: float = READY_TIMEOUT_S) -> CfProcess:
     """``cf tunnels quick-start http://127.0.0.1:<port>`` (or ``npx cf``), address parsed from its output."""
-    cf = [shutil.which("cf") or "npx", *([] if shutil.which("cf") else ["--yes", "cf"])]
+    cf = cf_command()
     log.parent.mkdir(parents=True, exist_ok=True)
     start = log.stat().st_size if log.exists() else 0
     env = {**os.environ, "TUNNEL_TRANSPORT_PROTOCOL": os.environ.get("AGORA_TUNNEL_PROTOCOL") or "http2"}  # QUIC (UDP 7844) is blocked on many networks
     with open(log, "ab") as fh:
         # Same process group as the project server: `agora down` stops it with the server.
-        proc = subprocess.Popen([*cf, "tunnels", "quick-start", f"http://127.0.0.1:{port}"], stdout=fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env)
+        proc = subprocess.Popen([*cf, "tunnels", "quick-start", f"http://127.0.0.1:{port}"], stdout=fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env, cwd=cf_cwd())
     deadline = time.time() + timeout
     while time.time() < deadline and proc.poll() is None:
         m = QUICK_URL_RE.search(_tail(log, start).decode("utf-8", "replace"))
         if m:
-            return QuickTunnel(proc, log, start, m.group(0).removeprefix("https://"))
+            return CfProcess(proc, log, start, m.group(0).removeprefix("https://"))
         time.sleep(0.25)
-    q = QuickTunnel(proc, log, start, "")
+    q = CfProcess(proc, log, start, "")
     q.stop()
     raise ShareError(f"`cf tunnels quick-start` printed no address within {timeout:.0f}s (is Node / npx available and the network up?); see {log}")
 
@@ -563,7 +576,6 @@ class ShareManager:
         store: ProjectStore,
         *,
         providers: Callable[[], tuple[DnsProvider, TunnelProvider]] | None = None,
-        config_dir: Path | None = None,
         domain: str | None = None,
         clock: Callable[[], float] = time.time,
         on_change: Callable[[], None] | None = None,
@@ -573,7 +585,6 @@ class ShareManager:
         self.file = ShareFile(store)
         self._providers_factory = providers
         self._providers: tuple[DnsProvider, TunnelProvider] | None = None
-        self.config_dir = config_dir or Path(os.environ.get("AGORA_CONFIG_DIR") or Path.home() / ".config" / "agora")
         self._domain = domain or os.environ.get("AGORA_SHARE_DOMAIN") or None
         self.clock = clock
         self.on_change = on_change
@@ -617,10 +628,6 @@ class ShareManager:
     def legacy_tunnel_name(self) -> str:
         """The name builds before instance ids used (shared by every copy of the project)."""
         return f"agora-share-{str(self.store.info()['id']).replace('-', '')[:8]}"
-
-    def _tunnel_files(self, tunnel_id: str) -> tuple[Path, Path]:
-        d = self.config_dir / "tunnels"
-        return d / f"{tunnel_id}.json", d / f"{tunnel_id}.yml"
 
     def _save(self) -> None:
         self.file.save(self.shares)
@@ -709,7 +716,11 @@ class ShareManager:
                 expiresAt=None if ttl_s is None else now + ttl_s * 1000,
                 maxOpens=max_opens,
             )
-            tunnel_id = self._ensure_tunnel()
+            try:
+                tunnel_id = self._ensure_tunnel()
+            except Exception:
+                self._teardown_if_idle()  # a tunnel made before the failure goes again
+                raise
             self.tunnel_dirty = True
             share.tunnelId = tunnel_id
             try:
@@ -745,34 +756,16 @@ class ShareManager:
         """This project's tunnel exists and its connector is running and registered."""
         _, tunnels = self.providers()
         tid = next((s.tunnelId for s in self.active() if s.tunnelId), None) or tunnels.find(self.tunnel_name)
-        if tid:
-            cred, cfg = self._tunnel_files(tid)
-            if not cred.exists():  # a tunnel we can't run (credentials lost): replace it
-                tunnels.delete(tid)
-                tid = None
         if not tid:
-            cred_tmp = self.config_dir / "tunnels" / f"new-{secrets.token_hex(4)}.json"
-            cred_tmp.parent.mkdir(parents=True, exist_ok=True)
-            os.chmod(cred_tmp.parent, 0o700)
-            tid = tunnels.create(self.tunnel_name, cred_tmp)
-            self.tunnel_dirty = True
-            cred, cfg = self._tunnel_files(tid)
-            os.replace(cred_tmp, cred)
-            os.chmod(cred, 0o600)
-        cred, cfg = self._tunnel_files(tid)
+            self.tunnel_dirty = True  # a tunnel may exist from here on, even if the next step fails
+            tid = tunnels.create(self.tunnel_name)
         if self.proc is None or not self.proc.alive():
-            cfg.write_text(
-                f"tunnel: {tid}\ncredentials-file: {cred}\nno-autoupdate: true\n"
-                # QUIC (UDP 7844) is blocked on many networks and cloudflared keeps retrying it; HTTP/2 always works.
-                f"protocol: {os.environ.get('AGORA_TUNNEL_PROTOCOL') or 'http2'}\n"
-                f"ingress:\n  - service: http://127.0.0.1:{self.gateway_port}\n"
-            )
-            self.proc = tunnels.start(tid, cred, cfg, self.store.run_dir / "cloudflared.log")
+            self.proc = tunnels.start(tid, self.gateway_port, self.store.run_dir / "cloudflared.log")
             self._write_state(tid)
             if not self.proc.wait_ready(READY_TIMEOUT_S):
                 self.proc.stop()
                 self.proc = None
-                raise ShareError(f"cloudflared did not connect within {READY_TIMEOUT_S:.0f}s; see {self.store.run_dir / 'cloudflared.log'}")
+                raise ShareError(f"the tunnel connector did not connect within {READY_TIMEOUT_S:.0f}s; see {self.store.run_dir / 'cloudflared.log'}")
         return tid
 
     def _write_state(self, tid: str | None) -> None:
@@ -858,8 +851,6 @@ class ShareManager:
             legacy = tunnels.find(self.legacy_tunnel_name) if self.legacy_tunnel_name != self.tunnel_name else None
             for t in [x for x in (tid, legacy if legacy in ours else None) if x]:
                 tunnels.delete(t)
-                for f in self._tunnel_files(t):
-                    f.unlink(missing_ok=True)
             self.tunnel_dirty = False
         except Exception:
             self.tunnel_dirty = True  # retried by the next sweep
