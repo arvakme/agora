@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { IconCopy, IconLock, IconShare } from "../app/icons";
 import { SPRING } from "../comments/motion";
 import { fmtLeft } from "../guest/GuestApp";
+import { replayText } from "./replayText";
 import { createPlan, defaultTarget, domainView, type DomainInfo, type ShareTarget } from "./domainChoice";
 import "./share.css";
 
@@ -26,6 +27,8 @@ export type ShareRow = {
   /** Distinct guests (browsers) that opened it / the limit (null = unlimited). */
   opens: number;
   maxOpens: number | null;
+  /** Guests may watch how the canvas was built (chosen when the share was made). */
+  buildReplay?: boolean;
 };
 
 /** "打开 3/5" or "打开 3" (unlimited). */
@@ -103,6 +106,8 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
   const [unit, setUnit] = useState<(typeof UNITS)[number]["key"]>("m");
   const [limited, setLimited] = useState(false);
   const [maxOpens, setMaxOpens] = useState("5");
+  // Not ticked unless the owner ticks it, every time: watching the whole process shows what was tried and thrown away too.
+  const [buildReplay, setBuildReplay] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [made, setMade] = useState<{ url: string; row: ShareRow } | null>(null);
@@ -130,7 +135,7 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
     setMade(null);
     try {
       if (!plan.ok) return;
-      const j = await api<{ url: string; share: ShareRow }>("POST", "", { canvasId, ttl: ttl(), maxOpens: limited ? Number(maxOpens) : null, ...plan.body });
+      const j = await api<{ url: string; share: ShareRow }>("POST", "", { canvasId, ttl: ttl(), maxOpens: limited ? Number(maxOpens) : null, buildReplay, ...plan.body });
       setMade({ url: j.url, row: j.share });
       setCopied(false);
       onCreated();
@@ -228,6 +233,17 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
           </div>
         </div>
       )}
+      <div className="share-field">
+        <span>搭建过程</span>
+        <label className="share-check">
+          <input type="checkbox" checked={buildReplay} onChange={(e) => setBuildReplay(e.target.checked)} />
+          让访客看搭建过程
+        </label>
+      </div>
+      <div className="share-field share-custom">
+        <span />
+        <small>访客能一步步看到这张图从空白到现在是怎么画出来的，包括画了又删掉、改掉的想法；看不到会话、请求、代码路径或令牌。不勾选，访客只看得到现在的图。</small>
+      </div>
       <p className="share-note">
         {limited
           ? "每个新访客（一个浏览器）用链接进来算一次，同一个浏览器再打开或刷新不另算；次数用完后新访客打不开，已经进来的人不受影响。"
@@ -283,7 +299,7 @@ function ShareList({ rows, onChange }: { rows: ShareRow[]; onChange: () => void 
               <b>{r.canvasTitle || r.canvasId}</b>
               <code title={r.url}>{r.host}</code>
               <span className="share-meta">
-                {r.expiresAt == null ? "直到撤销" : `剩 ${fmtLeft(r.expiresAt - now)}`} · <span title={r.maxOpens ? `已有 ${r.opens ?? 0} 个访客打开，最多 ${r.maxOpens} 个` : "已打开的访客数（不限次数）"} data-full={!!r.maxOpens && (r.opens ?? 0) >= r.maxOpens}>{opensText(r)}</span> · 评论 {r.comments}
+                {r.expiresAt == null ? "直到撤销" : `剩 ${fmtLeft(r.expiresAt - now)}`} · <span title={r.maxOpens ? `已有 ${r.opens ?? 0} 个访客打开，最多 ${r.maxOpens} 个` : "已打开的访客数（不限次数）"} data-full={!!r.maxOpens && (r.opens ?? 0) >= r.maxOpens}>{opensText(r)}</span> · 评论 {r.comments}{r.buildReplay ? ` · ${replayText(r)}` : ""}
               </span>
             </div>
             <button className="btn sm danger" disabled={pending === r.id} onClick={() => void revoke(r.id)} title="立即结束这个分享：链接和它的域名都会失效"><IconLock size={14} />{pending === r.id ? "撤销中…" : "撤销"}</button>

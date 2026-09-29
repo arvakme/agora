@@ -1,12 +1,12 @@
 # 分享：经 Cloudflare Tunnel 让别人看画布和评论
 
-作者把一块画布分享出去，拿到链接的人（访客）只能**看这块画布、读评论、发评论和回复，以及编辑、删除自己发的消息**。改图、会话、Agent、终端、项目文件一律只属于作者本机。分享走作者自己的公开域名（本机是 `quietharbor.de`），有效期由作者选，也可以限制最多被打开几次；到期或撤销后链接立即失效，Cloudflare 上为它建的东西随之删除。
+作者把一块画布分享出去，拿到链接的人（访客）只能**看这块画布、读评论、发评论和回复，以及编辑、删除自己发的消息**；评论可以钉在元素上，也可以对整张图（[施工回放 §6](share-build-replay.md#6-评论不绑元素)）。作者创建分享时勾选「让访客看搭建过程」的话，访客还能看这张图**从 0 到 1 是怎么一步步搭起来的**（全过程，包括画了又删的；访客自己没有小人；[施工回放](share-build-replay.md)）。改图、会话、Agent、终端、项目文件一律只属于作者本机。分享走作者自己的公开域名（本机是 `quietharbor.de`），有效期由作者选，也可以限制最多被打开几次；到期或撤销后链接立即失效，Cloudflare 上为它建的东西随之删除。
 
-实现：`server/canvas/share.py`（分享记录、令牌、生命周期、限流、访客可见内容）、`server/canvas/share_gateway.py`（访客唯一能到达的网关）、`server/canvas/cloudflare.py`（`cf` 命令行封装：DNS / 隧道提供者）、`server/canvas/project_router.py`（`/api/share`、评论合并、推送、网关与清扫的启动）、`agora_cli/share.py`（命令）；前端 `web/src/share/SharePanel.tsx`（作者的分享按钮与列表）、`web/src/guest/`（访客页）、`web/src/persist.ts` 的 `followProject`（作者页收访客评论）。测试 `tests/test_share.py`、`tests/test_share_bundle.py`（分享包、临时分享）、`web/src/guest/live.test.ts`、`web/src/comments/threads.test.ts`。
+实现：`server/canvas/share.py`（分享记录、令牌、生命周期、限流、访客可见内容）、`server/canvas/share_gateway.py`（访客唯一能到达的网关）、`server/canvas/cloudflare.py`（`cf` 命令行封装：DNS / 隧道提供者）、`server/canvas/project_router.py`（`/api/share`、评论合并、推送、网关与清扫的启动）、`agora_cli/share.py`（命令）；前端 `web/src/share/SharePanel.tsx`（作者的分享按钮与列表）、`web/src/guest/`（访客页）、`web/src/persist.ts` 的 `followProject`（作者页收访客评论）。测试 `tests/test_share.py`、`tests/test_share_bundle.py`（分享包、临时分享）、`tests/test_share_build.py`（搭建回放的开关、整张图评论、分享包里的日志）、`web/src/guest/live.test.ts`、`web/src/comments/threads.test.ts`。
 
 ## 1. 用法
 
-界面：顶栏「分享」→ 选画布、有效期（1 小时 / 1 天 / 7 天 / 自定义 1 分钟–90 天 / 直到撤销）、打开次数（不限次数 / 限制次数：最多打开 N 次，N 为 1–10000）→「创建链接」。链接**只显示这一次**（服务端只存令牌的哈希），复制后发给别人。下面的「当前分享」列出每个分享的剩余时间、打开次数（限制时是「打开 已用/上限」，用完变成提示色）、评论数和「撤销」；结束的分享留在「已结束」里。
+界面：顶栏「分享」→ 选画布、有效期（1 小时 / 1 天 / 7 天 / 自定义 1 分钟–90 天 / 直到撤销）、打开次数（不限次数 / 限制次数：最多打开 N 次，N 为 1–10000）→ 可选「搭建过程：让访客看搭建过程」（默认不勾，每次分享自己选；勾了访客能看到这张图从空白到现在的全过程，包括画了又删的想法，不含会话、请求、代码路径、令牌）→「创建链接」。链接**只显示这一次**（服务端只存令牌的哈希），复制后发给别人。下面的「当前分享」列出每个分享的剩余时间、打开次数（限制时是「打开 已用/上限」，用完变成提示色）、评论数和「撤销」；结束的分享留在「已结束」里。
 
 **地址：我的域名或临时链接**：分享窗口里先选「我的域名」还是「临时链接」。「我的域名」用 `cf zones list` 读账号里的 zone（第一次要几秒，窗口里写「正在读取…」）：只有一个就直接用，不出选择；不止一个就给一个下拉，选过的记在 `.agora/shares/settings.json`（`shares/` 自带 `*` 的 `.gitignore`，不提交），下次默认选中；设了 `AGORA_SHARE_DOMAIN` 就用它，不出选择（环境变量优先，界面上的选择不生效）。「临时链接」走 §10 的 `--quick`：不需要域名和账号，随时能用，但关掉 Agora 就失效、地址每次不同、同一时间只有一个；「我的域名」的地址稳定，`agora down` 之后有效期内还能恢复（§5）。失败说人话，并写下一步：没登录 →「还没登录 Cloudflare：在终端运行 `npx cf auth login`，完成后再点一次」；没有 cf 也拉不到 `npx cf` →「没找到 cf，也拉不到 npx cf：检查网络，或者先装 cf」；其他失败一句原因加「可以先用临时链接」。接口：`GET /api/share/domains` → `{domains, chosen, fixed, error}`；`POST /api/share` 可带 `domain`（必须是账号里的 zone，记住）和 `quick`；账号有多个 zone 又没选时返回 409 和 `zones`（不再要求设环境变量）。窗口的显示规则是纯函数（`web/src/share/domainChoice.ts`）。
 
@@ -16,6 +16,7 @@
 agora share create --domain quietharbor.de   # 账号里有多个域名时选一个（会记住；没有 --domain 又有多个时命令会列出来）
 agora share create --for 1d            # 默认分享聚焦的画布；--canvas <id|名字> 指定；--for 10m|2h|1d|7d|forever
 agora share create --max-opens 5        # 最多打开 5 次（不写就是不限次数）
+agora share create --build-replay       # 访客可以看这张图是怎么从 0 到 1 搭起来的（默认不给）
 agora share list                       # 表格（「打开」列是 已用/上限 或已用次数）；--json 输出记录（不含哈希）
 agora share revoke <id>                # 立即结束一个；--all 结束本项目全部有效分享
 agora share create --quick             # 不要 Cloudflare 账号的临时地址，见 §10
@@ -50,8 +51,9 @@ agora import x.agora-share.json        # 把别人给的分享包（文件、分
 | GET | `/s/{令牌}` | 验证令牌 → 新访客计一次打开（§5.1；次数用完则 403「打开次数已用完」页）→ 设分享 cookie 和访客 id cookie（`agora_guest`，16 位随机）→ 303 到 `/`；访问次数 +1 |
 | GET | `/`、`/index.html` | 前端页面，注入 `<meta name="robots" content="noindex, nofollow">` 和 `<meta name="agora-guest">`（前端据此进访客模式） |
 | GET | `/assets/*` | 前端静态文件（只在 `web/dist/assets` 里，路径穿越被拒） |
-| GET | `/api/guest/state` | 被分享的那一块画布（只读）、它的评论线程、`me`（`guest:<id>`）、到期时间 |
-| POST | `/api/guest/comments` | `{op: "create", threadId, id, anchor, text, name}` 新线程 / `{op: "reply", threadId, id, text, name}` 回复 / `{op: "edit", threadId, id, text}` 改自己的消息 / `{op: "delete", threadId, id}` 删自己的消息 / `{op: "restore", threadId, id, text, editedAt?}` 撤销删除（页面把原文送回）。edit / delete / restore 只对 `by.id` 等于 cookie 里访客 id 的消息生效，别人的（作者、Agent、其他访客）一律 403 `you can only change your own messages`；消息不存在或已删除再编辑是 404 |
+| GET | `/api/guest/state` | 被分享的那一块画布（只读）、它的评论线程、`me`（`guest:<id>`）、到期时间、`share.buildReplay`（作者有没有开搭建回放） |
+| GET | `/api/guest/build` | 被分享的画布和它下面的子画布是怎么一步步搭起来的（时间线，时间从第一步起算）。**分享的 `buildReplay` 不是真就 403**；没有 `canvas` 参数，只给分享的那一张；见[施工回放 §5](share-build-replay.md#5-分享开关网关) |
+| POST | `/api/guest/comments` | `{op: "create", threadId, id, anchor?, moment?, text, name}` 新线程（`anchor` 不带或 `null` = 对整张图的评论；`moment: {step}` = 在搭建回放的第几步写的，只有开了搭建回放的分享才收）/ `{op: "reply", threadId, id, text, name}` 回复 / `{op: "edit", threadId, id, text}` 改自己的消息 / `{op: "delete", threadId, id}` 删自己的消息 / `{op: "restore", threadId, id, text, editedAt?}` 撤销删除（页面把原文送回）。edit / delete / restore 只对 `by.id` 等于 cookie 里访客 id 的消息生效，别人的（作者、Agent、其他访客）一律 403 `you can only change your own messages`；消息不存在或已删除再编辑是 404 |
 | GET | `/api/guest/bundle` | 被分享的画布、子画布和评论打成一个分享包文件（`Content-Disposition: attachment`），内容与 `/api/guest/state` 同一个脱敏函数产出；见 §9 |
 | GET | `/api/guest/events` | SSE：`threads`（线程变化，已脱敏）、`canvas`（作者改图后的新元素）、`ended`（撤销或到期，页面切到失效页） |
 
@@ -61,9 +63,9 @@ agora import x.agora-share.json        # 把别人给的分享包（文件、分
 
 访客**不能**：改图（页面是 Excalidraw 的只读模式，且网关没有任何写画布的路由）、改或删别人的消息、删除整条线程、解决/重开线程、「交给 Agent」、撤销 Agent 的修改、看会话或轨迹、看进度指针（访客页不挂 `PointerLayer`，元素的 `customData` 整个去掉，所以 `codePaths` 也没有）、看本地路径（`root`、会话 id、turn id 都不下发）、访问 `/api/project`、`/api/agent`（包括终端和 `agora canvas apply` 用的桥接）、`/api/canvas`、`/api/share`、`/libraries`。
 
-访客看到的线程经过 `guest_threads` 脱敏：消息只留 `id / author / text / at / tone / by / editedAt / updatedAt / deleted`（线程另留 `updatedAt / deleted`，墓碑让访客页也把删掉的收起来）；非访客的身份 id（作者的 `mailto:邮箱`）换成 `member:<sha256 前 10 位>`，只保留显示名（git `user.name`）。
+访客看到的线程经过 `guest_threads` 脱敏：消息只留 `id / author / text / at / tone / by / editedAt / updatedAt / deleted`（线程另留 `anchor / moment / updatedAt / deleted`，墓碑让访客页也把删掉的收起来）；非访客的身份 id（作者的 `mailto:邮箱`）换成 `member:<sha256 前 10 位>`，只保留显示名（git `user.name`）。
 
-**评论的身份**：访客第一次评论前填显示名（存在他浏览器的 localStorage，最多 40 字）；服务端写入时用 cookie 里的访客 id：`by: {id: "guest:<id>", name}`，和本机用户的评论同构（`author: "human"`），写进同一个 `threads/<canvasId>.json`，`participants` 自然包含访客。线程编号 `n` 由服务端按 `seq` 分配。锚点必须指向画布上存在的元素，数值必须有限；正文最多 4000 字。
+**评论的身份**：访客第一次评论前填显示名（存在他浏览器的 localStorage，最多 40 字）；服务端写入时用 cookie 里的访客 id：`by: {id: "guest:<id>", name}`，和本机用户的评论同构（`author: "human"`），写进同一个 `threads/<canvasId>.json`，`participants` 自然包含访客。线程编号 `n` 由服务端按 `seq` 分配。锚点（带的话）必须指向画布上存在的元素，数值必须有限；不带锚点就是对整张图的评论；正文最多 4000 字。
 
 ## 4. 两方同时写评论：按操作合并
 
@@ -97,7 +99,7 @@ agora import x.agora-share.json        # 把别人给的分享包（文件、分
 
 | 内容 | 位置 | 进 git |
 |---|---|---|
-| 分享记录：id、画布、主机名、**令牌的 sha256**、创建/到期/结束时间、访问/访客/评论数、打开次数与上限、进来过的访客 id 哈希、DNS 记录 id、隧道 id、待清理项 | `.agora/shares/shares.json` | 否：模板 `.gitignore` 有 `shares/`，目录里另有一个 `*` 的 `.gitignore`（旧项目的 `.agora/.gitignore` 没有这一行也照样忽略） |
+| 分享记录：id、画布、主机名、**令牌的 sha256**、创建/到期/结束时间、访问/访客/评论数、打开次数与上限、进来过的访客 id 哈希、DNS 记录 id、隧道 id、待清理项、`buildReplay`（访客可看搭建过程） | `.agora/shares/shares.json` | 否：模板 `.gitignore` 有 `shares/`，目录里另有一个 `*` 的 `.gitignore`（旧项目的 `.agora/.gitignore` 没有这一行也照样忽略） |
 | 令牌原文 | 不存。只在创建时返回一次 | — |
 | Cloudflare 凭据 | 归 `cf` 管（`npx cf auth login`）；Agora 不存、不读、不复制 | 否 |
 | 分享域名 | `AGORA_SHARE_DOMAIN`；不设且账号里只有一个 zone 时用它的名字，否则报错要求设置 | — |
@@ -110,7 +112,7 @@ agora import x.agora-share.json        # 把别人给的分享包（文件、分
 | 猜令牌 / 爆破 | 256 位随机；`/s/` 每个地址每分钟 10 次；比较恒定时间；主机名本身也是随机的，不知道主机名连网关都到不了 |
 | 从磁盘或 git 拿到令牌 | 只存哈希；记录不进 git |
 | 访客越权改图、调 Agent、开终端、读会话或项目文件 | 隧道只通到网关，作者的应用不在隧道后面；网关白名单之外一律 403；作者应用拒绝带 `cf-*` 头或 Host 是分享主机名的请求（防止配置失误或 DNS rebinding 把它暴露出去） |
-| 泄露本地信息 | 下发内容去掉 `customData`（代码路径）、会话/turn id、项目根路径；作者邮箱换成不透明 id；访客页不加载进度指针和会话 |
+| 泄露本地信息 | 下发内容去掉 `customData`（代码路径）、会话/turn id、项目根路径；作者邮箱换成不透明 id；访客页不加载进度指针和会话。搭建过程只在作者勾选时给，给的是从画布元素造的时间线：没有请求原文、回复、命令、代码路径、会话 id、令牌（测试扫过），但**包括作者删掉、改掉的想法**——勾选说明里写明了 |
 | 刷评论 / 占资源 | 写每地址每分钟 20 次，读 120 次，SSE 连接每分钟 10 次、每个分享最多 50 条；正文 4000 字、名字 40 字上限；地址取 `CF-Connecting-IP` |
 | 冒充别的访客 | 访客 id 是网关发的随机 cookie，不签名；改 cookie 只能换一个 `guest:` 身份，显示名本来就是自填的，冒充不了作者（作者的 id 不是 `guest:`）。编辑 / 删除按 cookie 里的访客 id 判断，要改别人的消息得先拿到对方的 cookie（HttpOnly，页面脚本读不到） |
 | 绕过打开次数 | 次数按访客 id 计，只对新 id 计数；限制次数的分享只服务它放进来过的 id，复制令牌 cookie 不够；伪造一个没放进来过的 id 也是 403。清 cookie 重进会占用一个新名额——这正是「每个浏览器算一次」的口径 |
@@ -149,6 +151,8 @@ agora import x.agora-share.json        # 把别人给的分享包（文件、分
 
 一个分享包是一个 JSON 文件（`*.agora-share.json`）：被分享的画布和它下面的所有子画布、它们的评论线程、一份清单（格式名 `agora-share-bundle`、版本 1、来源项目名、根画布、导出时间）。**内容就是访客能看到的东西，不多一点**：元素和评论线程都走同一个函数（`share.py` 的 `guest_canvas`，访客页的 `/api/guest/state` 也用它），所以代码路径（`customData`，只留指向子画布的链接）、会话与 turn id、项目根路径、作者邮箱都不在里面。
 
+**施工日志**：包里每块画布多一个 `build`（这块画布是怎么搭起来的，时间从第一步起算，元素同样没有 `customData`；由时间线重造，老项目也有完整的一份）；访客下载的包只在这个分享开了搭建回放时才带。导入时它和包里其他东西一样先校验（格式、每条的时间、是谁做的、元素、条数），有一处不对整个包不导入；通过了写成新画布的 `.agora/buildlog/<新 id>.jsonl`，导入的人能回放。见[施工回放 §7](share-build-replay.md#7-分享包带上日志)。
+
 **拿到包的三种方式**：作者 `agora share export [--canvas …] [-o 文件]`（离线，服务不用开）；访客在访客页点「导入到我的 Agora」→ 下载（网关的 `GET /api/guest/bundle`，和其他访客接口一样要令牌 cookie，只读、不接受 POST）；`agora import <分享链接>`（打开一次链接、取包，算一次打开，受打开次数限制）。
 
 **导入**（`agora import <文件|分享链接|包的 URL>`，在当前项目；没有 `.agora/` 就创建）：
@@ -156,6 +160,7 @@ agora import x.agora-share.json        # 把别人给的分享包（文件、分
 - 每块画布得到**新 id**，标题是 `来自 <来源项目> · <原标题>`；子画布之间的链接改成新 id，指向包外的链接丢掉。已有的工作区布局不动（新画布在「所有画布」里）；项目里还没有工作区时新建一个，打开就停在导入的画布上。导入两次得到两份，从不覆盖。
 - 评论线程作为历史导入：作者标为 `imported:<哈希>`（保留显示名，不保留 id，不会和任何在线访客或本机用户撞上），线程带 `imported: {from}`。已删除的消息和线程不带，锚点元素没来的线程丢掉。
 - 包是**不可信输入**：先整体校验、都通过才写盘，写到一半出错就删掉已写的文件。限制：文件不超过 20 MB、200 块画布、每块 20000 个元素（合计 50000）、每块 2000 条线程、每条线程 200 条消息、消息 4000 字。只收基本图形（矩形、菱形、椭圆、箭头、线、手绘、文字、框）；`embeddable`、`iframe`、`image` 和未知类型丢掉；`customData` 全丢（只留改写后的子画布链接）；`link` 只留 http(s)；坐标、尺寸必须是有限数。不执行包里的任何内容，只写 `.agora/` 里的文件。
+- 对整张图的评论（`anchor: null`）和它的 `moment` 一起导入，同样只读。
 - **已知缺口**：导入的线程在数据上只读（`imported` 标记、别人的作者 id），但评论弹层的「交给 Agent」、回复框和删除按钮目前仍然显示，`dispatch` 也没有按 `imported` 拒绝——这两处在 `web/src/comments/`、`server/canvas/dispatch.py`，不在这次改动范围，需要后续跟进。
 
 **撤不回**：分享包一旦给出去，收不回来——撤销分享只让链接失效，已下载或已导出的文件谁拿着都能用。导出命令的输出和访客页的下载弹层都写明了这一点。

@@ -1,6 +1,6 @@
 """``agora share create|list|revoke``: share one canvas for viewing and commenting.
 
-    agora share create [--canvas ID|名字] [--for 1h|1d|7d|10m|forever] [--max-opens N] [--domain ZONE] [--quick] [--json]
+    agora share create [--canvas ID|名字] [--for 1h|1d|7d|10m|forever] [--max-opens N] [--domain ZONE] [--quick] [--build-replay] [--json]
     agora share list   [--json]
     agora share revoke <id>|--all
     agora share export [--canvas ID|名字] [-o 文件]     the canvas as a share bundle file
@@ -100,7 +100,8 @@ def cmd_import(p, a) -> int:
     except BundleError as e:
         print(f"agora import: {e}")
         return 1
-    print(f"已导入 {res['canvases']} 块画布、{res['threads']} 条评论线程（评论是只读的历史）。画布 id {res['canvasId']}；已开着的页面刷新后在「所有画布」里能看到。")
+    replay = "带着搭建过程（在画布的视图菜单里回放）；" if res.get("builds") else ""
+    print(f"已导入 {res['canvases']} 块画布、{res['threads']} 条评论线程（评论是只读的历史）。{replay}画布 id {res['canvasId']}；已开着的页面刷新后在「所有画布」里能看到。")
     return 0
 
 
@@ -139,7 +140,7 @@ def cmd_share(p, a) -> int:
         if not base:
             print("agora share: 项目服务没在运行，先 `agora up`（分享网关和隧道由它运行）")
             return 3
-        code, res = call(base, "POST", "/api/share", {"canvasId": cid, "ttl": ttl, "maxOpens": a.max_opens, "quick": a.quick, "domain": a.domain}, timeout=120)
+        code, res = call(base, "POST", "/api/share", {"canvasId": cid, "ttl": ttl, "maxOpens": a.max_opens, "quick": a.quick, "domain": a.domain, "buildReplay": a.build_replay}, timeout=120)
         if code != 200:
             zones = (res or {}).get("zones")
             if zones:  # several zones and none chosen: list them, the next step is --domain
@@ -153,7 +154,8 @@ def cmd_share(p, a) -> int:
             s = res["share"]
             until = "直到撤销" if s["expiresAt"] is None else time.strftime("%Y-%m-%d %H:%M", time.localtime(s["expiresAt"] / 1000))
             limit = f"最多打开 {s['maxOpens']} 次" if s.get("maxOpens") else "不限打开次数"
-            print(f"{res['url']}\n画布「{s.get('canvasTitle') or s['canvasId']}」· 有效期到 {until} · {limit} · id {s['id']}\n链接只显示这一次（只存了令牌的哈希）；撤销：agora share revoke {s['id']}")
+            replay = " · 访客可看搭建过程" if s.get("buildReplay") else ""
+            print(f"{res['url']}\n画布「{s.get('canvasTitle') or s['canvasId']}」· 有效期到 {until} · {limit}{replay} · id {s['id']}\n链接只显示这一次（只存了令牌的哈希）；撤销：agora share revoke {s['id']}")
             if s.get("quick"):
                 print("临时地址：不需要 Cloudflare 账号；同一时间只有这一个分享；撤销或 agora down 后地址失效。这条隧道不支持实时推送，访客页每几秒自己刷新。")
         return 0
@@ -210,6 +212,7 @@ def add_parser(sub) -> None:
                    help="the link can be opened at most N times (each new browser counts once; reopening in the same browser does not); default: unlimited")
     c.add_argument("--domain", default=None, help="the Cloudflare zone to share under (asked for when the account has several; remembered; AGORA_SHARE_DOMAIN wins)")
     c.add_argument("--quick", action="store_true", help="no Cloudflare account: a temporary trycloudflare.com address via `cf tunnels quick-start` (one share at a time)")
+    c.add_argument("--build-replay", dest="build_replay", action="store_true", help="let guests watch how the canvas was built, from nothing to now (the whole process, undone ideas included); default: not")
     c.add_argument("--json", action="store_true")
     ex = ssub.add_parser("export", help="write the canvas (and the canvases below it) with its comments to a share bundle file")
     ex.add_argument("--canvas", default=None, help="canvas id or name (default: the focused / only canvas)")

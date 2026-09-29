@@ -32,6 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from server.canvas import buildlog
+
 DIRNAME = ".agora"
 FORMAT = 1
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -276,6 +278,7 @@ class ProjectStore:
         self._lock = threading.RLock()
         # Called with a committed file's old bytes just before it is replaced (backup.FileHistory.keep).
         self.on_overwrite: Callable[[str, bytes], Any] | None = None
+        self._bl_versions: dict[tuple[str, int], str] | None = None  # which agent made which element version (buildlog.py); rebuilt on demand
         self._ident: tuple[int, int] | None = self._identity()
         self._pid: str | None = self._project_id() if self._ident else None
 
@@ -467,7 +470,48 @@ class ProjectStore:
                 shrinks = before > 0 and after * 2 <= before
             self._keep_old(path, current, shrinks)
             self._atomic(path, body)
+            if kind == "canvas":
+                self._log_save(id or "", current, body)
         return version_of(body) or ""
+
+    # ——— the construction log (buildlog.py): a side effect of saving a canvas, never a reason for the save to fail ———
+    def _log_save(self, id: str, before: bytes | None, after: bytes) -> None:
+        try:
+            buildlog.record_save(self.dir, id, before, after, versions=self._agent_versions())
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+
+    def _agent_versions(self) -> dict[tuple[str, int], str]:
+        if self._bl_versions is None:
+            ix: dict[tuple[str, int], str] = {}
+            for p in sorted((self.dir / "sessions").glob("*.jsonl")):
+                sid = p.name.removesuffix(".jsonl")
+                agent = str((self.read_binding(sid) or {}).get("agent") or "")
+                for b in ((self.read_session(sid) or ({}, ""))[0].get("batches") or {}).values():
+                    ix.update(self._versions_of(b, agent))
+            self._bl_versions = ix
+        return self._bl_versions
+
+    @staticmethod
+    def _versions_of(batch: Any, agent: str) -> dict[tuple[str, int], str]:
+        pairs = (batch or {}).get("after") if isinstance(batch, dict) else None
+        return {(p[0], p[1]): agent for p in pairs or [] if isinstance(p, list) and len(p) == 2 and isinstance(p[0], str) and isinstance(p[1], int) and agent}
+
+    def _note_batches(self, sid: str, records: list[dict[str, Any]]) -> None:
+        """Agent batches arrived: their versions are the agent's, and a save that was logged before they came is theirs too."""
+        try:
+            agent = str((self.read_binding(sid) or {}).get("agent") or "")
+            found: dict[tuple[str, int], str] = {}
+            for r in records:
+                if r.get("t") == "batch":
+                    found.update(self._versions_of(r.get("batch"), agent))
+            if found and agent:
+                if self._bl_versions is not None:
+                    self._bl_versions.update(found)
+                with self._locked():
+                    buildlog.attribute_batches(self.dir, agent, list(found))
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
 
     def delete(self, kind: str, id: str | None, *, base: str | None = None, force: bool = True) -> None:
         path = self._path(kind, id)
@@ -513,7 +557,9 @@ class ProjectStore:
                 fh.write(chunk)
                 fh.flush()
                 os.fsync(fh.fileno())
-            return version_of((current or b"") + chunk) or ""
+        if any(r.get("t") == "batch" for r in records):
+            self._note_batches(id, records)
+        return version_of((current or b"") + chunk) or ""
 
     def replace_session(self, id: str, records: list[dict[str, Any]], *, base: str | None, force: bool = False) -> str:
         path = self._path("session", id)
@@ -524,6 +570,9 @@ class ProjectStore:
                 return version_of(body) or ""
             self._check(path, current, base, force)
             self._atomic(path, body)
+            self._bl_versions = None
+        if any(r.get("t") == "batch" for r in records):
+            self._note_batches(id, records)
         return version_of(body) or ""
 
     # ——— agent bindings (sessions/<id>.agent.json; written only by the server) ———
@@ -597,6 +646,7 @@ class ProjectStore:
         with self._locked():
             for kind in ("binding", "session"):
                 self._path(kind, id).unlink(missing_ok=True)
+            self._bl_versions = None
 
     def mark_started(self, id: str) -> dict[str, Any] | None:
         """The native session exists now (its log was seen, or a turn ran): from here on it is

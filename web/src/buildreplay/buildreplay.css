@@ -1,0 +1,41 @@
+/* ▶ 看这张图是怎么搭起来的 (web/docs/share-build-replay.md): a page of its own over the app — the canvas picture under the 工位视图, a bar of controls,
+ * and the list of what was done. Lines and the theme's own tokens; purple only for what is going on now. */
+.br-root { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: var(--bg); color: var(--fg); font-size: var(--text-sm); }
+.br-head { flex: none; display: flex; align-items: center; gap: var(--space-3); min-height: 48px; padding: 6px 10px 6px 16px; border-bottom: 1px solid var(--line-ink); background: var(--surface); }
+.br-ttl { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.br-ttl b { font-weight: var(--weight-strong); }
+.br-ttl span { color: var(--fg-muted); }
+.br-crumbs { color: var(--fg-subtle) !important; font-size: var(--text-xs); }
+.br-note { flex: none; padding: 1px 8px; border-radius: var(--r-md); box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--fg-subtle); font-size: var(--text-xs); }
+.br-x { flex: none; }
+.br-empty { flex: 1; display: grid; place-items: center; position: relative; color: var(--fg-muted); }
+.br-empty .br-x { position: absolute; top: 8px; right: 10px; }
+.br-main { flex: 1; min-height: 0; display: flex; }
+.br-body { position: relative; flex: 1; min-width: 0; overflow: hidden; background: var(--bg); }
+.br-stage { position: absolute; inset: 0; animation: br-in 300ms var(--ease-out) both; }
+.br-stage[data-out] { animation: br-out 300ms var(--ease-out) both; pointer-events: none; }
+@keyframes br-in { from { opacity: 0; } }
+@keyframes br-out { to { opacity: 0; } }
+.br-scene { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; will-change: transform; }
+.br-scene > svg { display: block; width: 100%; height: 100%; }
+.br-list { flex: none; width: 300px; margin: 0; padding: 6px 0; list-style: none; overflow-y: auto; border-left: 1px solid var(--line-ink); background: var(--surface); }
+.br-list button { display: block; width: 100%; padding: 5px 14px; text-align: left; color: var(--fg-subtle); line-height: 1.4; }
+.br-list li[data-done] button { color: var(--fg-muted); }
+.br-list li[data-cur] button { color: var(--fg); background: var(--accent-wash); box-shadow: inset 2px 0 0 var(--accent); }
+.br-list button:hover { background: var(--raised); }
+.br-who { display: inline-block; margin-right: 8px; color: var(--fg-faint); font-size: var(--text-xs); }
+.br-list li[data-you] .br-who { color: var(--accent); }
+.br-bar { flex: none; display: flex; align-items: center; gap: var(--space-3); min-height: 48px; padding: 6px 16px; border-top: 1px solid var(--line-ink); background: var(--surface); }
+.br-speed { flex: none; }
+.br-scrub { flex: 1; min-width: 0; accent-color: var(--accent); }
+.br-time { flex: none; color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+@media (max-width: 800px) { .br-list { display: none; } }
+@media (prefers-reduced-motion: reduce) { .br-stage, .br-stage[data-out] { animation: none; } }
+
+.br-side { flex: none; width: 300px; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line-ink); background: var(--surface); }
+.br-side .br-list { flex: 1 1 auto; min-height: 0; width: auto; border-left: 0; }
+.br-comment { flex: none; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--line-ink); background: var(--surface); }
+.br-comment label { display: flex; flex-direction: column; gap: 4px; font-size: var(--text-xs); color: var(--fg-muted); }
+.br-comment label em { font-style: normal; margin-left: 6px; color: var(--fg-subtle); }
+.br-comment textarea { resize: none; width: 100%; box-sizing: border-box; padding: 6px 8px; border: 0; border-radius: var(--r-md); box-shadow: var(--box); background: var(--bg); color: var(--fg); font: inherit; font-size: var(--text-sm); }
+.br-comment-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); font-size: var(--text-xs); color: var(--fg-muted); }
