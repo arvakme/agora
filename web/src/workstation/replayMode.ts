@@ -6,6 +6,7 @@
 // at load; Esc leaves.
 import { useSyncExternalStore } from "react";
 import { backHintQuiet } from "../nested/up";
+import { layoutSaves } from "../layoutSaves";
 import { nested } from "../nested/store";
 import { clock, replayTime } from "./clock";
 import { canvasWhere, DOOR_MS, OUTSIDE, planFor } from "./place";
@@ -24,13 +25,18 @@ export type ReplayState = {
   series: string[];
   loading: boolean;
   error: string | null;
+  /** The summary, said by the bar when the badge over the node has no clear place. */
+  barNote: string | null;
 };
 
 const params = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
-let state: ReplayState = { items: null, id: null, spec: null, series: [], loading: false, error: null };
+let state: ReplayState = { items: null, id: null, spec: null, series: [], loading: false, error: null, barNote: null };
 const ls = new Set<() => void>();
 const set = (p: Partial<ReplayState>) => {
+  const was = !!state.id;
   state = { ...state, ...p };
+  // the layout is not saved while the camera moves the view around: paused as the replay starts (what was pending is written first)
+  if (!was && state.id) layoutSaves.pause(true);
   // no 「在子图里」 hint over the menu while the camera goes in and out by itself
   backHintQuiet.set(!!state.id);
   ls.forEach((l) => l());
@@ -138,6 +144,7 @@ export const replays = {
   run,
   active: () => !!state.id,
   load: () => void loadList(),
+  setBarNote: (note: string | null) => void (state.barNote !== note && set({ barNote: note })),
   /** Play one PR. */
   open: (id: string, canvasId?: string) => void open(id, canvasId, []),
   /** 连播: the latest `n` PRs, earliest merged first, one after another. */
@@ -160,7 +167,8 @@ export const replays = {
     set({ id: null, spec: null, series: [] });
     clock.live();
     // back to the canvas and the view the replay was entered from
-    void camera.exit().then(() => void (main = null));
+    // …and saving comes back once the canvas and the view it was entered from are back (the layout is as it was: nothing to save)
+    void camera.exit().then(() => (main = null, state.id || layoutSaves.pause(false)));
   },
   /** Position in a 连播: 1-based k of n, or null when one PR is played alone. */
   position: () => (state.series.length > 1 ? { k: state.series.indexOf(state.id ?? "") + 1, n: state.series.length } : null),

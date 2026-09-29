@@ -9,6 +9,8 @@
 import { createClient } from "./project/client";
 import { foldSessions, sessionRecords, threadsFromFile, threadsToFile, type Logged, type Person, type SessionsState, type ThreadsFile } from "./project/format";
 import { markImported, readLegacy } from "./project/legacy";
+import { createSaveQueue } from "./saveQueue";
+import { layoutSaves } from "./layoutSaves";
 import { trash, type Restored } from "./workspace/trash";
 import { threadStores, type ThreadSnapshot } from "./comments/threads";
 import type { El } from "./canvas/scene";
@@ -228,34 +230,24 @@ function write(key: string, v: unknown) {
   console.warn("persist: unknown key", key);
 }
 
-/** Debounced writes per key; the latest value wins. */
-const timers = new Map<string, number>();
-const pending = new Map<string, () => unknown>();
-export function save(key: string, value: () => unknown, ms = 400) {
-  pending.set(key, value);
-  clearTimeout(timers.get(key));
-  timers.set(key, window.setTimeout(() => flush(key), ms));
-}
-function flush(key: string) {
-  const v = pending.get(key);
-  pending.delete(key);
-  timers.delete(key);
-  if (v) write(key, v());
-}
+/** Debounced writes per key; the latest value wins (./saveQueue.ts). */
+const queue = createSaveQueue(write);
+export const save = queue.save;
 /** Send every debounced save now and wait until all writes are through (before moving files to the trash). */
 export async function flushSaves() {
-  [...pending.keys()].forEach(flush);
+  queue.flushAll();
   await project.idle();
 }
+/** The workspace layout is not saved while a PR replay plays (its camera's canvas switches are its own temporary view); what was pending goes first. */
+export const pauseLayoutSaves = (on: boolean) => (on ? queue.pause("workspace") : queue.resume("workspace"));
+layoutSaves.register(pauseLayoutSaves);
 
 /**
  * A canvas went to the trash: no late save may write it back, and its files are gone from `canvases/`.
  * Returns how to undo that if the server did not move it after all (the versions this page had seen).
  */
 export function dropCanvas(id: string): () => void {
-  clearTimeout(timers.get(`canvas:${id}`));
-  timers.delete(`canvas:${id}`);
-  pending.delete(`canvas:${id}`);
+  queue.drop(`canvas:${id}`);
   const slots = [`canvas:${id}`, `threads:${id}`];
   const had = slots.map((slot) => project.version(slot) ?? null);
   for (const slot of slots) {
@@ -310,8 +302,7 @@ let reloading = false;
 /** Take the disk version: reload without flushing this page's unsaved edits. */
 export function reloadFromDisk() {
   reloading = true;
-  timers.forEach((t) => clearTimeout(t));
-  pending.clear();
+  queue.clear();
   location.reload();
 }
 
@@ -319,5 +310,5 @@ export function reloadFromDisk() {
 addEventListener("pagehide", () => {
   if (reloading || !PERSIST) return;
   project.setKeepalive(true);
-  [...pending.keys()].forEach(flush);
+  queue.flushAll();
 });
