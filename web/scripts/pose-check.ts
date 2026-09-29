@@ -1,0 +1,170 @@
+// 姿势体检: every pose, gesture, pose change, trip and door ladder of the 小人, frame by frame, against the rules of
+// src/workstation/poseHealth.ts (web/docs/workstation.md §小人 · 姿势体检). No browser: it runs `solve` (src/workstation/rig.ts)
+// itself. Run it after every change to the animation:
+//
+//   cd web && npx vite-node scripts/pose-check.ts                      the frames that break a rule, by scenario (exit 1 if any)
+//   (the default report includes elbows: one that steps more than 7 figure units in a frame, 3 while walking, has flipped)
+//   npx vite-node scripts/pose-check.ts --frames                       every bad frame, not just the first of a run
+//   npx vite-node scripts/pose-check.ts --pops                         one-frame jumps and pops of a joint too
+//   npx vite-node scripts/pose-check.ts --speed out.svg                the root's speed along every trip and door (yellow: standing before the first step; red: a dip to rest inside the trip) + a table
+//   npx vite-node scripts/pose-check.ts --sheet out.svg [--match text] [--every 100] [--from ms] [--to ms] [--cols 12]
+//                                                                      contact sheet (a frame per --every ms; red = breaks a rule);
+//                                                                      out.png as well when rsvg-convert is installed
+//
+// `--match` picks scenarios by a substring of "scenario | label" (e.g. --match "door" or --match "sit down").
+import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { checkJoints, ELBOW_MAX, ELBOW_MAX_WALKING, elbowJumps, frames, jumps, snaps, speeds, sweep, type Frame } from "../src/workstation/poseHealth";
+import { RIG } from "../src/workstation/rig";
+
+const args = process.argv.slice(2);
+const opt = (name: string, def?: string) => {
+  const i = args.indexOf(name);
+  return i >= 0 ? (args[i + 1] ?? def) : def;
+};
+const has = (name: string) => args.includes(name);
+const match = opt("--match");
+const all = frames().filter((f) => !match || `${f.scenario} | ${f.label}`.includes(match));
+
+// ——— the drawing (a contact sheet) ———
+const U = 2.2; // px per figure unit
+const W = 150;
+const H = 150;
+const GROUND = 132;
+const f2 = (n: number) => Math.round(n * 100) / 100;
+const K = RIG.torso / 16.4;
+
+function figure(fr: Frame, bad: boolean): string {
+  const j = fr.joints;
+  const ink = bad ? "#c0392b" : "#333";
+  const line = (x1: number, y1: number, x2: number, y2: number, w: number, c: string) => `<line x1="${f2(x1)}" y1="${f2(y1)}" x2="${f2(x2)}" y2="${f2(y2)}" stroke="${c}" stroke-width="${f2(w)}" stroke-linecap="round"/>`;
+  const limb = (r: { x: number; y: number }, b: { jx: number; jy: number; ex: number; ey: number }, w1: number, w2: number, c: string) => line(r.x, r.y, b.jx, b.jy, w1, c) + line(b.jx, b.jy, b.ex, b.ey, w2, c);
+  const far = bad ? "#e6a8a0" : "#aaa";
+  const foot = (b: { ex: number; ey: number }, c: string) => line(b.ex, b.ey - RIG.ankle, b.ex + RIG.foot * j.f, b.ey - RIG.ankle, 3.2 * K, c);
+  const parts = [
+    limb(j.shF, j.armF, 4 * K, 3.6 * K, far),
+    limb(j.hipF, j.legF, 4.7 * K, 4.3 * K, far),
+    foot(j.legF, far),
+    line(j.px, j.py, j.nx, j.ny, 9.2 * K, ink),
+    limb(j.hipN, j.legN, 4.7 * K, 4.3 * K, ink),
+    foot(j.legN, ink),
+    limb(j.shN, j.armN, 4 * K, 3.6 * K, ink),
+    `<circle cx="${f2(j.hx)}" cy="${f2(j.hy)}" r="${RIG.head}" fill="#fff" stroke="${ink}" stroke-width="1.4"/>`,
+  ].join("");
+  const s = (j.scale ?? 1) * U;
+  const sx = Math.max(-1, Math.min(1, j.turn));
+  // a trip's root is in world px from the floor line it started at (a door's ladder: the figure is cut off at the floor line / one figure's height above it)
+  const rootY = fr.ladder ? j.root.y / fr.k : 0;
+  return `<g transform="translate(${W / 2} ${f2(GROUND + rootY * U - (j.lift ?? 0) * U)}) scale(${f2(s * sx)} ${f2(s)})">${parts}</g>`;
+}
+
+function tile(fr: Frame, i: number, cols: number): string {
+  const issues = checkJoints(fr.joints, fr.expect);
+  const bad = issues.length > 0;
+  const x = (i % cols) * W;
+  const y = Math.floor(i / cols) * (H + 12);
+  const dir = fr.ladder?.dir;
+  // door: rails on the parent canvas stand HATCH_POST above the floor; on the sub-diagram they hang from one figure's height above it
+  const top = dir === 1 ? -34 : dir === -1 ? -50 : null;
+  const lad = top === null ? "" : [-2.6, 2.6].map((dx) => `<line x1="${f2(W / 2 + dx * U)}" y1="${f2(GROUND + top * U)}" x2="${f2(W / 2 + dx * U)}" y2="${GROUND + (dir === 1 ? 50 : 0) * U}" stroke="#666"/>`).join("");
+  const cut = dir === 1 ? `<clipPath id="c${i}"><rect x="0" y="0" width="${W}" height="${GROUND}"/></clipPath>` : dir === -1 ? `<clipPath id="c${i}"><rect x="0" y="${GROUND - 50 * U}" width="${W}" height="${H}"/></clipPath>` : "";
+  const fig = figure(fr, bad);
+  return `<g transform="translate(${x} ${y})"><rect width="${W}" height="${H}" fill="${bad ? "#fff5f3" : "#fff"}" stroke="#ddd"/><rect x="0" y="${GROUND}" width="${W}" height="${H - GROUND}" fill="#eef0f3"/>${cut}${lad}<g${cut ? ` clip-path="url(#c${i})"` : ""}>${fig}</g><line x1="0" y1="${GROUND}" x2="${W}" y2="${GROUND}" stroke="#111" stroke-width="1.5"/><text x="4" y="11" font-size="9" font-family="monospace" fill="#555">${fr.t | 0} ms${bad ? " · " + issues.map((n) => n.rule).join(",") : ""}</text></g>`;
+}
+
+function sheet(fs: Frame[], cols: number, out: string) {
+  const rows = Math.ceil(fs.length / cols);
+  const body = fs.map((fr, i) => tile(fr, i, cols)).join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${cols * W}" height="${rows * (H + 12)}" viewBox="0 0 ${cols * W} ${rows * (H + 12)}"><rect width="100%" height="100%" fill="#fff"/>${body}</svg>`;
+  writeFileSync(out, svg);
+  if (out.endsWith(".svg")) {
+    try {
+      execFileSync("rsvg-convert", ["-o", out.replace(/\.svg$/, ".png"), out], { stdio: "ignore" });
+    } catch {
+      /* no rsvg-convert: the svg is the sheet */
+    }
+  }
+}
+
+// ——— the speed curves ———
+const speedOut = opt("--speed");
+if (speedOut) {
+  const all = speeds();
+  let y = 0;
+  const rows: string[] = [];
+  const W2 = 900;
+  const Hh = 90;
+  for (const sp of all) {
+    const t0 = sp.samples[0]?.t ?? 0;
+    const t1 = sp.samples[sp.samples.length - 1]?.t ?? 1;
+    const X = (t: number) => 40 + ((t - t0) / Math.max(1, t1 - t0)) * (W2 - 60);
+    const top = Math.max(0.25, sp.maxV);
+    const Y = (v: number) => y + Hh - 14 - (v / top) * (Hh - 34);
+    const d = sp.samples.map((s, i) => `${i ? "L" : "M"}${X(s.t).toFixed(1)} ${Y(s.v).toFixed(1)}`).join("");
+    const stops = sp.dips.map((t) => `<line x1="${X(t).toFixed(1)}" y1="${y + 16}" x2="${X(t).toFixed(1)}" y2="${y + Hh - 14}" stroke="#d9534f" stroke-width="2" opacity="0.7"/>`).join("") + `<rect x="40" y="${y + 16}" width="${(X(t0 + sp.setOff) - 40).toFixed(1)}" height="${Hh - 30}" fill="#f3e3b0" opacity="0.6"/>`;
+    rows.push(`<g>${stops}<line x1="40" y1="${Y(0)}" x2="${W2 - 20}" y2="${Y(0)}" stroke="#bbb"/><path d="${d}" fill="none" stroke="#2c3136" stroke-width="1.4"/><text x="40" y="${y + 11}" font-size="11" font-family="monospace" fill="#222">${sp.name} · ${(t1 - t0) | 0} ms · top ${sp.maxV.toFixed(3)} px/ms · steepest ${(sp.maxAccel * 1000).toFixed(1)} px/s² per ms · stands ${sp.setOff | 0} ms before the first step · ${sp.dips.length} dip${sp.dips.length === 1 ? "" : "s"} to rest${sp.dips.map((t) => ` @${t | 0}`).join("")}</text></g>`);
+    console.log(`${sp.name.padEnd(46)} ${String((t1 - t0) | 0).padStart(6)} ms  top ${sp.maxV.toFixed(3)} px/ms  steepest change ${sp.maxAccel.toFixed(5)} px/ms²  stands ${String(sp.setOff | 0).padStart(4)} ms first  dips to rest ${sp.dips.length}${sp.dips.map((t) => ` @${t | 0}`).join("")}`);
+    y += Hh;
+  }
+  writeFileSync(speedOut, `<svg xmlns="http://www.w3.org/2000/svg" width="${W2}" height="${y}" viewBox="0 0 ${W2} ${y}"><rect width="100%" height="100%" fill="#fff"/>${rows.join("")}</svg>`);
+  if (speedOut.endsWith(".svg")) {
+    try {
+      execFileSync("rsvg-convert", ["-o", speedOut.replace(/\.svg$/, ".png"), speedOut], { stdio: "ignore" });
+    } catch {
+      /* the svg is the chart */
+    }
+  }
+  process.exit(0);
+}
+
+// ——— the sheet ———
+const sheetOut = opt("--sheet");
+if (sheetOut) {
+  const every = Number(opt("--every", "100"));
+  const from = Number(opt("--from", "-Infinity"));
+  const to = Number(opt("--to", "Infinity"));
+  let last = -Infinity;
+  const pick = all.filter((f) => {
+    if (f.t < from || f.t > to) return false;
+    if (f.t - last >= every - 1e-6) {
+      last = f.t;
+      return true;
+    }
+    return false;
+  });
+  sheet(pick, Number(opt("--cols", "12")), sheetOut);
+  console.log(`${pick.length} frames → ${sheetOut}`);
+  process.exit(0);
+}
+
+// ——— the report ———
+const found = sweep(all);
+const group = new Map<string, { first: Frame; last: Frame; n: number; details: Set<string> }>();
+for (const { frame, issues } of found) {
+  for (const i of issues) {
+    const key = `${frame.scenario} | ${frame.label} | ${i.rule}`;
+    const g = group.get(key) ?? { first: frame, last: frame, n: 0, details: new Set() };
+    g.n++;
+    g.last = frame;
+    if (g.details.size < 2) g.details.add(i.detail);
+    group.set(key, g);
+    if (has("--frames")) console.log(`  ${frame.scenario} | ${frame.label} | t ${frame.t} | ${i.rule}: ${i.detail}`);
+  }
+}
+console.log(`${all.length} frames checked, ${found.length} break a rule`);
+for (const [key, g] of [...group].sort((a, b) => b[1].n - a[1].n)) console.log(`${String(g.n).padStart(5)} × ${key} · t ${g.first.t}…${g.last.t} · ${[...g.details].join(" / ")}`);
+// the elbow never flips to the other side of the arm (one frame's step over ELBOW_MAX; walking over ELBOW_MAX_WALKING)
+const flips = [...elbowJumps(all), ...elbowJumps(all.filter((f) => f.label.includes("walk")), ELBOW_MAX_WALKING)];
+console.log(`${flips.length} elbow flips (one frame's step > ${ELBOW_MAX} figure units, > ${ELBOW_MAX_WALKING} while walking)`);
+for (const x of flips.slice(0, 20)) console.log(`  ${x.a.scenario} | ${x.a.label} | t ${x.a.t}→${x.b.t} | ${x.arm} elbow moved ${x.d.toFixed(1)}`);
+let failed = found.length > 0 || flips.length > 0;
+if (has("--pops")) {
+  const j = jumps(all);
+  console.log(`${j.length} one-frame jumps (> 10 figure units in 16 ms)`);
+  for (const x of j.slice(0, 40)) console.log(`  ${x.a.scenario} | ${x.a.label} | t ${x.a.t}→${x.b.t} | ${x.joint} moved ${x.d.toFixed(1)}`);
+  const s = snaps(all);
+  console.log(`${s.length} pops (a joint's step changes by > 2.5 units from one frame to the next; for reading, they do not fail the run)`);
+  for (const x of s.slice(0, 40)) console.log(`  ${x.a.scenario} | ${x.a.label} | t ${x.a.t}→${x.b.t} | ${x.joint} ${x.d.toFixed(1)}`);
+  failed = failed || j.length > 0; // the pops are for reading: a gait's foot swings and a climb's rung changes are in them
+}
+process.exit(failed ? 1 : 0);

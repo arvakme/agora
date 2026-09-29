@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>姿势体检 · contact sheet</title>
+    <style>
+      body { margin: 0; background: #fff; font: 11px ui-monospace, monospace; color: #555; }
+      #sheet { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; }
+      .tile { position: relative; width: 150px; height: 150px; border: 1px solid #ddd; background: #fff; }
+      .tile[data-bad] { background: #fff5f3; border-color: #e6a8a0; }
+      .tile svg { position: absolute; inset: 0; }
+      .tile span { position: absolute; left: 3px; top: 2px; font-size: 9px; }
+      h3 { margin: 8px 6px 0; font: 600 12px ui-sans-serif, system-ui; color: #222; }
+    </style>
+  </head>
+  <body>
+    <div id="sheet"></div>
+    <script type="module" src="./pose-sheet.ts"></script>
+  </body>
+</html>
