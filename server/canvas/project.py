@@ -685,7 +685,7 @@ class ProjectStore:
         return merged, version_of(body) or "", body != raw
 
     def thread_op(self, id: str, op: dict[str, Any]) -> tuple[dict[str, Any], str, dict[str, Any]]:
-        """Apply one ``create`` / ``reply`` / ``edit`` / ``delete`` / ``restore`` / ``resolve`` op.
+        """Apply one ``create`` / ``reply`` / ``edit`` / ``delete`` / ``restore`` / ``resolve`` / ``bind`` / ``unbind`` op.
         ``edit``, ``delete`` and ``restore`` act on one message and need ``actor``: the id that
         wrote it (a share guest may only change their own messages → ``NotYours``).
         Returns (file, version, the thread)."""
@@ -743,6 +743,10 @@ class ProjectStore:
                 elif kind == "resolve":
                     thread["resolved"] = bool(op.get("resolved"))
                     thread["updatedAt"] = now
+                elif kind in ("bind", "unbind"):  # the conversation this thread is one with (null = ended by the person)
+                    if not (kind == "bind" and op.get("ifAbsent") and "handoff" in thread):  # ifAbsent: never undo an ending
+                        thread["handoff"] = op["handoff"] if kind == "bind" else None
+                        thread["updatedAt"] = now
                 else:
                     raise ValueError(f"unknown thread op {kind!r}")
             body = dump_json(data)

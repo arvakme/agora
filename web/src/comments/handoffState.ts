@@ -22,16 +22,6 @@ export function pinState(t: Pick<Thread, "resolved" | "agent"> & { messages: Pic
 }
 
 /**
- * The 「交给 …」 button: the agent the comment would go to right now; with several sessions the session's name too;
- * none to go to → 「交给 Agent…」 (the chooser opens); while it is running 「处理中」.
- */
-export function handLabel(o: { running?: boolean; name?: string; many?: boolean; sessionName?: string }): string {
-  if (o.running) return "处理中";
-  if (!o.name) return "交给 Agent…";
-  return `交给 ${o.name}${o.many && o.sessionName ? ` · ${o.sessionName}` : ""}`;
-}
-
-/**
  * The comment threads of one canvas that still have a hand-off the server has not finished: read from the
  * dispatch records (`GET /api/agent/dispatches?active=1`, the truth, kept in `.agora/dispatch`), so a page
  * loaded mid-run shows 「处理中」 again. `over` = the states after which nothing more is expected.

@@ -1,7 +1,7 @@
-// "交给 Agent" from a canvas comment.
-// - handToSession (the UI): the comment goes to the canvas's agent session — the user's
-//   own Pi / Claude Code / Codex — which edits through the agora-canvas skill and answers;
-//   the answer is posted back into the thread, linked to the change it made.
+// A canvas comment handed to an agent.
+// - handOff (the UI): an @ in the comment (comments/mention.ts) sends it to a conversation — a new one for the
+//   thread, or an existing one — which edits through the agora skill and answers; the answer is posted back into
+//   the thread, linked to the change it made.
 // - handToAgent (the eval harness): one schema-constrained planning turn (runTurn.ts).
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { resolveAnchor } from "../canvas/anchors";
@@ -9,13 +9,13 @@ import { threadRequest } from "../canvas/context";
 import { byId } from "../canvas/scene";
 import { runTurn, undoTurn, type AgentOutcome } from "../session/runTurn";
 import { sessions } from "../session/store";
-import { agents, DISPATCH_OVER } from "../session/agents";
-import { pickSession } from "../session/pickSession";
-import { openSessions, ui } from "../session/ui";
-import { pointerFollow } from "../pointer/follow";
+import { agents, DISPATCH_OVER, type Binding } from "../session/agents";
+import { adoptSession } from "../persist";
 import type { ThreadStore } from "../comments/threads";
 import { commentMessage } from "../comments/handoff";
 import { runningThreads } from "../comments/handoffState";
+import { threadSessionName } from "../comments/mention";
+import { threadSessionTitles } from "../comments/sessionTitles";
 
 export { sceneIndex } from "../session/runTurn";
 
@@ -61,38 +61,50 @@ export function undoAgent(api: ExcalidrawImperativeAPI, threads: ThreadStore, th
   return msg?.turnId ? undoTurn(api, msg.turnId) : { ok: false, stale: [] };
 }
 
-/** The session a comment on this canvas would go to right now, and how many could take it (the button names the agent when several could). */
-export function handTarget(canvasId: string, skip?: string[]) {
-  const st = agents.get();
-  return pickSession({ ids: sessions.onCanvas(canvasId).map((s) => s.id), bindings: st.bindings, status: st.status, activeAt: st.activeAt, open: openSessions.get(), focused: pointerFollow.get(), skip });
+/**
+ * A conversation the server made (its head record is already on disk) becomes this page's, the way a session restored
+ * from the trash does: the page must know the file's version, or its first save would be a conflict.
+ */
+async function adoptConversation(sid: string): Promise<void> {
+  if (sessions.get().sessions[sid]) return;
+  const snap = (await fetch("/api/project/snapshot").then((r) => (r.ok ? r.json() : null), () => null)) as { sessions?: Record<string, never>; bindings?: Record<string, Binding> } | null;
+  const file = snap?.sessions?.[sid];
+  if (!file) return; // it shows up when the page next loads
+  const got = adoptSession(sid, file);
+  const cur = sessions.get();
+  sessions.hydrate({ sessions: { ...cur.sessions, ...got.sessions }, turns: { ...cur.turns, ...got.turns }, batches: { ...cur.batches, ...got.batches } });
+  if (snap?.bindings?.[sid]) agents.hydrateBindings({ [sid]: snap.bindings[sid] });
 }
 
 /**
- * `choose`: skip the automatic pick and open the chooser (a send just failed and the person said 换一个会话).
- * The comment goes to the session the person is looking at, else the most recent one that can still take a
- * message (session/pickSession.ts); none → the chooser. A failed send leaves an action in the thread that
- * opens the chooser and sends again.
+ * Hand a comment thread to an agent (comments/mention.ts decides where): an agent kind opens a new conversation
+ * named after the comment, a session sid sends to that conversation. The server keeps the dispatch, binds the
+ * thread to the conversation (its `handoff`) and posts the answer into the thread when the turn ends, so a reload
+ * of this page loses nothing; here it starts it and shows it running.
+ * `bound`: the thread was already this conversation's, so a conversation that is gone ends the hand-off.
  */
-export async function handToSession(api: ExcalidrawImperativeAPI, threads: ThreadStore, threadId: string, opts: { choose?: boolean } = {}): Promise<void> {
+export async function handOff(api: ExcalidrawImperativeAPI, threads: ThreadStore, threadId: string, to: { sid: string } | { agent: string }, opts: { bound: boolean; name?: string }): Promise<void> {
   const thread = threads.thread(threadId)!;
   const canvasId = threads.canvasId;
   const anchors = resolveAnchor(thread.anchor, byId(api.getSceneElementsIncludingDeleted())).names.map((n) => ({ id: n.id, name: n.name }));
+  const anchor = anchors.length > 1 ? `${anchors[0].name} 等 ${anchors.length} 个` : anchors[0]?.name ?? "";
+  const name = opts.name ?? threadSessionName(thread.n, anchor);
   threads.setAgent(threadId, "running");
   try {
-    const sid = (opts.choose ? undefined : handTarget(canvasId).sid) ?? (await ui.chooseAgent(canvasId));
-    if (!sid) {
-      threads.reply(threadId, { author: "system", text: "没有选定 agent，评论没有交出去。", tone: "warn", action: "switch-session" });
-      return;
-    }
-    const anchor = anchors.length > 1 ? `${anchors[0].name} 等 ${anchors.length} 个` : anchors[0]?.name ?? "";
-    // The server keeps the dispatch and posts the answer into the thread when the turn ends, so a reload
-    // of this page loses nothing; here it only starts it and shows it running.
     let sent;
     try {
-      sent = await agents.dispatchComment(sid, commentMessage(thread, anchors), { canvasId, threadId, threadN: thread.n, anchor });
+      sent = await agents.dispatchComment("sid" in to ? to.sid : { new: to.agent }, commentMessage(thread, anchors, { followUp: opts.bound }), { canvasId, threadId, threadN: thread.n, anchor, name });
     } catch (e) {
-      threads.reply(threadId, { author: "system", text: `没有交出去：${(e as Error).message}`, tone: "error", sessionId: sid, action: "switch-session" });
+      const gone = opts.bound && /no agent|不在/.test((e as Error).message);
+      if (gone) threads.endHandoff(threadId);
+      threads.reply(threadId, { author: "system", text: gone ? "这条评论绑定的对话已经不在了，评论没有交出去。重新 @ 一个 agent 或对话。" : `没有交出去：${(e as Error).message}`, tone: "error", ...("sid" in to && { sessionId: to.sid }) });
       return;
+    }
+    if ("agent" in to) {
+      // The server made the conversation; the page learns of it here, so its tab (named for the comment) appears now.
+      const sid = sent.dispatch.target.sessionId;
+      threadSessionTitles.set(sid, name);
+      await adoptConversation(sid);
     }
     const d = await sent.done;
     // The answer arrives through the threads file; link it to the change it made (undo) once it is here.

@@ -2,7 +2,7 @@
 // answered (until the person closes the thread with ✓), and a hand-off that failed earlier does not sit beside
 // the answer that came later. Pure functions; the messages below are thread #1 of the 圆桌 AI copy as it was.
 import { describe, expect, it } from "vitest";
-import { collapseSuperseded, handLabel, PIN_LABEL, pinState, runningThreads, type Folded } from "./handoffState.ts";
+import { collapseSuperseded, PIN_LABEL, pinState, runningThreads, type Folded } from "./handoffState.ts";
 import type { Message } from "./threads.ts";
 
 const you: Message = { id: "m1", author: "you", text: "这里的限流是按用户还是按 IP？看代码回答，一两句话", at: 1 };
@@ -33,20 +33,6 @@ describe("pinState: what the pin says about the agent", () => {
     expect(PIN_LABEL.answered).toBe("已答复");
     expect(PIN_LABEL.pending).toBe("未答复");
     expect(PIN_LABEL.running).toBe("处理中");
-  });
-});
-
-describe("handLabel: the 交给 … button", () => {
-  it("names the agent the comment would go to", () => {
-    expect(handLabel({ name: "Claude Code" })).toBe("交给 Claude Code");
-  });
-  it("with several sessions the session's name comes with it", () => {
-    expect(handLabel({ name: "Claude Code", many: true, sessionName: "限流的问题" })).toBe("交给 Claude Code · 限流的问题");
-    expect(handLabel({ name: "Codex", many: true })).toBe("交给 Codex");
-  });
-  it("no target: 交给 Agent… (the chooser opens); while it runs: 处理中", () => {
-    expect(handLabel({})).toBe("交给 Agent…");
-    expect(handLabel({ running: true, name: "Claude Code" })).toBe("处理中");
   });
 });
 

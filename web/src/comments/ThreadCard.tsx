@@ -3,7 +3,7 @@
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { handTarget, handToSession, undoAgent } from "../ops/agent";
+import { handOff, undoAgent } from "../ops/agent";
 import type { AnchorState } from "../canvas/anchors";
 import { IconCheck, IconClose, IconHint, IconPencil, IconRetry, IconSend, IconTrash, IconUndo } from "../app/icons";
 import type { Message, Thread, ThreadStore } from "./threads";
@@ -15,26 +15,13 @@ import { useSessions, useTurn } from "../session/store";
 import { useTrash } from "../workspace/trash";
 import { AGENT_NAMES, agentName, useAgents } from "../session/agents";
 import { AgentAvatar } from "../session/AgentAvatar";
-import { openSessions, ui } from "../session/ui";
-import { pointerFollow } from "../pointer/follow";
-import { topicOf } from "../workspace/model";
-import { collapseSuperseded, handLabel, PIN_LABEL, pinState } from "./handoffState";
+import { ui } from "../session/ui";
+import { collapseSuperseded, PIN_LABEL, pinState } from "./handoffState";
+import { handoffLine, routeMessage, type MentionTarget } from "./mention";
+import { MentionField } from "./MentionField";
 import "./handoff.css";
 import { AnchorTag, type AnchorName } from "./AnchorTag";
 import type { CardPos } from "./CommentLayer";
-
-/** Who "交给 Agent" would send to right now, and whether there are several to choose from (then the button names it). */
-function useHandTarget(canvasId: string) {
-  const ag = useAgents();
-  const { sessions: all } = useSessions();
-  useSyncExternalStore(pointerFollow.subscribe, pointerFollow.get);
-  useSyncExternalStore(openSessions.subscribe, openSessions.get);
-  void all;
-  const { sid, live } = handTarget(canvasId);
-  // with several sessions the button also says which one: what it is about (its first message, as its tab is named)
-  const sessionName = sid ? topicOf(ag.items[sid]?.find((it) => it.kind === "user" && it.text)?.text) || undefined : undefined;
-  return { sid, many: live.length > 1, name: sid ? agentName(ag.bindings[sid]?.agent) : undefined, sessionName };
-}
 
 export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
   t: Thread;
@@ -48,9 +35,8 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
   const full = mode === "full";
   const [first, ...rest] = t.messages;
   const running = t.agent === "running";
-  const to = useHandTarget(store.canvasId);
   const ag = useAgents();
-  const lastId = t.messages.at(-1)?.id;
+  const { sessions: all } = useSessions();
   return (
     <motion.div
       layout
@@ -76,11 +62,6 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
             <AnchorTag names={st.names} />
           </span>
           <span className="tcard-actions">
-            {!t.resolved && !GUEST && (
-              <button className="btn sm primary tagent" disabled={running || st.status === "lost"} onClick={() => void handToSession(api, store, t.id)} title={to.sid ? `交给 ${to.name}（你正看着的会话，否则这块画布上最近活动、还能收消息的那个）` : "这块画布还没有能收消息的会话：点开后选一个 agent"}>
-                <IconSend size={14} />{handLabel({ running, ...to })}
-              </button>
-            )}
             {!GUEST && (
               <button className="icon-btn sm" onClick={() => store.setResolved(t.id, !t.resolved)} title={t.resolved ? "重新打开" : "解决"} aria-label={t.resolved ? "重新打开" : "解决"}>
                 {t.resolved ? <IconRetry size={16} /> : <IconCheck size={16} />}
@@ -107,13 +88,13 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
         )}
         <AnimatePresence initial={false}>
           {full &&
-            collapseSuperseded(rest, (sid) => (sid && ag.bindings[sid] ? agentName(ag.bindings[sid].agent) : to.name)).map((m) => "folded" in m ? (
+            collapseSuperseded(rest, (sid) => (sid && ag.bindings[sid] ? agentName(ag.bindings[sid].agent) : t.handoff ? agentName(t.handoff.agent) : undefined)).map((m) => "folded" in m ? (
               <Reveal key={m.id}>
                 <div className="tfolded" title="这条之前没能交出去，后来已经重新交给 Agent 并有了答复">{m.text}</div>
               </Reveal>
             ) : (
               <Reveal key={m.id}>
-                <Row m={m} tools={{ store, threadId: t.id }} onUndo={GUEST ? undefined : () => undoAgent(api, store, t.id, m.id)} onSwitch={!GUEST && m.action && m.id === lastId && !running ? () => void handToSession(api, store, t.id, { choose: true }) : undefined} />
+                <Row m={m} tools={{ store, threadId: t.id }} onUndo={GUEST ? undefined : () => undoAgent(api, store, t.id, m.id)} />
               </Reveal>
             ))}
           {full && running && (
@@ -130,7 +111,23 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
         </AnimatePresence>
       </div>
       {full && <div className="tstate" data-state={pinState(t)}>{PIN_LABEL[pinState(t)]}</div>}
-      {full && <Reply resolved={t.resolved} onSend={(text) => store.reply(t.id, { author: "you", text })} />}
+      {full && !GUEST && t.handoff && (
+        <div className="thandoff" data-gone={!all[t.handoff.sessionId]}>
+          <span className="thandoff-line" title={t.handoff.name}>{handoffLine(t.handoff, agentName(t.handoff.agent), pinState(t), !all[t.handoff.sessionId])}</span>
+          <button className="btn sm ghost" disabled={running} onClick={() => store.endHandoff(t.id)} title="以后在这条线程里的回复是普通评论，不再发给这个对话">结束交接</button>
+        </div>
+      )}
+      {full && (
+        <Reply
+          resolved={t.resolved}
+          bound={!!t.handoff && !GUEST}
+          onSend={(text, mention) => {
+            const route = routeMessage({ guest: GUEST, mention, handoff: t.handoff });
+            store.reply(t.id, { author: "you", text });
+            if (route.kind === "hand") void handOff(api, store, t.id, route.to, { bound: route.bound, ...(route.bound && t.handoff ? { name: t.handoff.name } : mention?.type === "session" ? { name: mention.label } : {}) });
+          }}
+        />
+      )}
     </motion.div>
   );
 }
@@ -150,7 +147,7 @@ function Reveal({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Row({ m, first, onUndo, onSwitch, tools }: { m: Message; first?: boolean; onUndo?: () => void; onSwitch?: () => void; tools?: { store: ThreadStore; threadId: string } }) {
+function Row({ m, first, onUndo, tools }: { m: Message; first?: boolean; onUndo?: () => void; tools?: { store: ThreadStore; threadId: string } }) {
   const [editing, setEditing] = useState(false);
   // Eval replies are the session turn itself; native-session replies carry the agent's own
   // text and point at their last canvas change (for undo) and the session.
@@ -191,7 +188,6 @@ function Row({ m, first, onUndo, onSwitch, tools }: { m: Message; first?: boolea
         ) : (
           <p className="trow-text">{reply?.text ?? m.text}</p>
         )}
-        {onSwitch && <button className="btn sm tswitch" onClick={onSwitch}><IconRetry size={14} />换一个会话</button>}
         {reply?.undoError && <p className="trow-text" data-warn>{reply.undoError}</p>}
         {reply?.changes && (
           <div className="tchanges" data-undone={!!reply.undone}>
@@ -275,23 +271,17 @@ function EditBox({ initial, onSave, onCancel }: { initial: string; onSave: (text
   );
 }
 
-/** Replying to a resolved thread reopens it (the store does that; the placeholder says so). */
-function Reply({ onSend, resolved }: { onSend: (text: string) => void; resolved?: boolean }) {
+/** Replying to a resolved thread reopens it (the store does that; the placeholder says so). `bound`: the thread is a conversation with an agent, so the reply goes to it. */
+function Reply({ onSend, resolved, bound }: { onSend: (text: string, mention: MentionTarget | null) => void; resolved?: boolean; bound?: boolean }) {
   const [text, setText] = useState("");
-  const send = () => {
-    if (!text.trim()) return;
-    onSend(text.trim());
+  const send = (t: string, mention: MentionTarget | null) => {
+    onSend(t, mention);
     setText("");
   };
+  const placeholder = resolved ? "回复会重新打开这条评论…" : bound ? "回复（会发给上面的对话）…" : GUEST ? "回复…" : "回复，输入 @ 交给 agent…";
   return (
-    <form className="treply" onSubmit={(e) => (e.preventDefault(), send())}>
-      <textarea
-        value={text}
-        rows={1}
-        placeholder={resolved ? "回复会重新打开这条评论…" : "回复…"}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && (e.preventDefault(), send())}
-      />
+    <form className="treply" onSubmit={(e) => (e.preventDefault(), text.trim() && send(text.trim(), null))}>
+      <MentionField value={text} onValue={setText} onSend={send} placeholder={placeholder} />
       <button type="submit" className="send" disabled={!text.trim()} aria-label="发送回复"><IconSend size={14} /></button>
     </form>
   );
@@ -303,7 +293,7 @@ export function Composer({ names, pos, text, onText, onCancel, onSubmit }: {
   text: string;
   onText: (text: string) => void;
   onCancel: () => void;
-  onSubmit: (text: string) => void;
+  onSubmit: (text: string, mention: MentionTarget | null) => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -311,7 +301,7 @@ export function Composer({ names, pos, text, onText, onCancel, onSubmit }: {
     el?.focus();
     el?.setSelectionRange(el.value.length, el.value.length);
   }, []);
-  const submit = () => text.trim() && onSubmit(text.trim());
+  const submit = (t: string, mention: MentionTarget | null) => onSubmit(t, mention);
   return (
     <motion.form
       className="tcard composer"
@@ -321,7 +311,7 @@ export function Composer({ names, pos, text, onText, onCancel, onSubmit }: {
       exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.12 } }}
       transition={SPRING}
       style={{ left: pos.left, top: pos.top, bottom: pos.bottom, originX: pos.flip ? 1 : 0, originY: pos.up ? 1 : 0, borderRadius: 14 }}
-      onSubmit={(e) => (e.preventDefault(), submit())}
+      onSubmit={(e) => (e.preventDefault(), text.trim() && submit(text.trim(), null))}
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="composer-head">
@@ -329,16 +319,7 @@ export function Composer({ names, pos, text, onText, onCancel, onSubmit }: {
         <button type="button" className="icon-btn sm muted" onClick={onCancel} aria-label="取消评论" title="取消（Esc）"><IconClose size={16} /></button>
       </div>
       <div className="treply bare">
-        <textarea
-          ref={ref}
-          value={text}
-          rows={2}
-          placeholder="添加评论…"
-          onChange={(e) => onText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) (e.preventDefault(), submit());
-          }}
-        />
+        <MentionField textareaRef={ref} value={text} onValue={onText} onSend={submit} rows={2} placeholder={GUEST ? "添加评论…" : "添加评论，输入 @ 交给 agent…"} />
         <button type="submit" className="send" disabled={!text.trim()} aria-label="发表评论"><IconSend size={14} /></button>
       </div>
     </motion.form>
