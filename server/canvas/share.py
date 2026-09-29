@@ -591,7 +591,8 @@ class ShareManager:
         self.file = ShareFile(store)
         self._providers_factory = providers
         self._providers: tuple[DnsProvider, TunnelProvider] | None = None
-        self._domain = domain or os.environ.get("AGORA_SHARE_DOMAIN") or None
+        self._domain = domain or os.environ.get("AGORA_SHARE_DOMAIN") or None  # fixed: nothing to choose
+        self._chosen = self._load_choice()
         self.clock = clock
         self.on_change = on_change
         self._quick = quick or start_quick_tunnel
@@ -617,10 +618,48 @@ class ShareManager:
                 self._providers = self._providers_factory()
         return self._providers
 
+    # ——— which zone the shares go under ———
+    @property
+    def _choice_path(self) -> Path:
+        return self.file.dir / "settings.json"
+
+    def _load_choice(self) -> str | None:
+        try:
+            return json.loads(self._choice_path.read_text()).get("domain") or None
+        except (FileNotFoundError, json.JSONDecodeError, AttributeError):
+            return None
+
+    def domains(self) -> dict[str, Any]:
+        """What the share window offers: the account's zones (one = use it, several = the person picks), the one
+        chosen last time (``.agora/shares/settings.json``, not committed), ``fixed`` when ``AGORA_SHARE_DOMAIN`` decides."""
+        if self._domain:
+            return {"domains": [self._domain], "chosen": self._domain, "fixed": True, "error": None}
+        from server.canvas.cloudflare import humanize
+
+        try:
+            zones = list(self.providers()[0].zones())
+        except Exception as e:  # not logged in, no cf, no network: say what to do
+            return {"domains": [], "chosen": self._chosen, "fixed": False, "error": humanize(e)}
+        chosen = self._chosen if self._chosen in zones else (zones[0] if len(zones) == 1 else None)
+        return {"domains": zones, "chosen": chosen, "fixed": False, "error": None}
+
+    def choose_domain(self, name: str) -> None:
+        """Remember the person's pick (it must be one of the account's zones)."""
+        if self._domain:
+            return  # the environment decides
+        if name not in self.providers()[0].zones():
+            raise ValueError(f"{name!r} is not a zone of this Cloudflare account")
+        self.file._ensure()
+        with self.store._locked():
+            self.store._atomic(self._choice_path, dump_json({"domain": name}))
+        self._chosen = name
+
     def domain(self) -> str:
-        if not self._domain:
-            self._domain = self.providers()[0].zone_name()
-        return self._domain
+        dns = self.providers()[0]
+        d = self._domain or self._chosen or dns.zone_name()
+        if hasattr(dns, "use_domain"):
+            dns.use_domain(d)
+        return d
 
     @property
     def tunnel_name(self) -> str:

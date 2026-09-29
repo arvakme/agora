@@ -8,9 +8,12 @@
 
 界面：顶栏「分享」→ 选画布、有效期（1 小时 / 1 天 / 7 天 / 自定义 1 分钟–90 天 / 直到撤销）、打开次数（不限次数 / 限制次数：最多打开 N 次，N 为 1–10000）→「创建链接」。链接**只显示这一次**（服务端只存令牌的哈希），复制后发给别人。下面的「当前分享」列出每个分享的剩余时间、打开次数（限制时是「打开 已用/上限」，用完变成提示色）、评论数和「撤销」；结束的分享留在「已结束」里。
 
+**地址：我的域名或临时链接**：分享窗口里先选「我的域名」还是「临时链接」。「我的域名」用 `cf zones list` 读账号里的 zone（第一次要几秒，窗口里写「正在读取…」）：只有一个就直接用，不出选择；不止一个就给一个下拉，选过的记在 `.agora/shares/settings.json`（`shares/` 自带 `*` 的 `.gitignore`，不提交），下次默认选中；设了 `AGORA_SHARE_DOMAIN` 就用它，不出选择（环境变量优先，界面上的选择不生效）。「临时链接」走 §10 的 `--quick`：不需要域名和账号，随时能用，但关掉 Agora 就失效、地址每次不同、同一时间只有一个；「我的域名」的地址稳定，`agora down` 之后有效期内还能恢复（§5）。失败说人话，并写下一步：没登录 →「还没登录 Cloudflare：在终端运行 `npx cf auth login`，完成后再点一次」；没有 cf 也拉不到 `npx cf` →「没找到 cf，也拉不到 npx cf：检查网络，或者先装 cf」；其他失败一句原因加「可以先用临时链接」。接口：`GET /api/share/domains` → `{domains, chosen, fixed, error}`；`POST /api/share` 可带 `domain`（必须是账号里的 zone，记住）和 `quick`；账号有多个 zone 又没选时返回 409 和 `zones`（不再要求设环境变量）。窗口的显示规则是纯函数（`web/src/share/domainChoice.ts`）。
+
 命令（在项目目录，或 `--project`）：
 
 ```bash
+agora share create --domain quietharbor.de   # 账号里有多个域名时选一个（会记住；没有 --domain 又有多个时命令会列出来）
 agora share create --for 1d            # 默认分享聚焦的画布；--canvas <id|名字> 指定；--for 10m|2h|1d|7d|forever
 agora share create --max-opens 5        # 最多打开 5 次（不写就是不限次数）
 agora share list                       # 表格（「打开」列是 已用/上限 或已用次数）；--json 输出记录（不含哈希）

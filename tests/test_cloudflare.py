@@ -34,6 +34,8 @@ if argv[:2] == ["auth", "whoami"]:
     out({{"authenticated": state["login"]}})
 if not state["login"]:
     die("Error: run `cf auth login` first")
+if a == "zones list":
+    out([{{"name": z}} for z in state.get("zones", ["example.test"])])
 if a == "tunnels list --name":
     out([{{"id": t, "name": n, "deleted_at": None}} for t, n in state["tunnels"].items() if n == argv[3]])
 if a == "tunnels create --name":
@@ -257,3 +259,141 @@ def test_revoke_all_after_down_clears_the_account_without_a_server(cf, tmp_path)
     offline.sweep()
     assert read()["records"] == {} and read()["tunnels"] == {}
     assert {s["status"] for s in offline.list()} == {"revoked"}
+
+
+# ——— SHR1: the person picks the domain in the share window; errors say what to do next ———
+import httpx  # noqa: E402
+from fastapi import APIRouter  # noqa: E402
+
+from server.canvas.cloudflare import ZoneChoice, humanize  # noqa: E402
+from server.canvas.project_router import create_project_app  # noqa: E402
+
+
+def _zoned(tmp_path, cf, zones, env_domain=None, monkeypatch=None):
+    """A manager over the stub cf with no fixed domain: the account has ``zones``."""
+    c, read, patch = cf
+    patch(zones=zones)
+    if monkeypatch:
+        monkeypatch.delenv("AGORA_SHARE_DOMAIN", raising=False)
+    free = CfCli(domain=env_domain, command=c.cmd)
+    store = ProjectStore(tmp_path / "proj")
+    store.root.mkdir(exist_ok=True)
+    store.init()
+    store.write("canvas", "c1", {"elements": []}, base=None)
+    m = ShareManager(store, providers=lambda: (CfDns(free), CfTunnels(free)), domain=env_domain)
+    m.gateway_port = 45678
+    app = create_project_app(store.root, canvas_router=APIRouter(), shares=m)
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8000")
+    return m, client, read, patch, store
+
+
+async def test_three_zones_are_offered_not_an_error(cf, tmp_path, monkeypatch):
+    m, client, *_ = _zoned(tmp_path, cf, ["a.test", "b.test", "c.test"], monkeypatch=monkeypatch)
+    r = await client.get("/api/share/domains")
+    assert r.status_code == 200
+    assert r.json() == {"domains": ["a.test", "b.test", "c.test"], "chosen": None, "fixed": False, "error": None}
+
+
+async def test_the_zone_picked_is_the_one_the_share_is_made_under_and_is_remembered(cf, tmp_path, monkeypatch):
+    m, client, read, _, store = _zoned(tmp_path, cf, ["a.test", "b.test", "c.test"], monkeypatch=monkeypatch)
+    try:
+        r = await client.post("/api/share", json={"canvasId": "c1", "ttl": 600, "domain": "b.test"})
+        assert r.status_code == 200, r.text
+        assert r.json()["share"]["host"].endswith(".b.test")
+        assert {v["zone"] for v in read()["records"].values()} == {"b.test"}  # the record was made in that zone
+        # next time (a new server) it is the default, and a share made without naming one goes there too
+        again = ShareManager(store, providers=m._providers_factory)
+        assert again.domains()["chosen"] == "b.test"
+        again.gateway_port = 45679
+        share, _url = again.create("c1", 600)
+        assert share["host"].endswith(".b.test")
+        again.shutdown()
+    finally:
+        m.shutdown()
+
+
+async def test_with_several_zones_and_no_choice_the_create_call_lists_them(cf, tmp_path, monkeypatch):
+    m, client, *_ = _zoned(tmp_path, cf, ["a.test", "b.test"], monkeypatch=monkeypatch)
+    r = await client.post("/api/share", json={"canvasId": "c1", "ttl": 600})
+    assert r.status_code == 409
+    assert r.json()["zones"] == ["a.test", "b.test"] and "a.test" in r.json()["detail"] and "CloudflareError" not in r.json()["detail"]
+
+
+async def test_a_zone_the_account_does_not_have_is_refused(cf, tmp_path, monkeypatch):
+    m, client, *_ = _zoned(tmp_path, cf, ["a.test", "b.test"], monkeypatch=monkeypatch)
+    r = await client.post("/api/share", json={"canvasId": "c1", "ttl": 600, "domain": "evil.test"})
+    assert r.status_code == 400
+
+
+async def test_one_zone_is_used_without_asking(cf, tmp_path, monkeypatch):
+    m, client, read, *_ = _zoned(tmp_path, cf, ["only.test"], monkeypatch=monkeypatch)
+    try:
+        assert (await client.get("/api/share/domains")).json() == {"domains": ["only.test"], "chosen": "only.test", "fixed": False, "error": None}
+        r = await client.post("/api/share", json={"canvasId": "c1", "ttl": 600})
+        assert r.status_code == 200 and r.json()["share"]["host"].endswith(".only.test")
+    finally:
+        m.shutdown()
+
+
+async def test_an_environment_domain_is_used_without_asking(cf, tmp_path, monkeypatch):
+    m, client, read, *_ = _zoned(tmp_path, cf, ["a.test", "b.test"], env_domain="a.test")
+    try:
+        assert (await client.get("/api/share/domains")).json() == {"domains": ["a.test"], "chosen": "a.test", "fixed": True, "error": None}
+        r = await client.post("/api/share", json={"canvasId": "c1", "ttl": 600, "domain": "b.test"})  # the environment wins over a pick
+        assert r.status_code == 200 and r.json()["share"]["host"].endswith(".a.test")
+    finally:
+        m.shutdown()
+
+
+async def test_not_logged_in_says_what_to_do_in_plain_words(cf, tmp_path, monkeypatch):
+    m, client, read, patch, _ = _zoned(tmp_path, cf, ["a.test", "b.test"], monkeypatch=monkeypatch)
+    patch(login=False)
+    d = (await client.get("/api/share/domains")).json()
+    assert d["domains"] == [] and "npx cf auth login" in d["error"] and "还没登录 Cloudflare" in d["error"]
+    r = await client.post("/api/share", json={"canvasId": "c1", "ttl": 600, "domain": "a.test"})
+    assert r.status_code == 502 and "npx cf auth login" in r.json()["detail"] and "Error" not in r.json()["detail"]
+
+
+def test_humanize_names_the_next_step_and_never_a_class_name():
+    from server.canvas.cloudflare import CfMissing, NotLoggedIn
+
+    assert "npx cf auth login" in humanize(NotLoggedIn(LOGIN_HINT))
+    assert "没找到 cf" in humanize(CfMissing("x")) and "检查网络" in humanize(CfMissing("x"))
+    other = humanize(CloudflareError("cf dns records create: zone is not active"))
+    assert "临时链接" in other and "CloudflareError" not in other and "zone is not active" in other
+    assert "a.test" in humanize(ZoneChoice(["a.test", "b.test"]))
+
+
+def test_a_missing_cf_binary_is_reported_as_missing(tmp_path):
+    from server.canvas.cloudflare import CfMissing
+
+    with pytest.raises(CfMissing):
+        CfCli(domain="x.test", command=[str(tmp_path / "no-such-cf")]).find("n")
+
+
+def test_the_command_line_lists_the_zones_and_names_the_flag(monkeypatch, capsys):
+    import argparse
+
+    import agora_cli.share as cli
+    from agora_cli.main import Project
+
+    monkeypatch.setattr(cli, "server_url", lambda p: "http://x")
+    sent = []
+
+    def fake_call(base, method, path, body=None, timeout=None):
+        sent.append(body)
+        return 409, {"detail": "账号里有多个域名", "zones": ["a.test", "b.test"]}
+
+    monkeypatch.setattr(cli, "call", fake_call)
+    monkeypatch.setattr("server.canvas.sessions.resolve_canvas", lambda store, c: "c1")
+
+    class P:
+        store = None
+
+    a = argparse.Namespace(action="create", duration="1d", canvas=None, max_opens=None, quick=False, domain=None, json=False)
+    assert cli.cmd_share(P(), a) == 1
+    out = capsys.readouterr().out
+    assert "--domain" in out and "a.test" in out and "b.test" in out and "--quick" in out
+    a.domain = "b.test"
+    cli.cmd_share(P(), a)
+    assert sent[-1]["domain"] == "b.test"
