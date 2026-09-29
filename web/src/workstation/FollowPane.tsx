@@ -24,6 +24,7 @@ import { canvases } from "../session/ui";
 import { clock, prefersReducedMotion, useReplay, useTick, useWorkstation } from "./clock";
 import { figurePositions } from "./focus";
 import { follow, paneView, useFollow } from "./follow";
+import { useReplays } from "./replayMode";
 import { frame } from "./frame";
 import { WorkstationOverlay } from "./Overlay";
 import { canvasWhere } from "./place";
@@ -47,7 +48,9 @@ export function FollowPane({ main }: { main: string }) {
   const f = useFollow();
   const runs = useRuns();
   const nst = useNested();
-  const on = useWorkstation();
+  // a PR replay has its own camera (./replayView.ts): no pane while it plays
+  const prOn = !!useReplays().id;
+  const on = useWorkstation() && !prOn;
   useReplay();
   useTick(250);
   const t = clock.time();

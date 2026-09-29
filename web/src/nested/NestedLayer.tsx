@@ -18,7 +18,7 @@ import { ui } from "../session/ui";
 import { pointerFollow } from "../pointer/follow";
 import { ancestry, childOf, descendants, openThreads, staleness, type Staleness } from "./graph";
 import { blankChild, nav, nested, useNested } from "./store";
-import { backHintSeen, markBackHintSeen, onBackHintSeen, upKeyLabel } from "./up";
+import { backHintQuiet, backHintSeen, backHintVisible, markBackHintSeen, onBackHintSeen, upKeyLabel } from "./up";
 import { writeChildLink } from "./writeChild";
 import "./nested.css";
 
@@ -146,7 +146,8 @@ export function Breadcrumb({ path, current, onGo, extra, keyLabel, hint }: { pat
 function BackHint({ keyLabel }: { keyLabel: string }) {
   const [show, setShow] = useState(() => !backHintSeen());
   useEffect(() => onBackHintSeen(() => setShow(false)), []);
-  if (!show) return null;
+  const quiet = useSyncExternalStore(backHintQuiet.subscribe, backHintQuiet.get);
+  if (!backHintVisible(!show, quiet)) return null;
   return (
     <span className="nest-hint" role="status">
       在子图里。点左上角返回，或按 {keyLabel}
