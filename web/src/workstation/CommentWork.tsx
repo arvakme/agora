@@ -89,7 +89,7 @@ export function CommentWork({ canvasId, pins }: { canvasId: string; pins: readon
         if (n.line) {
           if (a > 0 && pin && feet) {
             const p = scr(pin.x, pin.y);
-            const k = fsc * (it.f.depth > 0 ? SUB_SCALE : 1) * (st?.portalScale ?? 1);
+            const k = fsc * (it.f.depth > 0 ? SUB_SCALE : 1);
             const h = scr(feet.x, feet.y);
             h.y -= HEAD_Y * k;
             const d = Math.hypot(h.x - p.x, h.y - p.y);

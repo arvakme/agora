@@ -40,15 +40,16 @@ import { clock, prefersReducedMotion, useReplay } from "./clock";
 import { placeBubbles, protoSpot, type BubbleIn } from "./bubbles";
 import { pickBubbles, slots } from "./crowd";
 import { EntryMarks } from "./EntryMarks";
-import { FigureNode } from "./figureNode";
+import { FigureNode, PeekNode } from "./figureNode";
 import { FootprintLayer } from "./FootprintLayer";
 import { figurePositions, focus, useFocus } from "./focus";
 import { canvasOfView, follow, useFollow } from "./follow";
 import { frame } from "./frame";
 import { gestureFor } from "./gestures";
 import { buildGeometry, type Geometry } from "./geometry";
-import { canvasWhere, conflictAt, doorTiming, OUTSIDE, outsideProject, stateAt, writeConflicts, type Ctx, type RunState, type WriteConflict } from "./place";
-import { Glide, makeSprings, RIG, solve, SUB_SCALE, type Pt, type Springs, type Trip } from "./rig";
+import { cutLine, doorClimb, hatchesAt, hatchVisAt, ladderShape, LADDER_HALF, peekRise, type Hatch, type Peek } from "./hatch";
+import { canvasWhere, conflictAt, doorTiming, OUTSIDE, outsideProject, stateAt, writeConflicts, type Ctx, type RunState, type Side, type WriteConflict } from "./place";
+import { Glide, makeSprings, planDoor, RIG, solve, SUB_SCALE, type Pt, type Springs, type Trip } from "./rig";
 import type { Leg } from "./route";
 import { ReplayBar, TraceBar } from "./ReplayBar";
 import { stopEntryText } from "./traceText";
@@ -97,8 +98,11 @@ type Snap = {
   trips: { key: string; run: string; trip: Trip; sel: boolean }[];
   /** 追踪: the traced run's way on this canvas (./trace.ts), when one is traced. */
   trace: Trace | null;
+  /** The ladders and holes to draw at doors (./hatch.ts), and whose head looks out of each hole. */
+  hatches: Hatch[];
+  peeks: Peek[];
 };
-const EMPTY: Snap = { t: 0, figs: [], bubbles: [], rings: [], tethers: [], chips: [], states: new Map(), byId: new Map(), folded: new Map(), tray: false, trips: [], trace: null };
+const EMPTY: Snap = { t: 0, figs: [], bubbles: [], rings: [], tethers: [], chips: [], states: new Map(), byId: new Map(), folded: new Map(), tray: false, trips: [], trace: null, hatches: [], peeks: [] };
 /** 追踪: the others dim to this; a trace's line draws itself in over DRAW_MS as it starts, and fades out over TRACE_EXIT_MS as it ends. */
 const DIM = 0.3;
 const DRAW_MS = 650;
@@ -159,7 +163,7 @@ const tripAlpha = (p: Trip, t: number) => Math.max(0, Math.min(1, (t - p.t0) / T
  * false; `now`: what has happened by — in a replay the stops after t up to now show, not yet reached).
  * `only`: draw just these runs (the follow pane: those in its sub-diagram).
  */
-export function snapshot(runs: Runs, t: number, ctx: Ctx, conflicts: WriteConflict[], figuresOn: boolean, selected: string | null, o: { traced?: string | null; turn?: TurnWindow | null; only?: (runId: string) => boolean; route?: boolean; now?: number } = {}): Snap {
+export function snapshot(runs: Runs, t: number, ctx: Ctx, conflicts: WriteConflict[], figuresOn: boolean, selected: string | null, o: { traced?: string | null; followed?: string | null; turn?: TurnWindow | null; only?: (runId: string) => boolean; route?: boolean; now?: number } = {}): Snap {
   const states = new Map<string, RunState>();
   const present: FlatRun[] = [];
   const byId = new Map(runs.flat.map((f) => [f.run.id, f]));
@@ -219,7 +223,9 @@ export function snapshot(runs: Runs, t: number, ctx: Ctx, conflicts: WriteConfli
   const trace = tr ? traceAt(tr.run, t, ctx, o.now ?? Infinity, win ? spanOf(win, o.now ?? Date.now()) : undefined) : null;
   // the tray shows while someone stands there or looks at it, and for a traced way through it
   const tray = figs.some((x) => x.place === OUTSIDE || states.get(x.f.run.id)!.glance?.place === OUTSIDE) || !!trace?.stops.some((s) => s.place === OUTSIDE) || !!trace?.subs.some((s) => s.stops.some((x) => x.done && x.place === OUTSIDE));
-  return { t, figs, bubbles, rings: ringsOf(present, states, conflicts, t), tethers, chips: [], states, byId, folded, tray, trips, trace };
+  // the ladders at doors, and the head that looks out of each hole (only those drawn on this canvas: depth ≤ 1, and the pane's own)
+  const { hatches, peeks } = hatchesAt(runs.flat.filter((f) => f.depth < 2 && (!o.only || o.only(f.run.id))).map((f) => f.run.id), (id, u) => stateAt(byId.get(id)!.run, u, ctx), t, { traced: o.traced, followed: o.followed });
+  return { t, figs, bubbles, rings: ringsOf(present, states, conflicts, t), tethers, chips: [], states, byId, folded, tray, trips, trace, hatches, peeks };
 }
 
 /** The prototype's node rings: solid purple while someone writes there, warm while someone there
@@ -271,6 +277,32 @@ function TripShape({ trip: p, sel }: { trip: Trip; sel: boolean }) {
       ))}
     </>
   );
+}
+
+/** A door's ladder as it is drawn (./hatch.ts `ladderShape`), in figure units with the floor at the origin: two rails and the rungs, and where the ladder goes down through a
+ * node's top edge a dark slot for the hole; where it hangs from above (the sub-diagram's canvas) a short bar where it comes in. Placed by the frame job. */
+function HatchShape({ side }: { side: Side }) {
+  const l = ladderShape(side === "below" ? 1 : -1);
+  const w = LADDER_HALF;
+  return (
+    <g fill="none" stroke="var(--fg-muted)" strokeLinecap="round">
+      <path d={`M${-w} ${px(l.top)}V0M${w} ${px(l.top)}V0`} strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
+      <path d={l.rungs.map((y) => `M${-w} ${px(y)}H${w}`).join("")} strokeWidth={1} vectorEffect="non-scaling-stroke" />
+      {side === "below" ? <rect x={-w - 3} y={-1.2} width={2 * w + 6} height={2.4} rx={1.2} fill="var(--fig-ink)" stroke="none" /> : <path d={`M${-w - 4} ${px(l.top)}H${w + 4}`} strokeWidth={1.2} vectorEffect="non-scaling-stroke" />}
+    </g>
+  );
+}
+
+/** The trip through a door for a figure at k (./rig.ts `planDoor`), kept: the frame job asks for it every frame. */
+const doorTrips = new Map<string, Trip>();
+function doorTrip(k: number, dir: 1 | -1, leaving: boolean, f: 1 | -1): Trip {
+  const key = `${k.toFixed(3)}|${dir}|${leaving ? 1 : 0}|${f}`;
+  let t = doorTrips.get(key);
+  if (!t) {
+    if (doorTrips.size > 400) doorTrips.clear();
+    doorTrips.set(key, (t = planDoor(k, dir, leaving, f)));
+  }
+  return t;
 }
 
 const KIND_ICON: Record<string, typeof IconEye> = { read: IconEye, write: IconCode, exec: IconTerminal, think: IconCpu, wait: IconMessage, idle: IconCheck, walk: IconPath, delegate: IconSend, handoff: IconSend };
@@ -404,8 +436,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const clip = useMemo(() => clipPath({ x: 0, y: 0, w: a.width, h: a.height }, chrome), [a.width, a.height, chrome]);
 
   // ── structure: a few times a second at most ──
-  const inputs = useRef({ runs, ctx, conflicts, figuresOn, fo, only, pane });
-  inputs.current = { runs, ctx, conflicts, figuresOn, fo, only, pane };
+  const inputs = useRef({ runs, ctx, conflicts, figuresOn, fo, fl, only, pane });
+  inputs.current = { runs, ctx, conflicts, figuresOn, fo, fl, only, pane };
   const rebuild = useRef(() => {});
   useEffect(() => {
     let last = 0;
@@ -414,7 +446,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
       last = performance.now();
       pending = 0;
       const i = inputs.current;
-      setSnap(snapshot(i.runs, clock.time(), i.ctx, i.conflicts, i.figuresOn, i.fo.selected, { traced: i.fo.traced, turn: i.fo.turn, only: i.only, route: !i.pane, now: Date.now() }));
+      setSnap(snapshot(i.runs, clock.time(), i.ctx, i.conflicts, i.figuresOn, i.fo.selected, { traced: i.fo.traced, followed: i.fl.run, turn: i.fo.turn, only: i.only, route: !i.pane, now: Date.now() }));
     };
     const kick = () => {
       if (pending) return;
@@ -427,7 +459,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
     return () => (clearInterval(timer), clearTimeout(pending), offC());
   }, []);
   // data or settings changed: rebuild (same rate limit)
-  useEffect(() => rebuild.current(), [runs, ctx, conflicts, figuresOn, fo.selected, fo.traced, fo.turn]);
+  useEffect(() => rebuild.current(), [runs, ctx, conflicts, figuresOn, fo.selected, fo.traced, fo.turn, fl.run]);
 
   // ── imperative nodes: figures and tethers, created per snapshot, moved per frame ──
   const rootEl = useRef<HTMLDivElement>(null);
@@ -443,6 +475,10 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const gazes = useRef(new Map<string, { el: SVGPathElement; vis: number; to: { x: number; y: number } | null; a: string }>());
   /** The drawn trips' groups (bridges and ladders), faded per frame (with the opacity last set). */
   const tripEls = useRef(new Map<string, { el: SVGGElement; a: string }>());
+  /** The ladders and holes at doors (./hatch.ts): each group's opacity and transform as last set. And the heads looking out of the holes, by place. */
+  const hatchEls = useRef(new Map<string, { el: SVGGElement; a: string; tf: string }>());
+  const peekLayer = useRef<SVGGElement>(null);
+  const peekNodes = useRef(new Map<string, { id: string; node: PeekNode }>());
   /** 追踪: each way's line (how far along it was last drawn), and the marks in screen space — a stop's
    * circle (at its node's top-left corner, `dy` px down for a later visit; filled once reached, `at`)
    * and a sub-agent's avatar halfway out on its errand. The frame job grows the lines, fills the
@@ -535,8 +571,29 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         tethers.current.set(x.child, p);
       }
   }, [snap]);
+  // the heads looking out of holes: one per hole, its owner's (a new owner, a new head)
+  useLayoutEffect(() => {
+    const layer = peekLayer.current;
+    if (!layer) return;
+    const want = new Map(snap.peeks.map((p) => [p.place, p.id]));
+    for (const [place, x] of peekNodes.current)
+      if (want.get(place) !== x.id) {
+        x.node.g.remove();
+        peekNodes.current.delete(place);
+      }
+    for (const [place, id] of want) {
+      const f = snap.byId.get(id);
+      if (!f || peekNodes.current.has(place)) continue;
+      const where = snap.states.get(id)?.portal?.label;
+      const node = new PeekNode(id, f.run.agent, `${f.run.name} 在子图${where ? `「${where}」` : ""}里 · 点一下跟随`, (rid) => follow.start(rid));
+      layer.appendChild(node.g);
+      peekNodes.current.set(place, { id, node });
+    }
+  }, [snap]);
   useEffect(
     () => () => {
+      for (const x of peekNodes.current.values()) x.node.g.remove();
+      peekNodes.current.clear();
       for (const n of nodes.current.values()) n.g.remove();
       nodes.current.clear();
       for (const x of gazes.current.values()) x.el.remove();
@@ -637,6 +694,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         const st = stateAt(run, t, c);
         if (!st.present) {
           n.place(0, 0, k, 0, false);
+          n.cut(null);
           positions.delete(run.id); // not drawn in this view: the talk box is not hosted here
           continue;
         }
@@ -646,24 +704,34 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         const bump = conflict && t - conflict.start < 800 ? Math.sin(Math.PI * Math.min(1, (t - conflict.start) / 800)) : 0;
         const fresh = sp.t === null;
         const kk = k * (x.f.depth > 0 ? SUB_SCALE : 1);
+        // on a door's ladder: the climb (./rig.ts planDoor) about the hole, cut off at the floor line — not shrunk, not faded
+        const door = doorClimb(st, still);
         // a glance: it looks at the middle of the node's top edge
         const gb = st.glance ? g.boxOf(st.glance.place) : undefined;
         const gaze = gb ? { x: gb.x + gb.w / 2, y: gb.y } : null;
-        const j = solve({ t, wall: anim, dt: step, reset, pose: st.pose, since: st.since, dock: g.dock(st.at), trip: st.trip, k: kk, gaze, still, conflict: !!conflict && !!st.seg, bump, unknownReceipt: st.receipt === "unknown", coarse: !!run.coarse, readingWhileWalking: st.seg?.kind === "read", gest: gestureFor({ run, st, t, wall: anim, still, k: kk, ctx: c, positions, conflict, pointer: n.pointer }) }, sp);
+        const d0 = g.dock(x.place);
+        const here = g.dock(st.at); // where it stands (the hole, on a ladder)
+        let j: ReturnType<typeof solve>;
+        if (door) {
+          // facing the way it came to the ladder (going in) or the way it will walk on (coming out)
+          const face = (door.leaving ? st.trip?.phases[st.trip.phases.length - 1]?.f : st.trip?.f) ?? 1;
+          j = solve({ t: door.t, wall: anim, dt: step, reset, pose: st.pose, since: st.since, dock: { x: 0, y: 0 }, trip: doorTrip(kk, door.dir, door.leaving, face), k: kk, still, coarse: !!run.coarse }, sp);
+        } else j = solve({ t, wall: anim, dt: step, reset, pose: st.pose, since: st.since, dock: here, trip: st.trip, k: kk, gaze, still, conflict: !!conflict && !!st.seg, bump, unknownReceipt: st.receipt === "unknown", coarse: !!run.coarse, readingWhileWalking: st.seg?.kind === "read", gest: gestureFor({ run, st, t, wall: anim, still, k: kk, ctx: c, positions, conflict, pointer: n.pointer }) }, sp);
         // Side by side at a node: each figure has its own free spot (geometry.spots: along the top
         // edge, else beside or under the node, clear of text and icons); the offset from the trip's
         // dock glides — to 0 while it is on a trip, so it keeps to the bridges and ladders, and back
-        // to its spot after — so an arrival or a departure never jumps.
+        // to its spot after — so an arrival or a departure never jumps. (On a door's ladder it goes to the hole the same way: a figure that stood off to one side slides over as it takes hold.)
         let off = offs.current.get(run.id);
         if (!off) offs.current.set(run.id, (off = { x: new Glide(), y: new Glide() }));
-        const d0 = g.dock(x.place);
-        const spot = st.trip && t < st.trip.t1 ? d0 : (g.spots(x.place, k, counts.get(x.place) ?? 1)[x.slot] ?? d0);
+        const spot = door || (st.trip && t < st.trip.t1) ? d0 : (g.spots(x.place, k, counts.get(x.place) ?? 1)[x.slot] ?? d0);
         const ns = anim / 1000;
         const jumpOff = still || fresh || reset;
         const dx = jumpOff ? off.x.reset(spot.x - d0.x, ns) : off.x.step(ns, spot.x - d0.x);
         const dy = jumpOff ? off.y.reset(spot.y - d0.y, ns) : off.y.step(ns, spot.y - d0.y);
-        let wx = j.root.x + dx;
-        let wy = j.root.y + dy;
+        let wx = (door ? here.x : 0) + j.root.x + dx;
+        let wy = (door ? here.y : 0) + j.root.y + dy;
+        if (door) n.cut(door.dir === 1 ? "above" : "below", (here.y + cutLine(door.dir, kk) - wy) / kk);
+        else n.cut(null);
         let alpha = st.fade;
         if (still) {
           const xf = crossfade(moving, run.id, wx, wy, anim);
@@ -672,9 +740,10 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
           alpha *= xf.a;
         }
         const dim = dimmed(run.id);
-        n.place(wx, wy, kk * (st.portalScale ?? 1), alpha, dim, st.pose === "idle");
+        n.place(wx, wy, kk, alpha, dim, st.pose === "idle");
         n.draw(j, anim, still);
-        heads.current.set(run.id, { x: wx + j.hx * kk, y: wy + j.hy * kk, r: RIG.head * kk, mark: !!j.mark, k: kk, sc: fsc, walking: j.walking, root: { x: wx, y: wy } });
+        // (its bubble stays at the hole while it climbs, not going down with it)
+        heads.current.set(run.id, { x: wx + j.hx * kk, y: wy + j.hy * kk, r: RIG.head * kk, mark: !!j.mark, k: kk, sc: fsc, walking: j.walking && !door, root: door ? here : { x: wx, y: wy } });
         alphas.set(run.id, alpha / Math.max(0.001, st.fade));
         positions.set(run.id, { x: wx, y: wy });
         // the glance line, from the edge of the head to the node (fading in and out over ~150 ms)
@@ -699,6 +768,30 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         const d = tripEls.current.get(x.key);
         const a = (tripAlpha(x.trip, t) * (dimmed(x.run) ? DIM : 1)).toFixed(3);
         if (d && a !== d.a) d.el.setAttribute("opacity", (d.a = a));
+      }
+      // ladders and holes at doors: as visible as their climbers make them, at the hole; and the heads looking out of the holes
+      for (const h of s.hatches) {
+        const e = hatchEls.current.get(`${h.place}|${h.side}`);
+        if (!e) continue;
+        let vis = 0;
+        let all = true;
+        for (const id of h.ids) {
+          const run = s.byId.get(id)?.run;
+          if (!run) continue;
+          vis = Math.max(vis, hatchVisAt(stateAt(run, t, c), h.place, h.side, t, still));
+          all &&= dimmed(id);
+        }
+        const d0 = g.dock(h.place);
+        const tf = `translate(${px(d0.x)} ${px(d0.y)}) scale(${px(k)})`;
+        if (tf !== e.tf) e.el.setAttribute("transform", (e.tf = tf));
+        const a = (vis * (all ? DIM : 1)).toFixed(3);
+        if (a !== e.a) e.el.setAttribute("opacity", (e.a = a));
+      }
+      for (const [place, x] of peekNodes.current) {
+        const f = s.byId.get(x.id);
+        if (!f) continue;
+        const d0 = g.dock(place);
+        x.node.place(d0.x, d0.y, k * (f.depth > 0 ? SUB_SCALE : 1), peekRise(stateAt(f.run, t, c), still), still, dimmed(x.id), focus.get().selected === x.id);
       }
       for (const tt of s.tethers) {
         const p = tethers.current.get(tt.child);
@@ -976,6 +1069,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   // The trace's marks: each stop's number at its node's top-left corner (a later visit to the same node
   // below the earlier one, down its left edge); beside the first, just inside the node, the sub-diagram
   // nodes it went to through that node's entry; each sub-agent's avatar halfway out on its errand.
+  /** Which node's hole has a head looking out of it, and whose: the entrance mark of a node whose only agent that is has nothing more to say (./EntryMarks.tsx). */
+  const peekMap = useMemo(() => new Map(snap.peeks.map((p) => [p.place, p.id])), [snap.peeks]);
   const trv = traceShown?.tr ?? null;
   const visits = new Map<string, number>();
   const stopMarks = (trv?.stops ?? []).flatMap((s, i) => {
@@ -1040,6 +1135,23 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
               </g>
             ))}
           </g>
+          <g className="ws-hatches">
+            {snap.hatches.map((h) => {
+              const key = `${h.place}|${h.side}`;
+              return (
+                <g
+                  key={key}
+                  opacity={0}
+                  ref={(el) => {
+                    if (el) hatchEls.current.set(key, { el, a: "0", tf: "" });
+                    else hatchEls.current.delete(key);
+                  }}
+                >
+                  <HatchShape side={h.side} />
+                </g>
+              );
+            })}
+          </g>
           {trv && (
             <g className="ws-trace" data-exit={traceOut || undefined}>
               {errands.map((k) => (k.d ? <path key={k.id} className="ws-trace-sub" d={k.d} /> : null))}
@@ -1073,10 +1185,11 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
             onPointerOver={(e) => focus.hover((e.target as Element).closest("[data-run]")?.getAttribute("data-run") ?? null)}
             onPointerLeave={() => focus.hover(null)}
           />
+          <g ref={peekLayer} className="ws-peeks" />
         </g>
       </svg>
       {figuresOn && <TalkBubble canvasId={view.id} obstacles={() => (geomRef.current.tray ? [...geomRef.current.obstacles, geomRef.current.tray] : geomRef.current.obstacles)} />}
-      <EntryMarks view={view} />
+      <EntryMarks view={view} peeks={peekMap} />
       {snap.tray && (
         <div className="ws-tray" ref={trayEl}>
           <b>图外</b>

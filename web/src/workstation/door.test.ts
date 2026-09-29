@@ -1,11 +1,11 @@
 // 进出子图 (./place.ts stateAt with `ctx.door`; web/docs/workstation.md §评论联动与进出子图): a worker whose
-// file lies in a node's sub-diagram walks to that node and goes in — shrinking and fading at the node's top
-// edge over DOOR_MS — and is not on this canvas while it works in there; it comes back out the same way
-// before it walks on. On the sub-diagram's own canvas it comes in by the entrance (the node nearest the top
-// left) and walks to its node, and leaves the same way. Before its first file a worker is where that file
-// is. Still a pure function of the log and t; without `ctx.door` nothing changes.
+// file lies in a node's sub-diagram walks to that node and goes in — down a ladder from the node's top edge over
+// DOOR_MS, the body cut off by that line (the trip itself: ./ladder.test.ts) — and is not on this canvas while it
+// works in there; it comes back up the ladder before it walks on. On the sub-diagram's own canvas it comes in by the
+// entrance (the node nearest the top left), down a ladder from above, and walks to its node, and leaves up it. Before
+// its first file a worker is where that file is. Still a pure function of the log and t; without `ctx.door` nothing changes.
 import { describe, expect, it } from "vitest";
-import { DOOR_MS, DOOR_SCALE, HANDOFF_MS, OUTSIDE, stateAt, type Ctx } from "./place.ts";
+import { DOOR_MS, HANDOFF_MS, OUTSIDE, stateAt, type Ctx } from "./place.ts";
 import type { RunSeg, WorkRun } from "./runs/types.ts";
 import { entranceOf } from "./scenePlaces.ts";
 
@@ -50,34 +50,32 @@ const sub = (runs: WorkRun[], x: Partial<Ctx> = {}): Ctx => ({
 const PI = run([seg("think", 0, 2), seg("read", 2, 5, "server/db/models.py"), seg("write", 5, 10, "server/users.py"), seg("think", 10, 11), seg("read", 11, 14, "server/db/x.py")]);
 
 describe("going into a node's sub-diagram (the main canvas)", () => {
-  it("walks to the node, then goes in — shrinking and fading at its top edge over DOOR_MS — and is then not on this canvas", () => {
+  it("walks to the node, then goes down a ladder from its top edge over DOOR_MS — as big and as solid as ever — and is then not on this canvas", () => {
     const c = main([PI]);
     const walking = stateAt(PI, 5.1 * S, c);
     expect(walking).toMatchObject({ present: true, at: "api", from: "db", pose: "walk", fade: 1 });
     expect(walking.portalPhase).toBeUndefined();
     const arrive = walking.trip!.t1;
     const going = stateAt(PI, arrive + DOOR_MS / 4, c);
-    expect(going).toMatchObject({ present: true, at: "api", pose: "write", portalPhase: "in" });
-    expect(going.fade).toBeCloseTo(0.75, 5);
-    expect(going.portalScale).toBeGreaterThan(DOOR_SCALE);
-    expect(going.portalScale).toBeLessThan(1);
+    expect(going).toMatchObject({ present: true, at: "api", pose: "write", portalPhase: "in", portalSide: "below", fade: 1 });
+    expect(going.portalT).toBeCloseTo(DOOR_MS / 4, 5); // how far down the ladder it is: the drawing cuts it off at the floor line
+    expect(going).not.toHaveProperty("portalScale");
     expect(stateAt(PI, arrive + DOOR_MS + 1, c)).toMatchObject({ present: false, at: "api", portalPhase: "behind", portal: { canvasId: "c-api", label: "用户模块" } });
     // thinking in there: still in there
     expect(stateAt(PI, 10.5 * S, c)).toMatchObject({ present: false, portalPhase: "behind" });
   });
 
-  it("comes back out the same way at the node, and only then sets off", () => {
+  it("comes back up the ladder at the node, and only then sets off", () => {
     const c = main([PI]);
     const out = stateAt(PI, 11 * S + DOOR_MS / 4, c);
-    expect(out).toMatchObject({ present: true, at: "api", pose: "read", portalPhase: "out" });
-    expect(out.fade).toBeCloseTo(0.25, 5);
-    expect(out.portalScale).toBeGreaterThan(DOOR_SCALE);
-    expect(out.portalScale).toBeLessThan(1);
+    expect(out).toMatchObject({ present: true, at: "api", pose: "read", portalPhase: "out", portalSide: "below", fade: 1 });
+    expect(out.portalT).toBeCloseTo(DOOR_MS / 4, 5);
+    expect(out.portalBelow).toBeGreaterThan(0); // how long it was all the way down: its head looked out of the hole meanwhile
+    expect(out).not.toHaveProperty("portalScale");
     const walk = stateAt(PI, 11 * S + DOOR_MS + 100, c);
     expect(walk).toMatchObject({ present: true, at: "db", from: "api", pose: "walk", fade: 1 });
     expect(walk.trip!.t0).toBe(11 * S + DOOR_MS);
     expect(walk.portalPhase).toBeUndefined();
-    expect(walk.portalScale ?? 1).toBe(1);
   });
 
   it("before its first file a worker is where that file is: a stretch that starts in a sub-diagram starts in there", () => {
@@ -103,40 +101,38 @@ describe("going into a node's sub-diagram (the main canvas)", () => {
     expect(s.portalPhase).toBeUndefined();
   });
 
-  it("reduced motion: no walk; the door fades without the shrinking", () => {
+  it("reduced motion: no walk, no ladder; the door only fades", () => {
     const c = main([PI], { reduced: true });
     const going = stateAt(PI, 5 * S + DOOR_MS / 2, c);
     expect(going).toMatchObject({ present: true, at: "api", portalPhase: "in", trip: null });
     expect(going.fade).toBeCloseTo(0.5, 5);
-    expect(going.portalScale ?? 1).toBe(1);
     expect(stateAt(PI, 5 * S + DOOR_MS + 1, c).present).toBe(false);
     const out = stateAt(PI, 11 * S + DOOR_MS / 2, c);
     expect(out).toMatchObject({ present: true, portalPhase: "out" });
-    expect(out.portalScale ?? 1).toBe(1);
   });
 });
 
 describe("on the sub-diagram's own canvas", () => {
-  it("comes in by the entrance — appearing and growing there — then walks to its node", () => {
+  it("comes in by the entrance — down a ladder from above it — then walks to its node", () => {
     const c = sub([PI]);
     // reading the database, up on the main canvas
     expect(stateAt(PI, 3 * S, c)).toMatchObject({ present: false, at: "app", portalPhase: "behind" });
     const coming = stateAt(PI, 5 * S + DOOR_MS / 4, c);
-    expect(coming).toMatchObject({ present: true, at: "app", portalPhase: "out", trip: null });
-    expect(coming.fade).toBeCloseTo(0.25, 5);
+    expect(coming).toMatchObject({ present: true, at: "app", portalPhase: "out", portalSide: "above", trip: null, fade: 1 });
+    expect(coming.portalT).toBeCloseTo(DOOR_MS / 4, 5);
     const w = stateAt(PI, 5 * S + DOOR_MS + 100, c);
     expect(w).toMatchObject({ present: true, at: "users", from: "app", pose: "walk" });
     expect(w.trip!.t0).toBe(5 * S + DOOR_MS);
     expect(stateAt(PI, w.trip!.t1 + 1, c)).toMatchObject({ at: "users", pose: "write", w: 1 });
   });
 
-  it("leaves by the entrance: walks there and goes in", () => {
+  it("leaves by the entrance: walks there and climbs up the ladder", () => {
     const c = sub([PI]);
     const w = stateAt(PI, 11.1 * S, c);
     expect(w).toMatchObject({ present: true, at: "app", from: "users", pose: "walk" });
     expect(w.portalPhase).toBeUndefined();
     const arrive = w.trip!.t1;
-    expect(stateAt(PI, arrive + DOOR_MS / 2, c)).toMatchObject({ present: true, at: "app", portalPhase: "in" });
+    expect(stateAt(PI, arrive + DOOR_MS / 2, c)).toMatchObject({ present: true, at: "app", portalPhase: "in", portalSide: "above" });
     expect(stateAt(PI, arrive + DOOR_MS + 1, c)).toMatchObject({ present: false, portalPhase: "behind" });
   });
 
