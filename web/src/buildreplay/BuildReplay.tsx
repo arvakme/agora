@@ -14,7 +14,7 @@ import { RunsSource } from "../workstation/runs/store";
 import { presenceAt, subviewCtx } from "../workstation/subview";
 import { BuildStage } from "./BuildStage";
 import { geometryWalk } from "./geometryWalk";
-import { beatAt, beatOfStep, defaultSpeed, planBuild, SPEEDS, type Plan } from "./plan";
+import { beatAt, beatOfStep, defaultSpeed, figuresAt, planBuild, runId as figureId, SPEEDS, type Mode, type Plan } from "./plan";
 import { BuildWorld, realId, worldId } from "./sources";
 import { buildReplay, useBuildReplay } from "./store";
 import type { BuildTimeline } from "./types";
@@ -38,8 +38,29 @@ export function BuildReplayHost() {
 
 type Load = { state: "loading" } | { state: "error"; text: string } | { state: "ready"; tl: BuildTimeline };
 
+const MODE_KEY = "agora.buildReplayMode";
+/** 精简 (the default) or 逐步, as this browser last chose. */
+function readMode(): Mode {
+  try {
+    return localStorage.getItem(MODE_KEY) === "steps" ? "steps" : "brief";
+  } catch {
+    return "brief";
+  }
+}
+/** What the player starts from: the mode, the step to be at (null: the start) and whether it plays. Changing the mode keeps the step being watched. */
+type Start = { mode: Mode; step: number | null; playing: boolean };
+
 function BuildReplay({ canvas, onClose }: { canvas: string; onClose: () => void }) {
   const [load, setLoad] = useState<Load>({ state: "loading" });
+  const [start, setStart] = useState<Start>(() => ({ mode: readMode(), step: buildReplay.step(), playing: buildReplay.step() == null }));
+  const setMode = (mode: Mode, step: number, playing: boolean) => {
+    try {
+      localStorage.setItem(MODE_KEY, mode);
+    } catch {
+      /* private mode: this time only */
+    }
+    setStart({ mode, step, playing });
+  };
   useEffect(() => {
     const ctl = new AbortController();
     setLoad({ state: "loading" });
@@ -58,7 +79,7 @@ function BuildReplay({ canvas, onClose }: { canvas: string; onClose: () => void 
   return (
     <div className="br-root" role="dialog" aria-label="这张图是怎么搭起来的">
       {load.state === "ready" && load.tl.steps.length ? (
-        <Player tl={load.tl} onClose={onClose} />
+        <Player key={start.mode} tl={load.tl} start={start} onMode={setMode} onClose={onClose} />
       ) : (
         <div className="br-empty">
           <button className="icon-btn br-x" onClick={onClose} aria-label="关闭">
@@ -73,15 +94,14 @@ function BuildReplay({ canvas, onClose }: { canvas: string; onClose: () => void 
 
 const fmt = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
 
-function Player({ tl, onClose }: { tl: BuildTimeline; onClose: () => void }) {
-  const plan = useMemo(() => planBuild(tl, { ...geometryWalk(tl), author: GUEST }), [tl]);
+function Player({ tl, start, onMode, onClose }: { tl: BuildTimeline; start: Start; onMode: (m: Mode, step: number, playing: boolean) => void; onClose: () => void }) {
+  const plan = useMemo(() => planBuild(tl, { ...geometryWalk(tl), author: GUEST, mode: start.mode }), [tl, start.mode]);
   const world = useMemo(() => new BuildWorld(tl, plan, EPOCH), [tl, plan]);
-  const [playing, setPlaying] = useState(() => buildReplay.step() == null);
+  const [playing, setPlaying] = useState(start.playing);
   const [speed, setSpeed] = useState(() => defaultSpeed(plan.length));
   // a comment's moment opens it there: paused on the step it was made at
   const from = useMemo(() => {
-    const step = buildReplay.step();
-    return step == null ? 0 : (beatOfStep(plan, step)?.start ?? 0);
+    return start.step == null ? 0 : (beatOfStep(plan, start.step)?.start ?? 0);
   }, [plan]);
   const [t, setT] = useState(from);
   const main = worldId(tl.root);
@@ -118,7 +138,9 @@ function Player({ tl, onClose }: { tl: BuildTimeline; onClose: () => void }) {
 
   const beat = beatAt(plan, t);
   const actor = plan.actors.find((a) => a.key === beat?.actor) ?? plan.actors[0];
-  const runId = `build:${actor?.key}`;
+  const figures = figuresAt(plan, t);
+  const runId = figureId(actor?.key ?? "", beat?.group ?? 0);
+  const onCanvas = new Set(figures.values());
   const nst = useSyncExternalStore(world.nested.subscribe, world.nested.get);
   const runs = world.runs.get();
 
@@ -174,7 +196,7 @@ function Player({ tl, onClose }: { tl: BuildTimeline; onClose: () => void }) {
                 run={runId}
                 size={size}
                 out={l.out}
-                only={(id) => id === runId || !!ps.get(id)?.levels?.some((lv) => lv.canvasId === l.canvasId)}
+                only={(id) => onCanvas.has(id) && (id === runId || !!ps.get(id)?.levels?.some((lv) => lv.canvasId === l.canvasId))}
               />
             ))}
           </div>
@@ -187,6 +209,13 @@ function Player({ tl, onClose }: { tl: BuildTimeline; onClose: () => void }) {
           <button className="btn sm primary" onClick={toggle} aria-label={playing ? "暂停" : "播放"}>
             {playing ? "暂停" : t >= plan.length ? "重看" : "播放"}
           </button>
+          <div className="seg br-mode" role="radiogroup" aria-label="演法" title="精简：小人在一片区域只走一次，够得着的就站着画，太远的直接换位置；逐步：每一件事都走到那里再画">
+            {(["brief", "steps"] as const).map((m) => (
+              <button key={m} role="radio" aria-checked={start.mode === m} data-on={start.mode === m} onClick={() => start.mode !== m && onMode(m, beat?.step ?? 0, playing)}>
+                {m === "brief" ? "精简" : "逐步"}
+              </button>
+            ))}
+          </div>
           <div className="seg br-speed" role="radiogroup" aria-label="倍速">
             {SPEEDS.map((s) => (
               <button key={s} role="radio" aria-checked={speed === s} data-on={speed === s} onClick={() => faster(s)}>

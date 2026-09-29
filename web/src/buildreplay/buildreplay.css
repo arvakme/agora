@@ -39,3 +39,5 @@
 .br-comment label em { font-style: normal; margin-left: 6px; color: var(--fg-subtle); }
 .br-comment textarea { resize: none; width: 100%; box-sizing: border-box; padding: 6px 8px; border: 0; border-radius: var(--r-md); box-shadow: var(--box); background: var(--bg); color: var(--fg); font: inherit; font-size: var(--text-sm); }
 .br-comment-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); font-size: var(--text-xs); color: var(--fg-muted); }
+
+.br-mode { flex: none; }
