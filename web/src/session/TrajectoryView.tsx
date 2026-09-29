@@ -231,7 +231,17 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
     setTimeout(() => scroll.current?.querySelector(`[data-traj-turn="${focusTurn.n}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" }), 60);
   }, [focusTurn?.key]);
 
-  const [flash, setFlash] = useState<string | null>(null);
+  const [flash, setFlash] = useState<ReadonlySet<string>>(new Set());
+  // A stop clicked on the canvas names all of its calls (`itemIds`, ../workstation/trace.ts itemsOfStop): they light together.
+  const stopIds = useRef<{ itemId: string; ids: string[] } | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ sessionId: string; itemId: string | null; itemIds?: string[] }>).detail;
+      stopIds.current = d.sessionId === sessionId && d.itemId && d.itemIds?.length ? { itemId: d.itemId, ids: d.itemIds } : null;
+    };
+    addEventListener("agora:step", on, true); // before SessionPane's own listener turns it into `focusItem`
+    return () => removeEventListener("agora:step", on, true);
+  }, [sessionId]);
   useEffect(() => {
     if (!focusItem) return;
     const turn = turns.find((t) => t.steps.some((s) => s.records.some((r) => r.id === focusItem.id)))?.n ?? focusItem.n;
@@ -244,10 +254,11 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
     setQuery("");
     setRange(null);
     const go = setTimeout(() => {
+      const many = stopIds.current?.itemId === focusItem.id ? stopIds.current.ids : [focusItem.id];
       scroll.current?.querySelector(`[data-rec-id="${CSS.escape(focusItem.id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
-      setFlash(focusItem.id);
+      setFlash(new Set(many));
     }, 80);
-    const off = setTimeout(() => setFlash(null), 1900);
+    const off = setTimeout(() => setFlash(new Set()), 1500);
     return () => (clearTimeout(go), clearTimeout(off));
   }, [focusItem?.key]);
   // a row under the pointer lights its node and stop on the canvas; the trace's stop hovered there lights the row
@@ -308,7 +319,7 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
               {steps.map((s) => (
                 <StepGroup key={s.n} step={s}>
                   {s.records.map((r) => (
-                    <RecordRow key={r.id} sessionId={sessionId} r={r} selected={selected === r.id} onSelect={() => setSelected(selected === r.id ? null : r.id)} agent={agent} future={cutoff != null && r.at > cutoff} flash={flash === r.id} hot={hovered === r.id} />
+                    <RecordRow key={r.id} sessionId={sessionId} r={r} selected={selected === r.id} onSelect={() => setSelected(selected === r.id ? null : r.id)} agent={agent} future={cutoff != null && r.at > cutoff} flash={flash.has(r.id)} hot={hovered === r.id} />
                   ))}
                 </StepGroup>
               ))}

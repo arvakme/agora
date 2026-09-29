@@ -17,6 +17,8 @@ import { AGENT_NAMES, agentName, useAgents } from "../session/agents";
 import { AgentAvatar } from "../session/AgentAvatar";
 import { openSessions, ui } from "../session/ui";
 import { pointerFollow } from "../pointer/follow";
+import { topicOf } from "../workspace/model";
+import { collapseSuperseded, handLabel, PIN_LABEL, pinState } from "./handoffState";
 import "./handoff.css";
 import { AnchorTag, type AnchorName } from "./AnchorTag";
 import type { CardPos } from "./CommentLayer";
@@ -29,7 +31,9 @@ function useHandTarget(canvasId: string) {
   useSyncExternalStore(openSessions.subscribe, openSessions.get);
   void all;
   const { sid, live } = handTarget(canvasId);
-  return { sid, many: live.length > 1, name: sid ? agentName(ag.bindings[sid]?.agent) : undefined };
+  // with several sessions the button also says which one: what it is about (its first message, as its tab is named)
+  const sessionName = sid ? topicOf(ag.items[sid]?.find((it) => it.kind === "user" && it.text)?.text) || undefined : undefined;
+  return { sid, many: live.length > 1, name: sid ? agentName(ag.bindings[sid]?.agent) : undefined, sessionName };
 }
 
 export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
@@ -73,8 +77,7 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
           <span className="tcard-actions">
             {!t.resolved && !GUEST && (
               <button className="btn sm primary tagent" disabled={running || st.status === "lost"} onClick={() => void handToSession(api, store, t.id)} title={to.sid ? `交给 ${to.name}（你正看着的会话，否则这块画布上最近活动、还能收消息的那个）` : "这块画布还没有能收消息的会话：点开后选一个 agent"}>
-                <IconSend size={14} />{running ? "处理中" : "交给 Agent"}
-                {!running && to.many && <small className="tagent-to">交给 {to.name}</small>}
+                <IconSend size={14} />{handLabel({ running, ...to })}
               </button>
             )}
             {!GUEST && (
@@ -103,7 +106,11 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
         )}
         <AnimatePresence initial={false}>
           {full &&
-            rest.map((m) => (
+            collapseSuperseded(rest, to.name).map((m) => "folded" in m ? (
+              <Reveal key={m.id}>
+                <div className="tfolded" title="这条之前没能交出去，后来已经重新交给 Agent 并有了答复">{m.text}</div>
+              </Reveal>
+            ) : (
               <Reveal key={m.id}>
                 <Row m={m} tools={{ store, threadId: t.id }} onUndo={GUEST ? undefined : () => undoAgent(api, store, t.id, m.id)} onSwitch={!GUEST && m.action && m.id === lastId && !running ? () => void handToSession(api, store, t.id, { choose: true }) : undefined} />
               </Reveal>
@@ -121,6 +128,7 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover }: {
           )}
         </AnimatePresence>
       </div>
+      {full && <div className="tstate" data-state={pinState(t)}>{PIN_LABEL[pinState(t)]}</div>}
       {full && <Reply resolved={t.resolved} onSend={(text) => store.reply(t.id, { author: "you", text })} />}
     </motion.div>
   );
