@@ -279,3 +279,31 @@ def test_skill_install_cli(store):
     got = json.loads(r.stdout)["installed"]
     assert got[0]["path"].endswith(".agents/skills/agora") and got[0]["state"] == "created"
     assert (store.root / ".agents" / "skills" / "agora" / "references" / "canvas-ops.md").exists()
+
+
+async def test_a_turn_that_arrives_whole_in_one_read_shows_its_transcript_before_it_is_done(store, tmp_path, monkeypatch):
+    """The user's message and the turn's end can land in one read of the log: the page must get the transcript first,
+    then "done" (it reads the finished turn when done comes)."""
+    from server.canvas.sessions import Pending
+
+    log = tmp_path / "native.jsonl"
+    log.write_text("")
+    monkeypatch.setattr(agents, "locate_log", lambda kind, nid, root=None, home=None, hint=None: agents.LogLookup("found", log, (log,)) if nid else agents.LogLookup("missing"))
+    store.bind("s-o", agent="pi", native_id="n-1")
+    hub = AgentHub(store)
+    sub = hub.subscribe(executor=False)
+    lv = hub._get("s-o")
+    lv.awaiting.append(Pending(send_id="m-1", prompt=agora_prompt("一句", canvas_id="c1", canvas_name="架构图"), at=time.time(), delivered_at=time.time()))
+
+    def rec(role, text, **extra):
+        return json.dumps({"type": "message", "id": role, "timestamp": "2026-09-29T06:00:00.000Z", "message": {"role": role, "content": [{"type": "text", "text": text}], **extra}}, ensure_ascii=False) + "\n"
+
+    with log.open("a") as fh:  # both records before the hub reads once
+        fh.write(rec("user", agora_prompt("一句", canvas_id="c1", canvas_name="架构图")) + rec("assistant", "echo: 一句", stopReason="stop"))
+    await asyncio.to_thread(hub._follow, "s-o", lv)
+    evs = []
+    while not sub.q.empty():
+        evs.append(sub.q.get_nowait())
+    kinds = [e["t"] for e in evs if e["t"] in ("transcript", "done")]
+    order = [e["t"] for e in evs if e["t"] == "done" or (e["t"] == "transcript" and any(i["kind"] == "user" for i in e["items"]))]
+    assert order == ["transcript", "done"], kinds
