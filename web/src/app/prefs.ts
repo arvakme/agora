@@ -3,20 +3,22 @@
 //   hints        — Excalidraw's hint line under the toolbar outside first run / empty canvases;
 //   footprints   — 工位视图: faint footprints where workers stood and wrote (on by default; trial,
 //                  web/docs/workstation.md「新想法」);
+//   followCamera — 工位视图: the canvas's camera follows the main agent (on by default; the person's own
+//                  pausing of it is not kept, web/docs/workstation.md §10 默认跟随);
 //   notifyWait   — a system notification when an agent starts waiting on you while the page is
 //                  hidden (off by default; turning it on asks the browser; trial, same section).
 // A convenience kept in localStorage (the page works without it); shared by the owner's page and
 // share guests.
 import { useSyncExternalStore } from "react";
 
-export type Prefs = { showResolved: boolean; hints: boolean; footprints: boolean; notifyWait: boolean };
+export type Prefs = { showResolved: boolean; hints: boolean; footprints: boolean; followCamera: boolean; notifyWait: boolean };
 const KEY = "agora.view";
 function read(): Prefs {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? "{}") as Partial<Prefs>;
-    return { showResolved: !!v.showResolved, hints: !!v.hints, footprints: v.footprints !== false, notifyWait: !!v.notifyWait };
+    return { showResolved: !!v.showResolved, hints: !!v.hints, footprints: v.footprints !== false, followCamera: v.followCamera !== false, notifyWait: !!v.notifyWait };
   } catch {
-    return { showResolved: false, hints: false, footprints: true, notifyWait: false };
+    return { showResolved: false, hints: false, footprints: true, followCamera: true, notifyWait: false };
   }
 }
 let state = read();

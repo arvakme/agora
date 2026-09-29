@@ -52,6 +52,7 @@ import { Glide, makeSprings, RIG, solve, SUB_SCALE, type Pt, type Springs, type 
 import type { Leg } from "./route";
 import { ReplayBar } from "./ReplayBar";
 import { ReplayMarks } from "./ReplayMarks";
+import { liveFollow, useLiveFollow } from "./replayLive";
 import { plays, usePlay } from "./replayMode";
 import { RunAvatar } from "./RunAvatar";
 import { scenePlaces } from "./scenePlaces";
@@ -374,6 +375,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const nst = useNested();
   const replay = useReplay();
   const playing = !!usePlay().play;
+  const camFollow = useLiveFollow();
   const fo = useFocus();
   const fl = useFollow();
   const reduced = prefersReducedMotion();
@@ -1215,6 +1217,11 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         );
       })}
       {playing && !only && <ReplayBar />}
+      {!playing && !only && camFollow.run && camFollow.paused && (
+        <div className="ws-live-bar" role="status">
+          <button className="btn sm primary" onClick={() => liveFollow.resume()} title="镜头继续跟着主 agent">跟随 {camFollow.name}</button>
+        </div>
+      )}
       {playing && <ReplayMarks view={view} ctx={ctx} />}
       {replay && !playing && (
         <div className="ws-banner" role="status">

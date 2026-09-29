@@ -6,12 +6,11 @@
 // It ends at the turn's end plus the summary (or on Esc, ✕): the canvas and view it was started from come
 // back. No layout is saved and no history entry made meanwhile.
 import { useSyncExternalStore } from "react";
-import { backHintQuiet } from "../nested/up";
-import { layoutSaves } from "../layoutSaves";
 import { nested } from "../nested/store";
 import { clock, replayTime } from "./clock";
 import { canvasWhere } from "./place";
 import { summaryOf, type Window } from "./playCounts";
+import { quiet } from "./replayQuiet";
 import { createCamera } from "./replayView";
 import { runs } from "./runs/store";
 import type { WorkRun } from "./runs/types";
@@ -44,10 +43,8 @@ const ls = new Set<() => void>();
 const set = (p: Partial<PlayState>) => {
   const was = !!state.play;
   state = { ...state, ...p };
-  // the layout is not saved while the camera moves the view around: paused as it starts (what was pending is written first)
-  if (!was && state.play) layoutSaves.pause(true);
-  // no 「在子图里」 hint over the menu while the camera goes in and out by itself
-  backHintQuiet.set(!!state.play);
+  // the layout is not saved while the camera moves the view around, and there is no 「在子图里」 hint over the menu: from the start until the canvas and the view are back (what was pending is written first)
+  if (!was && state.play) quiet.hold("play", true);
   ls.forEach((l) => l());
 };
 let main: string | null = null;
@@ -59,13 +56,17 @@ const run = (): WorkRun | null => (state.play ? (runs.get().byId.get(state.play.
 /** The camera: the main view follows the traced agent (./replayView.ts). */
 const camera = createCamera(() => (state.play ? mainCanvas() : null), run, () => state.play?.win ?? null, { setManual: (on) => state.manual !== on && set({ manual: on }) });
 
+/** Something to do before a play starts (the live camera comes home first: ./replayLive.ts). */
+export const beforePlay = { run: async (): Promise<void> => {} };
+
 export const plays = {
   get: () => state,
   subscribe: (l: () => void) => (ls.add(l), () => void ls.delete(l)),
   active: () => !!state.play,
   run,
   /** Play a turn. The caller has traced it (`focus.trace`); the clock starts a moment before it and ends after it (the summary). */
-  start(p: Play) {
+  async start(p: Play) {
+    await beforePlay.run();
     const now = Date.now();
     main = p.canvasId ?? null;
     doneAt = 0;
@@ -93,7 +94,7 @@ export const plays = {
     set({ play: null, barNote: null, manual: false });
     clock.live();
     // …and saving comes back once the canvas and the view are back (the layout is as it was: nothing to save)
-    void camera.exit().then(() => (main = null, state.play || layoutSaves.pause(false)));
+    void camera.exit().then(() => (main = null, state.play || quiet.hold("play", false)));
   },
 };
 

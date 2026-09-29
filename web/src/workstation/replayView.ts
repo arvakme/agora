@@ -7,6 +7,7 @@
 // reduced motion, or where the browser has no view transitions, it is a cut. Imperative, no React: it outlives the canvases it switches.
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { El } from "../canvas/scene";
+import { nextPaused, type PauseEvent } from "./liveCamera";
 import { firstView, viewport, type Viewport } from "../canvas/viewport";
 import { nav, nested } from "../nested/store";
 import { canvases } from "../session/ui";
@@ -55,19 +56,45 @@ const now = () => performance.now();
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export type CameraEvent = { at: number; t: number; from: string; to: string; title: string };
-export type Camera = { tick: () => void; frame: (dtMs: number) => void; resume: () => void; exit: () => Promise<void>; shown: () => string | null };
-export type CameraHooks = { /** The person moved the canvas themself: the camera stops following until told to (the bar's 「跟随小人」). */ setManual: (on: boolean) => void };
+export type Camera = { tick: () => void; frame: (dtMs: number) => void; resume: () => void; exit: () => Promise<void>; /** Let go without putting anything back (the live camera). */ stop: () => void; shown: () => string | null };
+/** The live camera (./liveCamera.ts, web/docs/workstation.md 默认跟随): follows an agent at work in everyday use, with no window to play. */
+export type LiveHooks = {
+  /** The canvas the person has in front of them (the main pane's). */
+  current: () => string | null;
+  /** Whether the followed agent is at work: idle, the camera does not move. */
+  awake: () => boolean;
+  /** Whether the camera has taken the canvas away from the one the person is on: saving the layout and the 「在子图里」 hint wait meanwhile. */
+  away: (on: boolean) => void;
+};
+export type CameraHooks = { /** The person moved the canvas themself: the camera stops following until told to (the bar's 「跟随小人」). */ setManual: (on: boolean) => void; live?: LiveHooks };
 
 /**
  * `origin`: the canvas the replay was started from; `run`: the traced agent's run. Call
  * `tick` a few times a second; `exit` when leaving the replay.
  */
 export function createCamera(origin: () => string | null, run: () => WorkRun | null, getWindow: () => { start: number; end: number | null } | null, hooks: CameraHooks = { setManual: () => {} }): Camera {
+  const live = hooks.live;
+  const tag = live ? "Live" : "";
   let manual = false;
   let chasing = false;
+  /** Leaving (a play's exit is under way): nothing else moves the view meanwhile. */
+  let leaving = false;
+  /** Live: how many ticks in a row the canvas in front of the person was not the one the camera shows; whether it is `away`. */
+  let mismatch = 0;
+  let awayNow = false;
+  const setAway = (on: boolean) => {
+    if (on === awayNow) return;
+    awayNow = on;
+    live?.away(on);
+  };
+  const pause = (ev: PauseEvent) => {
+    if (nextPaused(manual, ev) === manual) return;
+    manual = true;
+    hooks.setManual(true);
+  };
   let lastSample = 0;
   const zooms: [number, string, number][] = [];
-  if (typeof window !== "undefined") Object.assign(window, { __wsZooms: zooms });
+  if (typeof window !== "undefined") Object.assign(window, { [`__wsZooms${tag}`]: zooms });
   let home: string | null = null;
   let homeView: Viewport | null = null;
   let shown: string | null = null;
@@ -84,7 +111,7 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
   const log: CameraEvent[] = [];
   /** Each fit, for the evidence (window.__wsFits). */
   const fits: unknown[] = [];
-  if (typeof window !== "undefined") Object.assign(window, { __wsCamera: log, __wsFits: fits });
+  if (typeof window !== "undefined") Object.assign(window, { [`__wsCamera${tag}`]: log, [`__wsFits${tag}`]: fits });
 
   /** The view that fits `api`'s canvas to what the toolbar and the bar leave free of it. */
   function fitOf(api: ExcalidrawImperativeAPI) {
@@ -133,6 +160,8 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
 
   async function go(to: string, restore = false) {
     const from = shown!;
+    // live: the view of the canvas the person is on, to give back when the camera comes home
+    if (live && from === home && !restore) homeView = viewport.get(from) ?? homeView;
     busy = true;
     measureBar();
     try {
@@ -163,15 +192,93 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
   // the person's own pan or zoom of the canvas takes the camera from us until they hand it back
   const takeOver = (e: Event) => {
     const el = e.target as HTMLElement | null;
-    if (!el?.closest?.(".excalidraw") || el.closest?.(".ws-play-bar")) return;
-    if (el.tagName === "CANVAS" || el.closest(".zoom-actions")) (manual = true), hooks.setManual(true);
+    // live: opening the comment dock is the person's doing too
+    if (live && e.type === "pointerdown" && el?.closest?.(".dock")) return pause("comment");
+    if (!el?.closest?.(".excalidraw") || el.closest?.(".ws-play-bar, .ws-live-bar")) return;
+    if (el.tagName === "CANVAS" || el.closest(".zoom-actions")) pause(e.type === "wheel" ? "zoom" : "pan");
+  };
+  // live: Esc, and typing into an element of the canvas (its text editor), pause it as well
+  const onKey = (e: KeyboardEvent) => {
+    const el = e.target as HTMLElement | null;
+    const typing = !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+    if (e.key === "Escape") return void ((!typing || !!el?.closest?.(".excalidraw")) && pause("escape"));
+    if (typing && el?.closest?.(".excalidraw")) pause("edit");
   };
   const listen = (on: boolean) => {
     for (const ev of ["pointerdown", "wheel"] as const) on ? addEventListener(ev, takeOver, true) : removeEventListener(ev, takeOver, true);
+    if (live) on ? addEventListener("keydown", onKey, true) : removeEventListener("keydown", onKey, true);
   };
+  /** Live: the camera lets go (a play takes over, the switch is off, the timeline is replaying): nothing put back — the person's view is theirs. */
+  const release = () => {
+    listen(false);
+    setAway(false);
+    manual = chasing = false;
+    hooks.setManual(false);
+    home = shown = null;
+    homeView = null;
+    entry = null;
+    mismatch = 0;
+  };
+  /** The live tick: the same choice of canvas as a play's, from the canvas the person is on; nothing while the agent is idle. */
+  const liveTick = () => {
+    const r = run();
+    // it stops (the switch is off, the timeline replays, a play begins): what it took the canvas away from comes back — unless the person has taken it themselves
+    if (!r) return void (home && (manual ? release() : void leave()));
+    const cur = live!.current();
+    if (!home) {
+      if (!cur) return;
+      home = shown = cur;
+      listen(true);
+      return;
+    }
+    if (busy) return;
+    // the person went to another canvas themself (breadcrumb, a node's child, back): that is theirs, they are on their own view now
+    if (cur && cur !== shown) {
+      if (++mismatch < 2) return;
+      mismatch = 0;
+      home = shown = cur;
+      setAway(false);
+      return pause("select");
+    }
+    mismatch = 0;
+    setAway(!manual && shown !== home);
+    if (manual || !live!.awake()) return;
+    const t = clock.time();
+    const want = cameraCanvas(home, (c) => {
+      const ctx = ctxFor(c);
+      if (!ctx) return { behind: false, into: null };
+      const st = stateAt(r, t, ctx);
+      return { behind: !st.present && st.portalPhase === "behind", into: st.portal?.canvasId ?? null };
+    });
+    if (want === shown) return;
+    // away from the first moment of a switch (in or back home) until the tick after it is done: nothing of the move is kept
+    setAway(true);
+    void go(want);
+  };
+
+  async function leave() {
+    leaving = true;
+    while (busy) await wait(30);
+    if (home && shown && shown !== home) await go(home, true);
+    else if (home && homeView && !live) {
+      const api = canvases.get(home)?.api;
+      if (api) viewFor(home, true)(api);
+    }
+    // the history is what it was: this entry, with the address it had
+    if (entry) history.replaceState(entry.state, "", entry.href);
+    entry = null;
+    listen(false);
+    setAway(false);
+    manual = chasing = false;
+    hooks.setManual(false);
+    home = shown = null;
+    homeView = null;
+    leaving = false;
+  }
 
   return {
     shown: () => shown,
+    stop: release,
     resume() {
       manual = false;
       chasing = true;
@@ -179,7 +286,8 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     },
     /** Once per animation frame: the follow camera moves the shown canvas toward the view it should have. */
     frame(dtMs) {
-      if (!home || !shown || busy || manual) return;
+      if (!home || !shown || busy || manual || leaving) return;
+      if (live && !live.awake()) return;
       const r = run();
       const w = getWindow();
       const api = canvases.get(shown)?.api;
@@ -203,6 +311,8 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
       setView(api, { zoom: cur.zoom + (target.zoom - cur.zoom) * k, scrollX: cur.scrollX + (target.scrollX - cur.scrollX) * k, scrollY: cur.scrollY + (target.scrollY - cur.scrollY) * k });
     },
     tick() {
+      if (leaving) return;
+      if (live) return liveTick();
       const o = origin();
       if (!o || busy) return;
       measureBar();
@@ -233,21 +343,6 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
       }
       if (want !== shown) void go(want);
     },
-    async exit() {
-      while (busy) await wait(30);
-      if (home && shown && shown !== home) await go(home, true);
-      else if (home && homeView) {
-        const api = canvases.get(home)?.api;
-        if (api) viewFor(home, true)(api);
-      }
-      // the history is what it was: this entry, with the address it had
-      if (entry) history.replaceState(entry.state, "", entry.href);
-      entry = null;
-      listen(false);
-      manual = chasing = false;
-      hooks.setManual(false);
-      home = shown = null;
-      homeView = null;
-    },
+    exit: leave,
   };
 }
