@@ -12,9 +12,10 @@ import { ConflictNotice } from "../multi/ConflictNotice";
 import { AnimatePresence, motion } from "motion/react";
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { IconChevron, IconCode, IconCommentSolid, IconCopy, IconLayers, IconLock, IconMore, IconPath, IconTarget, IconUndo } from "../app/icons";
-import { panelView, useReplay, useReplayAt, useTick, type PanelView } from "../workstation/clock";
-import { hhmmss } from "../workstation/axis";
+import { panelView, replayTime, useReplay, useTick, type PanelView } from "../workstation/clock";
+import { usePlay } from "../workstation/replayMode";
 import { useRuns } from "../workstation/runs/store";
+import { panelPlays } from "./replayStep";
 import { Markdown } from "./markdown";
 import { ProcessFold, TrajectoryView } from "./TrajectoryView";
 import { TraceTurn } from "./TraceTurn";
@@ -237,9 +238,20 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   const [termMsg, setTermMsg] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [view, setView] = useState<PanelView>("chat");
-  // Replay (the timeline dragged into the past): the pane keeps the view you chose; in the trajectory later steps are greyed.
+  // A turn of this session plays on the diagram (▶ on a turn): the pane goes to the trajectory, which follows the play
+  // (later steps greyed, the current one marked, the controls on top), and comes back to the view it had when the play ends.
   const replay = useReplay();
-  const replayAt = useReplayAt();
+  const played = usePlay().play;
+  const runsNow = useRuns();
+  const playing = !!played && runsNow.byId.get(played.runId)?.sessionId === sessionId;
+  const savedView = useRef<PanelView | null>(null);
+  useEffect(() => {
+    const next = panelPlays({ view, saved: savedView.current }, playing, "trajectory");
+    savedView.current = next.saved;
+    if (next.view !== view) setView(next.view);
+  }, [playing]);
+  const playNow = useTick(250, playing && !!replay?.playing); // the play moves on the wall clock: re-read it 4 times a second
+  const playAt = playing && replay ? replayTime(replay, replay.playing ? playNow : Date.now()) : null;
   const [focusTurn, setFocusTurn] = useState<{ n: number; key: number } | null>(null);
   const [focusItem, setFocusItem] = useState<{ id: string; n?: number; key: number } | null>(null);
   const canvasTitle = canvasTitles[session.canvasId];
@@ -438,10 +450,9 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           {status?.terminal.alive && termMsg && <span className="sp-attach-msg">{termMsg}{status.terminal.clients ? ` · ${status.terminal.clients} 个窗口` : ""}</span>}
         </div>
       )}
-      {replay && view === "trajectory" && <p className="sp-replay-note">回放到 {hhmmss(replayAt!)}：灰色的是之后发生的。拖时间线，或在细条上点 ▶ 回放。</p>}
       {view === "trajectory" ? (
         <div className="sp-traj">
-          <TrajectoryView sessionId={sessionId} turns={turns} focusTurn={focusTurn} focusItem={focusItem} agent={binding.agent} cutoff={replay ? replayAt : null} working={working} />
+          <TrajectoryView sessionId={sessionId} turns={turns} focusTurn={focusTurn} focusItem={focusItem} agent={binding.agent} cutoff={playAt} working={working} play={playing && played && playAt != null ? { n: played.n, at: playAt } : null} />
         </div>
       ) : (
         <div className="sp-stage">

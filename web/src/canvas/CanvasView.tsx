@@ -19,12 +19,9 @@ import { PointerLayer } from "../pointer/PointerLayer";
 import { childAt, OwnerBreadcrumb, OwnerChildMarkers } from "../nested/NestedLayer";
 import { nav } from "../nested/store";
 import { WorkstationOverlay } from "../workstation/Overlay";
-import { Timeline, timelineResize } from "../workstation/Timeline";
 import { useWorkstation } from "../workstation/clock";
-import { glideTo } from "./glide";
 import { firstView, viewport } from "./viewport";
 import { BENCH_BARE } from "../bench/bench";
-import { figurePositions } from "../workstation/focus";
 import { useChrome } from "./useChrome";
 import type { Box } from "./clearance";
 import { AnimatePresence, motion } from "motion/react";
@@ -159,9 +156,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onGone, o
       const prev = lastSize.current;
       lastSize.current = { w: a.width, h: a.height };
       if (prev && (prev.w !== a.width || prev.h !== a.height)) {
-        // …except a height change from the 工位时间线 growing or shrinking below: keep the top edge.
-        const fromTimeline = performance.now() - timelineResize.at < 500;
-        api.updateScene({ appState: { scrollX: a.scrollX + (a.width - prev.w) / 2 / a.zoom.value, scrollY: a.scrollY + (fromTimeline ? 0 : (a.height - prev.h) / 2 / a.zoom.value) } });
+        api.updateScene({ appState: { scrollX: a.scrollX + (a.width - prev.w) / 2 / a.zoom.value, scrollY: a.scrollY + (a.height - prev.h) / 2 / a.zoom.value } });
         return;
       }
       const sel = selectedContainers(a.selectedElementIds, byId(p.elements));
@@ -308,7 +303,6 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onGone, o
         </>
       )}
       </div>
-      {!readOnly && !BENCH_BARE && <Timeline canvasId={doc.id} onLocate={(runId) => api && locate(api, doc.id, runId)} />}
       </div>
       {api && view && <CommentsDrawer title={doc.title} api={api} store={doc.store} view={view} open={drawerOpen} onClose={() => onDrawer(false)} focusId={listFocus} onRepin={setRepin} />}
     </div>
@@ -331,15 +325,6 @@ function EmptyCanvas({ onSample }: { onSample: () => void }) {
       </div>
     </div>
   );
-}
-
-/**
- * A lane name in the timeline "locates" its agent: this canvas glides (≈420 ms, eased) so the
- * figure sits in the middle, once. The person's own pan / zoom / click stops the glide at once.
- */
-function locate(api: ExcalidrawImperativeAPI, canvasId: string, runId: string) {
-  const p = figurePositions.get(canvasId, runId);
-  if (p) glideTo(api, { x: p.x, y: p.y - 30 });
 }
 
 const canvasBg = () => getComputedStyle(document.documentElement).getPropertyValue("--canvas-bg").trim() || "white";
