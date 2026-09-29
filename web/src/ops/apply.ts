@@ -7,6 +7,7 @@ import {
   arrowsOf,
   boundText,
   buildArrow,
+  buildJunction,
   buildShape,
   byId,
   isArrow,
@@ -38,6 +39,8 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
   const order = scene.map((e) => e.id);
   const changed = new Set<string>();
   const geometryChanged = new Set<string>();
+  /** Arrows given their own path in this batch: moving an end afterwards puts them back on the plain straight line. */
+  const routed = new Set<string>();
   const summary: string[] = [];
   const name = (id: string) => nameOf(work.get(id)!, work);
 
@@ -68,13 +71,13 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
     if (patch.x !== undefined || patch.y !== undefined || patch.width !== undefined || patch.height !== undefined) geometryChanged.add(el.id);
   };
 
-  const rebuildArrow = (a: El, label = labelOf(a, work)) => {
+  const rebuildArrow = (a: El, label = labelOf(a, work), path?: readonly (readonly [number, number])[]) => {
     if (!isArrow(a)) return;
     const from = a.startBinding && work.get(a.startBinding.elementId);
     const to = a.endBinding && work.get(a.endBinding.elementId);
     if (!from || !to || from.isDeleted || to.isDeleted) return;
     const oldText = boundText(a, work);
-    const built = buildArrow({ id: a.id, from, to, label, bothEnds: !!a.startArrowhead, base: styleOf(a) });
+    const built = buildArrow({ id: a.id, from, to, label, bothEnds: !!a.startArrowhead, plain: !a.startArrowhead && !a.endArrowhead, path, base: styleOf(a) });
     const arrow = built.find((e) => e.id === a.id)!;
     const text = built.find((e) => e.type === "text");
     const textId = oldText?.id ?? text?.id;
@@ -122,6 +125,7 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
       }
       case "move": {
         const el = work.get(o.id)!;
+        for (const a of arrowsOf(el.id, [...work.values()])) routed.delete(a.id);
         const dx = o.x - el.x, dy = o.y - el.y;
         if (libraryMeta(el)) shiftLibrary(el, dx, dy);
         else if (el.type === "frame") {
@@ -133,6 +137,7 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
       }
       case "resize": {
         const el = work.get(o.id)!;
+        for (const a of arrowsOf(el.id, [...work.values()])) routed.delete(a.id);
         if (el.type === "frame") put({ ...el, width: o.width, height: o.height });
         else rebuildShape(el, { width: o.width, height: o.height });
         summary.push(`调整尺寸 ${name(o.id)} → ${Math.round(o.width)}×${Math.round(o.height)}`);
@@ -162,9 +167,23 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
       case "add_arrow": {
         let id = o.ref ?? `e-${o.from}-${o.to}`;
         while (work.has(id)) id += "-2";
-        const built = buildArrow({ id, from: work.get(o.from)!, to: work.get(o.to)!, label: o.text, bothEnds: o.bothEnds });
+        const built = buildArrow({ id, from: work.get(o.from)!, to: work.get(o.to)!, label: o.text, bothEnds: o.bothEnds, plain: o.plain, path: o.path });
         for (const e of built) put(e);
-        summary.push(`新增箭头 ${name(o.from)} ${o.bothEnds ? "↔" : "→"} ${name(o.to)}${o.text ? `「${o.text}」` : ""}`);
+        if (o.path) routed.add(id);
+        summary.push(`新增箭头 ${name(o.from)} ${o.plain ? "—" : o.bothEnds ? "↔" : "→"} ${name(o.to)}${o.text ? `「${o.text}」` : ""}`);
+        break;
+      }
+      case "add_junction": {
+        for (const e of buildJunction({ id: o.ref, x: o.x, y: o.y })) put(e);
+        summary.push("新增汇合点");
+        break;
+      }
+      case "route": {
+        const a = work.get(o.id)!;
+        rebuildArrow(a, labelOf(a, work), o.path ?? undefined);
+        if (o.path) routed.add(a.id);
+        else routed.delete(a.id);
+        summary.push(`${describeArrow(a)} ${o.path ? "改走折线" : "改回直线"}`);
         break;
       }
       case "insert_library_item": {
@@ -203,7 +222,7 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
 
   // Invariants the editor would normally maintain on user edits:
   // 1. arrows bound to moved/resized shapes are re-routed;
-  for (const id of geometryChanged) for (const a of arrowsOf(id, [...work.values()])) rebuildArrow(work.get(a.id)!);
+  for (const id of geometryChanged) for (const a of arrowsOf(id, [...work.values()])) if (!routed.has(a.id)) rebuildArrow(work.get(a.id)!);
   // 2. frames grow to contain their children (Excalidraw clips children to the frame);
   for (const f of [...work.values()].filter((e) => e.type === "frame" && !e.isDeleted)) {
     const kids = [...work.values()].filter((c) => c.frameId === f.id && isShape(c) && !c.isDeleted);
