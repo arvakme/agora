@@ -18,6 +18,21 @@ const WALK_PX_MS = 0.22;
 const DETOUR = 1.4;
 const SETTLE_MS = 500;
 
+/**
+ * `steps`: the figure walks to each thing that is drawn, one by one (the whole way it happened). `brief` (the default of the player): it walks to
+ * where a run of things is drawn once and draws them from there — what is within reach is drawn where it stands, a line is pulled from the node it
+ * leaves — and everything is a little quicker. The order of the steps, and of nodes before the lines that join them, is the same in both.
+ */
+export type Mode = "steps" | "brief";
+/** How far (world px, centre to centre) the figure draws from where it stands: about two and a half nodes across. Beyond it, it walks. */
+export const REACH_PX = 420;
+/** In brief mode the time a beat lasts is this fraction of a step-by-step one when the figure did not have to walk to it. */
+const BRIEF_DWELL = 0.6;
+const BRIEF_LEAD_MS = 120;
+/** Brief mode: a walk on one canvas that would take longer than this is cut instead — the figure is gone from where it was and stands, faded in, where the next thing is drawn. */
+export const HOP_MS = 8000;
+const HOP_APPEAR_MS = 320;
+
 export type Beat = {
   i: number;
   step: number;
@@ -28,6 +43,19 @@ export type Beat = {
   say: string;
   /** The node the figure works at (null: where it already is). */
   place: string | null;
+  /** Where the figure stands to do it: `place`, or (brief) where it already stands when that is within reach. */
+  at: string | null;
+  /** The figure did not move for this beat: it drew it from where it stood. */
+  reach: boolean;
+  /** Where it came from (the place it stood at before), on which canvas; the walk it took (ms, and world px between the two nodes on the same canvas). */
+  from: string | null;
+  fromCanvas: string | null;
+  walkMs: number;
+  dist: number;
+  /** The figure did not walk here (brief): it was cut there, a new figure fades in (its own group of runs, `runsOf`). */
+  hop: boolean;
+  /** Which figure of the actor does this: it changes at every cut. */
+  group: number;
   quiet: boolean;
   /** Play time (ms from the opening): the figure sets off, gets there and the canvas changes, the beat is over. */
   start: number;
@@ -47,12 +75,17 @@ export type PlanOptions = {
   entrance?: (canvas: string) => string | null;
   /** Who watches is not who worked: the person's steps are the author's (a guest of a share), not "你". */
   author?: boolean;
+  mode?: Mode;
+  /** Brief mode: how far the figure draws from where it stands (world px); default `REACH_PX`. */
+  reach?: number;
+  /** Brief mode: walks longer than this (ms) on one canvas are cut; default `HOP_MS`. */
+  hop?: number;
 };
 
 const actorKey = (a: Actor) => (a.kind === "you" ? "you" : a.agent || "agent");
 
 /** Where each node is (its centre), as of the last version any step gives it: for a walk's length. */
-function centres(tl: BuildTimeline): Map<string, { x: number; y: number }> {
+export function centres(tl: BuildTimeline): Map<string, { x: number; y: number }> {
   const out = new Map<string, { x: number; y: number }>();
   const see = (canvas: string, e: El) => out.set(`${canvas}/${e.id}`, { x: e.x + e.width / 2, y: e.y + e.height / 2 });
   for (const [canvas, els] of Object.entries(tl.start)) els.forEach((e) => see(canvas, e));
@@ -96,6 +129,8 @@ function journeyMs(tl: BuildTimeline, a: string, here: string | null, b: string,
 
 export function planBuild(tl: BuildTimeline, opts: PlanOptions = {}): Plan {
   const at = centres(tl);
+  const brief = opts.mode === "brief";
+  const reach = opts.reach ?? REACH_PX;
   const walk =
     opts.walk ??
     ((canvas: string, from: string | null, to: string) => {
@@ -106,13 +141,16 @@ export function planBuild(tl: BuildTimeline, opts: PlanOptions = {}): Plan {
   const entrance = opts.entrance ?? (() => null);
   const beats: Beat[] = [];
   const where = new Map<string, { canvas: string; place: string | null }>();
+  const groups = new Map<string, number>();
   const actors = new Map<string, ActorInfo>();
   let t = OPENING_MS;
   for (const s of tl.steps) {
     const key = actorKey(s.actor);
     if (!actors.has(key)) actors.set(key, { key, agent: s.actor.kind === "you" ? (opts.author ? "author" : "you") : s.actor.agent, name: s.actor.kind === "you" ? (opts.author ? "作者" : "你") : s.actor.name });
     const from = where.get(key);
-    for (const it of nearestFirst(s.items, from?.canvas === s.canvas ? from.place : null, (id) => at.get(`${s.canvas}/${id}`))) {
+    const ordered = nearestFirst(s.items, from?.canvas === s.canvas ? from.place : null, (id) => at.get(`${s.canvas}/${id}`));
+    for (let idx = 0; idx < ordered.length; idx++) {
+      const it = ordered[idx];
       const prev = beats[beats.length - 1];
       // links and the like change nothing on the canvas: one beat for a run of them (on one canvas: a beat's changes are that canvas's), no walking
       if (it.quiet && prev?.quiet && prev.actor === key && prev.canvas === s.canvas) {
@@ -123,18 +161,103 @@ export function planBuild(tl: BuildTimeline, opts: PlanOptions = {}): Plan {
       }
       const here = where.get(key);
       const to = it.quiet ? null : it.place;
+      // brief: what is within reach is drawn from where the figure stands; else it walks — to the place that suits the run of things drawn next
+      const stays = brief && !!to && !!here?.place && here.canvas === s.canvas && reachable(at, s.canvas, here.place, it, reach);
+      const stand = !to ? null : stays ? here!.place : brief ? stanceFor(at, s.canvas, ordered, idx, reach) : to;
       let ms = 0;
-      if (to && here) ms = here.canvas !== s.canvas ? journeyMs(tl, here.canvas, here.place, s.canvas, to, walk, entrance) : here.place === to ? 0 : walk(s.canvas, here.place, to);
+      let hop = false;
+      if (stand && here && !stays) ms = here.canvas !== s.canvas ? journeyMs(tl, here.canvas, here.place, s.canvas, stand, walk, entrance) : here.place === stand ? 0 : walk(s.canvas, here.place, stand);
+      if (brief && ms > (opts.hop ?? HOP_MS) && here && here.canvas === s.canvas) [ms, hop] = [HOP_APPEAR_MS, true];
+      if (hop) groups.set(key, (groups.get(key) ?? 0) + 1);
+      const a = here?.place ? at.get(`${here.canvas}/${here.place}`) : undefined;
+      const b = stand ? at.get(`${s.canvas}/${stand}`) : undefined;
+      const dist = a && b && here!.canvas === s.canvas ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
       const start = t;
-      const land = start + ms + LAND_LEAD_MS;
-      const end = land + DWELL[it.quiet ? "tick" : it.kind];
-      beats.push({ i: beats.length, step: s.i, canvas: s.canvas, actor: key, kind: it.quiet ? "tick" : it.kind, say: it.say, place: to, quiet: it.quiet, start, land, end, add: [...(it.add ?? [])], change: [...(it.change ?? [])], remove: [...(it.remove ?? [])], ...(it.child ? { child: it.child } : {}) });
-      if (to) where.set(key, { canvas: s.canvas, place: to });
+      const lead = brief && !ms ? BRIEF_LEAD_MS : LAND_LEAD_MS;
+      const land = start + ms + lead;
+      const dwell = DWELL[it.quiet ? "tick" : it.kind] * (brief ? BRIEF_DWELL : 1);
+      const end = land + dwell;
+      beats.push({
+        i: beats.length,
+        step: s.i,
+        canvas: s.canvas,
+        actor: key,
+        kind: it.quiet ? "tick" : it.kind,
+        say: it.say,
+        place: to,
+        at: stand,
+        reach: stays || (!!to && !!here && !ms && here.canvas === s.canvas && here.place === stand),
+        from: here?.place ?? null,
+        fromCanvas: here?.canvas ?? null,
+        walkMs: hop ? 0 : ms,
+        dist,
+        hop,
+        group: groups.get(key) ?? 0,
+        quiet: it.quiet,
+        start,
+        land,
+        end,
+        add: [...(it.add ?? [])],
+        change: [...(it.change ?? [])],
+        remove: [...(it.remove ?? [])],
+        ...(it.child ? { child: it.child } : {}),
+      });
+      if (stand) where.set(key, { canvas: s.canvas, place: stand });
       else if (!here) where.set(key, { canvas: s.canvas, place: null });
       t = end;
     }
   }
   return { beats, length: t + OPENING_MS, actors: [...actors.values()] };
+}
+
+const dist2 = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+
+/** Where the things of an item are: the node it is at, and for a line the nodes it joins (so a line is pulled from either end). */
+function anchorsOf(at: Map<string, { x: number; y: number }>, canvas: string, it: BuildItem): { x: number; y: number }[] {
+  const out: { x: number; y: number }[] = [];
+  const own = it.place ? at.get(`${canvas}/${it.place}`) : undefined;
+  if (own) out.push(own);
+  if (it.kind === "add-arrows")
+    for (const e of it.add ?? []) {
+      const b = e as unknown as { startBinding?: { elementId?: string } | null; endBinding?: { elementId?: string } | null };
+      for (const id of [b.startBinding?.elementId, b.endBinding?.elementId]) {
+        const c = id ? at.get(`${canvas}/${id}`) : undefined;
+        if (c) out.push(c);
+      }
+    }
+  return out;
+}
+
+/** Is this item within the figure's reach from where it stands (`stand`, a node of `canvas`)? */
+function reachable(at: Map<string, { x: number; y: number }>, canvas: string, stand: string, it: BuildItem, reach: number): boolean {
+  const me = at.get(`${canvas}/${stand}`);
+  if (!me) return false;
+  return anchorsOf(at, canvas, it).some((c) => dist2(me, c) <= reach);
+}
+
+/**
+ * Where to walk to for item `idx` when it is out of reach: the node among the things drawn next (those that follow, on the same canvas, while they stay within
+ * reach of this one) from which all of them are closest — so the figure walks once and draws the run from there.
+ */
+function stanceFor(at: Map<string, { x: number; y: number }>, canvas: string, items: readonly BuildItem[], idx: number, reach: number): string | null {
+  const first = items[idx];
+  const start = first.place ? at.get(`${canvas}/${first.place}`) : undefined;
+  if (!first.place || !start) return first.place;
+  const run: BuildItem[] = [first];
+  for (let k = idx + 1; k < items.length; k++) {
+    const it = items[k];
+    if (it.quiet || !it.place || !anchorsOf(at, canvas, it).some((c) => dist2(start, c) <= reach)) break;
+    run.push(it);
+  }
+  let best = first.place;
+  let radius = Infinity;
+  for (const cand of run) {
+    const c = cand.place ? at.get(`${canvas}/${cand.place}`) : undefined;
+    if (!c || !cand.place) continue;
+    const r = Math.max(...run.map((it) => Math.min(...anchorsOf(at, canvas, it).map((x) => dist2(c, x)))));
+    if (r < radius) [best, radius] = [cand.place, r];
+  }
+  return best;
 }
 
 /**
@@ -260,14 +383,29 @@ export function withPlaces(canvas: string, els: readonly El[]): El[] {
   return els.map((e) => (NODE_TYPES.has(e.type) && !(e as { containerId?: string | null }).containerId ? ({ ...e, customData: { ...(e.customData ?? {}), codePaths: [pathFor(canvas, e.id)] } } as El) : e));
 }
 
-/** One run per actor: every beat is a segment of "writing" at its node, with the words it says. */
+/** The id of the run of one figure: an actor has a new one at every cut (brief mode), so that the one before is gone and the next fades in where it is needed. */
+export const runId = (actor: string, group: number) => (group ? `build:${actor}~${group}` : `build:${actor}`);
+
+/** One run per figure (an actor has one for as long as it walks; a cut starts the next): every beat is a segment of "writing" at its node, with the words it says. */
 export function runsOf(plan: Plan, epoch: number): WorkRun[] {
-  return plan.actors.map((a) => {
-    const segs: RunSeg[] = plan.beats
-      .filter((b) => b.actor === a.key)
-      .map((b) => ({ kind: b.quiet ? "think" : "write", start: epoch + b.start, end: epoch + b.end, label: b.say, say: b.say, ...(b.place && !b.quiet ? { path: pathFor(b.canvas, b.place) } : {}) }));
-    return { id: `build:${a.key}`, agent: a.agent, name: a.name, segs, receipts: [], running: false, lastAt: epoch + plan.length, children: [] };
-  });
+  const out: WorkRun[] = [];
+  for (const a of plan.actors) {
+    const mine = plan.beats.filter((b) => b.actor === a.key);
+    for (const group of [...new Set(mine.map((b) => b.group))]) {
+      const segs: RunSeg[] = mine
+        .filter((b) => b.group === group)
+        .map((b) => ({ kind: b.quiet ? "think" : "write", start: epoch + b.start, end: epoch + b.end, label: b.say, say: b.say, ...(b.at && !b.quiet && !b.reach ? { path: pathFor(b.canvas, b.at) } : {}) }));
+      out.push({ id: runId(a.key, group), agent: a.agent, name: a.name, segs, receipts: [], running: false, lastAt: epoch + plan.length, children: [] });
+    }
+  }
+  return out;
+}
+
+/** The figure of each actor that is on the canvas at play time `t`: the one whose beats it is in (the first before the opening, the last after the end). */
+export function figuresAt(plan: Plan, t: number): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const b of plan.beats) if (b.start <= t || !out.has(b.actor)) out.set(b.actor, runId(b.actor, b.group));
+  return out;
 }
 
 /** The first beat of step `step` of the timeline (a comment's moment), or the last one when the timeline is shorter now. */
