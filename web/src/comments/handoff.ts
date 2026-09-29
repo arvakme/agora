@@ -19,14 +19,16 @@ export function unseen(messages: Thread["messages"]): Thread["messages"] {
  * The message an agent gets for a comment. `followUp`: the thread is already one conversation with it, so
  * it gets only what it has not seen (the person's new reply, and anything a guest added), not the whole thread again.
  */
-export function commentMessage(thread: Pick<Thread, "n" | "messages">, anchors: { id: string; name: string }[], opts: { followUp?: boolean } = {}): string {
+export function commentMessage(thread: Pick<Thread, "n" | "messages">, anchors: { id: string; name: string }[], opts: { followUp?: boolean; mention?: string } = {}): string {
   const where = anchors.length ? `锚点：${anchors.map((a) => `${a.name}（${a.id}）`).join("、")}` : "锚点：整块画布";
   const guest = (m: Thread["messages"][number]) => m.author === "you" && isGuestId(m.by?.id);
   const who = (m: Thread["messages"][number]) => (guest(m) ? `访客 ${m.by?.name ?? ""}`.trim() : m.author === "you" ? (m.by?.name ?? "用户") : m.author === "agent" ? "Agent" : "系统");
   const shown = opts.followUp ? unseen(thread.messages) : thread.messages;
   // A guest's words are quoted and kept on one line: with a newline in them they could start a line of their own
   // ("- 用户：…") and pass for the user.
-  const said = (m: Thread["messages"][number]) => (guest(m) ? `“${m.text.replace(/\s*[\r\n]+\s*/g, " ").trim()}”` : m.text);
+  // (the @name of the conversation it goes to is how the person addressed it, not part of what it is told)
+  const bare = (m: Thread["messages"][number]) => (opts.mention ? m.text.replaceAll(`@${opts.mention}`, "").replace(/^[ \t]+/, "").replace(/[ \t]{2,}/g, " ").trim() : m.text);
+  const said = (m: Thread["messages"][number]) => (guest(m) ? `“${m.text.replace(/\s*[\r\n]+\s*/g, " ").trim()}”` : bare(m));
   const lines = shown.map((m) => `- ${who(m)}：${said(m)}`);
   // the first line keeps its shape in a follow-up too: the trajectory recognises a comment's turn by it (workstation/lanes.ts)
   const note = opts.followUp ? ["（这条评论有新的回复，下面只列出你还没看到的部分；前面的你已经处理过。）"] : [];

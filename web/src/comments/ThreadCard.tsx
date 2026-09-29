@@ -17,7 +17,7 @@ import { useAgentName, useAgents } from "../session/agents";
 import { AgentAvatar } from "../session/AgentAvatar";
 import { ui } from "../session/ui";
 import { collapseSuperseded, PIN_LABEL, pinState } from "./handoffState";
-import { handoffLine, routeMessage, type MentionTarget } from "./mention";
+import { handoffLine, routeMessage, submitMention, type MentionTarget } from "./mention";
 import { MentionField } from "./MentionField";
 import "./handoff.css";
 import { useAuthorColors, type AuthorSlot } from "./authorColor";
@@ -137,7 +137,7 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover, onRepin }: {
           onSend={(text, mention) => {
             const route = routeMessage({ guest: GUEST, mention, handoff: t.handoff });
             store.reply(t.id, { author: "you", text });
-            if (route.kind === "hand") void handOff(api, store, t.id, route.to, { bound: route.bound, ...(route.bound && t.handoff ? { name: t.handoff.name } : mention?.type === "session" ? { name: mention.label } : {}) });
+            if (route.kind === "hand") void handOff(api, store, t.id, route.to, { bound: route.bound, ...(route.bound && t.handoff ? { name: t.handoff.name } : mention?.type === "session" ? { name: mention.label } : {}), ...(mention && { mention: mention.label }) });
           }}
         />
       )}
@@ -288,14 +288,16 @@ function EditBox({ initial, onSave, onCancel }: { initial: string; onSave: (text
 /** Replying to a resolved thread reopens it (the store does that; the placeholder says so). `bound`: the thread is a conversation with an agent, so the reply goes to it. */
 function Reply({ onSend, resolved, bound, canvasId, handoff }: { onSend: (text: string, mention: MentionTarget | null) => void; resolved?: boolean; bound?: boolean; canvasId?: string; handoff?: Thread["handoff"] }) {
   const [text, setText] = useState("");
+  const picked = useRef<MentionTarget | null>(null); // the pick made in the @ list: Enter and the send button carry the same one
   const send = (t: string, mention: MentionTarget | null) => {
     onSend(t, mention);
+    picked.current = null;
     setText("");
   };
   const placeholder = resolved ? "回复会重新打开这条评论…" : bound ? "回复（会发给上面的对话）…" : GUEST ? "回复…" : "回复，输入 @ 交给 agent…";
   return (
-    <form className="treply" onSubmit={(e) => (e.preventDefault(), text.trim() && send(text.trim(), null))}>
-      <MentionField value={text} onValue={setText} onSend={send} placeholder={placeholder} canvasId={canvasId} handoff={handoff} />
+    <form className="treply" onSubmit={(e) => (e.preventDefault(), (() => { const s = submitMention(text, picked.current); if (s) send(s.text, s.mention); })())}>
+      <MentionField value={text} onValue={setText} onSend={send} placeholder={placeholder} canvasId={canvasId} handoff={handoff} pickedRef={picked} />
       <button type="submit" className="send" disabled={!text.trim()} aria-label="发送回复"><IconSend size={14} /></button>
     </form>
   );
@@ -315,7 +317,8 @@ export function Composer({ pos, text, onText, onCancel, onSubmit, canvasId }: {
     el?.focus();
     el?.setSelectionRange(el.value.length, el.value.length);
   }, []);
-  const submit = (t: string, mention: MentionTarget | null) => onSubmit(t, mention);
+  const picked = useRef<MentionTarget | null>(null); // the pick made in the @ list: Enter and the send button carry the same one
+  const submit = (t: string, mention: MentionTarget | null) => (onSubmit(t, mention), (picked.current = null));
   return (
     <motion.form
       className="tcard composer"
@@ -325,7 +328,7 @@ export function Composer({ pos, text, onText, onCancel, onSubmit, canvasId }: {
       exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.12 } }}
       transition={SPRING}
       style={{ left: pos.left, top: pos.top, bottom: pos.bottom, originX: pos.flip ? 1 : 0, originY: pos.up ? 1 : 0, borderRadius: 14 }}
-      onSubmit={(e) => (e.preventDefault(), text.trim() && submit(text.trim(), null))}
+      onSubmit={(e) => (e.preventDefault(), (() => { const s = submitMention(text, picked.current); if (s) submit(s.text, s.mention); })())}
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="composer-head">
@@ -333,7 +336,7 @@ export function Composer({ pos, text, onText, onCancel, onSubmit, canvasId }: {
         <button type="button" className="icon-btn sm muted" onClick={onCancel} aria-label="取消评论" title="取消（Esc）"><IconClose size={16} /></button>
       </div>
       <div className="treply bare">
-        <MentionField textareaRef={ref} value={text} onValue={onText} onSend={submit} rows={2} canvasId={canvasId} placeholder={GUEST ? "添加评论…" : "添加评论，输入 @ 交给 agent…"} />
+        <MentionField textareaRef={ref} value={text} onValue={onText} onSend={submit} rows={2} canvasId={canvasId} pickedRef={picked} placeholder={GUEST ? "添加评论…" : "添加评论，输入 @ 交给 agent…"} />
         <button type="submit" className="send" disabled={!text.trim()} aria-label="发表评论"><IconSend size={14} /></button>
       </div>
     </motion.form>

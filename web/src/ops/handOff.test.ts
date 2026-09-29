@@ -110,6 +110,31 @@ describe("handOff", () => {
   });
 });
 
+describe("MT1: an existing conversation is really the one that gets it", () => {
+  it("the @name is left out of the message, and the message goes to that conversation", async () => {
+    const t = store.create(anchor, "@主对话 请补一张子图");
+    await handOff(api, store, t.id, { sid: "s-main" }, { bound: false, name: "主对话" });
+    expect(bodies[0].to).toBe("s-main");
+    expect(bodies[0].task).toContain("请补一张子图");
+    expect(bodies[0].task).not.toContain("@主对话");
+  });
+
+  it("if the server handed it to another conversation than the one named, the thread says so instead of staying quiet", async () => {
+    const t = store.create(anchor, "@主对话 请补一张子图");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: { body?: string }) => {
+        const body = JSON.parse(init?.body ?? "{}") as Body;
+        return new Response(JSON.stringify({ id: "0d5f6a1e-0000-4000-8000-0000000000aa", state: "done", source: body.source, target: { sessionId: "s-other", agent: "claude", new: false } }), { status: 200 });
+      }),
+    );
+    await handOff(api, store, t.id, { sid: "s-main" }, { bound: false, name: "主对话" });
+    const last = store.thread(t.id)!.messages.at(-1)!;
+    expect(last).toMatchObject({ author: "system", tone: "warn" });
+    expect(last.text).toContain("s-other");
+  });
+});
+
 describe("the binding lives in the thread record", () => {
   it("takes in the binding the server wrote, and ending it wins over an older copy", () => {
     const t = store.create(anchor, "hi");

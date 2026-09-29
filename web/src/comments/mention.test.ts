@@ -1,7 +1,7 @@
 // Comments handed to agents by @ (comments/mention.ts): the list, the routing of a message, the naming.
 import { describe, expect, it } from "vitest";
 import type { Binding, Status } from "../session/agents.ts";
-import { agoText, applyMention, handoffLine, mentionOptions, mentionQuery, mentionRows, routeMessage, stillMentioned, threadSessionName, type MentionRow, type MentionSources, type MentionTarget } from "./mention.ts";
+import { agoText, applyMention, handoffLine, mentionOptions, mentionQuery, mentionRows, routeMessage, stillMentioned, submitMention, threadSessionName, type MentionRow, type MentionSources, type MentionTarget } from "./mention.ts";
 
 const NOW = 10_000_000;
 const MIN = 60_000;
@@ -173,5 +173,44 @@ describe("naming", () => {
     expect(handoffLine(h, "Claude Code", "answered", false)).toBe("由 Claude Code · 评论 #1 · 浏览器 已答复");
     expect(handoffLine(h, "Claude Code", "pending", false)).toBe("由 Claude Code · 评论 #1 · 浏览器 已交接");
     expect(handoffLine(h, "Claude Code", "pending", true)).toContain("已不在了");
+  });
+});
+
+
+// MT1: an @ on an existing conversation did not take effect when the send button was pressed (only Enter carried the pick),
+// and conversations that look the same could not be told apart in the list.
+describe("what is sent, by Enter or by the send button (the same for both)", () => {
+  const picked: MentionTarget = { type: "session", sid: "s-a", agent: "claude", label: "Claude Code · 画出这个项目的架构" };
+  it("carries the pick while its @name is still in the text, trimmed", () => {
+    expect(submitMention("  @Claude Code · 画出这个项目的架构 再看一遍  ", picked)).toEqual({ text: "@Claude Code · 画出这个项目的架构 再看一遍", mention: picked });
+  });
+  it("carries no pick once the @name was deleted, and sends nothing for an empty box", () => {
+    expect(submitMention("再看一遍", picked)).toEqual({ text: "再看一遍", mention: null });
+    expect(submitMention("   ", picked)).toBeNull();
+    expect(submitMention("好", null)).toEqual({ text: "好", mention: null });
+  });
+});
+
+describe("conversations that look the same are told apart", () => {
+  const twins = (over: Partial<MentionSources> = {}) =>
+    src({
+      bindings: { "s-a": b("claude", 1), "s-b": b("claude", 2), "s-c": b("codex", 3) },
+      names: { "s-a": "Claude Code", "s-b": "Claude Code", "s-c": "Codex 会话" },
+      activeAt: { "s-a": NOW - 3 * MIN, "s-b": NOW - 60 * MIN, "s-c": NOW - 2 * MIN },
+      ...over,
+    });
+  it("two conversations with one name (and the agent of that name) get labels that differ: the first thing said in them, else how long ago", () => {
+    const rows = mentionOptions(twins({ topics: { "s-a": "画出这个项目的架构" } }), "claude");
+    expect(rows.map((r) => r.label)).toEqual(["Claude Code", "Claude Code · 画出这个项目的架构", "Claude Code · 1 小时前"]);
+    expect(new Set(rows.map((r) => r.label)).size).toBe(rows.length); // so the @name in the text says which one was meant
+  });
+  it("a conversation whose name is its own keeps it", () => {
+    const rows = mentionOptions(twins(), "");
+    expect(rows.find((r) => r.type === "session" && r.sid === "s-c")).toMatchObject({ label: "Codex 会话" });
+  });
+  it("the short list uses the same labels, and the picked one is what the text names", () => {
+    const shown = picks(mentionRows(twins({ topics: { "s-a": "画出这个项目的架构" }, canvas: ["s-a", "s-b"] }), "", false)).map((r) => r.title);
+    expect(new Set(shown).size).toBe(shown.length);
+    expect(shown.filter((t) => t.startsWith("Claude Code ·")).length).toBe(3); // the recommended new one, and the two twins
   });
 });

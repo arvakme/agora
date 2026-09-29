@@ -26,6 +26,8 @@ export type MentionSources = {
   status: Record<string, Status | undefined>;
   activeAt: Record<string, number>;
   names: Record<string, string>;
+  /** What was said first in a conversation (a short line): tells apart conversations that carry the same name. */
+  topics?: Record<string, string>;
   /** The conversations on this canvas; unknown = all of them. */
   canvas?: readonly string[];
   /** The conversation this thread is bound to. */
@@ -49,13 +51,37 @@ export function agoText(at: number, now: number): string {
   return `${Math.round(s / 86400)} 天前`;
 }
 
+/**
+ * What each conversation is called in the list and in the text (`@label`). A conversation nobody named is called after its agent,
+ * so several look the same, and one can look like the agent itself: those get the first thing said in them, else how long ago
+ * (and a short id if even that is the same). Every label is unique, so the @name in a comment says which one was meant.
+ */
+function labels(o: MentionSources): Map<string, string> {
+  const live = Object.keys(o.bindings).filter((sid) => sendable(o.bindings[sid], o.status[sid]));
+  const at = (sid: string) => lastActive(o.bindings[sid], o.activeAt[sid]);
+  const base = (sid: string) => o.names[sid] || `${nameOf(o, o.bindings[sid].agent)} 会话`;
+  const agentNames = new Set(o.agents.map((a) => a.name));
+  const count = new Map<string, number>();
+  for (const sid of live) count.set(base(sid), (count.get(base(sid)) ?? 0) + 1);
+  const out = new Map<string, string>();
+  for (const sid of live) {
+    const b = base(sid);
+    out.set(sid, count.get(b)! > 1 || agentNames.has(b) ? `${b} · ${o.topics?.[sid] || agoText(at(sid), o.now)}` : b);
+  }
+  const seen = new Map<string, number>();
+  for (const l of out.values()) seen.set(l, (seen.get(l) ?? 0) + 1);
+  for (const [sid, l] of out) if (seen.get(l)! > 1) out.set(sid, `${l} #${sid.slice(-4)}`);
+  return out;
+}
+
 /** The conversations that can still take a message, the most recently active first. */
 function liveSessions(o: MentionSources, only?: readonly string[]) {
   const at = (sid: string) => lastActive(o.bindings[sid], o.activeAt[sid]);
+  const named = labels(o);
   return (only ?? Object.keys(o.bindings))
-    .filter((sid) => sendable(o.bindings[sid], o.status[sid]))
+    .filter((sid) => named.has(sid))
     .sort((a, b) => at(b) - at(a))
-    .map((sid) => ({ sid, agent: o.bindings[sid].agent, name: o.names[sid] || `${nameOf(o, o.bindings[sid].agent)} 会话`, at: at(sid) }));
+    .map((sid) => ({ sid, agent: o.bindings[sid].agent, name: named.get(sid)!, at: at(sid) }));
 }
 const nameOf = (o: MentionSources, kind: string) => o.agents.find((a) => a.kind === kind)?.name ?? kind;
 
@@ -95,6 +121,15 @@ export function mentionRows(o: MentionSources, query: string, expanded: boolean)
 export function applyMention(text: string, q: MentionQuery, target: MentionTarget): { text: string; caret: number } {
   const insert = `@${target.label} `;
   return { text: text.slice(0, q.start) + insert + text.slice(q.end), caret: q.start + insert.length };
+}
+
+/**
+ * What a send carries, by Enter or by the send button (both call this, so they cannot differ): the text, trimmed, and the pick
+ * made in the list while its `@name` is still in the text. Nothing for an empty box.
+ */
+export function submitMention(text: string, picked: MentionTarget | null): { text: string; mention: MentionTarget | null } | null {
+  const t = text.trim();
+  return t ? { text: t, mention: stillMentioned(t, picked) } : null;
 }
 
 /** The mention picked earlier only counts while its `@label` is still in the text. */

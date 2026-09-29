@@ -548,7 +548,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
               <ol>
                 <li>在这里告诉 {nameOf(binding.agent)} 你要做什么；</li>
                 <li>它干活时，左边图上的小人会带你看它在改哪里；点小人可以直接对它说话；</li>
-                <li>在图上留评论，点「交给 {nameOf(binding.agent)}」让它处理。</li>
+                <li>在图上留评论，在评论框里输入 @ 选 {nameOf(binding.agent)}（或别的 agent、别的对话）让它处理。</li>
               </ol>
             </div>
           )}

@@ -9,7 +9,8 @@ import { useSessionNames } from "../multi/writes";
 import { agentName, sessionKinds, useAgents } from "../session/agents";
 import { sessions, useSessions } from "../session/store";
 import "../session/recommend.css";
-import { applyMention, MENTION_LIST_CLASS, mentionQuery, mentionRows, stillMentioned, type MentionRow, type MentionSources, type MentionTarget } from "./mention";
+import { applyMention, MENTION_LIST_CLASS, mentionQuery, mentionRows, submitMention, type MentionRow, type MentionSources, type MentionTarget } from "./mention";
+import { topicOf } from "../workspace/model";
 import type { Thread } from "./threads";
 
 /** Room for eight rows (a row is 29.4px, the list has 4px padding, comments/handoff.css); a longer list scrolls. */
@@ -30,14 +31,15 @@ function useMentionSources(canvasId: string | undefined, handoff: Thread["handof
       status: ag.status,
       activeAt: ag.activeAt,
       names,
+      topics: Object.fromEntries(Object.keys(ag.bindings).flatMap((sid) => { const t = topicOf(ag.items[sid]?.find((it) => it.kind === "user" && it.text)?.text); return t ? [[sid, t]] : []; })),
       canvas: canvasId ? sessions.onCanvas(canvasId).map((s) => s.id) : undefined,
       handoff,
       now: Date.now(),
     };
-  }, [ag.bindings, ag.status, ag.activeAt, names, ss.sessions, canvasId, handoff]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ag.bindings, ag.status, ag.activeAt, ag.items, names, ss.sessions, canvasId, handoff]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-export function MentionField({ value, onValue, onSend, placeholder, rows = 1, label, textareaRef, onEscape, canvasId, handoff }: {
+export function MentionField({ value, onValue, onSend, placeholder, rows = 1, label, textareaRef, onEscape, canvasId, handoff, pickedRef }: {
   value: string;
   onValue: (text: string) => void;
   /** Enter (without the list open): the text and the mention that is still in it. */
@@ -51,6 +53,11 @@ export function MentionField({ value, onValue, onSend, placeholder, rows = 1, la
   canvasId?: string;
   /** The conversation this thread is bound to: offered first. */
   handoff?: Thread["handoff"];
+  /**
+   * Where the pick made in the list is kept. The form around the box owns it, so its send button carries the same pick as Enter
+   * does (a button that read no pick sent every @ to the thread's bound conversation, MT1).
+   */
+  pickedRef?: React.MutableRefObject<MentionTarget | null>;
 }) {
   const own = useRef<HTMLTextAreaElement>(null);
   const ref = textareaRef ?? own;
@@ -58,7 +65,8 @@ export function MentionField({ value, onValue, onSend, placeholder, rows = 1, la
   const [caret, setCaret] = useState(0);
   const [active, setActive] = useState(0);
   const [closed, setClosed] = useState(false);
-  const picked = useRef<MentionTarget | null>(null);
+  const ownPick = useRef<MentionTarget | null>(null);
+  const picked = pickedRef ?? ownPick;
   const q = GUEST ? null : mentionQuery(value, caret);
   const [expanded, setExpanded] = useState(false);
   const options = useMemo(() => (q ? mentionRows(src, q.query, expanded) : []), [src, q?.query, expanded]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -85,7 +93,10 @@ export function MentionField({ value, onValue, onSend, placeholder, rows = 1, la
   };
   // 「更多」 opens the whole list where it is; everything else is a mention.
   const choose = (r: MentionRow) => ("more" in r ? (setExpanded(true), setActive(0)) : pick(r.target));
-  const send = () => value.trim() && onSend(value.trim(), stillMentioned(value, picked.current));
+  const send = () => {
+    const s = submitMention(value, picked.current);
+    if (s) (onSend(s.text, s.mention), (picked.current = null));
+  };
 
   return (
     <div className="mention-wrap">
