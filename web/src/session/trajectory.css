@@ -152,3 +152,18 @@ p.ds-say { white-space: pre-wrap; }
 .md th, .md td { padding: var(--space-3) var(--space-5) var(--space-3) 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 .md th { color: var(--fg-muted); font-weight: var(--weight-strong); white-space: nowrap; }
 .md tr:last-child td { border-bottom: 0; }
+
+/* a turn plays on the diagram: the controls on top, the row it is at marked (TrajectoryView.tsx, PlayControls.tsx) */
+.ds-play { display: flex; align-items: center; gap: var(--space-2); padding: 6px var(--space-3); background: var(--accent-wash); border-bottom: 1px solid var(--line); }
+.ds-play-turn { color: var(--accent-ink); }
+.ds-play-state { color: var(--fg-muted); font-size: var(--text-xs); }
+.ds-rec[data-now] { box-shadow: inset 2px 0 0 var(--accent); background: var(--accent-wash); }
+.ds-rec[data-now] .ds-rec-i { color: var(--accent-ink); }
+
+/* the sub-agents a turn dispatched, under that turn */
+.ds-kids { margin-top: var(--space-2); }
+.ds-kid { display: flex; align-items: center; gap: var(--space-2); width: 100%; padding: 4px var(--space-3) 4px var(--space-4); border: 0; background: none; color: var(--fg); font: inherit; font-size: var(--text-sm); text-align: left; cursor: pointer; }
+.ds-kid:hover, .ds-kid[data-on] { background: var(--raised, var(--bg-sunken)); }
+.ds-kid[data-on] .ds-kid-name { color: var(--accent-ink); }
+.ds-kid-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-kid-state, .ds-kid time { color: var(--fg-muted); font-size: var(--text-xs); white-space: nowrap; font-variant-numeric: tabular-nums; }
