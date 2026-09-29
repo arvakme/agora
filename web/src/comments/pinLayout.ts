@@ -35,7 +35,7 @@ export function layoutPins(threads: readonly Thread[], view: CanvasViewState, bl
   const taken = new Map<string, number>();
   const boxes: Box[] = [];
   const keyOf = (st: AnchorState) => `${Math.round(st.point.x)},${Math.round(st.point.y)}`;
-  const pins = threads.map((t) => {
+  const pins = threads.filter((t): t is Thread & { anchor: Anchor } => !!t.anchor).map((t) => {
     const st = resolveAnchor(t.anchor, view.map);
     const k = taken.get(keyOf(st)) ?? 0;
     taken.set(keyOf(st), k + 1);

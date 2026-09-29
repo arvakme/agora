@@ -8,6 +8,7 @@ shape: see ``transcript.py``'s module docstring (web/docs/agent-sessions.md).
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -18,6 +19,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from server.canvas import agora_msg
+from server.canvas.agora_msg import SEL_MARK
 from server.canvas.runner import Usage, empty_usage
 
 # Prompts Agora sends end with a context footer starting with this marker; it tells the
@@ -92,9 +95,23 @@ RECEIPT_MARK = re.compile(r"agora-receipt-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[
 def user_item(id: str, text: str, at: int) -> dict[str, Any]:
     clean = PASTE_TAG.sub("", text).strip()
     body, from_agora = split_agora(clean)
-    mark = DISPATCH_MARK.search(clean[len(body):]) if from_agora else None
-    receipt = RECEIPT_MARK.search(clean[len(body):]) if from_agora else None
-    return {"id": id, "kind": "user", "text": _clip(body, MAX_TEXT), "at": at, "source": "agora" if from_agora else "terminal", **({"dispatch": mark.group(1)} if mark else {}), **({"receipt": receipt.group(1)} if receipt else {})}
+    body = agora_msg.strip_file_tags(body) if from_agora else body
+    foot = clean[len(body) :] if from_agora else ""
+    mark = DISPATCH_MARK.search(foot)
+    receipt = RECEIPT_MARK.search(foot)
+    extra: dict[str, Any] = {}
+    if from_agora:
+        # what Agora wrote into the message (agora_msg.py): a card, or the person's words with a selection picture / list
+        extra["card"] = agora_msg.card(body, receipt.group(1).split(":")[1] if receipt else None)
+        body, ids = agora_msg.strip_tail_note(body)
+        sel = SEL_MARK.search(foot)
+        extra["selection"] = {"id": sel.group(1)} if sel else {"ids": ids} if ids else None
+    return {"id": id, "kind": "user", "text": _clip(body, MAX_TEXT), "at": at, "source": "agora" if from_agora else "terminal", **({"dispatch": mark.group(1)} if mark else {}), **({"receipt": receipt.group(1)} if receipt else {}), **{k: v for k, v in extra.items() if v}}
+
+
+def image_b64(path: str) -> str:
+    """A picture file as base64 (the selection's png; what Claude's stream-json and Grok's ACP blocks carry)."""
+    return base64.b64encode(Path(path).read_bytes()).decode()
 
 
 def _full(v: Any) -> str:

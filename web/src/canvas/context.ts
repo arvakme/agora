@@ -24,7 +24,7 @@ export const threadRequest = (thread: Thread): Request => ({
   id: thread.id,
   origin: "comment",
   messages: thread.messages.filter((m) => m.author === "you").map((m) => ({ author: "user", text: m.text })),
-  anchorIds: thread.anchor.ids,
+  anchorIds: thread.anchor?.ids ?? [],
 });
 
 export function freeze(scene: Scene, req: Request, selectedIds: string[]): FrozenContext {
