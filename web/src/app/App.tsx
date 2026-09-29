@@ -904,7 +904,7 @@ export function App({ boot }: { boot: Boot }) {
             ) : null
           }
         />
-        <FollowPane main={canvasDoc.id} root={root} setRoot={setRoot} />
+        <FollowPane main={canvasDoc.id} root={root} setRoot={setRoot} isSession={(t) => docsRef.current.find((d) => d.id === t)?.kind === "session"} />
         {mode === "comment" && (
           <motion.div className="mode-hint" style={dockAt ? { left: dockAt.x, bottom: dockAt.bottom + 50 } : undefined} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
             <IconComment size={14} />在「<b>{canvasDoc.title}</b>」上点一个元素钉评论 · Esc 退出
