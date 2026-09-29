@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from server.canvas import share as share_mod
 from server.canvas.cloudflare import LOGIN_HINT, CfCli, CfDns, CfTunnels, CloudflareError
 from server.canvas.project import ProjectStore
 from server.canvas.share import ShareError, ShareManager
@@ -55,7 +56,8 @@ if a.startswith("dns records delete"):
 if a.startswith("dns records get"):
     if argv[3] in state["records"]: out({{"id": argv[3]}})
     die("Record not found (81044)")
-if argv[:3] == ["tunnels", "run", "--token"]:
+if argv[:2] == ["tunnels", "run"]:
+    save()
     print("INF Registered tunnel connection", flush=True)
     import time; time.sleep(60); sys.exit(0)
 die("stub: unknown " + a)
@@ -115,37 +117,49 @@ def test_not_logged_in_says_how_to_log_in(cf):
     assert str(e.value) == LOGIN_HINT
 
 
-def test_command_failure_is_reported_without_secrets(cf):
+def test_command_failure_is_reported_verbatim_and_names_the_step(cf):
     c, _, patch = cf
-    patch(fail="tunnels token get")
+    patch(fail="tunnels config update")
     tid = CfTunnels(c).create("agora-share-x")
-    with pytest.raises(CloudflareError) as e:
+    with pytest.raises(CloudflareError, match="tunnels config update"):
         CfTunnels(c).start(tid, 1234, Path("/dev/null"))
-    assert "SECRET" not in str(e.value)
 
 
-def test_start_sets_ingress_runs_with_token_and_stops_with_the_tree(cf, tmp_path):
+def test_start_sets_ingress_and_runs_by_id_so_no_token_is_in_any_argument(cf, tmp_path):
     c, read, _ = cf
     tunnels = CfTunnels(c)
     tid = tunnels.create("agora-share-x")
     proc = tunnels.start(tid, 4321, tmp_path / "run" / "cf.log")
     try:
         assert proc.wait_ready(10)
-        upd = next(x for x in read()["calls"] if x[:3] == ["tunnels", "config", "update"])
+        calls = read()["calls"]
+        upd = next(x for x in calls if x[:3] == ["tunnels", "config", "update"])
         assert json.loads(upd[upd.index("--body") + 1])["config"]["ingress"] == [{"service": "http://127.0.0.1:4321"}]
-        assert "SECRET-TOKEN-VALUE" not in (tmp_path / "run" / "cf.log").read_text()  # the token never reaches the log
+        assert ["tunnels", "run", tid] in calls  # cf fetches the token itself; `ps` shows only the tunnel id
+        assert not any("--token" in x or x[:3] == ["tunnels", "token", "get"] for x in calls)
     finally:
         proc.stop()
     time.sleep(0.2)
     assert not proc.alive()
 
 
-def _manager(tmp_path, c) -> ShareManager:
+def test_cf_is_pinned_to_the_tested_version_unless_overridden(monkeypatch):
+    monkeypatch.setattr(share_mod.shutil, "which", lambda name: None)
+    monkeypatch.delenv("AGORA_CF_VERSION", raising=False)
+    assert share_mod.cf_command() == ["npx", "--yes", "cf@1.0.0-beta.5"]
+    monkeypatch.setenv("AGORA_CF_VERSION", "1.2.3")
+    assert share_mod.cf_command() == ["npx", "--yes", "cf@1.2.3"]
+    monkeypatch.setattr(share_mod.shutil, "which", lambda name: "/opt/bin/cf")  # an installed cf is used as it is
+    assert share_mod.cf_command() == ["/opt/bin/cf"]
+
+
+def _manager(tmp_path, c, clock=None) -> ShareManager:
     store = ProjectStore(tmp_path / "proj")
     store.root.mkdir()
     store.init()
     store.write("canvas", "c1", {"elements": []}, base=None)
-    m = ShareManager(store, providers=lambda: (CfDns(c), CfTunnels(c)), domain="example.test")
+    kw = {"clock": clock} if clock else {}
+    m = ShareManager(store, providers=lambda: (CfDns(c), CfTunnels(c)), domain="example.test", **kw)
     m.gateway_port = 45678
     return m
 
@@ -153,7 +167,7 @@ def _manager(tmp_path, c) -> ShareManager:
 def test_failed_create_rolls_back_what_was_made(cf, tmp_path):
     c, read, patch = cf
     m = _manager(tmp_path, c)
-    patch(fail="tunnels token get")  # the tunnel exists by then, the connector cannot start
+    patch(fail="tunnels config update")  # the tunnel exists by then, the connector cannot start
     with pytest.raises(CloudflareError):
         m.create("c1", 600)
     assert read()["tunnels"] == {} and read()["records"] == {}
@@ -194,3 +208,52 @@ def test_cf_runs_in_agoras_state_dir_not_the_project(monkeypatch, tmp_path):
     CfCli(domain="example.com", command=["cf"]).check_login()
     assert seen["cwd"] == str(tmp_path / "state" / "cf")
     assert not (project / ".cloudflare").exists()
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.t = 1_800_000_000.0
+
+    def __call__(self) -> float:
+        return self.t
+
+
+def _runs(read) -> int:
+    return sum(1 for x in read()["calls"] if x[:2] == ["tunnels", "run"])
+
+
+def test_down_keeps_live_shares_up_restores_the_same_address_and_cleans_the_expired(cf, tmp_path):
+    c, read, _ = cf
+    clock = Clock()
+    m = _manager(tmp_path, c, clock)
+    long, long_url = m.create("c1", 3600)
+    short, _ = m.create("c1", 120)
+    m.shutdown()  # agora down
+    st = read()
+    assert m.proc is None and len(st["records"]) == 2 and len(st["tunnels"]) == 1  # live shares keep their DNS and tunnel
+    clock.t += 300  # the short one runs out while the server is down
+    up = ShareManager(m.store, providers=lambda: (CfDns(c), CfTunnels(c)), domain="example.test", clock=clock)
+    up.gateway_port = 45679
+    try:
+        up.resume()  # agora up
+        st = read()
+        assert {s["id"]: s["status"] for s in up.list()} == {long["id"]: "active", short["id"]: "expired"}
+        assert [r["name"] for r in st["records"].values()] == [long["host"]]  # the expired one is cleaned, the other kept
+        assert _runs(read) == 2 and up.proc is not None and long_url.split("/s/")[0].endswith(long["host"])  # same address, connector back
+        assert up.verify(long["host"], long_url.rsplit("/", 1)[1]) is not None
+    finally:
+        up.shutdown()
+
+
+def test_revoke_all_after_down_clears_the_account_without_a_server(cf, tmp_path):
+    c, read, _ = cf
+    m = _manager(tmp_path, c)
+    a, _ = m.create("c1", 3600)
+    b, _ = m.create("c1", 3600)
+    m.shutdown()
+    offline = ShareManager(m.store, providers=lambda: (CfDns(c), CfTunnels(c)), domain="example.test")  # `agora share revoke --all` with the server down
+    for s in offline.list():
+        offline.revoke(s["id"])
+    offline.sweep()
+    assert read()["records"] == {} and read()["tunnels"] == {}
+    assert {s["status"] for s in offline.list()} == {"revoked"}

@@ -105,7 +105,7 @@ flowchart LR
 | Node 24（写在 `web/mise.toml`，装了 [mise](https://mise.jdx.dev) 会自动选用） | 构建前端 |
 | tmux | 「在终端打开」 |
 | 至少一个已登录的 agent CLI：`claude`、`pi` 或 `codex` | 会话 |
-| 可选：`cf`（`npx cf` 即可，先 `npx cf auth login`）+ 自己的 Cloudflare 域名 | 分享 |
+| 可选：`cf`（没装时自动用 `npx cf@1.0.0-beta.5`，`AGORA_CF_VERSION` 可改；先 `npx cf auth login`）+ 自己的 Cloudflare 域名 | 分享 |
 
 ```bash
 git clone https://github.com/arvakme/agora.git ~/code/agora
@@ -127,7 +127,7 @@ cd ~/code/my-service                            # 你的项目
 - 绑定会话时会自动为该 agent 安装 `agora` skill（旧的 `agora-canvas` 链接会被换掉）；也可以手动 `agora skill install --agent claude|codex|pi|all`（Claude Code 链接到 `.claude/skills/`，Codex 链接到 `.agents/skills/`，Pi 每次启动带 `--skill`；链接写进 `.git/info/exclude`，不改全局配置）。
 - 把 `~/code/agora/bin` 加进 `PATH` 后可以直接用 `agora up` / `agora open`。`agora up` 只起服务并打印地址；`agora open --dev` 走 vite 热更新，开发 Agora 本身时用。
 
-分享需要 `cf`（Cloudflare CLI；没装就用 `npx cf`），并已 `npx cf auth login`（凭据归 `cf` 管，Agora 不存也不读）；`AGORA_SHARE_DOMAIN` 指定分享用的域名（账号里只有一个域名时可省）：
+分享需要 `cf`（Cloudflare CLI；没装就用固定版本的 `npx cf`），并已 `npx cf auth login`（凭据归 `cf` 管，Agora 不存也不读）；`AGORA_SHARE_DOMAIN` 指定分享用的域名（账号里只有一个域名时可省）：
 
 ```bash
 agora share create --for 1d        # 默认分享聚焦的画布；--canvas <id|名字>；--for 10m|2h|1d|7d|forever
