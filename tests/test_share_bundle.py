@@ -200,7 +200,7 @@ def quick(tmp_path):
         started.append(q)
         return q
 
-    m = ShareManager(store, config_dir=tmp_path / "cfg", clock=Clock(), quick=factory)
+    m = ShareManager(store, clock=Clock(), quick=factory)
     m.gateway_port = 45678
     return store, m, started
 

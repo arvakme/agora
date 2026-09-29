@@ -1,5 +1,5 @@
 """Sharing (web/docs/sharing.md): guest whitelist, expiry and revoke, hashed tokens, and the
-DNS / tunnel cleanup, with Cloudflare and cloudflared replaced by fakes."""
+DNS / tunnel cleanup, with Cloudflare and cf replaced by fakes."""
 
 from __future__ import annotations
 
@@ -72,10 +72,9 @@ class FakeTunnels:
     def find(self, name):
         return next((i for i, n in self.tunnels.items() if n == name), None)
 
-    def create(self, name, credentials: Path):
+    def create(self, name):
         self.n += 1
         tid = f"tun-{self.n}"
-        credentials.write_text('{"TunnelSecret": "s"}')
         self.tunnels[tid] = name
         return tid
 
@@ -83,8 +82,8 @@ class FakeTunnels:
         self.tunnels.pop(tid)
         self.deleted.append(tid)
 
-    def start(self, tid, credentials, config, log):
-        assert credentials.exists() and "service: http://127.0.0.1:" in config.read_text()
+    def start(self, tid, port, log):
+        assert tid in self.tunnels and port == 45678 or port == 45679
         p = FakeProc(1000 + len(self.procs))
         self.procs.append(p)
         return p
@@ -121,7 +120,7 @@ def env(tmp_path):
         base=None,
     )
     dns, tunnels, clock = FakeDNS(), FakeTunnels(), Clock()
-    shares = ShareManager(store, providers=lambda: (dns, tunnels), config_dir=tmp_path / "cfg", clock=clock)
+    shares = ShareManager(store, providers=lambda: (dns, tunnels), clock=clock)
     shares.gateway_port = 45678
     dist = tmp_path / "dist"
     (dist / "assets").mkdir(parents=True)
@@ -301,7 +300,6 @@ async def test_expiry_kills_the_token_and_cleans_dns_and_tunnel(env):
     assert shares.sweep() == [share["id"]]
     assert dns.records == {} and dns.deleted == [rid]
     assert tunnels.tunnels == {} and not tunnels.procs[0].running
-    assert not list((shares.config_dir / "tunnels").glob("*"))
     assert shares.list()[0]["status"] == "expired" and shares.list()[0]["cleanup"] == []
     assert not (store.run_dir / "share-tunnel.json").exists()
 
@@ -366,7 +364,7 @@ async def test_restart_resumes_active_shares_and_ends_expired(env, tmp_path):
     shares.shutdown()
     assert not tunnels.procs[0].running
     clock.t += 300
-    again = ShareManager(store, providers=lambda: (dns, tunnels), config_dir=shares.config_dir, clock=clock)
+    again = ShareManager(store, providers=lambda: (dns, tunnels), clock=clock)
     again.gateway_port = 45679
     again.resume()
     assert {s["id"]: s["status"] for s in again.list()} == {a["id"]: "expired", b["id"]: "active"}
