@@ -8,7 +8,7 @@ import { IconCheck, IconChevron, IconSearch } from "../app/icons";
 import { SPRING } from "../comments/motion";
 import { closedState, findOption, isSearchable, optionCount, openState, pickerKey, pickerRows, queryState, toggleGroup, type PickGroup, type PickState } from "./pickerModel";
 
-export function Picker({ label, value, onChange, groups, disabled, placeholder, title, compact }: { label: string; value: string; onChange: (v: string) => void; groups: PickGroup[]; disabled?: boolean; placeholder?: string; title?: string; /** Trigger shows the label only (narrow fields). */ compact?: boolean }) {
+export function Picker({ label, value, onChange, groups, disabled, placeholder, title, compact, valueLabel }: { label: string; value: string; onChange: (v: string) => void; groups: PickGroup[]; disabled?: boolean; placeholder?: string; title?: string; /** Trigger shows the label only (narrow fields). */ compact?: boolean; /** What the trigger says when the value is empty (default 「CLI 默认」). */ valueLabel?: string }) {
   const id = useId();
   const [st, setSt] = useState<PickState>(closedState);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -75,7 +75,7 @@ export function Picker({ label, value, onChange, groups, disabled, placeholder, 
         onKeyDown={(e) => (st.open || measure(), onKey(e))}
       >
         <span className="pk-value">
-          <span className="pk-name">{current?.label ?? (value || "CLI 默认")}</span>
+          <span className="pk-name">{current?.label ?? (value || valueLabel || "CLI 默认")}</span>
           {current?.detail && !compact && <span className="pk-id">{current.detail}</span>}
         </span>
         <IconChevron size={12} open={st.open} />

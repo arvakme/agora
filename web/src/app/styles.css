@@ -84,6 +84,8 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .agent-avatar[data-agent="claude"] { --mark: 0.62; }
 .agent-avatar > .agent-initial { font-size: calc(var(--av) * 0.46); font-weight: 600; line-height: 1; color: var(--ink, currentColor); }
 .agent-avatar[data-agent="codex"] { --mark: 0.7; }
+.agent-avatar[data-agent="grok"], .agent-avatar[data-agent="cursor"] { --mark: 0.72; }
+.agent-avatar[data-agent="devin"] { --mark: 0.5; }
 .avatar[data-who="system"] { --icon: var(--caution); }
 
 /* inline notice: a bold state word, then a sentence you can act on */

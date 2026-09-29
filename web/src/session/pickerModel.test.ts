@@ -64,7 +64,7 @@ describe("model picker groups", () => {
   it("effort: the model's levels, its default marked, CLI 默认 only when no default is known", () => {
     expect(effortGroups({ levels: ["low", "high"], initial: "high", cliDefault: false })[0].options.map((o) => [o.value, o.note])).toEqual([["low", undefined], ["high", "默认"]]);
     expect(effortGroups({ levels: ["low"], initial: "", cliDefault: true })[0].options.map((o) => o.label)).toEqual(["CLI 默认", "low"]);
-    expect(effortGroups({ levels: [], initial: "", cliDefault: true })[0].options.map((o) => o.label)).toEqual(["不支持"]);
+    expect(effortGroups({ levels: [], initial: "", cliDefault: true })[0].options.map((o) => o.label)).toEqual(["这个 CLI 不分强度"]);
   });
 });
 

@@ -1,9 +1,10 @@
 // Every place that shows which agent a session is (agent picker, session header, tabs, 所有画布,
 // pointer labels, trajectory rows, comment replies) goes through AgentAvatar: one disc on the
 // theme's avatar tile (--avatar-tile + hairline), with the agent's own mark on it — vector for
-// Pi and Claude Code, a 64/128px raster pair for Codex — so it stays sharp at 16–40px on 2x/3x
+// Pi, Claude Code, Cursor and Devin, a 64/128px raster pair for Codex and Grok — so it stays sharp at 16–40px on 2x/3x
 // screens and reads in both themes. Marks and sources: ../app/agents/marks.tsx.
-import { ClaudeMark, CodexMark, PiMark } from "../app/agents/marks";
+import { ClaudeMark, CodexMark, CursorMark, DevinMark, GrokMark, PiMark } from "../app/agents/marks";
+import { markFor } from "./agentMarks";
 import { agentName, useAgents, type AgentKind } from "./agents";
 
 /** 16 tabs / inline rows · 20 compact lists · 26 beside people's avatars in threads · 32 session header · 40 agent picker. */
@@ -19,9 +20,21 @@ export function AgentAvatar({ kind, size = 32, label }: { kind: AgentKind; size?
       aria-label={label ? agentName(kind) : undefined}
       aria-hidden={label ? undefined : true}
     >
-      {kind === "pi" ? <PiMark /> : kind === "claude" ? <ClaudeMark /> : kind === "codex" ? <CodexMark px={size} /> : <InitialMark kind={kind} />}
+      <Mark kind={kind} size={size} />
     </span>
   );
+}
+
+function Mark({ kind, size }: { kind: AgentKind; size: number }) {
+  switch (markFor(kind)) {
+    case "pi": return <PiMark />;
+    case "claude": return <ClaudeMark />;
+    case "codex": return <CodexMark px={size} />;
+    case "grok": return <GrokMark px={size} />;
+    case "cursor": return <CursorMark />;
+    case "devin": return <DevinMark />;
+    default: return <InitialMark kind={kind} />;
+  }
 }
 
 /** A CLI without a drawn mark yet (an observed agent from the adapter registry): its initial. */
