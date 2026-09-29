@@ -10,6 +10,7 @@ import { nested } from "../nested/store";
 import { clock, replayTime } from "./clock";
 import { canvasWhere } from "./place";
 import { summaryOf, type Window } from "./playCounts";
+import { startAt, type StartOpts } from "./replayStart";
 import { quiet } from "./replayQuiet";
 import { createCamera } from "./replayView";
 import { runs } from "./runs/store";
@@ -35,8 +36,6 @@ export type PlayState = {
   starting: boolean;
 };
 
-/** After the turn's own end the play goes on this long: the summary, on the whole diagram. */
-const SUMMARY_MS = 3000;
 /** Then it lets go by itself after this long. */
 const HOLD_MS = 3500;
 
@@ -67,8 +66,8 @@ export const plays = {
   subscribe: (l: () => void) => (ls.add(l), () => void ls.delete(l)),
   active: () => !!state.play,
   run,
-  /** Play a turn. The caller has traced it (`focus.trace`); the clock starts a moment before it and ends after it (the summary). */
-  async start(p: Play) {
+  /** Play a turn. The caller has traced it (`focus.trace`); the clock starts a moment before it (or at the step `o.from`, paused there when `o.paused`) and ends after it (the summary). */
+  async start(p: Play, o: StartOpts = {}) {
     const token = ++startToken;
     set({ starting: true });
     try {
@@ -77,9 +76,11 @@ export const plays = {
       const now = Date.now();
       main = p.canvasId ?? null;
       doneAt = 0;
-      until = Math.min(now, (p.win.end ?? now) + SUMMARY_MS);
+      const go = startAt(p.win, now, o);
+      until = go.until;
       set({ play: p, barNote: null, manual: false });
-      clock.play(p.win.start - 400, until, 1, clock.get()?.gaps);
+      if (go.paused) clock.seek(go.at, until, clock.get()?.gaps);
+      else clock.play(go.at, until, 1, clock.get()?.gaps);
     } finally {
       if (token === startToken) set({ starting: false });
     }

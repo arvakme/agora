@@ -157,8 +157,16 @@ p.ds-say { white-space: pre-wrap; }
 .ds-play { display: flex; align-items: center; gap: var(--space-2); padding: 6px var(--space-3); background: var(--accent-wash); border-bottom: 1px solid var(--line); }
 .ds-play-turn { color: var(--accent-ink); }
 .ds-play-state { color: var(--fg-muted); font-size: var(--text-xs); }
-.ds-rec[data-now] { box-shadow: inset 2px 0 0 var(--accent); background: var(--accent-wash); }
+/* the current step: a progress line grows down its left edge and the wash fades in (no flash when it moves on) */
+.ds-rec { transition: background-color 360ms var(--ease-out); }
+.ds-rec::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); transform: scaleY(0); transform-origin: top; opacity: 0; transition: transform 360ms var(--ease-out), opacity 360ms var(--ease-out); pointer-events: none; }
+.ds-rec[data-now] { background: var(--accent-wash); }
+.ds-rec[data-now]::after { transform: scaleY(1); opacity: 1; }
 .ds-rec[data-now] .ds-rec-i { color: var(--accent-ink); }
+/* another turn while one plays: folded and faded */
+.ds-turn[data-dim] { opacity: 0.45; }
+.ds-turn[data-dim] .ds-turn-head { cursor: default; }
+@media (prefers-reduced-motion: reduce) { .ds-rec, .ds-rec::after { transition: none; } }
 
 /* the sub-agents a turn dispatched, under that turn */
 .ds-kids { margin-top: var(--space-2); }
@@ -167,3 +175,9 @@ p.ds-say { white-space: pre-wrap; }
 .ds-kid[data-on] .ds-kid-name { color: var(--accent-ink); }
 .ds-kid-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ds-kid-state, .ds-kid time { color: var(--fg-muted); font-size: var(--text-xs); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* 「▶ 从这一步回放」: at the row's right end, on hover or focus */
+.ds-rec-play { position: absolute; right: 4px; top: 3px; height: 22px; padding: 0 8px; border-radius: var(--r-xs); background: var(--surface); box-shadow: var(--box); color: var(--accent); font-size: var(--text-xs); line-height: 22px; opacity: 0; transition: opacity var(--dur-tap) var(--ease-out); }
+.ds-rec:hover .ds-rec-play, .ds-rec-play:focus-visible { opacity: 1; }
+.ds-rec-play:hover { background: var(--accent-fill); color: var(--accent-fg); }
+@media (hover: none) { .ds-rec-play { opacity: 1; } }

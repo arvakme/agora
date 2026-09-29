@@ -7,6 +7,12 @@
 .ws-play-bar .k { color: var(--accent-ink); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
 .ws-play-bar .ttl { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg-muted); }
 
+/* the route left on the canvas after a replay: whose it is and how to close it, and what the numbers mean (top left, where the play bar was) */
+.ws-trace-bar { pointer-events: none; position: absolute; z-index: 7; top: 68px; left: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: calc(100% - 24px); }
+.ws-trace-head { pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 4px 0 12px; border-radius: var(--r-md); background: var(--surface); box-shadow: 0 0 0 1px var(--accent); font-size: var(--text-sm); white-space: nowrap; }
+.ws-trace-head .k { color: var(--accent-ink); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
+.ws-trace-legend { margin: 0; padding: 0 6px; border-radius: var(--r-xs); background: color-mix(in srgb, var(--surface) 85%, transparent); color: var(--fg-muted); font-size: var(--text-xs); line-height: 18px; }
+
 /* the live camera, paused by the person (§10 默认跟随): one button, top centre under the toolbar (Excalidraw's property panel covers the left); it goes once the camera follows again */
 .ws-live-bar { pointer-events: auto; position: absolute; z-index: 7; top: 66px; left: 50%; transform: translateX(-50%); display: inline-flex; max-width: calc(100% - 24px); }
 .ws-live-bar .btn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

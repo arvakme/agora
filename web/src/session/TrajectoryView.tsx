@@ -19,6 +19,10 @@ import { IconChevron, IconCopy, IconSearch } from "../app/icons";
 import { agents, type AgentKind, type Item } from "./agents";
 import { focus, useFocus } from "../workstation/focus";
 import { TraceTurn } from "./TraceTurn";
+import { panToStep, playTurn } from "./playTurn";
+import { clock as replayClock } from "../workstation/clock";
+import { jumpTo } from "../workstation/replayStart";
+import { plays } from "../workstation/replayMode";
 import { AgentAvatar } from "./AgentAvatar";
 import {
   ACTIVITY_NOW,
@@ -38,6 +42,8 @@ import {
 import { JumpPill, useJumpToBottom } from "./JumpPill";
 import { PlayControls } from "./PlayControls";
 import { currentRecord } from "./replayStep";
+import { isUserScroll, quietFor } from "./followModel";
+import { turnOpen } from "./replayScope";
 import { kidsByTurn } from "./subAgents";
 import { RunAvatar } from "../workstation/RunAvatar";
 import { useRuns } from "../workstation/runs/store";
@@ -46,6 +52,7 @@ import "./trajectory.css";
 
 const clock = (at: number) => new Date(at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 const KIND: Record<TrajRecord["kind"], string> = { user: "用户", message: "消息", tool: "工具" };
+const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const OP: Record<string, string> = { edit: "改", write: "写", add: "新建", delete: "删" };
 
 /** Model · effort · tokens · time · cost, only the parts that are known (nothing is made up). */
@@ -270,31 +277,57 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
   // a row under the pointer lights its node and stop on the canvas; the trace's stop hovered there lights the row
   const hovered = useFocus().itemHover;
 
-  // A turn plays: the row it is at is marked and kept in view — until the person looks elsewhere (wheel, touch, keys in the
-  // ledger): then it does not take the scroll back, and 「回到当前步」 says how to (Esc / the end of the play clears it).
+  // A turn plays: the pane shows only that turn, its head at the top, and the row it is at is marked and kept in the middle —
+  // until the person really scrolls (wheel, touch, paging keys in the ledger): then it does not take the scroll back, and
+  // 「回到当前步」 says how to (Esc / the end of the play clears it). Its own scrolling, the pane switching to this view and a
+  // trackpad's leftover momentum are not the person (./followModel.ts).
   const now = play ? currentRecord(turns, play.n, play.at) : null;
   const [away, setAway] = useState(false);
   const following = useRef(true);
-  const toNow = (smooth = false) => scroll.current?.querySelector(".ds-rec[data-now]")?.scrollIntoView({ block: "nearest", behavior: smooth ? "smooth" : "auto" });
+  const quiet = useRef(0); // wheel / touch before this moment are momentum from before the play, not the person
+  const toNow = (smooth = true) => {
+    scroll.current?.querySelector(".ds-rec[data-now]")?.scrollIntoView({ block: "center", behavior: smooth && !reducedMotion() ? "smooth" : "auto" });
+  };
   useEffect(() => {
+    quiet.current = quietFor(Date.now(), quiet.current); // this view has just come up for the play
     if (!play) return void (following.current = true, setAway(false));
     const el = scroll.current;
     if (!el) return;
-    const leave = () => (following.current = false, setAway(true));
-    const keys = (e: KeyboardEvent) => ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key) && leave();
-    el.addEventListener("wheel", leave, { passive: true });
-    el.addEventListener("touchmove", leave, { passive: true });
+    const leave = (e: Parameters<typeof isUserScroll>[0]) => {
+      if (!isUserScroll(e, Date.now(), quiet.current)) return;
+      following.current = false;
+      setAway(true);
+    };
+    const wheel = (e: WheelEvent) => leave({ kind: "wheel", dx: e.deltaX, dy: e.deltaY });
+    const touch = () => leave({ kind: "touch" });
+    const keys = (e: KeyboardEvent) => leave({ kind: "key", key: e.key, onButton: (e.target as HTMLElement | null)?.closest?.("button") != null });
+    el.addEventListener("wheel", wheel, { passive: true });
+    el.addEventListener("touchmove", touch, { passive: true });
     el.addEventListener("keydown", keys);
-    return () => (el.removeEventListener("wheel", leave), el.removeEventListener("touchmove", leave), el.removeEventListener("keydown", keys));
+    return () => (el.removeEventListener("wheel", wheel), el.removeEventListener("touchmove", touch), el.removeEventListener("keydown", keys));
   }, [!!play]);
+  // the played turn's head goes to the top (the others fold: `turnOpen`)
   useEffect(() => {
-    if (!play) return;
-    // the row's turn opens if it was folded
-    if (play.n != null) setCollapsed((c) => (c.has(play.n) ? (c.delete(play.n), new Set(c)) : c));
+    if (play?.n == null) return;
+    const t = setTimeout(() => scroll.current?.querySelector(`[data-traj-turn="${play.n}"]`)?.scrollIntoView({ block: "start", behavior: reducedMotion() ? "auto" : "smooth" }), 60);
+    return () => clearTimeout(t);
   }, [play?.n]);
   useEffect(() => {
     if (now && following.current) toNow();
   }, [now]);
+  // A step clicked: the figure goes to that step. During this turn's play the clock jumps there (paused stays paused, playing goes on);
+  // otherwise the turn opens paused at that step (「关闭」 / Esc lets go). 「▶ 从这一步回放」 plays on from the step.
+  const go = (t: TrajTurn, r: TrajRecord) => {
+    const at = plays.get().play?.n === t.n && plays.get().play?.runId === top?.id ? replayClock.get() : null;
+    if (at) {
+      const j = jumpTo(at, r.at);
+      following.current = true;
+      setAway(false);
+      return void (j.playing ? replayClock.play(j.at, j.until, j.speed, at.gaps) : replayClock.seek(j.at, j.until, at.gaps));
+    }
+    if (!playTurn(sessionId, t, { from: r.at, paused: true }) && r.kind === "tool") panToStep(r.id); // no figure to bring: at least its node
+  };
+  const playFrom = (t: TrajTurn, r: TrajRecord) => void playTurn(sessionId, t, { from: r.at });
   const allOpen = collapsed.size === 0;
   return (
     <div className="ds-traj" data-replay={cutoff != null || undefined}>
@@ -310,7 +343,7 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
             </button>
           ))}
         </div>
-        <button className="ds-text-btn" onClick={() => setCollapsed(allOpen ? new Set(turns.map((t) => t.n)) : new Set())}>
+        <button className="ds-text-btn" disabled={!!play} onClick={() => setCollapsed(allOpen ? new Set(turns.map((t) => t.n)) : new Set())}>
           {allOpen ? "收起所有轮次" : "展开所有轮次"}
         </button>
         <label className="ds-search">
@@ -335,11 +368,11 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
           const steps = t.steps.map((s) => ({ ...s, records: s.records.filter(visible) })).filter((s) => s.records.length);
           if ((focus || q) && !steps.length) return null;
           return (
-            <TurnSection key={t.n} sessionId={sessionId} turn={t} kids={kids.get(t.n)} open={!collapsed.has(t.n)} onToggle={() => setCollapsed((c) => (c.has(t.n) ? (c.delete(t.n), new Set(c)) : new Set(c).add(t.n)))}>
+            <TurnSection key={t.n} sessionId={sessionId} turn={t} kids={kids.get(t.n)} open={turnOpen(t.n, play?.n ?? null, collapsed)} dim={!!play && play.n !== t.n} onToggle={() => !play && setCollapsed((c) => (c.has(t.n) ? (c.delete(t.n), new Set(c)) : new Set(c).add(t.n)))}>
               {steps.map((s) => (
                 <StepGroup key={s.n} step={s}>
                   {s.records.map((r) => (
-                    <RecordRow key={r.id} sessionId={sessionId} r={r} selected={selected === r.id} onSelect={() => setSelected(selected === r.id ? null : r.id)} agent={agent} future={cutoff != null && r.at > cutoff} now={r.id === now} flash={flash.has(r.id)} hot={hovered === r.id} />
+                    <RecordRow key={r.id} sessionId={sessionId} r={r} canPlay={!!top} onGo={() => go(t, r)} onPlay={() => playFrom(t, r)} selected={selected === r.id} onSelect={() => setSelected(selected === r.id ? null : r.id)} agent={agent} future={cutoff != null && r.at > cutoff} now={r.id === now} flash={flash.has(r.id)} hot={hovered === r.id} />
                   ))}
                 </StepGroup>
               ))}
@@ -348,7 +381,7 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
         })}
       </div>
       {play ? (
-        <JumpPill show={away} unread={0} label="回到当前步" onJump={() => ((following.current = true), setAway(false), toNow(true))} />
+        <JumpPill show={away} unread={0} label="回到当前步" onJump={() => ((following.current = true), setAway(false), toNow())} />
       ) : (
         <JumpPill show={jump.show} unread={jump.unread} running={working} onJump={jump.jump} />
       )}
@@ -358,9 +391,9 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
 
 const recordId = (turns: TrajTurn[], index: number) => turns.flatMap((t) => t.steps.flatMap((s) => s.records)).find((r) => r.index === index)?.id ?? null;
 
-function TurnSection({ sessionId, turn, open, onToggle, kids, children }: { sessionId: string; turn: TrajTurn; open: boolean; onToggle: () => void; kids?: WorkRun[]; children: React.ReactNode }) {
+function TurnSection({ sessionId, turn, open, dim, onToggle, kids, children }: { sessionId: string; turn: TrajTurn; open: boolean; /** another turn is playing: this one is folded and faded */ dim?: boolean; onToggle: () => void; kids?: WorkRun[]; children: React.ReactNode }) {
   return (
-    <section className="ds-turn" data-traj-turn={turn.n} data-running={turn.running}>
+    <section className="ds-turn" data-traj-turn={turn.n} data-running={turn.running} data-dim={dim || undefined} title={dim ? "回放中，只看正在放的这一轮" : undefined}>
       <div className="ds-turn-headrow">
       <button className="ds-turn-head" onClick={onToggle} aria-expanded={open}>
         <IconChevron open={open} />
@@ -414,14 +447,15 @@ function StepGroup({ step, children }: { step: TrajStep; children: React.ReactNo
   );
 }
 
-function RecordRow({ sessionId, r, selected, onSelect, agent, future, now, flash, hot }: { sessionId: string; r: TrajRecord; selected: boolean; onSelect: () => void; agent?: AgentKind; future?: boolean; now?: boolean; flash?: boolean; hot?: boolean }) {
+function RecordRow({ sessionId, r, canPlay, onGo, onPlay, selected, onSelect, agent, future, now, flash, hot }: { sessionId: string; r: TrajRecord; /** the session has an agent on the diagram to play or bring to this step */ canPlay: boolean; onGo: () => void; onPlay: () => void; selected: boolean; onSelect: () => void; agent?: AgentKind; future?: boolean; now?: boolean; flash?: boolean; hot?: boolean }) {
   return (
     <div className="ds-rec" data-rec-id={r.id} data-selected={selected} data-kind={r.kind} data-error={r.isError} data-future={future || undefined} data-now={now || undefined} data-flash={flash || undefined} data-hot={hot || undefined} onPointerEnter={() => r.kind === "tool" && focus.hoverItem(r.id)} onPointerLeave={() => focus.hoverItem(null)}>
       <button
         className="ds-rec-line"
         onClick={() => {
           onSelect();
-          if (r.kind === "tool") focus.panToItem(r.id); // its node on the canvas, once
+          if (canPlay) onGo(); // the figure goes to this step (and the canvas to its node)
+          else if (r.kind === "tool") focus.panToItem(r.id); // no figure: its node on the canvas, once
         }}
         aria-expanded={selected}
       >
@@ -430,6 +464,11 @@ function RecordRow({ sessionId, r, selected, onSelect, agent, future, now, flash
         <span className="ds-rec-text">{r.kind === "tool" ? <span className="ds-mono">{r.text}</span> : r.text || "（空）"}</span>
         <span className="ds-rec-time">{r.running ? "…" : r.durationMs != null ? fmtDuration(r.durationMs) : clock(r.at)}</span>
       </button>
+      {canPlay && (
+        <button className="ds-rec-play" onClick={onPlay} title="从这一步回放：小人和镜头从这里接着走" aria-label={`从 #${r.index} 这一步回放`}>
+          ▶
+        </button>
+      )}
       {selected &&
         (r.kind === "tool" ? (
           <ToolDetail sessionId={sessionId} item={r.item} />
