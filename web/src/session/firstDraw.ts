@@ -14,6 +14,9 @@ export const drawPlan = (recommended: string): { kind: string; prompt: string } 
 /** On the empty canvas: one sentence, pointing at the same button (not a second way). */
 export const EMPTY_HINT = "这张图还是空的：让 agent 画出这个项目的架构（会话里的「画出这个项目的架构」），或者自己动手画。";
 
+/** On the empty canvas while an agent is at work (FX2a): what is going on, in plain words — its figure is outside the picture, and the camera is with it. */
+export const busyHint = (agent: string): string => `${agent} 正在看代码、准备画图——小人在图外，镜头跟着它；画出来的东西会一件件出现在这里。`;
+
 /** 「看一个示例」 asks the app to open the sample as another canvas (the current one is not touched). */
 const listeners = new Set<() => void>();
 export const sampleRequests = {

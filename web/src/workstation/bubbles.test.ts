@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { Box } from "../canvas/clearance";
-import { placeBubbles, protoSpot, TAIL_H, TIP_GAP, type BubbleIn } from "./bubbles";
+import { BUBBLE_MAX_W, boxesIn, placeBubbles, protoSpot, TAIL_H, TIP_GAP, type BubbleIn } from "./bubbles";
 
 const overlap = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 const boxes = (list: BubbleIn[], at: Map<string, { x: number; y: number; chip: boolean }>) =>
@@ -138,3 +139,51 @@ describe("a bubble never covers its own figure", () => {
   });
 });
 
+
+// FX2b (ACC1 #5, #8): a bubble is at most BUBBLE_MAX_W wide (the words end in …, the full text shows on hover),
+// stays whole inside the pane near its edges, and the talk box keeps off every shown bubble.
+describe("bubble width", () => {
+  it("the CSS cap is the exported cap (one number, two places)", () => {
+    const css = readFileSync(new URL("./workstation.css", import.meta.url), "utf8");
+    expect(css).toContain(`--bub-max: ${BUBBLE_MAX_W}px`);
+  });
+
+  it("the words part ends in an ellipsis instead of growing", () => {
+    const css = readFileSync(new URL("./workstation.css", import.meta.url), "utf8");
+    expect(css).toMatch(/\.ws-bub-in \{[^}]*max-width: calc\(var\(--bub-max\)/);
+    expect(css).toMatch(/\.ws-bub-in > [^{]*\{[^}]*text-overflow: ellipsis/);
+  });
+
+  it("at either edge of the pane a full-width bubble slides in, whole, tail still on its head", () => {
+    for (const x of [26, 40, 60, 940, 970, 992]) {
+      const b = fig(`e${x}`, x, 300, { w: BUBBLE_MAX_W });
+      const { at } = placeBubbles([b], { width: 1000, height: 800, nodes: [] });
+      const p = at.get(b.id)!;
+      expect(p.x, `${x}`).toBeGreaterThanOrEqual(8);
+      expect(p.x + (p.chip ? 40 : b.w), `${x}`).toBeLessThanOrEqual(1000 - 8);
+      if (!p.chip && p.tail === "d") expect(p.x + p.tailX).toBe(x);
+    }
+  });
+
+  it("several full-width bubbles at once: none overlaps another, all inside the pane", () => {
+    const list = [fig("a", 120, 300, { w: BUBBLE_MAX_W }), fig("b", 260, 300, { w: BUBBLE_MAX_W, foldable: true }), fig("c", 400, 320, { w: BUBBLE_MAX_W, foldable: true }), fig("d", 880, 300, { w: BUBBLE_MAX_W })];
+    const { at } = placeBubbles(list, { width: 1000, height: 800, nodes: [] });
+    const bs = boxes(list, at);
+    noOverlap(bs);
+    for (const r of bs) expect(r.x >= 8 && r.x + r.w <= 992 && r.y >= 8 && r.y + r.h <= 792, r.id).toBe(true);
+  });
+});
+
+describe("boxesIn (the talk box's obstacles)", () => {
+  it("shown bubbles as boxes in the box's own frame; empty or hidden ones are dropped", () => {
+    const rects = [
+      { left: 130, top: 90, width: 200, height: 28 },
+      { left: 10, top: 10, width: 0, height: 0 },
+      { left: 400, top: 200, width: 80, height: 22 },
+    ];
+    expect(boxesIn({ left: 100, top: 50 }, rects)).toEqual([
+      { x: 30, y: 40, w: 200, h: 28 },
+      { x: 300, y: 150, w: 80, h: 22 },
+    ]);
+  });
+});

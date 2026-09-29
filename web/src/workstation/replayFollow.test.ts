@@ -2,7 +2,7 @@
 // it is going to and its bubble, near 100 % and never below 70 % — with a dead zone, so the camera
 // does not move while the figure stays near the middle. Pure: `followView`.
 import { describe, expect, it } from "vitest";
-import { followView, type FollowIn } from "./replayFollow.ts";
+import { trayShotBox, followView, type FollowIn } from "./replayFollow.ts";
 
 const base: FollowIn = {
   pane: { w: 1200, h: 800 },
@@ -86,5 +86,32 @@ describe("dead zone: the camera stays put while the figure stays near the middle
   });
   it("moves when there is no current view yet", () => {
     expect(followView({ ...base, current: null }).move).toBe(true);
+  });
+});
+
+describe("FX2a · #7/#10: a figure at the tray outside the drawing is framed with the piece of the drawing nearest to it", () => {
+  const bounds = { x: 0, y: 0, w: 2400, h: 1600 };
+  it("the tray above the drawing: the strip of the drawing under it, not one node or bare canvas; none when it stands inside, or there is no drawing", () => {
+    const b = trayShotBox({ x: 800, y: -120 }, bounds)!;
+    expect(b).toEqual({ x: 440, y: 0, w: 720, h: 360 });
+    expect(trayShotBox({ x: 800, y: 300 }, bounds)).toBeNull();
+    expect(trayShotBox({ x: 800, y: -120 }, null)).toBeNull();
+    expect(trayShotBox({ x: 800, y: -120 }, { x: 0, y: 0, w: 0, h: 0 })).toBeNull();
+  });
+  it("the corner: the tray off the top-left corner is framed with the corner", () => {
+    expect(trayShotBox({ x: -200, y: -200 }, bounds)).toEqual({ x: 0, y: 0, w: 360, h: 360 });
+  });
+  it("the shot with it shows the top of the drawing next to the figure (and holds the figure in when it does not all fit at 0.7)", () => {
+    const fig = { x: 800, y: -120 };
+    const node = trayShotBox(fig, bounds)!;
+    const out = followView({ ...base, figure: fig, node, current: null });
+    const z = out.view.zoom;
+    const screenY = (y: number) => (y + out.view.scrollY) * z;
+    const screenX = (x: number) => (x + out.view.scrollX) * z;
+    expect(z).toBeGreaterThanOrEqual(0.7);
+    expect(screenY(0)).toBeGreaterThan(base.occupied.top); // the drawing's top edge is in view under the toolbar
+    expect(screenY(fig.y)).toBeGreaterThan(base.occupied.top); // and so is the figure
+    expect(screenX(fig.x)).toBeGreaterThan(0);
+    expect(screenX(fig.x)).toBeLessThan(base.pane.w);
   });
 });

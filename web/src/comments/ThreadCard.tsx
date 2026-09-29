@@ -23,7 +23,7 @@ import "./handoff.css";
 import { useAuthorColors, type AuthorSlot } from "./authorColor";
 import { anchorNote } from "./anchorNote";
 import { MomentChip } from "./MomentChip";
-import type { CardPos } from "./CommentLayer";
+import type { CardPos } from "./cardPlace";
 
 export function ThreadCard({ t, st, mode, api, store, pos, onHover, onRepin }: {
   t: Thread;

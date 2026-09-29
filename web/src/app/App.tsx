@@ -49,6 +49,7 @@ import {
   firstScreen,
   groupKind,
   placeDoc,
+  placeQuiet,
   replaceTab,
   isOpen,
   nextTitle,
@@ -71,6 +72,8 @@ import {
 } from "../workspace/model";
 
 const params = new URLSearchParams(location.search);
+/** A canvas opened only for an agent's read or edit is closed again after this long unused, unless the person took it. */
+const QUIET_TAB_MS = 8000;
 const EVAL_MODE = params.has("eval");
 // ?eval&task=t1 runs one task; ?runs=N overrides the 3 runs per task.
 const EVAL_ONLY = params.get("task")?.split(",").map((t) => TASKS[Number(t.replace(/\D/g, "")) - 1]?.id).filter(Boolean);
@@ -695,16 +698,38 @@ export function App({ boot }: { boot: Boot }) {
     });
     return () => buildReplay.setCommenter(null);
   }, []);
+  /** Canvases opened only for an agent (`ui.ensureCanvas`): id → when one of its calls last used it. */
+  const quietTabs = useRef(new Map<string, number>());
+  useEffect(() => {
+    const t = setInterval(() => {
+      for (const [id, at] of quietTabs.current) {
+        if (Date.now() - at < QUIET_TAB_MS) continue;
+        quietTabs.current.delete(id);
+        // the person took it (it is in front, or focused): it stays, as theirs
+        const g = groupOf(rootRef.current, id);
+        if (!g || g.active === id || focusedRef.current === id) continue;
+        setRoot((r) => closeTab(r, id));
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, []);
   useEffect(() => {
     ui.focusPane = (id) => {
       if (!docsRef.current.some((d) => d.id === id)) return;
       openRef.current(id);
     };
     ui.ensureCanvas = async (id) => {
-      if (canvases.get(id)) return canvases.get(id);
+      if (canvases.get(id)) return (quietTabs.current.has(id) && quietTabs.current.set(id, Date.now()), canvases.get(id));
       if (!docsRef.current.some((d) => d.id === id && d.kind === "canvas")) return undefined;
-      openRef.current(id, { focus: false, kind: "canvas", keepVisible: focusedRef.current });
+      // for an agent's read or edit, not for the person: the tab joins quietly (never the active one, no split beside the canvas in use) and goes again once
+      // nothing has used it for a while and the person has not taken it (./workspace/model.ts `placeQuiet`)
+      if (!isOpen(rootRef.current, id)) {
+        const quiet = { kindOf: (t: string) => docsRef.current.find((d) => d.id === t)?.kind, recentCanvas: lastCanvasRef.current, focused: focusedRef.current };
+        setRoot((r) => (isOpen(r, id) ? r : placeQuiet(r, id, quiet)));
+        quietTabs.current.set(id, Date.now());
+      }
       for (let i = 0; i < 60 && !canvases.get(id); i++) await new Promise((ok) => setTimeout(ok, 50));
+      if (quietTabs.current.has(id)) quietTabs.current.set(id, Date.now());
       return canvases.get(id);
     };
     ui.openThread = (canvasId, threadId) => {

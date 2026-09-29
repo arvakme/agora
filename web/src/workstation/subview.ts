@@ -10,8 +10,9 @@
 // nodes as its places, so a short read of another node is a glance exactly as it is on the canvas —
 // and since when it has been working below the main canvas. The entry marks (./EntryMarks.tsx)
 // show who is below a node. Pure; memoised per scenes and context.
-import { effectiveLinks, type NestedLink, type Scenes } from "../nested/graph";
+import { childOf, effectiveLinks, labelOf, type NestedLink, type Scenes } from "../nested/graph";
 import { elementFor } from "../pointer/codeLinks";
+import { parseNodePath } from "./runs/nodePath";
 import { bursts, DOOR_MS, OUTSIDE, stateAt, type Ctx } from "./place";
 import type { RunSeg, WorkRun } from "./runs/types";
 
@@ -33,6 +34,8 @@ function linksOf(canvasId: string, scenes: Scenes): NestedLink[] {
  * means the file is on `main` itself. Null when nothing on `main` claims it (图外).
  */
 export function levelsOf(path: string, main: string, scenes: Scenes, titles: Titles = {}): Level[] | null {
+  const np = parseNodePath(path);
+  if (np) return levelsOfNode(np.canvas, np.id, main, scenes, titles);
   const out: Level[] = [];
   const seen = new Set<string>();
   for (let c: string | undefined = main; c && !seen.has(c); ) {
@@ -45,6 +48,28 @@ export function levelsOf(path: string, main: string, scenes: Scenes, titles: Tit
     c = link.child && !link.own.includes(hit.glob) && scenes.has(link.child) ? link.child : undefined;
   }
   return out.length ? out : null;
+}
+
+/** The levels of a node of canvas `canvas` (a canvas edit, ./runs/touch.ts) from `main` down: the chain of nodes that open the canvases, the node last. Null when the canvas is not below `main`. */
+function levelsOfNode(canvas: string, id: string, main: string, scenes: Scenes, titles: Titles): Level[] | null {
+  const label = (c: string, node: string) => {
+    const els = scenes.get(c) ?? [];
+    const e = els.find((x) => x.id === node);
+    return e ? labelOf(e, new Map(els.map((x) => [x.id, x]))) : "";
+  };
+  const way = (from: string, seen: Set<string>): Level[] | null => {
+    if (seen.has(from)) return null;
+    seen.add(from);
+    if (from === canvas) return scenes.get(from)?.some((e) => e.id === id && !e.isDeleted) ? [{ canvasId: from, title: titles[from] ?? "", node: id, label: label(from, id) }] : null;
+    for (const e of scenes.get(from) ?? []) {
+      const ch = e.isDeleted ? null : childOf(e);
+      if (!ch || !scenes.has(ch)) continue;
+      const rest = way(ch, seen);
+      if (rest) return [{ canvasId: from, title: titles[from] ?? "", node: e.id, label: label(from, e.id) }, ...rest];
+    }
+    return null;
+  };
+  return way(main, new Set());
 }
 
 export type SubviewCtx = {

@@ -28,7 +28,7 @@
 // 「↘ 子图 · …」 mark; each sub-agent's errand is a thin dashed line from where it was sent to where it
 // handed back. The structure comes with the snapshot; the frame job only grows the lines and fills
 // the circles. Figures' own motion runs on animation time: the wall clock × clock.motionScale().
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { IconCheck, IconCode, IconCpu, IconEye, IconHistory, IconMessage, IconPath, IconSend, IconTerminal } from "../app/icons";
 import type { CanvasViewState } from "../canvas/CanvasView";
 import { clipPath } from "../canvas/chrome";
@@ -46,7 +46,7 @@ import { figurePositions, focus, useFocus } from "./focus";
 import { bubbleActions } from "./bubbleActions";
 import { directorFrame, LOOKAHEAD_MS } from "./director";
 import { followStatus } from "./followChoice";
-import { isWorking } from "./liveCamera";
+import { hideEmptyLayer, isWorking } from "./liveCamera";
 import { frame } from "./frame";
 import { gestureFor } from "./gestures";
 import { buildGeometry, type Geometry } from "./geometry";
@@ -62,7 +62,10 @@ import { liveFollow, useLiveFollow } from "./replayLive";
 import { plays, usePlay } from "./replayMode";
 import { RunAvatar } from "./RunAvatar";
 import { scenePlaces } from "./scenePlaces";
+import { pathLabel } from "./runs/nodePath";
 import { useRuns, type Runs } from "./runs/store";
+import { touchedVersion } from "./runs/touched";
+import { touches } from "./runs/touch";
 import { receiptText, type FlatRun } from "./runs/types";
 import { TalkBubble } from "./TalkBubble";
 import { glideTo } from "../canvas/glide";
@@ -347,7 +350,7 @@ function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflic
     const c = g?.child ? byId.get(g.child)?.run : undefined;
     body = <>{icon}<span className="v">派</span><span>{c ? `${c.name}：${c.task ?? ""}` : g?.label.replace(/^派 /, "")}</span>{c && <span className="el">{c.via === "task" ? "Task 工具" : c.via === "dispatch" ? "Agora 派发" : "原生子代理"}</span>}</>;
   } else if (kind === "exec") body = <>{icon}<span className="v">{g?.verifies ? "验收 · " : ""}跑</span><span className="f">{g?.cmd ?? g?.label}</span>{el}</>;
-  else body = <>{icon}<span className="v">{g?.verifies ? "验收 · " : ""}{kind === "write" ? "写" : "读"}</span><span className="f">{g?.path ?? ""}</span>{el}</>;
+  else body = <>{icon}<span className="v">{g?.verifies ? "验收 · " : ""}{kind === "write" ? "写" : "读"}</span><span className="f">{pathLabel(g?.path) || g?.say || ""}</span>{el}</>;
   const c = conflictAt(conflicts, run.id, t);
   if (c && g) {
     kind = "conflict";
@@ -423,7 +426,9 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const keep = useMemo(() => keepOf(runs, fo.traced), [runs, fo.traced]);
   const keepRef = useRef(keep);
   keepRef.current = keep;
-  const geom = useMemo(() => buildGeometry(view.id, view.elements, view.map, nst.scenes, (id) => nst.titles[id]), [view.id, view.version, nst.scenes, nst.titles]);
+  // (the nodes an agent's canvas changes touched are places: ./runs/touch.ts; the geometry is made again when they change)
+  const touched = useSyncExternalStore(touches.subscribe, touchedVersion);
+  const geom = useMemo(() => buildGeometry(view.id, view.elements, view.map, nst.scenes, (id) => nst.titles[id]), [view.id, view.version, nst.scenes, nst.titles, touched]);
   const stay = useMemo(() => new Set(fo.traced ? [fo.traced] : []), [fo.traced]); // a route on the canvas keeps its figure
   const ctx = useMemo<Ctx>(() => ({ stay, locate: geom.locate, dock: geom.dock, route: geom.route, ...withDoorTiming(scenePlaces(geom.boxes, view.map, nst.index.has(view.id)), view.id, nst.index), reduced, run: (id) => runs.byId.get(id) }), [geom, runs, reduced, view.map, nst.index, view.id, stay]);
   const conflicts = useMemo(() => writeConflicts(runs.flat.map((f) => f.run)), [runs]);
@@ -1143,7 +1148,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const errands = (trv?.subs ?? []).map((k) => ({ id: k.id, ...errand(k.stops.filter((x) => x.done).map((x) => geom.dock(x.place))), run: snap.byId.get(k.id)?.run }));
   const placeName = (p: string) => (p === OUTSIDE ? "图外" : (geom.labels.get(p) ?? "节点"));
   return (
-    <div className="ws-layer" ref={rootEl} style={{ clipPath: clip, display: empty ? "none" : undefined }} data-empty={empty || undefined} data-trace={keep ? "" : undefined}>
+    <div className="ws-layer" ref={rootEl} style={{ clipPath: clip, display: hideEmptyLayer(empty, runs.flat.some((f) => f.run.running)) ? "none" : undefined }} data-empty={empty || undefined} data-trace={keep ? "" : undefined}>
       <svg className="ws-svg" aria-hidden={!figuresOn}>
         <g ref={svgWorld}>
           <FootprintLayer ctx={ctx} boxOf={geom.boxOf} />
@@ -1360,7 +1365,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
             <RunAvatar agent={lead.run.agent} size={18} />
             <b>{lead.run.name}</b>
             <span>{verb}</span>
-            {st.seg?.path && (verb === "写" || verb === "读") && <span className="f">{base(st.seg.path)}</span>}
+            {pathLabel(st.seg?.path) && (verb === "写" || verb === "读") && <span className="f">{base(st.seg!.path!)}</span>}
             {c.ids.length > 1 && <em>+{c.ids.length - 1}</em>}
           </button>
         );

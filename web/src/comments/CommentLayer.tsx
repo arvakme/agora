@@ -7,6 +7,7 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { resolveAnchor } from "../canvas/anchors";
+import { footprint, type Box } from "../canvas/clearance";
 import { layoutPins, PIN, sceneBlocks } from "./pinLayout";
 import { IconCheck, IconClose, IconPlus } from "../app/icons";
 import { identity, useThreads, type Anchor, type Thread, type ThreadStore } from "./threads";
@@ -22,12 +23,10 @@ import { handOff, resumeRunning } from "../ops/agent";
 import { routeMessage } from "./mention";
 import { GUEST } from "../guest/mode";
 import { WholeCanvas } from "./WholeCanvas";
+import { placeCard, type CardPos } from "./cardPlace";
 
 /** An unsent comment: where it is pinned and what has been typed so far. */
 export type Draft = { anchor: Anchor; text: string };
-const CARD_W = 320;
-const DOCK_CLEAR = 76;
-export type CardPos = { left: number; top?: number; bottom?: number; maxH: number; flip: boolean; up: boolean };
 
 type Props = {
   api: ExcalidrawImperativeAPI;
@@ -61,17 +60,11 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
   const a = view.appState;
   const W = a.width, H = a.height;
   const toScreen = (p: { x: number; y: number }) => ({ x: (p.x + a.scrollX) * a.zoom.value, y: (p.y + a.scrollY) * a.zoom.value });
-  // Cards open beside the pin; pins in the lower half open upward so the card clears the dock.
-  const cardPos = (p: { x: number; y: number }): CardPos => {
-    const flip = p.x + 28 + CARD_W > W - 8 && p.x - CARD_W - 12 > 8;
-    // Neither side fits (narrow pane): stay inside the pane.
-    const left = Math.max(8, Math.min(flip ? p.x - CARD_W - 12 : p.x + 28, W - CARD_W - 8));
-    if (p.y > H * 0.5) {
-      const bottom = Math.max(DOCK_CLEAR, H - p.y - 6);
-      return { left, bottom, maxH: H - bottom - 12, flip, up: true };
-    }
-    const top = Math.max(8, p.y - 34);
-    return { left, top, maxH: H - top - DOCK_CLEAR, flip, up: false };
+  const screenBox = (b: Box): Box => ({ x: (b.x + a.scrollX) * a.zoom.value, y: (b.y + a.scrollY) * a.zoom.value, w: b.w * a.zoom.value, h: b.h * a.zoom.value });
+  // Cards open beside the pin, never over the element the comment is about (./cardPlace.ts).
+  const cardPos = (p: { x: number; y: number }, anchor: Anchor | null | undefined): CardPos => {
+    const own = (anchor?.ids ?? []).map((id) => view.map.get(id)).filter((e) => e && !e.isDeleted).map((e) => screenBox(footprint(e!, view.map, view.elements)));
+    return placeCard({ pin: p, pane: { w: W, h: H }, avoid: own });
   };
   const hover = (id: string | null) => {
     clearTimeout(leaveTimer.current);
@@ -157,7 +150,7 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
             mode={shown.t.id === activeId ? "full" : "preview"}
             api={api}
             store={store}
-            pos={cardPos(shown.p)}
+            pos={cardPos(shown.p, shown.t.anchor)}
             onRepin={onRepin}
             onHover={(inside) => shown.t.id !== activeId && hover(inside ? shown.t.id : null)}
           />
@@ -170,7 +163,7 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
           <Composer
             key="composer"
             canvasId={store.canvasId}
-            pos={cardPos(landing(draft.anchor))}
+            pos={cardPos(landing(draft.anchor), draft.anchor)}
             text={draft.text}
             onText={(text) => setDraft({ ...draft, text })}
             onCancel={() => setDraft(null)}

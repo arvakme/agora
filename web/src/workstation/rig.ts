@@ -195,7 +195,7 @@ type Swing = { foot: 0 | 1; t0: number; t1: number; from: Pt; to: Pt; up: number
 /** One ladder's holds: rung j at y = bot − j·sp (0 the lower floor, n the upper one, top the rails' ends).
  * A limb holds every R-th rung, a diagonal pair moving while the other holds; hands hold m rungs over
  * the feet; `hip`: the hips' height above the feet on it (figure units, knees bent). */
-type Rungs = { bot: number; sp: number; n: number; top: number; R: number; m: number; hip: number; /** The hands hold this far ahead of the feet's line (figure units): a door's ladder runs through the body, so without it a hand on a rung passes the shoulder within a unit and the elbow whips round (web/docs/workstation.md §16). */ ahead: number };
+type Rungs = { bot: number; sp: number; n: number; top: number; R: number; m: number; hip: number; /** The hands hold this far ahead of the feet's line (figure units): a door's ladder runs through the body, so without it a hand on a rung passes the shoulder within a unit and the elbow whips round (web/docs/workstation.md §16). */ ahead: number; /** Going down a ladder beside a node's wall: the body comes in to it (DOWN_LEAN…). */ snug: boolean };
 /** How the body's speed goes along a walk or climb, over its time fraction u (0 … 1): up from `g0` over the first `a` of it, cruising, down to `g1` over the last `b` (speeds as
  * multiples of length ÷ duration, so a walk that starts from rest has g0 = 0). One phase ends at the speed the next one starts at: the speed is continuous along the whole trip. */
 export type Profile = { a: number; b: number; g0: number; g1: number };
@@ -215,7 +215,7 @@ export type Ladder = { x: number; top: number; bottom: number; rungs: number[]; 
 export type Trip = { t0: number; t1: number; a: Pt; b: Pt; f: 1 | -1; k: number; phases: Phase[]; bridges: Bridge[]; ladders: Ladder[] };
 /** A worker on a trip at t: root and feet (world), its hands' holds while on a ladder, how far into the
  * climbing stance it is (0 walking … 1 on the ladder), its hip height (figure units) and facing. */
-export type TripPose = { root: Pt; feet: [Foot, Foot]; hands: [Foot, Foot] | null; climb: number; hip: number; f: 1 | -1 };
+export type TripPose = { root: Pt; feet: [Foot, Foot]; hands: [Foot, Foot] | null; climb: number; hip: number; f: 1 | -1; /** On a ladder the body comes in to (going down one beside a node's wall: `Rungs.snug`). */ snug?: boolean };
 
 /** Progress 0 → 1 over time fraction u along `P`: the speed goes evenly from g0 up to the cruise over the first `a` of the time, holds it, and evenly down to g1 over the last `b`;
  * the cruise is what makes the whole come to 1. Continuous in speed, whatever g0 and g1 are. */
@@ -297,16 +297,25 @@ function holds(r: Rungs, x: number, f: 1 | -1, y: number, k: number): { feet: [F
   };
 }
 
-/** The rungs of a ladder from y0 to y1 for a figure at k world px per unit, its limbs reaching R rungs a move. */
-function rungsOf(y0: number, y1: number, k: number, R: number): Rungs {
+/** Going down, a limb reaches half as far a move (the short steps of feeling for the next rung below), so the hips can stay higher: the legs long, not folded like a seat. */
+const DOWN_HIP = 0.9;
+/** …its body comes in to the ladder: it leans this much more to it (°), its hips end up this far behind the feet's line and shift at most this far (figure units) to get there, and its hands hold this far ahead of the rails, clear of the shoulders that came forward. */
+const DOWN_LEAN = 6;
+const DOWN_BEHIND = 0.8;
+const DOWN_SWAY_MAX = 3;
+const DOWN_AHEAD = 2.5;
+/** The rungs of a ladder from y0 to y1 for a figure at k world px per unit, its limbs reaching R rungs a move (half that going down: y1 below y0; the hips then up to `downHip` of the standing height, the hands ahead of the rails). */
+function rungsOf(y0: number, y1: number, k: number, R0: number, downHip = DOWN_HIP): Rungs {
+  const down = y1 > y0;
+  const R = down ? R0 / 2 : R0;
   const bot = Math.max(y0, y1);
   const H = bot - Math.min(y0, y1);
   const n = Math.max(1, Math.round(H / (RUNG * k)));
   const sp = H / n;
   // hips low enough that a foot at the bottom of its reach (R/4 rungs under the body) still gets there
-  const hip = Math.min(0.8 * RIG.hip, 0.97 * (RIG.thigh + RIG.shin) - (R / 4) * (sp / k));
+  const hip = Math.min((down ? downHip : 0.8) * RIG.hip, 0.97 * (RIG.thigh + RIG.shin) - (R / 4) * (sp / k));
   const hand = hip + RIG.torso - SHOULDER + 0.5 * (RIG.upper + RIG.fore);
-  return { bot, sp, n, top: n + Math.max(1, Math.round((POST * k) / sp)), R, m: Math.max(1, Math.round((hand * k) / sp)), hip, ahead: 0 };
+  return { bot, sp, n, top: n + Math.max(1, Math.round((POST * k) / sp)), R, m: Math.max(1, Math.round((hand * k) / sp)), hip, ahead: down ? DOWN_AHEAD : 0, snug: down };
 }
 
 /** A walk from a to b (root) over level legs and steps: footsteps, and the body's rise over each step. */
@@ -501,6 +510,8 @@ const DOOR_GRAB = 100;
 const DOOR_RAMP = 0.2;
 /** Hands reach this far ahead of the body's line to a door's rails (the ladder runs through the body: `GAP`, as a ladder beside a node's wall is kept off it). */
 const DOOR_AHEAD = 4;
+/** Down a door's ladder the hips stay this share of the standing height: higher and the head would still show over the floor line when the door closes behind it (DOOR_H is one figure's height). */
+const DOOR_DOWN_HIP = 0.835;
 const DOOR_CLIMB_MS = Math.round((DOOR_H * REF_K) / (CLIMB_SPEED * (1 - DOOR_RAMP)));
 /** Going through a door — down (or up) its ladder, from the floor to all the way out of sight, or back — takes this long; a smaller figure takes as long over a shorter way. */
 export const DOOR_MS = DOOR_GRAB + DOOR_CLIMB_MS;
@@ -516,7 +527,7 @@ export function planDoor(k: number, dir: 1 | -1, leaving: boolean, f: 1 | -1 = 1
   const far: Pt = { x: 0, y: dir * DOOR_H * k };
   const floor: Pt = { x: 0, y: 0 };
   const [a, b] = leaving ? [floor, far] : [far, floor];
-  const rungs = { ...rungsOf(a.y, b.y, k, 4), ahead: DOOR_AHEAD };
+  const rungs = { ...rungsOf(a.y, b.y, k, 4, DOOR_DOWN_HIP), ahead: DOOR_AHEAD, snug: false };
   const st = RIG.stance * k;
   const home = (foot: 0 | 1): Pt => ({ x: (foot ? -st : st) * f, y: 0 });
   const hold: [Foot, Foot] = [{ ...home(0), lift: 0 }, { ...home(1), lift: 0 }];
@@ -540,7 +551,7 @@ function poseIn(x: Phase, t: number, k: number): TripPose {
   if (x.kind === "climb") {
     const root = { x: x.a.x, y: mix(x.a.y, x.b.y, prog(u, x.prof)) };
     const h = holds(x.rungs, x.x, x.f, root.y, k);
-    return { root, feet: h.feet, hands: h.hands, climb: 1, hip: x.rungs.hip, f: x.f };
+    return { root, feet: h.feet, hands: h.hands, climb: 1, hip: x.rungs.hip, f: x.f, snug: x.rungs.snug };
   }
   const L = Math.abs(x.b.x - x.a.x);
   const d = L * prog(u, x.prof);
@@ -578,7 +589,7 @@ function poseAt(p: Trip, i: number, t: number): TripPose {
   const w = onto(c, t);
   const h = holds(c.rungs, c.x, c.f, c === next ? c.a.y : c.b.y, p.k);
   // stepping off, it faces the ladder until its hands are off, then turns to walk on
-  return { ...base, feet: blend(base.feet, h.feet, w), hands: h.hands, climb: w, hip: mix(RIG.hip, c.rungs.hip, w), f: c === prev ? c.f : base.f };
+  return { ...base, feet: blend(base.feet, h.feet, w), hands: h.hands, climb: w, hip: mix(RIG.hip, c.rungs.hip, w), f: c === prev ? c.f : base.f, snug: c.rungs.snug };
 }
 
 /** A corner between a walk and a climb, where the body turns from level to upright (at CORNER of the pace), is rounded over this much time either side: the path there is the
@@ -856,7 +867,10 @@ export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolea
     bob = (1 - climb) * Math.min(2.2, (Math.abs(feet[0].x - feet[1].x) + Math.abs(feet[0].y - feet[1].y)) * 0.09);
     // arms swing against the legs (each hand opposite its foot); on a ladder they reach for the rungs
     const hang = 0.887 * (RIG.upper + RIG.fore);
-    T = { near: [1 - 0.5 * feet[0].x * f, hang], far: [0.2 - 0.5 * feet[1].x * f, hang], lean: mix(3, 5, climb), tilt: 0, sway: 0, prop: o.readingWhileWalking && climb < 0.5 ? "carry" : null, mark: null, facing: 1 };
+    // going down a ladder the body comes in to it — the hips over the feet, not sat back on the rungs, the torso tipped to it — by how far onto the ladder it is
+    const snug = trip.snug ? climb : 0;
+    const over = clamp(((feet[0].x + feet[1].x) / 2) * f - 0.8 - DOWN_BEHIND, 0, DOWN_SWAY_MAX);
+    T = { near: [1 - 0.5 * feet[0].x * f, hang], far: [0.2 - 0.5 * feet[1].x * f, hang], lean: mix(3, 5, climb) + DOWN_LEAN * snug, tilt: 0, sway: over * snug, prop: o.readingWhileWalking && climb < 0.5 ? "carry" : null, mark: null, facing: 1 };
   } else {
     T = poseTargets(o.pose, wall, o.since, { still, conflict: o.conflict, bump: o.gest?.bump ?? o.bump, unknownReceipt: o.unknownReceipt, coarse: o.coarse, seed: sp.seed });
     if (T.facing === -1) f = -1;

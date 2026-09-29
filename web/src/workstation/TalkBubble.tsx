@@ -13,6 +13,7 @@ import { agentName, agents, steerOf } from "../session/agents";
 import { CHOICES, defaultChoice, planSend, whyNoSteer, type SendMode } from "../session/steerModel";
 import { InputRight } from "../session/InputRight";
 import { figurePositions, useFocus } from "./focus";
+import { boxesIn } from "./bubbles";
 import { frame } from "./frame";
 import { occupiedOf } from "./replayDom";
 import { useRuns } from "./runs/store";
@@ -61,7 +62,7 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
   const input = useRef<HTMLInputElement>(null);
   const id = f.run.id;
   // Under the figure's feet (bubbles sit above the heads); when that would cover a node or a label, above the
-  // bubble or beside it (./talk.ts `placeTalk`), inside what the toolbar and the strip leave free — in the
+  // bubble or beside it (./talk.ts `placeTalk`; the drawing and every shown bubble are what it keeps off), inside what the toolbar and the strip leave free — in the
   // view's pixels, every frame. Focus waits until after the click that selected the figure (its mousedown
   // focuses the figure, a button) and places the box first: a hidden input cannot take focus.
   const side = useRef<Side | null>(null);
@@ -84,7 +85,11 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
       }
       const { top, bottom } = inset.current;
       const feet = { x: (p.x + v.scrollX) * v.zoom, y: (p.y + v.scrollY) * v.zoom };
-      const obs = obsRef.current().map((b) => ({ x: (b.x + v.scrollX) * v.zoom, y: (b.y + v.scrollY) * v.zoom, w: b.w * v.zoom, h: b.h * v.zoom }));
+      const drawing = obsRef.current().map((b) => ({ x: (b.x + v.scrollX) * v.zoom, y: (b.y + v.scrollY) * v.zoom, w: b.w * v.zoom, h: b.h * v.zoom }));
+      // the bubbles in this layer too (they move on their own): the box never sits over one, the selected figure's own included
+      const layer = el.offsetParent;
+      const bubbles = layer ? boxesIn(layer.getBoundingClientRect(), [...layer.querySelectorAll<HTMLElement>(".ws-bub-pos:not([data-folded]) > .ws-bub:not([data-exit])")].filter((b) => b.parentElement!.style.opacity !== "0").map((b) => b.getBoundingClientRect())) : [];
+      const obs = [...drawing, ...bubbles];
       const r = placeTalk({ feet, size: { w: el.offsetWidth, h: el.offsetHeight }, area: { x: 8, y: top, w: Math.max(0, v.width - 16), h: Math.max(0, v.height - top - bottom) }, obstacles: obs, prev: side.current });
       side.current = r.side;
       el.dataset.side = r.side;

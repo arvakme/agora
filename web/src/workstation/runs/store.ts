@@ -7,6 +7,7 @@ import { createContext, useContext, useSyncExternalStore } from "react";
 import { adapters, agentName, agents, fetchRuns, type AgentKind } from "../../session/agents";
 import { sessionNames } from "../../multi/writes";
 import { fromTree, runFromTranscript } from "./derive";
+import { mergeTouches, touches } from "./touch";
 import { longWindow, scenario, scratchRun } from "./fixtures";
 import { flatten, type WorkRun, type FlatRun } from "./types";
 
@@ -74,6 +75,7 @@ function compute(): Runs {
   const st = agents.get();
   const names = sessionNames.get();
   seen.keep(Object.keys(st.bindings));
+  touches.keep(Object.keys(st.bindings));
   const roots: WorkRun[] = [];
   const sec = Math.floor(now / 1000);
   for (const [sid, b] of Object.entries(st.bindings)) {
@@ -86,7 +88,8 @@ function compute(): Runs {
       hit = { key, run: stampSeen(sid, runFromTranscript({ sessionId: sid, agent: b.agent, name, items, running, now: (sec + 2) * 1000, root })) };
       derived.set(items, hit);
     }
-    let run = hit.run;
+    // what the agent changed on the canvas through the page is work at those nodes (./touch.ts)
+    let run = mergeTouches(hit.run, touches.of(sid));
     if (!run.segs.length) continue;
     const tree = trees.get(sid);
     if (tree?.children.length) {
@@ -149,6 +152,7 @@ function start() {
   if (timer) return;
   const offA = agents.subscribe(refresh);
   const offN = sessionNames.subscribe(refresh);
+  const offT = touches.subscribe(refresh);
   // The adapter list arriving renames agents: the runs made with the old names (sub-agents from a run tree too) are made again.
   const offL = adapters.subscribe(() => (fetched.clear(), refresh()));
   // Running turns end at "now": refresh once a second while anything runs (or the mock plays).
@@ -156,7 +160,7 @@ function start() {
     if (MOCK || value.flat.some((f) => f.run.running)) refresh();
   }, 1000);
   value = compute();
-  stop = () => (offA(), offN(), offL(), clearInterval(timer), (timer = 0), seen.clear());
+  stop = () => (offA(), offN(), offT(), offL(), clearInterval(timer), (timer = 0), seen.clear());
 }
 let stop = () => {};
 

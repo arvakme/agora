@@ -3,7 +3,7 @@
 // looking at, else the top-level run most recently at work), when it holds still (the agent is idle), when
 // the person's own doing pauses it and what resumes it. Pure.
 import { describe, expect, it } from "vitest";
-import { canvasStep, ENTER_MS, HOME_AFTER_MS, isWorking, MOUNT_GRACE_MS, newCanvasMachine, newSpell, nextPaused, pickFollow, SPELL_FIRST_SIGHT_MS, spellStep, type CanvasIn, type Top } from "./liveCamera.ts";
+import { canvasStep, ENTER_MS, HOME_AFTER_MS, isWorking, MOUNT_GRACE_MS, newCanvasMachine, newSpell, nextPaused, pickFollow, SPELL_FIRST_SIGHT_MS, spellStep, hideEmptyLayer, type CanvasIn, type Top } from "./liveCamera.ts";
 
 const top = (id: string, o: Partial<Top> = {}): Top => ({ id, sessionId: `s-${id}`, working: false, lastWorkAt: 0, ...o });
 const base = { on: true, playing: null, chosen: null, focusedSession: null, tops: [] as Top[] };
@@ -68,7 +68,7 @@ describe("isWorking: one standard for the strip and the camera", () => {
 
 // ── the live camera's state machine, fed a time series ──
 describe("canvasStep: which canvas the camera shows, over time", () => {
-  const base: CanvasIn = { now: 0, working: true, want: "home", shown: "home", home: "home", cur: "home", busy: false, manual: false, displaced: false };
+  const base: CanvasIn = { now: 0, working: true, want: "home", shown: "home", home: "home", cur: "home", busy: false, manual: false, displaced: false, behind: false, input: true };
   /** Feeds one tick per `dt` ms; `f(t)` gives that tick's changes; returns the actions that were not "none", with their times. */
   const run = (seconds: number, f: (t: number) => Partial<CanvasIn>, dt = 200) => {
     const m = newCanvasMachine();
@@ -82,7 +82,7 @@ describe("canvasStep: which canvas the camera shows, over time", () => {
         // the world follows the action: the canvas is shown (and mounted), the person's canvas is where they went
         if (a.type === "go") ((cur.shown = a.to), (cur.cur = a.to), (cur.displaced = a.to !== cur.home));
         if (a.type === "home") ((cur.shown = cur.home), (cur.cur = cur.home), (cur.displaced = false));
-        if (a.type === "user-moved") ((cur.shown = a.to), (cur.home = a.to), (cur.displaced = false));
+        if (a.type === "user-moved" || a.type === "canvas-moved") ((cur.shown = a.to), (cur.home = a.to), (cur.displaced = false));
       }
     }
     return acts;
@@ -90,7 +90,7 @@ describe("canvasStep: which canvas the camera shows, over time", () => {
   it("thinking for 20 s inside a sub-diagram: nothing — no home, no going in and out", () => {
     // it went in at 4 s (wanted there for 3 s), then thinks (still running, no calls) for 20 s
     const acts = run(30, (t) => ({ want: t >= 1000 ? "child" : "home", working: true }));
-    expect(acts).toEqual([{ t: 4000, type: "go", to: "child" }]);
+    expect(acts).toEqual([{ t: 1000 + ENTER_MS, type: "go", to: "child" }]);
   });
   it("several files written in a sub-diagram in a row: one way in, none out until the turn ends", () => {
     const acts = run(40, (t) => ({ want: t >= 1000 && t < 30000 ? "child" : "home", working: t < 30000 }));
@@ -115,7 +115,7 @@ describe("canvasStep: which canvas the camera shows, over time", () => {
     expect(acts.some((a) => a.type === "home")).toBe(false);
   });
   it("paused: nothing happens; resumed: the machine goes on from there", () => {
-    const acts = run(30, (t) => ({ manual: t >= 2000 && t < 15000, want: "child" }));
+    const acts = run(30, (t) => ({ manual: t < 15000, want: "child" }));
     expect(acts.every((a) => a.t >= 15000)).toBe(true);
     expect(acts[0]).toMatchObject({ type: "go", to: "child" });
   });
@@ -128,6 +128,17 @@ describe("canvasStep: which canvas the camera shows, over time", () => {
     const acts = run(20, (t) => ({ want: "child", cur: t < 4000 + 5000 ? (t % 400 === 0 ? "home" : null) : "child" }));
     expect(acts.map((a) => a.type)).toEqual(["go"]);
     expect(MOUNT_GRACE_MS).toBeGreaterThan(5000);
+  });
+  it("FX2a #2: another canvas with no input of the person's lately is not theirs: the camera goes on there, nothing is paused", () => {
+    const acts = run(6, (t) => ({ cur: t >= 2000 ? "other" : "home", want: "home", working: false, input: false }));
+    expect(acts).toEqual([{ t: 2200, type: "canvas-moved", to: "other" }]);
+  });
+  it("FX2a #6: the figure behind the door with nobody left on the canvas: in at once (the first tick); passing a door still is not", () => {
+    const acts = run(10, (t) => ({ want: t >= 2000 ? "child" : "home", behind: t >= 2000 }));
+    expect(acts).toEqual([{ t: 2000, type: "go", to: "child" }]);
+    const not = run(10, (t) => ({ want: t >= 2000 ? "child" : "home", behind: false }));
+    expect(not).toEqual([{ t: 2000 + ENTER_MS, type: "go", to: "child" }]);
+    expect(ENTER_MS).toBeLessThanOrEqual(1000);
   });
   it("a switch in progress: nothing", () => {
     const m = newCanvasMachine();
@@ -170,5 +181,14 @@ describe("spellStep: a turn is followed from the moment it begins", () => {
   });
   it("the person chose this agent: followed while it works", () => {
     expect(spellStep(newSpell(), { working: true, lastWorkStart: null, openedAt: OPENED, now: OPENED + 500, chosen: true }).followed).toBe(true);
+  });
+});
+
+describe("FX2a · #1: the figures' layer on an empty canvas", () => {
+  it("hidden while nobody works (the canvas's own guide shows); drawn as soon as an agent is at work; never hidden on a canvas with content", () => {
+    expect(hideEmptyLayer(true, false)).toBe(true);
+    expect(hideEmptyLayer(true, true)).toBe(false);
+    expect(hideEmptyLayer(false, false)).toBe(false);
+    expect(hideEmptyLayer(false, true)).toBe(false);
   });
 });

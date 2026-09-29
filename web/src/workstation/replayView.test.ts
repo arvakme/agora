@@ -13,6 +13,8 @@ const w = {
   pos: { x: 2000, y: 0 },
   view: { ...viewAt({ x: 0, y: 0 }, 1, pane), width: pane.w, height: pane.h } as V,
   writes: [] as V[],
+  /** The canvas has nothing in the scene store yet (an empty canvas the agent has not drawn on). */
+  noScene: false,
   listeners: new Map<string, (e: unknown) => void>(),
 };
 const els = [{ id: "api", x: 0, y: 0, width: 400, height: 300 }];
@@ -25,8 +27,8 @@ const api = {
   },
 };
 vi.mock("../canvas/viewport", () => ({ viewport: { get: () => w.view }, firstView: { set: () => {}, drop: () => {} } }));
-vi.mock("../nested/store", () => ({ nested: { get: () => ({ scenes: new Map([["c", els]]), titles: { c: "canvas" }, index: new Map() }) }, nav: { go: () => {} } }));
-vi.mock("../session/ui", () => ({ canvases: new Map([["c", { api }]]) }));
+vi.mock("../nested/store", () => ({ nested: { get: () => ({ scenes: w.noScene ? new Map() : new Map([["c", els], ["d", els]]), titles: { c: "canvas", d: "other" }, index: new Map() }) }, nav: { go: () => {} } }));
+vi.mock("../session/ui", () => ({ canvases: new Map([["c", { api }], ["d", { api }]]) }));
 vi.mock("./clock", () => ({ clock: { time: () => w.time }, prefersReducedMotion: () => w.reduced }));
 vi.mock("./geometry", () => ({ buildGeometry: () => ({ locate: () => ({ place: "api" }), dock: () => w.pos, route: undefined, boxes: new Map(), boxOf: () => undefined }) }));
 vi.mock("./replayDom", () => ({ occupiedOf: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), excalidrawEl: () => null }));
@@ -44,6 +46,7 @@ beforeEach(() => {
   w.pos = { x: 2000, y: 0 };
   w.view = { ...viewAt({ x: 0, y: 0 }, 1, pane), width: pane.w, height: pane.h };
   w.writes = [];
+  w.noScene = false;
   w.listeners.clear();
   vi.stubGlobal("document", { querySelector: () => null });
   vi.stubGlobal("history", { state: null, replaceState: () => {} });
@@ -142,6 +145,67 @@ describe("FX1 · P2: the way home returns the view the person had — at their z
     expect(paused.on).toBe(false);
     expect(w.view.zoom).toBeCloseTo(own.zoom, 2);
     expect(Math.abs(w.view.scrollX - own.scrollX) * own.zoom).toBeLessThan(3);
+    c.stop();
+  });
+});
+
+describe("FX2a · #1: an empty canvas — the agent is at work in the tray, and the camera goes to it at once", () => {
+  it("no scene in the store: the figure at the tray outside the pane is followed (a cut to it), not left off screen", () => {
+    w.noScene = true;
+    w.pos = { x: 0, y: -1500 }; // the tray, far from the view
+    const paused = { on: false };
+    const c = createCamera(() => null, () => run, () => ({ start: 0, end: null }), liveHooks(paused));
+    c.tick();
+    for (let i = 0; i < 90; i++) c.frame(FRAME);
+    const centre = { x: pane.w / 2 / w.view.zoom - w.view.scrollX, y: pane.h / 2 / w.view.zoom - w.view.scrollY };
+    expect(Math.hypot(centre.x - w.pos.x, centre.y - (w.pos.y - 40))).toBeLessThan(200);
+    c.stop();
+  });
+});
+
+describe("FX2a · #2: the canvas in front changes with no input of the person's (the app opened it for the agent): not their doing, no pause", () => {
+  it("no pointer, key or wheel lately: the camera goes on, on that canvas, and is not paused", () => {
+    const paused = { on: false };
+    let cur = "c";
+    const hooks = { setManual: (x: boolean) => void (paused.on = x), live: { current: () => cur, working: () => true, away: () => {} } };
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_000_000);
+    const c = createCamera(() => null, () => run, () => ({ start: 0, end: null }), hooks);
+    c.tick();
+    cur = "d";
+    for (let i = 0; i < 40; i++) (vi.setSystemTime(Date.now() + 200), c.tick());
+    expect(paused.on).toBe(false);
+    expect(c.shown()).toBe("d");
+    c.stop();
+  });
+  it("a click a moment before it: the person went there — paused, as before", () => {
+    const paused = { on: false };
+    let cur = "c";
+    const hooks = { setManual: (x: boolean) => void (paused.on = x), live: { current: () => cur, working: () => true, away: () => {} } };
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_000_000);
+    const c = createCamera(() => null, () => run, () => ({ start: 0, end: null }), hooks);
+    c.tick();
+    w.listeners.get("pointerdown")!({ type: "pointerdown", target: { closest: () => null } });
+    cur = "d";
+    for (let i = 0; i < 10; i++) (vi.setSystemTime(Date.now() + 200), c.tick());
+    expect(paused.on).toBe(true);
+    c.stop();
+  });
+});
+
+describe("FX2a · #14: the tab comes back from the background: the camera goes on from its own state, not from a view something reset", () => {
+  it("a 30 s gap in the frames and the canvas view reset to the origin: the next frame is back on the camera's view", () => {
+    w.pos = { x: 300, y: 200 };
+    const paused = { on: false };
+    const c = createCamera(() => null, () => run, () => ({ start: 0, end: null }), liveHooks(paused));
+    c.tick();
+    for (let i = 0; i < 120; i++) c.frame(FRAME);
+    const before = { ...w.view };
+    w.view = { ...w.view, scrollX: 0, scrollY: 0 }; // what the hidden tab came back with
+    c.frame(30000);
+    expect(Math.abs(w.view.scrollX - before.scrollX)).toBeLessThan(60);
+    expect(Math.abs(w.view.scrollY - before.scrollY)).toBeLessThan(60);
     c.stop();
   });
 });

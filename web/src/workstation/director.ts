@@ -48,6 +48,12 @@ export function directorFrame(i: DirectorIn): DirectorOut {
   return { t, figures, known };
 }
 
+/** Whether the figure is still on its way at `now` (a trip that is not over, or a cut still fading): the live camera does not go home while it is — it goes home once the figure stands. */
+export function figureMoving(run: WorkRun, ctx: Ctx, now: number, delay = LOOKAHEAD_MS): boolean {
+  const f = directorFrame({ runs: [run], now, delay, ctx }).figures[0];
+  return !!f && ((!!f.state.trip && f.state.w < 1) || (!!f.ghost && f.ghost.alpha > 0.001));
+}
+
 /** Where a figure's feet are in a frame (world coordinates, before the place's slot offsets): along its trip, else at its place's dock. */
 export function figureAt(f: FigureFrame, ctx: Pick<Ctx, "dock">): Pt {
   const trip = f.state.trip;

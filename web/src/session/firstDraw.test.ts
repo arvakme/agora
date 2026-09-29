@@ -1,7 +1,7 @@
 // The first screen of a new project (session/firstDraw.ts): the button that asks an agent to draw the project's
 // architecture, the words on the empty canvas, and the quiet way to look at the sample.
 import { describe, expect, it, vi } from "vitest";
-import { ARCHITECTURE_PROMPT, EMPTY_HINT, drawPlan, isEmptyCanvas, sampleRequests } from "./firstDraw.ts";
+import { ARCHITECTURE_PROMPT, busyHint, EMPTY_HINT, drawPlan, isEmptyCanvas, sampleRequests } from "./firstDraw.ts";
 
 describe("drawPlan (the main button)", () => {
   it("starts the recommended agent and sends the written prompt", () => {
@@ -42,5 +42,13 @@ describe("isEmptyCanvas", () => {
     expect(isEmptyCanvas([])).toBe(true);
     expect(isEmptyCanvas([{ isDeleted: true }, { isDeleted: true }])).toBe(true);
     expect(isEmptyCanvas([{ isDeleted: true }, {}])).toBe(false);
+  });
+});
+
+describe("FX2a · #1: the empty canvas while an agent is already at work", () => {
+  it("names the agent and says where its figure is, in plain words (not the 'ask an agent' sentence)", () => {
+    expect(busyHint("Claude Code")).toContain("Claude Code");
+    expect(busyHint("Claude Code")).toContain("小人在图外");
+    expect(busyHint("Claude Code")).not.toContain("这张图还是空的");
   });
 });

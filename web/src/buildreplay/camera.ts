@@ -13,6 +13,8 @@ const ROOM = { up: 130, side: 90, down: 30 };
 const PAD = 48;
 /** The shot must be this far (world px, screen px at the zoom) from where the view is before the camera sets off: a figure at work does not make it tremble. */
 const MOVE_PX = 12;
+/** The figure stays at least this far (screen px) from the pane's edge, whatever the drawing's bounds say: its head and bubble are not cut off at the drawing's edge. */
+const EDGE_PX = 120;
 
 export type Shot = { zoom: number; centre: { x: number; y: number } };
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -30,7 +32,15 @@ export function shotOf(i: { size: { w: number; h: number }; bounds: Box; figure:
   const vh = h / zoom;
   const fit = (c: number, lo: number, hi: number, ext: number) => (hi - lo <= ext ? (lo + hi) / 2 : clamp(c, lo + ext / 2, hi - ext / 2));
   const want = p ? { x: p.x, y: p.y - 40 / zoom } : { x: b.x + b.w / 2, y: b.y + b.h / 2 };
-  return { zoom, centre: { x: fit(want.x, r.x0, r.x1, vw), y: fit(want.y, r.y0, r.y1, vh) } };
+  const centre = { x: fit(want.x, r.x0, r.x1, vw), y: fit(want.y, r.y0, r.y1, vh) };
+  if (p) {
+    // the range holds the view inside the drawing; a figure at the drawing's edge would then stand on the pane's edge: let the view go past it, but no further than it takes
+    const lx = Math.max(0, w / 2 - EDGE_PX) / zoom;
+    const ly = Math.max(0, h / 2 - EDGE_PX) / zoom;
+    centre.x = clamp(centre.x, p.x - lx, p.x + lx);
+    centre.y = clamp(centre.y, p.y - ly, p.y + ly);
+  }
+  return { zoom, centre };
 }
 
 /** A figure that moves this far (world px) between two frames was cut across (a walk is a few px a frame): the shot changes with it. */

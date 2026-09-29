@@ -8,7 +8,7 @@ import type { AnchorState } from "../canvas/anchors";
 import { IconClose, IconComment, IconPlus } from "../app/icons";
 import { GUEST } from "../guest/mode";
 import { handOff } from "../ops/agent";
-import type { CardPos } from "./CommentLayer";
+import type { CardPos } from "./cardPlace";
 import { threadAuthorName } from "./authorColor";
 import { routeMessage } from "./mention";
 import { MomentChip } from "./MomentChip";

@@ -13,8 +13,9 @@
 .ws-trace-head .k { color: var(--accent-ink); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
 .ws-trace-legend { margin: 0; padding: 0 6px; border-radius: var(--r-xs); background: color-mix(in srgb, var(--surface) 85%, transparent); color: var(--fg-muted); font-size: var(--text-xs); line-height: 18px; }
 
-/* who the camera follows (§10 默认跟随): one small quiet line, top centre under the toolbar (Excalidraw's property panel covers the left), 「继续」 once the person has stopped it; nothing while that agent is idle */
-.ws-follow-status { pointer-events: auto; position: absolute; z-index: 6; top: 66px; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 6px; max-width: calc(100% - 24px); color: var(--fg-muted); font-size: var(--text-xs); white-space: nowrap; }
+/* who the camera follows (§10 默认跟随): one small quiet line on a paper card (drawn diagrams run under it), top centre under the toolbar (Excalidraw's property panel covers the left), 「继续」 once the person has stopped it; nothing while that agent is idle */
+.ws-follow-status { pointer-events: auto; position: absolute; z-index: 6; top: 66px; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 6px; max-width: calc(100% - 24px); height: 26px; padding: 0 10px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--frame); color: var(--fg-muted); font-size: var(--text-xs); white-space: nowrap; }
+.ws-follow-status:has(.btn) { padding-right: 2px; }
 .ws-follow-status > span { overflow: hidden; text-overflow: ellipsis; }
 .ws-follow-status .btn { height: 22px; padding: 0 8px; font-size: var(--text-xs); }
 /* the preparing-a-replay line, the same place */

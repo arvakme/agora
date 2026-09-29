@@ -194,3 +194,25 @@ describe("FX1 · P3: stepOf splits a long step into steps of at most 100 ms", ()
     expect(once.at.x).toBeGreaterThan(400);
   });
 });
+
+describe("FX2a · #9: a figure at the edge of the drawing is not left on the edge of the pane", () => {
+  const size = { w: 600, h: 400 };
+  const bounds = { x: 0, y: 0, w: 3000, h: 300 };
+  it("at the right end of the drawing: the figure is at least 120 px from the pane's edge (and it was on it before)", () => {
+    const fig = { x: 3000, y: 150 };
+    const shot = shotOf({ size, bounds, figure: fig });
+    const dx = (fig.x - shot.centre.x) * shot.zoom;
+    expect(Math.abs(dx)).toBeLessThanOrEqual(size.w / 2 - 120 + 1e-6);
+  });
+  it("a figure in the middle of the drawing: the centre is where it was (on the figure), unchanged", () => {
+    const fig = { x: 1500, y: 150 };
+    const shot = shotOf({ size, bounds, figure: fig });
+    expect(shot.centre.x).toBeCloseTo(1500, 5);
+  });
+  it("the same at the top and the bottom edge", () => {
+    for (const fig of [{ x: 1500, y: -100 }, { x: 1500, y: 420 }]) {
+      const shot = shotOf({ size, bounds, figure: fig });
+      expect(Math.abs((fig.y - shot.centre.y) * shot.zoom)).toBeLessThanOrEqual(size.h / 2 - 120 + 40 + 1e-6);
+    }
+  });
+});

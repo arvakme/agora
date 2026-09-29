@@ -48,6 +48,11 @@ export type Placed = { x: number; y: number; tail: Tail; /** px from the bubble'
 export const TIP_GAP = 3;
 export const TAIL_H = 5;
 const SIDE = 10;
+/**
+ * The widest a bubble gets (px): longer words end in … and show in full while it is hovered (workstation.css `--bub-max`,
+ * the same number). The selected bubble adds its two buttons beside the words, so it is wider than this by their width.
+ */
+export const BUBBLE_MAX_W = 260;
 
 const hit = (a: Box, b: Box, pad = 0) => a.x < b.x + b.w + pad && b.x < a.x + a.w + pad && a.y < b.y + b.h + pad && b.y < a.y + a.h + pad;
 
@@ -169,4 +174,9 @@ export function placeBubbles(list: readonly BubbleIn[], o: { width: number; heig
     taken.push({ x: best.x, y: best.y, w: cw, h: ch });
   }
   return { at, folded };
+}
+
+/** Shown bubbles (client rects) as boxes in the frame of `origin`, a layer's client corner; the talk box keeps off them. */
+export function boxesIn(origin: { left: number; top: number }, rects: readonly { left: number; top: number; width: number; height: number }[]): Box[] {
+  return rects.filter((r) => r.width > 0 && r.height > 0).map((r) => ({ x: r.left - origin.left, y: r.top - origin.top, w: r.width, h: r.height }));
 }
