@@ -23,7 +23,22 @@ export const follow = {
   end: () => void (state.run && set({ ...state, ended: true })),
   stop: () => set({ run: null, ended: false, auto: false, pinned: false }),
   /** 钉住: the pane stays open when its agent leaves or finishes. */
+  hovered: () => hover,
+  hover: (on: boolean) => followHover.set(on),
+  subscribeHover: (l: () => void) => followHover.subscribe(l),
   pin: (on: boolean) => void (state.run && set({ ...state, pinned: on })),
+};
+/** The pointer is over the follow view: it stays open (an ended one is not closed under it). */
+let hover = false;
+const hoverLs = new Set<() => void>();
+export const followHover = {
+  get: () => hover,
+  set(on: boolean) {
+    if (on === hover) return;
+    hover = on;
+    hoverLs.forEach((l) => l());
+  },
+  subscribe: (l: () => void) => (hoverLs.add(l), () => void hoverLs.delete(l)),
 };
 export const useFollow = () => useSyncExternalStore(follow.subscribe, follow.get);
 

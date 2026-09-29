@@ -29,7 +29,8 @@ import { sessionNames } from "../multi/writes";
 import { setRunsRoot } from "../workstation/runs/store";
 import { WorkerDefs } from "../workstation/RunAvatar";
 import { WaitNotifier } from "../workstation/WaitNotifier";
-import { FollowPane } from "../workstation/FollowPane";
+import { FollowMark, FollowPane, FollowView, useFollowTitle } from "../workstation/FollowPane";
+import { FOLLOW_TAB } from "../workspace/followTab";
 import { focus as figureFocus } from "../workstation/focus";
 import { follow } from "../workstation/follow";
 import { BENCH, installBench } from "../bench/bench";
@@ -202,6 +203,7 @@ export function App({ boot }: { boot: Boot }) {
   // Session names follow their agent and first message (docs/workspace-model.md §2).
   useSyncExternalStore(agents.subscribe, bindingKey);
   const bindings = agents.get().bindings;
+  const followTitle = useFollowTitle();
   const names: Record<string, string> = {
     ...Object.fromEntries(docs.map((d) => [d.id, d.title])),
     ...sessionTitles(docs, (sid, d) => {
@@ -327,7 +329,8 @@ export function App({ boot }: { boot: Boot }) {
   lastCanvasRef.current = lastCanvas;
 
   const focus = (id: string) => {
-    if (id === focused) return;
+    // the follow tab is a view, not a document: it never takes the focus (the canvas in use stays the one)
+    if (id === focused || id === FOLLOW_TAB) return;
     setFocused(id);
     if (kindOf(id) === "canvas") setLastCanvas(id);
     setMode("browse");
@@ -394,6 +397,7 @@ export function App({ boot }: { boot: Boot }) {
    * except a draft session (no agent chosen, never saved), which closing discards.
    */
   const close = (id: string) => {
+    if (id === FOLLOW_TAB) return follow.stop();
     const doc = docOf(id);
     if (doc?.kind === "session" && sessions.isDraft(doc.sessionId)) {
       setDocs((ds) => ds.filter((d) => d.id !== id));
@@ -828,10 +832,10 @@ export function App({ boot }: { boot: Boot }) {
         <Workspace
           root={root}
           setRoot={setRoot}
-          titles={names}
+          titles={{ ...names, [FOLLOW_TAB]: followTitle }}
           subtitles={Object.fromEntries(docs.flatMap((d) => (d.kind === "session" ? [[d.id, sessionSubtitle(d)]] : [])))}
-          kinds={Object.fromEntries(docs.map((d) => [d.id, d.kind]))}
-          marks={Object.fromEntries(docs.flatMap((d) => (d.kind === "session" ? [[d.id, <SessionMark key={d.id} sessionId={d.sessionId} fallback={d.agent} />]] : [])))}
+          kinds={{ ...Object.fromEntries(docs.map((d) => [d.id, d.kind])), [FOLLOW_TAB]: "follow" }}
+          marks={{ ...Object.fromEntries(docs.flatMap((d) => (d.kind === "session" ? [[d.id, <SessionMark key={d.id} sessionId={d.sessionId} fallback={d.agent} />]] : []))), [FOLLOW_TAB]: <FollowMark key="follow" /> }}
           focused={focused}
           onFocus={focus}
           onNew={onNew}
@@ -854,6 +858,7 @@ export function App({ boot }: { boot: Boot }) {
           )}
           onSettled={onSettled}
           renderCanvas={(id) => {
+            if (id === FOLLOW_TAB) return canvasDoc ? <FollowView main={canvasDoc.id} /> : null;
             const doc = docs.find((d) => d.id === id);
             if (!doc || !synced) return null;
             if (doc.kind === "session") return <SessionPane sessionId={doc.sessionId} canvasTitles={canvasTitles} />;
@@ -899,7 +904,7 @@ export function App({ boot }: { boot: Boot }) {
             ) : null
           }
         />
-        <FollowPane main={canvasDoc.id} />
+        <FollowPane main={canvasDoc.id} root={root} setRoot={setRoot} />
         {mode === "comment" && (
           <motion.div className="mode-hint" style={dockAt ? { left: dockAt.x, bottom: dockAt.bottom + 50 } : undefined} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
             <IconComment size={14} />在「<b>{canvasDoc.title}</b>」上点一个元素钉评论 · Esc 退出

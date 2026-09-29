@@ -1,5 +1,5 @@
-// The follow pane (web/docs/workstation.md §10 子视图跟随): a read-only window at the right of the
-// canvas in use that keeps one agent in view while it works in sub-diagrams. Inside: the canvas the
+// The follow view (web/docs/workstation.md §10 子视图跟随): a read-only tab of the window manager (beside the
+// canvas in use, ./../workspace/followTab.ts) that keeps one agent in view while it works in sub-diagrams. Inside: the canvas the
 // agent is in (the deepest one that has its file, ./subview.ts) as Excalidraw's SVG export, cached
 // per scene version, under the same 工位视图 overlay the canvas has (./Overlay.tsx) — so there too it
 // walks bridges, climbs ladders and stands on that canvas's nodes — seen through a camera that
@@ -12,12 +12,15 @@
 // that is. The person's own canvas never moves and never changes level (only 在主画布打开 does that).
 import { exportToSvg, getCommonBounds, hashElementsVersion } from "@excalidraw/excalidraw";
 import type { NonDeletedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
-import { cloneElement, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { IconClose, IconEnter, IconPin } from "../app/icons";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { IconEnter, IconPin } from "../app/icons";
 import { useTheme } from "../app/theme";
 import type { CanvasViewState } from "../canvas/CanvasView";
 import type { Box } from "../canvas/clearance";
 import { byId, type El } from "../canvas/scene";
+import { FOLLOW_TAB, insertFollow, spotOf, withoutFollow, type Spot } from "../workspace/followTab";
+import { isOpen } from "../workspace/model";
+import type { Node } from "../workspace/layout";
 import { viewport } from "../canvas/viewport";
 import { nav, useNested } from "../nested/store";
 import { canvases } from "../session/ui";
@@ -35,16 +38,16 @@ import "./follow.css";
 
 /** How long the pane stays after its agent has left or finished (unless pinned or hovered). */
 const LINGER_MS = 3000;
-/** The cross-fade between two canvases, and the pane's own exit (follow.css). */
+/** The cross-fade between two canvases (follow.css). */
 const SWAP_MS = 300;
-const CLOSE_MS = 180;
 const NO_CHROME: Box[] = [];
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const untitled = (t: string | undefined) => t || "未命名画布";
 
 type Layer = { canvasId: string; out: boolean };
 
-export function FollowPane({ main }: { main: string }) {
+/** What both halves know: who is where below `main` at the time shown (./subview.ts), and the follow state. */
+function useFollowing(main: string) {
   const f = useFollow();
   const runs = useRuns();
   const nst = useNested();
@@ -54,11 +57,22 @@ export function FollowPane({ main }: { main: string }) {
   useReplay();
   useTick(250);
   const t = clock.time();
-  const reduced = prefersReducedMotion();
   const ctx = useMemo(() => subviewCtx(main, nst.scenes, nst.titles, (id) => runs.byId.get(id), () => canvasWhere.get(main)?.ctx), [main, nst.scenes, nst.titles, runs]);
   const ps = new Map(runs.flat.map((x) => [x.run.id, presenceAt(x.run, t, ctx)] as const));
+  /** The follow tab is in the layout: an agent is followed (an automatic one only with the 工位视图 on) and it exists. */
+  const open = !!f.run && (on || !f.auto) && !!runs.byId.get(f.run);
+  return { f, runs, nst, on, ps, open };
+}
 
-  // ── the pane's own choices, ≤ 4 Hz: open for a newcomer, move on when its agent leaves, say it ended ──
+/**
+ * The follow view's brain, mounted once by the app shell: it opens the follow tab for a newcomer below
+ * the canvas, moves on when its agent leaves, says it ended and closes it about 3 s later — and keeps
+ * the tab in the window manager's layout (`root`) in step with that. It draws nothing itself; the tab's
+ * body is `FollowView`.
+ */
+export function FollowPane({ main, root, setRoot }: { main: string; root: Node; setRoot: (f: (r: Node) => Node) => void }) {
+  const { f, on, ps, open } = useFollowing(main);
+  // ── open for a newcomer, move on when its agent leaves, say it ended ──
   const announced = useRef(new Map<string, number>());
   useEffect(() => {
     const cur = follow.get();
@@ -79,13 +93,52 @@ export function FollowPane({ main }: { main: string }) {
     if (done && !cur.ended) follow.end();
     else if (!done && cur.ended) follow.start(cur.run, { auto: cur.auto });
   });
-  const [hovered, setHovered] = useState(false);
+  const hovered = useSyncExternalStore(follow.subscribeHover, follow.hovered);
   useEffect(() => {
-    if (!f.run) return setHovered(false);
+    if (!f.run) return;
     if (!f.ended || f.pinned || hovered) return;
     const tm = window.setTimeout(() => follow.stop(), LINGER_MS);
     return () => clearTimeout(tm);
   }, [f.run, f.ended, f.pinned, hovered]);
+
+  // ── the tab: in the layout while it is open — where the person last left it, else beside the canvas ──
+  const has = isOpen(root, FOLLOW_TAB);
+  const spot = useRef<Spot | null>(null);
+  const had = useRef(false);
+  useEffect(() => {
+    if (open && !has) setRoot((r) => insertFollow(r, main, spot.current));
+    else if (!open && has) setRoot((r) => withoutFollow(r));
+  }, [open, has, main]);
+  useEffect(() => {
+    if (has) spot.current = spotOf(root, FOLLOW_TAB) ?? spot.current;
+  }, [root, has]);
+  // closed from the tab bar (or the layout changed under it): nothing to follow in
+  useEffect(() => {
+    if (had.current && !has && open) follow.stop();
+    had.current = has;
+  }, [has, open]);
+  return null;
+}
+
+/** The follow tab's title: 「跟随 · <agent>」. */
+export function useFollowTitle(): string {
+  const f = useFollow();
+  const runs = useRuns();
+  const run = f.run ? runs.byId.get(f.run) : undefined;
+  return run ? `跟随 · ${run.name}` : "跟随";
+}
+/** The follow tab's mark: the followed agent's avatar. */
+export function FollowMark() {
+  const f = useFollow();
+  const runs = useRuns();
+  const flat = f.run ? runs.flat.find((x) => x.run.id === f.run) : undefined;
+  return flat ? <RunAvatar agent={flat.run.agent} size={18} parent={flat.parent?.agent} /> : <span className="wm-tab-dot" />;
+}
+
+/** The body of the follow tab: a read-only picture of the canvas its agent is in, under the same overlay the canvas has. */
+export function FollowView({ main }: { main: string }) {
+  const { f, runs, nst, ps, open } = useFollowing(main);
+  const reduced = prefersReducedMotion();
 
   // ── what it shows: the canvas its agent is in; where it last was once it has gone or ended ──
   const p = f.run ? ps.get(f.run) : undefined;
@@ -107,26 +160,9 @@ export function FollowPane({ main }: { main: string }) {
     return () => clearTimeout(tm);
   }, [layers]);
 
-  // ── where: the right of the canvas in use, below its toolbar, above the timeline ──
-  const open = !!f.run && (on || !f.auto);
-  const [rect, setRect] = useState<{ left: number; top: number; right: number; width: number; height: number } | null>(null);
-  useLayoutEffect(() => {
-    if (!open) return;
-    const el = document.querySelector<HTMLElement>(`[data-pane="${CSS.escape(main)}"] .canvas-layers`);
-    if (!el) return;
-    const measure = () => {
-      const r = el.getBoundingClientRect();
-      setRect((o) => (o && o.left === r.left && o.top === r.top && o.right === r.right && o.height === r.height ? o : { left: r.left, top: r.top, right: r.right, width: r.width, height: r.height }));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    addEventListener("resize", measure);
-    const iv = window.setInterval(measure, 500); // panes glide after layout changes
-    return () => (ro.disconnect(), removeEventListener("resize", measure), clearInterval(iv));
-  }, [main, open]);
   const body = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const flat = f.run ? runs.flat.find((x) => x.run.id === f.run) : undefined;
   useLayoutEffect(() => {
     const el = body.current;
     if (!open || !el) return;
@@ -135,117 +171,83 @@ export function FollowPane({ main }: { main: string }) {
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [open, !!rect]);
+  }, [open, !!flat]);
 
-  const flat = f.run ? runs.flat.find((x) => x.run.id === f.run) : undefined;
   const mainTitle = untitled(nst.titles[main]);
   const crumbs = levels ? [...levels.map((l) => untitled(l.title)), deepest!.label] : known ? [mainTitle, "图外"] : [mainTitle];
   // Everyone standing below the canvas in use (tree order, so the avatars never trade places), and the followed one.
   const row = runs.flat.filter((x) => x.run.id === f.run || (ps.get(x.run.id)?.levels?.length ?? 0) > 1);
-  const note = !f.ended ? null : p && !p.ended ? `回到 ${mainTitle}` : "已结束";
-  const pos = rect && {
-    top: rect.top + 64,
-    right: Math.max(8, innerWidth - rect.right + 12),
-    width: clamp(rect.width * 0.4, Math.min(300, rect.width - 24), 720),
-    height: clamp(rect.height * 0.55, Math.min(220, rect.height - 80), Math.max(160, rect.height - 80)),
-  };
+  const note = !f.ended ? null : p && !p.ended ? `回到 ${mainTitle}` : "已结束 · 停止跟随";
   const openInMain = () => {
     nav.go(main, target);
     follow.stop();
   };
-
-  // Enter: slides in from the right (CSS). Leave: the last picture fades out the same way, then
-  // unmounts. Reduced motion: it just appears and goes.
-  const shown = open && flat && pos;
-  const last = useRef<ReactElement | null>(null);
-  const [leaving, setLeaving] = useState<ReactElement | null>(null);
-  if (!shown && last.current && !leaving && !reduced) setLeaving(cloneElement(last.current, { "data-closing": "" } as object));
-  if (shown && leaving) setLeaving(null);
-  useEffect(() => {
-    if (!leaving) return;
-    const tm = window.setTimeout(() => ((last.current = null), setLeaving(null)), CLOSE_MS);
-    return () => clearTimeout(tm);
-  }, [leaving]);
-  if (!shown) {
-    if (reduced) last.current = null;
-    return leaving;
-  }
-  return (last.current = (
-        <section
-          key="follow"
-          className="ws-follow"
-          style={pos}
-          aria-label={`跟随 ${flat.run.name}`}
-          onPointerEnter={() => setHovered(true)}
-          onPointerLeave={() => setHovered(false)}
-          data-ended={f.ended || undefined}
-        >
-          <header className="ws-follow-head">
-            {row.length > 1 ? (
-              <div className="ws-follow-who" role="tablist" aria-label="子视图里的 agent">
-                {row.map((x) => (
-                  <button
-                    key={x.run.id}
-                    role="tab"
-                    aria-selected={x.run.id === f.run}
-                    title={`跟随 ${x.run.name}${x.parent ? `（${x.parent.name} 派的）` : ""}`}
-                    onClick={() => follow.start(x.run.id)}
-                  >
-                    <RunAvatar agent={x.run.agent} size={18} parent={x.parent?.agent} />
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <RunAvatar agent={flat.run.agent} size={20} parent={flat.parent?.agent} />
-            )}
-            <div className="ws-follow-ttl">
-              <b>{flat.run.name}</b>
-              {flat.parent && <span className="par">{flat.parent.name} 派的</span>}
-              <ol className="ws-follow-crumbs" aria-label="它在哪">
-                {crumbs.map((c, i) => (
-                  <li key={i} aria-current={i === crumbs.length - 1 ? "location" : undefined}>{c}</li>
-                ))}
-              </ol>
-            </div>
-            <div className="ws-follow-acts">
-              <button className="icon-btn xs" aria-pressed={f.pinned} data-on={f.pinned || undefined} onClick={() => follow.pin(!f.pinned)} title={f.pinned ? "取消钉住" : "钉住：它离开或结束后也不收起"} aria-label="钉住">
-                <IconPin size={14} />
+  if (!open || !flat) return null;
+  return (
+    <section className="ws-follow" aria-label={`跟随 ${flat.run.name}`} onPointerEnter={() => follow.hover(true)} onPointerLeave={() => follow.hover(false)} data-ended={f.ended || undefined}>
+      <header className="ws-follow-head">
+        {row.length > 1 ? (
+          <div className="ws-follow-who" role="tablist" aria-label="子视图里的 agent">
+            {row.map((x) => (
+              <button
+                key={x.run.id}
+                role="tab"
+                aria-selected={x.run.id === f.run}
+                title={`跟随 ${x.run.name}${x.parent ? `（${x.parent.name} 派的）` : ""}`}
+                onClick={() => follow.start(x.run.id)}
+              >
+                <RunAvatar agent={x.run.agent} size={18} parent={x.parent?.agent} />
               </button>
-              <button className="icon-btn xs" disabled={target === main} onClick={openInMain} title={`在主画布打开「${untitled(nst.titles[target])}」`} aria-label="在主画布打开">
-                <IconEnter size={14} />
-              </button>
-              <button className="icon-btn xs" onClick={() => follow.stop()} title="停止跟随（Esc）" aria-label="停止跟随">
-                <IconClose size={14} />
-              </button>
-            </div>
-          </header>
-          <div className="ws-follow-body" ref={body}>
-            {size &&
-              size.w > 0 &&
-              layers.map((l) => (
-                <Stage
-                  key={l.canvasId}
-                  canvasId={l.canvasId}
-                  run={flat.run.id}
-                  node={l.canvasId === target ? deepest?.node : undefined}
-                  size={size}
-                  out={l.out}
-                  reduced={reduced}
-                  // only who is in this canvas (or below it) and the one followed — the others would stand at its 图外 tray
-                  only={(id) => id === flat.run.id || !!ps.get(id)?.levels?.some((lv) => lv.canvasId === l.canvasId)}
-                />
-              ))}
-            {note && (
-              <div className="ws-follow-note" role="status">
-                <span>
-                  {flat.run.name} {note}
-                </span>
-                {!f.pinned && <em>即将收起</em>}
-              </div>
-            )}
+            ))}
           </div>
-        </section>
-  ));
+        ) : (
+          <RunAvatar agent={flat.run.agent} size={20} parent={flat.parent?.agent} />
+        )}
+        <div className="ws-follow-ttl">
+          <b>{flat.run.name}</b>
+          {flat.parent && <span className="par">{flat.parent.name} 派的</span>}
+          <ol className="ws-follow-crumbs" aria-label="它在哪">
+            {crumbs.map((c, i) => (
+              <li key={i} aria-current={i === crumbs.length - 1 ? "location" : undefined}>{c}</li>
+            ))}
+          </ol>
+        </div>
+        <div className="ws-follow-acts">
+          <button className="icon-btn xs" aria-pressed={f.pinned} data-on={f.pinned || undefined} onClick={() => follow.pin(!f.pinned)} title={f.pinned ? "取消钉住" : "钉住：它离开或结束后也不收起"} aria-label="钉住">
+            <IconPin size={14} />
+          </button>
+          <button className="icon-btn xs" disabled={target === main} onClick={openInMain} title={`在主画布打开「${untitled(nst.titles[target])}」`} aria-label="在主画布打开">
+            <IconEnter size={14} />
+          </button>
+        </div>
+      </header>
+      <div className="ws-follow-body" ref={body}>
+        {size &&
+          size.w > 0 &&
+          layers.map((l) => (
+            <Stage
+              key={l.canvasId}
+              canvasId={l.canvasId}
+              run={flat.run.id}
+              node={l.canvasId === target ? deepest?.node : undefined}
+              size={size}
+              out={l.out}
+              reduced={reduced}
+              // only who is in this canvas (or below it) and the one followed — the others would stand at its 图外 tray
+              only={(id) => id === flat.run.id || !!ps.get(id)?.levels?.some((lv) => lv.canvasId === l.canvasId)}
+            />
+          ))}
+        {note && (
+          <div className="ws-follow-note" role="status">
+            <span>
+              {flat.run.name} {note}
+            </span>
+            {!f.pinned && <em>即将收起</em>}
+          </div>
+        )}
+      </div>
+    </section>
+  );
 }
 
 /**

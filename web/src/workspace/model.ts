@@ -1,6 +1,7 @@
 // Workspace model (see web/docs/workspace-model.md): which canvases and sessions exist,
 // which are open as tabs, and the naming / placement rules. Pure functions only.
 import { activate, addTab, group, groupOf, groups, removeTab, type Group, type Node } from "./layout.ts";
+import { FOLLOW_TAB } from "./followTab.ts";
 
 /** `reviewedAt`: a child canvas the person checked against the code at that time (docs/nested-canvas.md §5). */
 export type CanvasDoc = { id: string; kind: "canvas"; title: string; reviewedAt?: number };
@@ -223,7 +224,9 @@ export function savedWorkspace(
     for (const [k, v] of Object.entries(m) as [keyof SessionMeta, unknown][]) if (v !== undefined && v !== "" && v !== null) (next as Record<string, unknown>)[k] = v;
     return next;
   };
-  ws = { ...ws, docs: ws.docs.map(withMeta) };
+  // the follow view is a tab of this page's layout only, never the project's
+  const noFollow = groupOf(ws.root, FOLLOW_TAB) ? (removeTab(ws.root, FOLLOW_TAB) ?? emptyGroup()) : ws.root;
+  ws = { ...ws, root: noFollow, focused: ws.focused === FOLLOW_TAB ? (groups(noFollow).find((g) => g.active)?.active ?? "") : ws.focused, docs: ws.docs.map(withMeta) };
   const drafts = ws.docs.filter((d) => d.kind === "session" && isDraft(d.sessionId)).map((d) => d.id);
   if (!drafts.length) return { v: 2, ...ws };
   let root: Node = ws.root;

@@ -22,8 +22,8 @@ type Props = {
   titles: Record<string, string>;
   /** Secondary text after a tab's title (a session's linked canvas). */
   subtitles?: Record<string, string>;
-  /** Pane kind per tab: the tab's mark, and what a group's「+」creates. */
-  kinds?: Record<string, "canvas" | "session">;
+  /** Pane kind per tab: the tab's mark, and what a group's「+」creates. `follow`: the follow view (./followTab.ts), a tab that is not a document — no renaming, no deleting. */
+  kinds?: Record<string, "canvas" | "session" | "follow">;
   /** A tab's own mark in place of the dot (a session's agent avatar). */
   marks?: Record<string, ReactNode>;
   focused: string;
@@ -66,7 +66,7 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
   const { rects, sashes } = layout(root, { x: PAD, y: PAD, w: size.w - PAD * 2, h: size.h - PAD * 2 }, GAP);
   const all = groups(root);
   const focusedGroup = groupOf(root, focused)?.id;
-  const kindOf = (t: string) => kinds[t];
+  const kindOf = (t: string) => (kinds[t] === "follow" ? undefined : kinds[t]);
   /** 「+」 or a double-click on the tab bar: a session group gets a new session; canvas and mixed groups a small menu (the one place to create or open canvases). */
   const plus = (groupId: string, anchor: HTMLElement) => {
     const g = all.find((g) => g.id === groupId)!;
@@ -180,7 +180,7 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
                     onPointerMove={onTabMove}
                     onPointerUp={onTabUp}
                     onPointerCancel={() => setDrag(null)}
-                    onDoubleClick={() => setEditing(t)}
+                    onDoubleClick={() => kinds[t] !== "follow" && setEditing(t)}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       const box = ref.current!.getBoundingClientRect();
@@ -191,12 +191,12 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
                     {editing === t ? (
                       <TitleInput value={titles[t]} label={kinds[t] === "session" ? "会话名称" : "画布名称"} onDone={(v) => (v !== null && onRename(t, v), setEditing(null))} />
                     ) : (
-                      <span className="wm-tab-title" title={subtitles[t] ? `${titles[t]} · 关联画布：${subtitles[t]}（双击重命名）` : "双击重命名"}>
+                      <span className="wm-tab-title" title={subtitles[t] ? `${titles[t]} · 关联画布：${subtitles[t]}（双击重命名）` : kinds[t] === "follow" ? "跟随视图：只读，关掉就是停止跟随" : "双击重命名"}>
                         {titles[t]}
                         {subtitles[t] && <span className="wm-tab-sub">{subtitles[t]}</span>}
                       </span>
                     )}
-                    <button className="wm-tab-close" aria-label={`关闭 ${titles[t]}`} title="关闭（不会删除）" onClick={() => onClose(t)}><IconClose size={14} /></button>
+                    <button className="wm-tab-close" aria-label={`关闭 ${titles[t]}`} title={kinds[t] === "follow" ? "停止跟随" : "关闭（不会删除）"} onClick={() => onClose(t)}><IconClose size={14} /></button>
                     {g.active === t && <motion.span layoutId={`tab-ind-${g.id}`} className="wm-tab-ind" transition={SPRING} />}
                   </motion.div>
                 ))}
@@ -255,9 +255,9 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
               </>
             ) : (
               <>
-                <button role="menuitem" onClick={() => (setEditing(menu.tab), setMenu(null))}><IconPencil size={14} />重命名<kbd>双击</kbd></button>
-                <button role="menuitem" onClick={() => (onClose(menu.tab), setMenu(null))}><IconClose size={14} />关闭</button>
-                <button role="menuitem" className="danger" onClick={() => (onDelete(menu.tab), setMenu(null))}><IconTrash size={14} />删除…</button>
+                {kinds[menu.tab] !== "follow" && <button role="menuitem" onClick={() => (setEditing(menu.tab), setMenu(null))}><IconPencil size={14} />重命名<kbd>双击</kbd></button>}
+                <button role="menuitem" onClick={() => (onClose(menu.tab), setMenu(null))}><IconClose size={14} />{kinds[menu.tab] === "follow" ? "停止跟随" : "关闭"}</button>
+                {kinds[menu.tab] !== "follow" && <button role="menuitem" className="danger" onClick={() => (onDelete(menu.tab), setMenu(null))}><IconTrash size={14} />删除…</button>}
               </>
             )}
           </motion.div>

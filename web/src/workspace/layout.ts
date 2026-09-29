@@ -88,6 +88,17 @@ export function moveTab(root: Node, tab: string, targetId: string, zone: Zone, i
   return wrapped!;
 }
 
+/**
+ * A new group holding `tab`, cut off the `zone` side of group `targetId` (which gives it `share` of its room).
+ * With the target's parent running the same way the new group goes in beside it there, so the neighbours are not moved.
+ */
+export function splitOff(root: Node, targetId: string, tab: string, zone: Exclude<Zone, "center">, share = 0.35): Node {
+  const dir: Dir = zone === "left" || zone === "right" ? "row" : "col";
+  const fresh = group([tab]);
+  const before = zone === "left" || zone === "top";
+  return rebuild(root, (n) => (n.id === targetId ? split(dir, before ? [fresh, n] : [n, fresh], before ? [share, 1 - share] : [1 - share, share]) : n))!;
+}
+
 export function resize(root: Node, splitId: string, index: number, delta: number, min: number): Node {
   return rebuild(root, (n) => {
     if (n.kind !== "split" || n.id !== splitId) return n;
