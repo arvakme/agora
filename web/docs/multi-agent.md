@@ -47,7 +47,7 @@
 
 **指针照样映射回同一张图**：会话日志里的路径相对于它自己的 worktree 根目录，而 worktree 和主目录的相对路径一致，所以 `transcript.py` 的 `State.root` 设成 worktree 根就能得到和主目录一样的 `server/orders/service.py`，节点匹配、嵌套汇总、工位视图都不用改。画布、评论、会话记录仍在主目录的 `.agora/` 里（`AGORA_PROJECT` 指向主目录），`agora canvas` 照常工作。
 
-**要改的地方**：`agents.py` 的无头与交互式命令的 cwd；Seedmux 启动命令的 `cd`；Codex 认领 rollout 时按 worktree 目录比对；skill 链接装进 worktree（`.git/info/exclude` 是共用的）；指针标签上标出「隔离」；会话面板加「合并回主分支」（显示 `git diff main...agora/<id>` 的文件列表，一键 `git merge --no-ff`，有冲突时列出冲突文件交给用户或 agent 处理）。
+**要改的地方**：`agents.py` 的无头与交互式命令的 cwd；Codex 认领 rollout 时按 worktree 目录比对；skill 链接装进 worktree（`.git/info/exclude` 是共用的）；指针标签上标出「隔离」；会话面板加「合并回主分支」（显示 `git diff main...agora/<id>` 的文件列表，一键 `git merge --no-ff`，有冲突时列出冲突文件交给用户或 agent 处理）。
 
 **为什么本轮不做**：
 

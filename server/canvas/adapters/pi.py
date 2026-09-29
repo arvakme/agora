@@ -5,7 +5,7 @@
   ``--session-id <id>`` only looks in the current directory's folder and silently starts a new,
   empty session with that id when it is not there — so the id does not survive a project move:
   Agora moves the log (``migrate_log``).
-- No native sub-agents: the user's Pi dispatches workers through Seedmux.
+- No native sub-agents.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from typing import Any, Callable
 from server.canvas import agent_models
 from server.canvas.adapters.base import first_cwd, valid_id, Adapter, tool_facts, VersionRange
 from server.canvas.adapters.shell_files import shell_tool
-from server.canvas.adapters.tools import activity_of, spawn_in_output
+from server.canvas.adapters.tools import activity_of
 from server.canvas.adapters.common import (
     MAX_TEXT,
     LogLookup,
@@ -157,8 +157,6 @@ def project(rec: dict[str, Any], st: State) -> Out:
             name = str(b.get("name"))
             st.pending.add(tid)
             tool: dict[str, Any] = {"name": name, "input": _summary(b.get("arguments")), "args": _full(b.get("arguments"))}
-            if isinstance(b.get("arguments"), dict) and isinstance(b["arguments"].get("command"), str) and "smx-team" in b["arguments"]["command"]:
-                st.extra.setdefault("cmd", {})[tid] = b["arguments"]["command"]
             facts = classify(name, b.get("arguments"), st.root)
             if facts.get("files"):
                 tool["files"] = facts["files"]
@@ -179,9 +177,6 @@ def project(rec: dict[str, Any], st: State) -> Out:
         st.pending.discard(tid)
         out = text_of(m.get("content"))
         done: dict[str, Any] = {"name": str(m.get("toolName") or ""), "output": _full(out), "isError": bool(m.get("isError"))}
-        sp = spawn_in_output(out, st.extra.get("cmd", {}).pop(tid, None))
-        if sp:
-            done["spawn"] = sp
         items.append({"id": tid, "kind": "tool", "at": at, "endAt": at, "tool": done})
     return items, turns
 
@@ -238,7 +233,6 @@ class PiAdapter(Adapter):
     binaries = ("pi",)
     tested = VersionRange(">=0.80,<0.88")
     max_tier = "T1"
-    seedmux_names = ("pi",)
     icon = "pi"
     log_hint = "~/.pi/agent/sessions/--<目录>--/<时间>_<id>.jsonl"
     log_dir = "~/.pi/agent/sessions/"

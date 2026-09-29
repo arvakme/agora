@@ -21,9 +21,6 @@
   message without tool calls (no end record exists).
 - Tools: read / write / edit / exec (``workdir``) / grep / find_file_by_name / get_output / kill_shell /
   todo_write / webfetch / web_search / ask_user_question / run_subagent …
-- Seedmux starts it as ``devin --permission-mode dangerous --respect-workspace-trust false -- <prompt>``
-  and never learns its session id (no hooks): ``worker_for_ticket`` finds the session in the
-  ticket's cwd that was given the ticket.
 """
 
 from __future__ import annotations
@@ -31,7 +28,6 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-import time
 import urllib.parse
 from contextlib import closing
 from pathlib import Path
@@ -40,7 +36,7 @@ from typing import Any
 from server.canvas.adapters.base import Adapter, VersionRange, tool_facts, valid_id
 from server.canvas.adapters.common import MAX_TEXT, LogLookup, Out, State, _clip, _end, _full, _ms, _start, _summary, _usage, rel_path, text_of, user_item
 from server.canvas.adapters.shell_files import shell_tool
-from server.canvas.adapters.tools import activity_of, prompt_names_ticket, replies_to_ticket, spawn_in_output
+from server.canvas.adapters.tools import activity_of
 
 DB = "sessions.db"
 TICKET_PAD_S = 120  # a worker session is active after its ticket was created (minus this)
@@ -154,8 +150,6 @@ def project(rec: dict[str, Any], st: State) -> Out:
         for c in calls:
             tid, name, args = str(c.get("id")), str(c.get("name") or "tool"), _args(c.get("arguments"))
             st.pending.add(tid)
-            if isinstance(args, dict) and isinstance(args.get("command"), str):
-                st.extra.setdefault("cmds", {})[tid] = args["command"]
             items.append({"id": tid, "kind": "tool", "at": at, "msg": mid, "tool": {"name": name, "input": _summary(args), "args": _full(args), **classify(name, args, st.root)}})
         mt = md.get("metrics") if isinstance(md.get("metrics"), dict) else {}
         if mt.get("input_tokens") or mt.get("output_tokens"):
@@ -169,9 +163,6 @@ def project(rec: dict[str, Any], st: State) -> Out:
         timing = ext.get("chisel/tool_call_timing") if isinstance(ext.get("chisel/tool_call_timing"), dict) else {}
         result = ext.get("chisel/tool_result_meta") if isinstance(ext.get("chisel/tool_result_meta"), dict) else {}
         done: dict[str, Any] = {"output": _full(content), "isError": result.get("success") is False or bool(ext.get("chisel/tool_failure"))}
-        sp = spawn_in_output(content, st.extra.get("cmds", {}).pop(tid, None))
-        if sp:
-            done["spawn"] = sp
         items.append({"id": tid, "kind": "tool", "at": at, "endAt": _ms(timing["finished_at"]) if timing.get("finished_at") else at, "tool": done})
     return items, turns
 
@@ -182,7 +173,6 @@ class DevinAdapter(Adapter):
     binaries = ("devin",)
     tested = VersionRange(">=3000.10.21,<3000.11")
     max_tier = "T2"
-    seedmux_names = ("devin",)
     icon = "devin"
     log_hint = "~/.local/share/devin/cli/sessions.db（SQLite，只读查询）"
     log_dir = "~/.local/share/devin/cli/sessions.db"
@@ -259,26 +249,6 @@ class DevinAdapter(Adapter):
     def classify(self, name: str, args: Any, root: str | None = None) -> dict[str, Any]:
         return classify(name, args, root)
 
-    # ——— Seedmux workers (receipts.worker_ref) ———
-    def worker_for_ticket(self, rc: dict[str, Any], home: Path | None = None) -> tuple[str, Path, str] | None:
-        """The session in the ticket's cwd, alive while the ticket was open (created before its reply,
-        active after its dispatch), whose first prompt names the ticket or which ran
-        ``smx-team ack/reply`` for it: (session id, path, why)."""
-        task, cwd = rc.get("taskId"), rc.get("cwd")
-        if not task or not cwd:
-            return None
-        db = db_path(home)
-        created = (rc.get("createdAt") or 0) / 1000
-        until = (rc.get("repliedAt") or time.time() * 1000) / 1000
-        like = "%" + str(task).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-        sids = _query(db, "select id from sessions s where working_directory in (?, ?) and last_activity_at >= ? and created_at <= ? and exists (select 1 from message_nodes m where m.session_id = s.id and m.chat_message like ? escape '\\') order by abs(created_at - ?)",
-                      (str(cwd), os.path.realpath(cwd), int(created - TICKET_PAD_S), int(until + TICKET_PAD_S), like, int(created)))
-        for (sid,) in sids:
-            why = gave_ticket(self.read_records(db / sid), str(task)) if valid_id(sid) else None
-            if why:
-                return sid, db / sid, why
-        return None
-
     # ——— fixtures (tests/test_adapter_contracts.py) ———
     def fixture_place(self, folder: Path, home: Path, cwd: str, nid: str) -> Path:
         """A sessions.db with the recorded schema (``schema.sql``), the session row (``session.json``)
@@ -297,16 +267,3 @@ class DevinAdapter(Adapter):
             con.commit()
         return db / nid
 
-
-def gave_ticket(recs: list[dict[str, Any]], task: str) -> str | None:
-    """Why a session is the ticket's worker, or None: its first prompt names the ticket (Seedmux's
-    worker envelope), or it ran ``smx-team ack/reply <ticket>``."""
-    first = next((r for r in recs if r.get("role") == "user" and isinstance(r.get("metadata"), dict) and r["metadata"].get("is_user_input") is True), None)
-    if first is not None and prompt_names_ticket(first.get("content") if isinstance(first.get("content"), str) else text_of(first.get("content")), task):
-        return f"（第一条提示就是工单 {task}）"
-    for r in recs:
-        for c in r.get("tool_calls") or [] if r.get("role") == "assistant" else []:
-            args = _args(c.get("arguments")) if isinstance(c, dict) else None
-            if isinstance(c, dict) and c.get("name") == "exec" and isinstance(args, dict) and replies_to_ticket(args.get("command"), task):
-                return f"（它运行了 smx-team ack/reply {task}）"
-    return None

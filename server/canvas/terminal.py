@@ -7,14 +7,22 @@ see or touch the user's own tmux sessions. The pane runs the agent CLI directly 
 shell): the tmux session exists exactly as long as the CLI holds the native session.
 
 Input into a pane is a bracketed paste (``paste-buffer -p``) followed by Enter, the same
-way a person pasting and pressing Enter would; ``client_activity`` (last keypress of any
-attached client) lets the caller hold a delivery while someone is typing.
+way a person pasting and pressing Enter would. Enter goes out with ``send-keys -c <client>``
+to a writable control-mode client Agora holds itself: tmux 3.7b sends a bare ``send-keys`` through
+whichever client is current and refuses it (``client is read-only``) as soon as a read-only
+viewer is the latest one attached.
 
-The pane can instead live in Seedmux (``seedmux.py``): then the agent CLI runs directly in a
-Seedmux pane Agora asked for, and the same operations address that pane on Seedmux's tmux
-server. Which one holds a session is recorded in ``.agora/run/seedmux/<session>.json``, mirrored
-under ``$AGORA_STATE_DIR/seedmux/<socket>/`` so ``agora down`` still closes those panes after
-``.agora/run/`` was lost (``git clean -fdx``).
+Input right (runtime facts under ``.agora/run/``, meaning of ``native_protocol.SessionGate``):
+
+- ``input-right/<session>.json`` exists → a person took the pane over (``takeover``): automatic
+  delivery pauses, the queue stays. It only goes away with ``give_back`` (or when the pane is
+  closed or replaced): detaching, a dropped connection or a restart of Agora do not return it.
+- A writable client that is not Agora's own pauses delivery for as long as it is attached; it is
+  never kicked. A read-only attach (``attach_command(readonly=True)``) takes no input right and
+  cannot type.
+
+Liveness: ``panes/<session>.json`` registers the real pane (tmux pane id, CLI pid and its start
+time) when the pane is opened; ``state`` compares what tmux reports now with it.
 """
 
 from __future__ import annotations
@@ -22,14 +30,18 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import select
 import shlex
 import shutil
 import subprocess
+import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
-from server.canvas.agents import _NESTED, AGENT_BIN, child_env
-from server.canvas.seedmux import START_GRACE_S, Seedmux
+from native_protocol import SessionGate
+from server.canvas.agents import _NESTED, child_env
 
 CONF = """\
 # Agora's tmux server for this project (not the user's ~/.tmux.conf).
@@ -43,60 +55,207 @@ set -g status-left-length 20
 set -g status-right "#{session_name}  detach: C-b d "
 """
 PASTE_END = b"\x1b[201~"
+CLIENT_FMT = "#{client_name}|#{client_readonly}|#{client_control_mode}"
+# An attach over a local socket answers in milliseconds; this only bounds a server that stopped answering.
+HANDSHAKE_S = 10.0
+
+Liveness = Literal["running", "unknown", "gone"]
 
 
 class TerminalError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class Client:
+    name: str
+    readonly: bool
+    control: bool
+
+
+# ——— pure rules ———
+def make_gate(right: dict | None, unmanaged_writers: int) -> SessionGate:
+    """The session gate: a recorded takeover pauses (and holds the input right); writable clients
+    Agora did not hand out pause too, but only while they are attached."""
+    return SessionGate(input_right="human" if right else "host", paused=right is not None, unmanaged_writers=unmanaged_writers)
+
+
+def gate_hold(gate: SessionGate) -> str | None:
+    """Why automatic delivery waits, in words for the page; None when it may go."""
+    if gate.input_right != "host":
+        return "终端已被人接管，归还输入权后再投递"
+    if gate.paused:
+        return "自动投递已暂停"
+    if gate.unmanaged_writers:
+        return "终端里有可写的窗口连着，关掉它或改成只读后再投递"
+    return None
+
+
+def judge(rec: dict | None, *, dead: bool, pid: int | None, started: str | None) -> Liveness:
+    """Is the pane the one Agora registered? ``rec`` is what ``open`` wrote (CLI pid and start
+    time), the rest what tmux and ``ps`` report now (``dead``: tmux's ``pane_dead``; ``started``: the
+    start time of ``pid``, None when there is no such process). A pane with no registration (opened
+    by an older build, or ``.agora/run/`` was lost) is there but unproven: ``unknown``."""
+    if dead or pid is None:
+        return "gone"
+    if rec is None:
+        return "unknown"
+    if rec.get("pid") != pid or started is None or rec.get("started") != started:
+        return "gone"  # another process sits where the registered CLI ran (pid reuse, a replaced pane)
+    return "running"
+
+
+def parse_clients(raw: str) -> list[Client]:
+    out = []
+    for line in raw.splitlines():
+        name, ro, ctl = (line.split("|") + ["", ""])[:3]
+        if name:
+            out.append(Client(name, ro == "1", ctl == "1"))
+    return out
+
+
+def process_started(pid: int) -> str | None:
+    """The start time ``ps`` reports for ``pid`` (with the pid it names one process), None when gone."""
+    r = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True, env={**os.environ, "LC_ALL": "C"})
+    out = r.stdout.strip()
+    return out if r.returncode == 0 and out else None
+
+
+def process_tree(pid: int) -> list[int]:
+    """``pid`` and every process below it (a CLI's launcher may start the process that holds the files)."""
+    r = subprocess.run(["ps", "-A", "-o", "pid=,ppid="], capture_output=True, text=True)
+    kids: dict[int, list[int]] = {}
+    for line in r.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and all(p.isdigit() for p in parts):
+            kids.setdefault(int(parts[1]), []).append(int(parts[0]))
+    out, todo = [], [pid]
+    while todo:
+        p = todo.pop()
+        if p not in out:
+            out.append(p)
+            todo += kids.get(p, [])
+    return out
+
+
+def open_files(pids: list[int]) -> list[str]:
+    """Absolute paths the processes have open (``/proc/<pid>/fd`` on Linux, ``lsof`` elsewhere)."""
+    paths: list[str] = []
+    lsof = []
+    for pid in pids:
+        fd = Path(f"/proc/{pid}/fd")
+        if fd.is_dir():
+            for entry in fd.iterdir():
+                try:
+                    target = os.readlink(entry)
+                except OSError:
+                    continue
+                if target.startswith("/"):
+                    paths.append(target)
+        else:
+            lsof.append(str(pid))
+    if lsof:
+        exe = shutil.which("lsof")
+        if exe is None:
+            raise TerminalError("lsof is required to see which files a CLI has open on this platform")
+        r = subprocess.run([exe, "-nP", "-Fn", "-p", ",".join(lsof)], capture_output=True, text=True)
+        paths += [line[1:] for line in r.stdout.splitlines() if line.startswith("n/")]
+    return paths
+
+
+# ——— control client (Agora's own writable client) ———
+def _read_block(fd: int, pending: bytearray, deadline: float) -> list[str]:
+    """The body of tmux's next ``%begin``/``%end`` reply block. Control mode wraps every reply in
+    one and sends notifications outside them, so a whole block is tmux saying it served a command.
+    Reads go through the raw descriptor and this caller-owned buffer: a buffered reader would hide
+    lines it already consumed from ``select``."""
+    body: list[str] = []
+    inside = False
+    while True:
+        while b"\n" in pending:
+            line, _, rest = pending.partition(b"\n")
+            del pending[:]
+            pending.extend(rest)
+            text = line.decode(errors="replace").rstrip("\r")
+            if text.startswith("%begin"):
+                inside, body = True, []
+            elif text.startswith("%error"):
+                raise TerminalError(f"control client refused a command: {text}")
+            elif text.startswith("%end") and inside:
+                return body
+            elif inside:
+                body.append(text)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TerminalError("control client never finished the handshake")
+        if not select.select([fd], [], [], remaining)[0]:
+            continue
+        chunk = os.read(fd, 4096)
+        if not chunk:
+            raise TerminalError("control client closed before the handshake")
+        pending.extend(chunk)
+
+
+def control_identity(stdin, stdout) -> str:
+    """Wait until the control client serves commands (attaching answers with a block of its own),
+    then have it name itself: exact where diffing client lists only guesses which one is ours."""
+    deadline = time.monotonic() + HANDSHAKE_S
+    fd = stdout.fileno()
+    pending = bytearray()
+    _read_block(fd, pending, deadline)
+    try:
+        stdin.write(b"display-message -p '#{client_name}'\n")
+        stdin.flush()
+    except OSError as exc:
+        raise TerminalError(f"control client would not take the handshake: {exc}") from exc
+    reply = _read_block(fd, pending, deadline)
+    name = reply[0].strip() if reply else ""
+    if not name:
+        raise TerminalError("control client did not name itself")
+    return name
+
+
+def _drain(stream) -> None:
+    try:
+        while stream.read(4096):
+            pass
+    except (OSError, ValueError):
+        return
+
+
+class _Control:
+    def __init__(self, proc: subprocess.Popen, name: str) -> None:
+        self.proc, self.name = proc, name
+
+    def close(self) -> None:
+        for f in (self.proc.stdin,):
+            try:
+                if f:
+                    f.close()
+            except OSError:
+                pass
+        self.proc.terminate()
+        try:
+            self.proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait(timeout=1)
+
+
 class Terminals:
-    def __init__(self, root: Path, run_dir: Path, tmux: str | None = None, seedmux: Seedmux | None = None, socket: str | None = None, legacy: list[str] | None = None) -> None:
+    def __init__(self, root: Path, run_dir: Path, tmux: str | None = None, socket: str | None = None, legacy: list[str] | None = None) -> None:
         self.root = root
         self.run_dir = run_dir
         self.tmux = tmux or shutil.which("tmux") or "tmux"
         # The instance's socket (stable across a move); the path hash only when there is no instance.
         self.socket = socket or f"agora-{hashlib.sha1(str(root).encode()).hexdigest()[:10]}"
         self.conf = run_dir / "tmux.conf"
-        self.smx = seedmux or Seedmux.default()
         # Sockets this copy used under other names (path hashes of older builds): a pane still running
         # there after an upgrade holds its session too — seen, pasted into and closed where it is.
         self.legacy = [x for x in legacy or [] if x != self.socket]
-        from server.canvas.local import state_dir
-
-        self.mirror = state_dir() / "seedmux" / self.socket
-
-    # ——— Seedmux holder record ———
-    def _smx_file(self, session_id: str) -> Path:
-        return self.run_dir / "seedmux" / f"{self.name(session_id)}.json"
-
-    def _smx_files(self, session_id: str) -> list[Path]:
-        return [self._smx_file(session_id), self.mirror / self._smx_file(session_id).name]
-
-    def seedmux_pane(self, session_id: str) -> str | None:
-        """The Seedmux pane that holds this session, while it still runs (else the record is dropped)."""
-        rec = None
-        for f in self._smx_files(session_id):
-            try:
-                rec = json.loads(f.read_text())
-                break
-            except (OSError, ValueError):
-                continue
-        if rec is None:
-            return None
-        pane = rec.get("paneId")
-        st = self.smx.state(pane) if isinstance(pane, str) else "gone"
-        if st == "running" or (st == "starting" and time.time() - float(rec.get("at", 0)) < START_GRACE_S):
-            return pane
-        for f in self._smx_files(session_id):
-            f.unlink(missing_ok=True)
-        return None
-
-    def holder(self, session_id: str) -> dict | None:
-        """``{"app": "seedmux", "paneId"}`` or ``{"app": "tmux"}`` while a pane holds the session."""
-        pane = self.seedmux_pane(session_id)
-        if pane:
-            return {"app": "seedmux", "paneId": pane}
-        return {"app": "tmux"} if self._agora_alive(session_id) else None
+        self._others: dict[str, Terminals] = {}
+        self._controls: dict[str, _Control] = {}
+        self._lock = threading.Lock()
 
     # ——— plumbing ———
     def _run(self, *args: str, input: bytes | None = None, check: bool = True) -> subprocess.CompletedProcess:
@@ -124,87 +283,187 @@ class Terminals:
         """Exact-match target for the session's (only) pane: ``=name:`` (``=name`` alone resolves no pane)."""
         return f"={self.name(session_id)}:"
 
-    def attach_command(self, session_id: str) -> str:
-        return f"{shlex.quote(self.tmux)} -L {self._where(session_id).socket} attach -t {self.name(session_id)}"
+    def attach_command(self, session_id: str, *, readonly: bool = False) -> str:
+        """The shell command that attaches to the pane. ``readonly``: a viewer that takes no input
+        right and cannot type (tmux drops its keys)."""
+        return f"{shlex.quote(self.tmux)} -L {self._where(session_id).socket} attach{' -r' if readonly else ''} -t {self.name(session_id)}"
 
     def _where(self, session_id: str) -> "Terminals":
         """The tmux server holding this session's pane: this copy's own, else a legacy one where it still runs."""
-        if not self.legacy or self._own_alive(session_id):
+        if not self.legacy or self._own_has_pane(session_id):
             return self
         for name in self.legacy:
-            other = Terminals(self.root, self.run_dir, self.tmux, self.smx, socket=name)
-            if other._own_alive(session_id):
+            other = self._others.get(name)
+            if other is None:
+                other = self._others[name] = Terminals(self.root, self.run_dir, self.tmux, socket=name)
+            if other._own_has_pane(session_id):
                 return other
         return self
 
     # ——— state ———
+    def state(self, session_id: str) -> Liveness:
+        """``running``: the pane and the CLI process Agora registered are there. ``unknown``: a pane
+        is there but nothing proves it is that CLI. ``gone``: no pane, the CLI exited, or another
+        process took its place. Whether the turn it was in finished is for the native log to say."""
+        return self._where(session_id)._own_state(session_id)
+
     def alive(self, session_id: str) -> bool:
-        return self.seedmux_pane(session_id) is not None or self._agora_alive(session_id)
+        return self.state(session_id) != "gone"
 
-    def _agora_alive(self, session_id: str) -> bool:
-        return self._where(session_id)._own_alive(session_id)
-
-    def _own_alive(self, session_id: str) -> bool:
+    def _own_has_pane(self, session_id: str) -> bool:
+        """Cheap: tmux has a live pane by this name on this server (which server holds it, not who runs in it)."""
         r = self._run("display-message", "-p", "-t", self.pane(session_id), "#{pane_dead}", check=False)
         return r.returncode == 0 and r.stdout.strip() == b"0"
+
+    def _own_state(self, session_id: str) -> Liveness:
+        r = self._run("display-message", "-p", "-t", self.pane(session_id), "#{pane_dead}|#{pane_pid}", check=False)
+        if r.returncode != 0:
+            return "gone"
+        dead, _, pid_s = r.stdout.decode().strip().partition("|")
+        pid = int(pid_s) if pid_s.isdigit() else None
+        return judge(self._registered(session_id), dead=dead != "0", pid=pid, started=process_started(pid) if pid else None)
 
     def sessions(self) -> list[str]:
         r = self._run("list-sessions", "-F", "#{session_name}", check=False)
         return r.stdout.decode().split() if r.returncode == 0 else []
 
-    def clients(self, session_id: str) -> int:
-        if pane := self.seedmux_pane(session_id):
-            return self.smx.clients(pane)
-        r = self._where(session_id)._run("list-clients", "-t", f"={self.name(session_id)}", "-F", "#{client_activity}", check=False)
-        return len(r.stdout.split()) if r.returncode == 0 else 0
+    def pane_pid(self, session_id: str) -> int | None:
+        r = self._where(session_id)._run("display-message", "-p", "-t", self.pane(session_id), "#{pane_pid}", check=False)
+        out = r.stdout.decode().strip()
+        return int(out) if r.returncode == 0 and out.isdigit() else None
 
-    def last_input(self, session_id: str) -> float | None:
-        """Epoch seconds of the latest keypress from any client attached to this pane."""
-        if pane := self.seedmux_pane(session_id):
-            return self.smx.last_input(pane)
-        r = self._where(session_id)._run("list-clients", "-t", f"={self.name(session_id)}", "-F", "#{client_activity}", check=False)
-        vals = [float(x) for x in r.stdout.decode().split() if x.strip().isdigit()] if r.returncode == 0 else []
-        return max(vals) if vals else None
+    def process_files(self, session_id: str) -> list[str]:
+        """Files the pane's CLI process (or the processes it started) has open."""
+        pid = self.pane_pid(session_id)
+        return open_files(process_tree(pid)) if pid else []
 
     def capture(self, session_id: str, lines: int = 200) -> str:
-        if pane := self.seedmux_pane(session_id):
-            return self.smx.capture(pane, lines)
         r = self._where(session_id)._run("capture-pane", "-p", "-J", "-S", f"-{lines}", "-t", self.pane(session_id), check=False)
         return r.stdout.decode("utf-8", "replace")
+
+    # ——— registration and input right (files under .agora/run/) ———
+    def _file(self, kind: str, session_id: str) -> Path:
+        return self.run_dir / kind / f"{self.name(session_id)}.json"
+
+    def _read(self, kind: str, session_id: str) -> dict | None:
+        try:
+            rec = json.loads(self._file(kind, session_id).read_text())
+        except (OSError, ValueError):
+            return None
+        return rec if isinstance(rec, dict) else None
+
+    def _write(self, kind: str, session_id: str, rec: dict) -> None:
+        if not self.run_dir.parent.is_dir():  # never recreate .agora/ for a project that moved away
+            return
+        f = self._file(kind, session_id)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_suffix(".tmp")
+        tmp.write_text(json.dumps(rec))
+        os.replace(tmp, f)
+
+    def _registered(self, session_id: str) -> dict | None:
+        return self._read("panes", session_id)
+
+    def input_right(self, session_id: str) -> dict | None:
+        """The recorded takeover (``{"right": "human", "at": …}``), None while the host holds the input right."""
+        return self._read("input-right", session_id)
+
+    def takeover(self, session_id: str) -> dict:
+        """A person takes the pane over: automatic delivery pauses and stays paused, whatever happens
+        to their connection, until ``give_back``. Nothing running is cancelled."""
+        rec = self.input_right(session_id) or {"right": "human", "at": time.time()}
+        self._write("input-right", session_id, rec)
+        return rec
+
+    def give_back(self, session_id: str) -> bool:
+        """The person hands the input right back: delivery resumes. Whether it was held."""
+        f = self._file("input-right", session_id)
+        held = f.exists()
+        f.unlink(missing_ok=True)
+        return held
+
+    def list_clients(self, session_id: str) -> list[Client]:
+        """Clients attached to the pane's session, Agora's own control client left out."""
+        w = self._where(session_id)
+        r = w._run("list-clients", "-t", f"={self.name(session_id)}", "-F", CLIENT_FMT, check=False)
+        own = w._controls.get(self.name(session_id))
+        return [c for c in parse_clients(r.stdout.decode()) if own is None or c.name != own.name] if r.returncode == 0 else []
+
+    def clients(self, session_id: str) -> int:
+        return len(self.list_clients(session_id))
+
+    def gate(self, session_id: str) -> SessionGate:
+        writers = sum(1 for c in self.list_clients(session_id) if not c.readonly)
+        return make_gate(self.input_right(session_id), writers)
 
     # ——— actions ———
     def open(self, session_id: str, argv: list[str], *, cwd: Path, env: dict[str, str]) -> bool:
         """Start the pane unless it already runs. Returns True when it was created."""
-        if self.seedmux_pane(session_id):
-            raise TerminalError("这个会话已在 Seedmux 中打开：到 Seedmux 里切到那个 pane，或先关闭终端")
-        if self._agora_alive(session_id):
+        if self.state(session_id) != "gone":
             return False
         name = self.name(session_id)
         self._run("kill-session", "-t", f"={name}", check=False)  # a dead leftover
+        self._close_control(name)
         # `env -u …` drops nesting markers inherited from whoever started the tmux server.
         wrapped = ["env", *[a for k in _NESTED for a in ("-u", k)], *[f"{k}={v}" for k, v in env.items()], *argv]
         r = self._run("new-session", "-d", "-s", name, "-x", "220", "-y", "56", "-c", str(cwd), "--", *wrapped, check=False)
         if r.returncode != 0:
             raise TerminalError(r.stderr.decode(errors="replace").strip() or "tmux new-session failed")
+        self._file("input-right", session_id).unlink(missing_ok=True)  # a new CLI starts with the host holding input
+        self._register(session_id)
         return True
 
+    def _register(self, session_id: str) -> None:
+        r = self._run("display-message", "-p", "-t", self.pane(session_id), "#{pane_id}|#{pane_pid}", check=False)
+        pane_id, _, pid_s = r.stdout.decode().strip().partition("|")
+        if r.returncode == 0 and pid_s.isdigit():
+            self._write("panes", session_id, {"paneId": pane_id, "pid": int(pid_s), "started": process_started(int(pid_s)), "at": time.time()})
+
+    def _control(self, session_id: str) -> str:
+        """The name of Agora's own writable client on this pane's session (started on first use)."""
+        name = self.name(session_id)
+        with self._lock:
+            ctl = self._controls.get(name)
+            if ctl is not None and ctl.proc.poll() is None and any(c.name == ctl.name for c in parse_clients(self._run("list-clients", "-t", f"={name}", "-F", CLIENT_FMT, check=False).stdout.decode())):
+                return ctl.name
+            self._close_control(name)
+            # ignore-size: it never resizes the window; no-output: tmux does not stream the pane to it.
+            proc = subprocess.Popen(
+                [self.tmux, "-L", self.socket, "-f", str(self.conf), "-C", "attach-session", "-f", "ignore-size,no-output", "-t", f"={name}"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                env=child_env(),
+            )
+            try:
+                cname = control_identity(proc.stdin, proc.stdout)
+            except TerminalError:
+                _Control(proc, "").close()
+                raise
+            threading.Thread(target=_drain, args=(proc.stdout,), daemon=True).start()
+            self._controls[name] = _Control(proc, cname)
+            return cname
+
+    def _close_control(self, name: str) -> None:
+        ctl = self._controls.pop(name, None)
+        if ctl is not None:
+            ctl.close()
+
     def paste(self, session_id: str, text: str, *, settle_s: float = 0.4) -> None:
-        """Bracketed paste of ``text`` into the pane, then Enter."""
+        """Bracketed paste of ``text`` into the pane, then Enter (from Agora's own client)."""
         data = text.encode()
         if PASTE_END in data:
             raise TerminalError("text contains a bracketed-paste terminator")
         buf = f"agora-{session_id}"
-        if pane := self.seedmux_pane(session_id):
-            try:
-                self.smx.paste(pane, text, buf, settle_s)
-            except subprocess.CalledProcessError as exc:
-                raise TerminalError((exc.stderr or b"").decode(errors="replace").strip() or "tmux paste failed") from None
-            return
         w = self._where(session_id)
-        w._run("load-buffer", "-b", buf, "-", input=data)
-        w._run("paste-buffer", "-p", "-d", "-b", buf, "-t", self.pane(session_id))
-        time.sleep(settle_s)
-        w._run("send-keys", "-t", self.pane(session_id), "Enter")
+        client = w._control(session_id)
+        try:
+            w._run("load-buffer", "-b", buf, "-", input=data)
+            w._run("paste-buffer", "-p", "-d", "-b", buf, "-t", self.pane(session_id))
+            time.sleep(settle_s)  # a TUI merges keys that arrive while it still takes the paste in
+            w._run("send-keys", "-c", client, "-t", self.pane(session_id), "Enter")
+        except subprocess.CalledProcessError as exc:
+            raise TerminalError((exc.stderr or b"").decode(errors="replace").strip() or "tmux paste failed") from None
 
     def socket_path(self) -> Path:
         """Where tmux puts this server's socket ($TMUX_TMPDIR or /tmp, then tmux-<uid>/<name>)."""
@@ -217,19 +476,20 @@ class Terminals:
             self.socket_path().unlink(missing_ok=True)
 
     def kill(self, session_id: str) -> None:
-        if pane := self.seedmux_pane(session_id):
-            self.smx.kill(pane)
-            for f in self._smx_files(session_id):
-                f.unlink(missing_ok=True)
         w = self._where(session_id)
+        w._close_control(self.name(session_id))
         w._run("kill-session", "-t", f"={self.name(session_id)}", check=False)
         w._drop_dead_socket()
         if w is not self:
             self._run("kill-session", "-t", f"={self.name(session_id)}", check=False)
             self._drop_dead_socket()
+        for kind in ("panes", "input-right"):
+            self._file(kind, session_id).unlink(missing_ok=True)
 
     def kill_server(self) -> None:
         """Stop this project's tmux server and remove its socket file."""
+        for name in list(self._controls):
+            self._close_control(name)
         self._run("kill-server", check=False)
         self._drop_dead_socket()
 
@@ -240,7 +500,7 @@ class Terminals:
         for name in sockets:
             if name == self.socket:
                 continue
-            other = Terminals(self.root, self.run_dir, self.tmux, self.smx, socket=name)
+            other = Terminals(self.root, self.run_dir, self.tmux, socket=name)
             if other._run("list-sessions", check=False).returncode == 0:
                 other.kill_server()
                 stopped.append(name)
@@ -249,51 +509,8 @@ class Terminals:
         return stopped
 
     def shutdown(self) -> None:
-        """``agora down``: the Seedmux panes this project opened, then its own tmux server."""
-        for f in sorted([*(self.run_dir / "seedmux").glob("*.json"), *self.mirror.glob("*.json")]):
-            try:
-                pane = json.loads(f.read_text()).get("paneId")
-            except (OSError, ValueError):
-                pane = None
-            if isinstance(pane, str) and self.smx.state(pane) != "gone":
-                self.smx.kill(pane)
-            f.unlink(missing_ok=True)
+        """``agora down``: this project's own tmux server."""
         self.kill_server()
-
-    # ——— Seedmux ———
-    def seedmux_launch(self, argv: list[str], env: dict[str, str]) -> str:
-        """The line Seedmux types into the new pane's shell: become the agent CLI (``exec``).
-
-        The pane keeps its own PATH (Seedmux's agent shims stay in front, so its status hooks
-        work) with Agora's ``bin/`` prepended for ``agora canvas``."""
-        q = shlex.quote
-        unset = " ".join(f"-u {k}" for k in _NESTED)
-        sets = " ".join(f"{k}={q(v)}" for k, v in env.items() if k != "PATH")
-        return f"cd {q(str(self.root))} && exec env {unset} {sets} PATH={q(str(AGENT_BIN))}:\"$PATH\" {' '.join(q(a) for a in argv)}"
-
-    def open_seedmux(self, session_id: str, argv: list[str], *, env: dict[str, str]) -> dict:
-        """Hold the session in a new Seedmux pane, or return the one already holding it.
-
-        When Agora's own tmux pane already holds it, the new Seedmux pane is one more window
-        attached to that pane (like「新窗口」in Kitty) instead of a second CLI process."""
-        if pane := self.seedmux_pane(session_id):
-            return {"paneId": pane, "created": False, "attached": False}
-        if self._agora_alive(session_id):
-            attach = f"exec env -u TMUX {self.attach_command(session_id)}"
-            pane = self.smx.spawn(attach, self.root)
-            return {"paneId": pane, "created": False, "attached": True}
-        pane = self.smx.spawn(self.seedmux_launch(argv, env), self.root)
-        rec = json.dumps({"paneId": pane, "at": time.time(), "socket": str(self.smx.socket), "root": str(self.root)})
-        for f in self._smx_files(session_id):
-            try:
-                f.parent.mkdir(parents=True, exist_ok=True)
-                f.write_text(rec)
-            except OSError:
-                pass  # the mirror is a backstop; the run/ record is what normally counts
-        return {"paneId": pane, "created": True, "attached": False}
-
-    def seedmux_status(self) -> dict:
-        return self.smx.check()
 
     @staticmethod
     def kitty() -> str | None:

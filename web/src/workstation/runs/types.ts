@@ -1,8 +1,8 @@
 // What the 工位视图 draws: a top-level Agora session and, below it, the sub-agents it dispatched —
-// native (Claude Agent / Task, Codex spawn), Seedmux workers, and theirs. This is a view model:
+// native (Claude Agent / Task, Codex spawn), and theirs. This is a view model:
 // the one wire shape is the server's `RunTree` / `AgentRun` (session/agents.ts, `fetchRuns`,
 // web/docs/cli-adapters.md §5), converted once in ./derive.ts (`fromTree`). The receipt states are
-// the server's unified `RunState`; what the page says for them (声明完成 vs 已返回结果 vs 验收通过)
+// the server's unified `RunState`; what the page says for them (已返回结果 vs 验收通过)
 // is `receiptView`.
 import type { RunState } from "../../session/agents";
 
@@ -40,9 +40,9 @@ export type RunSeg = {
 };
 
 /**
- * What the page shows for a receipt. `claimed` = a Seedmux worker says it is done (replied:done —
- * never green, not the same as accepted); `returned` = a native sub-agent handed its result back;
- * `accepted` = the dispatcher verified it (`receipt.accept`). The rest are the server's states.
+ * What the page shows for a receipt. `claimed` = a worker says it is done (never green, not the
+ * same as accepted); `returned` = a native sub-agent handed its result back; `accepted` = the
+ * dispatcher verified it (`receipt.accepted`). The rest are the server's states.
  */
 export type ReceiptState =
   | "dispatched"
@@ -81,13 +81,13 @@ export const TROUBLE: ReadonlySet<ReceiptState> = new Set(["failed", "blocked", 
 export type Receipt = { at: number; state: RunState; accepted?: boolean };
 
 /** How a sub-agent was dispatched, and how sure the parent link is (adapter doc §5.2). */
-export type Via = "task" | "native" | "seedmux";
-export type Evidence = "native" | "seedmux" | "inferred";
+export type Via = "task" | "native";
+export type Evidence = "native" | "inferred";
 
 export type WorkRun = {
-  /** `kind:nativeId`, `smx:T-xx`, or the Agora session id for a derived top-level run. */
+  /** `kind:nativeId`, or the Agora session id for a derived top-level run. */
   id: string;
-  /** Agent kind: pi, claude, codex, or any other CLI's kind ("worker" when only receipts are known). */
+  /** Agent kind: pi, claude, codex, or any other CLI's kind. */
   agent: string;
   name: string;
   /** The Agora session (top-level runs only). */
@@ -97,7 +97,7 @@ export type WorkRun = {
   evidence?: Evidence;
   /** What it was asked to do (sub-agents). */
   task?: string;
-  /** Known only by its receipts (T3): no tool calls, so it never walks. */
+  /** Known only by its receipts: no tool calls, so it never walks. */
   coarse?: boolean;
   segs: RunSeg[];
   receipts: Receipt[];
@@ -129,7 +129,7 @@ export function receiptView(run: Pick<WorkRun, "via">, r: Receipt): ReceiptState
   if (r.accepted) return "accepted";
   switch (r.state) {
     case "done":
-      return run.via === "seedmux" ? "claimed" : "returned";
+      return "returned";
     case "session_changed":
     case "idle":
       return "unknown";

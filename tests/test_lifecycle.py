@@ -22,6 +22,7 @@ from server.canvas.agents import NativeMissing, check_native, claude_dir_name, i
 from server.canvas.project import Gone, ProjectStore
 from server.canvas.project_router import create_project_app
 from server.canvas.sessions import AgentHub, agora_prompt, binding_started
+from server.canvas.terminal import make_gate
 from server.canvas.transcript import split_agora
 
 NID = "65b04644-6b78-49c7-b0df-b94f9d79a2fc"
@@ -296,14 +297,14 @@ class FakeTerms:
         self.killed.append(sid)
         self.open.discard(sid)
 
-    def attach_command(self, sid):
+    def attach_command(self, sid, *, readonly=False):
         return f"tmux attach -t agora-{sid}"
-
-    def holder(self, sid):
-        return {"app": "tmux"} if sid in self.open else None
 
     def clients(self, sid):
         return 0
+
+    def gate(self, sid):
+        return make_gate(None, 0)
 
 
 def test_deleting_a_session_closes_its_pane(store):

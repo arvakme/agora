@@ -1,4 +1,4 @@
-// Run-tree fixtures: the scripted ~46 s from the 工位视图 prototype (two sessions, a Seedmux worker
+// Run-tree fixtures: the scripted ~46 s from the 工位视图 prototype (two sessions, a worker
 // with tool calls, a receipts-only worker, a Claude Task sub-agent), placed at `base`, and after it
 // Pi working in API 服务's sub-diagram (47–57 s) and on a canvas comment (58–66 s). Used by the tests
 // and by the dev mock (`?mock=runs`), so the sub-agent UI can be seen before the adapter layer serves
@@ -36,12 +36,12 @@ const C3: TurnComment = { n: MOCK_COMMENT.n, anchor: [...MOCK_COMMENT.anchor] };
 export function scenario(at: number, now = at + 46_000): WorkRun[] {
   const t = (s: number) => at + s * 1000;
   const cx: WorkRun = {
-    id: "smx:T-41",
+    id: "sub:T-41",
     agent: "codex",
     name: "Codex",
     parentId: "mock-pi",
-    via: "seedmux",
-    evidence: "seedmux",
+    via: "native",
+    evidence: "native",
     task: "给 users 接口补测试",
     segs: segs(at, [
       ["read", 21.6, 24, { path: "server/users.py" }],
@@ -62,12 +62,12 @@ export function scenario(at: number, now = at + 46_000): WorkRun[] {
     children: [],
   };
   const w3: WorkRun = {
-    id: "smx:T-42",
+    id: "sub:T-42",
     agent: "worker",
     name: "worker-3",
     parentId: "mock-pi",
-    via: "seedmux",
-    evidence: "seedmux",
+    via: "native",
+    evidence: "native",
     task: "查限流方案",
     coarse: true,
     segs: [],
@@ -95,13 +95,13 @@ export function scenario(at: number, now = at + 46_000): WorkRun[] {
       ["read", 6.5, 9.5, { path: "server/db/models.py" }],
       ["think", 9.5, 12],
       ["write", 12, 19, { path: "server/users.py" }],
-      ["delegate", 19, 20, { child: "smx:T-41", label: "Codex" }],
-      ["delegate", 20, 20.8, { child: "smx:T-42", label: "worker-3" }],
+      ["delegate", 19, 20, { child: "sub:T-41", label: "Codex" }],
+      ["delegate", 20, 20.8, { child: "sub:T-42", label: "worker-3" }],
       ["think", 20.8, 27],
       ["wait", 27, 33, { question: "POST /users 要不要登录才能调？" }],
       ["write", 33, 38, { path: "server/users.py", turn: 2 }],
-      ["read", 38, 40.5, { path: "tests/test_users.py", verifies: "smx:T-41", turn: 2 }],
-      ["exec", 40.5, 44, { cmd: "pytest tests/test_users.py", verifies: "smx:T-41", turn: 2 }],
+      ["read", 38, 40.5, { path: "tests/test_users.py", verifies: "sub:T-41", turn: 2 }],
+      ["exec", 40.5, 44, { cmd: "pytest tests/test_users.py", verifies: "sub:T-41", turn: 2 }],
       ["think", 44, 45.5, { turn: 2 }],
       // in API 服务's sub-diagram: 应用入口, then over the bridge to 路由 and down the ladder to 用户模块
       ["think", 47, 48, { turn: 3 }],
@@ -211,8 +211,8 @@ export function longWindow(now: number, days = 5, subs = 100): WorkRun[] {
       agent: i % 3 ? "codex" : "claude",
       name: `worker-${i + 1}`,
       parentId: top.id,
-      via: "seedmux",
-      evidence: "seedmux",
+      via: "native",
+      evidence: "native",
       task: `任务 ${i + 1}`,
       segs: segs(at, [["read", start + 5, start + 60, { path: files[i % files.length] }], ["write", start + 60, start + 200, { path: files[(i + 2) % files.length] }], ["exec", start + 200, start + 230, { cmd: "pytest -q" }]]),
       receipts: rc(at, [[start, "running"], [start + 240, "accepted"]]),

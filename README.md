@@ -32,7 +32,7 @@ Agora 把这三件事放到同一张图上：图就在仓库里，agent 能读�
 
 ### 3. 一键在终端继续，双向同步
 
-「在终端打开」用同一个原生会话 id 起交互式 CLI（`claude --resume`、`pi --session-id`、`codex resume`），下拉里选在哪儿打开（记在浏览器里）：**Kitty**——在本项目专属的 tmux 服务器里起，再用 Kitty（没有就 Terminal.app）打开窗口；**Seedmux**——经 Seedmux 官方控制桥在当前标签页旁新开一个 pane，CLI 直接跑在里面。你在终端里说的话、agent 的回复和工具调用都会出现在面板上；从面板发的消息会等 agent 这一轮结束、终端 4 秒没有按键后粘贴进去。
+「在终端打开」用同一个原生会话 id 起交互式 CLI（`claude --resume`、`pi --session-id`、`codex resume`），在本项目专属的 tmux 服务器里起，再用 Kitty（没有就 Terminal.app）打开窗口。你在终端里说的话、agent 的回复和工具调用都会出现在面板上；从面板发的消息会等 agent 这一轮结束、且没有人占着终端的输入（接管了，或挂着一个可写窗口）时粘贴进去，队列不丢。
 
 ![终端已接管：面板显示 tmux attach 命令，对话继续同步](docs/media/terminal.png)
 
@@ -169,7 +169,7 @@ web/                  前端（React + Excalidraw）；web/docs/ 是各功能规
 web/libraries/        vendored 素材库（约 6k 个组件，来源与许可见其 NOTICE.md）
 tests/                Python 测试
 docs/                 开发协作与测试说明；docs/legacy-rooms.md 是早期房间调度的说明
-server/ brain/ daemon/ host/ agora_ask/ k8s/
+server/ brain/ daemon/ k8s/
                       早期「多 Agent 房间调度」实现（Postgres + Redis），已不是当前产品路径
 ```
 
@@ -183,7 +183,7 @@ server/ brain/ daemon/ host/ agora_ask/ k8s/
 - **Codex 终端先行时靠认领。** 还没有原生 id 的 Codex 会话在终端里开新会话，Agora 认领打开终端之后同目录下出现的第一个 rollout；同一时间在同一目录另起 Codex 可能认错。
 - **用量不全。** Claude Code 终端里的轮次没有花费（原生日志不记），Codex 不记花费。
 - **指针只看编辑工具的写入。** `sed -i`、`cat > x` 这类 shell 写入不会被识别；读文件、跑测试不移动指针；一个文件只属于最具体的那个节点。
-- **只在 macOS 上实测过。** 终端窗口用 Kitty 或 Terminal.app 打开；都没有时面板给出 `tmux attach` 命令。Seedmux 需要它的 Agent Team 控制桥开着（设置 › Agent Team）；关着时下拉里的「复制打开命令」给出可在任意 pane 里运行的命令。Agora 没法让 Seedmux 切到已开的 pane，要自己在 Seedmux 里切过去。
+- **只在 macOS 上实测过。** 终端窗口用 Kitty 或 Terminal.app 打开；都没有时面板给出 `tmux attach` 命令；下拉里的「复制打开命令」给出可在任意终端里运行的命令。
 
 可能的方向（未排期）：多人实时协同编辑、Linux 上的终端窗口、进度指针识别更多写入方式。
 
@@ -206,5 +206,5 @@ CI（`.github/workflows/test.yml`）跑全部 Python 测试（带 Postgres / Red
 - **dither-extra 图标**（`web/src/app/dither-extra/`）：本项目作者为 Marginalia 按 Dither Icons 的构造规则绘制的 17 个补充图标（`eye-off` 复用 Dither Icons 的眼睛几何），随本项目以 MIT 发布，并附 Dither Icons 的许可原文（[LICENSE-dither-icons.txt](web/src/app/dither-extra/LICENSE-dither-icons.txt)）。
 - **DeepSeek Harness**（github.com/deepseek-ai/deepseek-harness，MIT）：会话「对话 / 轨迹」视图的信息结构，用本项目的技术栈重写，未引入其依赖。
 - **Agent 标志**（`web/src/app/agents/`，随应用打包、不在运行时外链）：Pi 取自 [pi.dev](https://pi.dev) Press Kit 的方形徽标（Badge SVG，`pi.dev/favicon.svg`，单色，亮色 `#111111`、暗色 `#f6f6f6`），以矢量路径内联；Claude Code 取自官方文档站 [code.claude.com/docs](https://code.claude.com/docs) 的矢量标志（橙色星芒 `#D97757`），以矢量路径内联；Codex 取自 OpenAI 签名的 Codex 桌面应用（bundle id `com.openai.codex`，26.908.70816）自带的 1024px 图标 `Contents/Resources/icon-codex-light.png` 与 `icon-codex-dark-color.png`：用两张图做差分抠图去掉应用底板与投影，只留中间的云形标志，导出 64px 与 128px 两档。
-- **终端应用图标**（`web/src/app/terminals/`）：Kitty 取自本机 `kitty.app`（0.48.2）的 `Contents/Resources/kitty.icns`，Kitty 为 Kovid Goyal 的作品（[kovidgoyal/kitty](https://github.com/kovidgoyal/kitty)）；Seedmux 取自本机 `Seedmux.app`（0.1.69，`com.xx.seedmux`）的 `Contents/Resources/AppIcon.icns`；各取 32px 与 64px 两档，未改动图形。
-- **以上标志和图标是各自所有者（Earendil / Pi、Anthropic、OpenAI、Kovid Goyal / kitty、Seedmux）的商标或作品，不在本项目的 MIT 许可范围内，这里仅用于标识对应的产品；本项目与它们没有从属或背书关系。**
+- **终端应用图标**（`web/src/app/terminals/`）：Kitty 取自本机 `kitty.app`（0.48.2）的 `Contents/Resources/kitty.icns`，Kitty 为 Kovid Goyal 的作品（[kovidgoyal/kitty](https://github.com/kovidgoyal/kitty)）；取 32px 与 64px 两档，未改动图形。
+- **以上标志和图标是各自所有者（Earendil / Pi、Anthropic、OpenAI、Kovid Goyal / kitty）的商标或作品，不在本项目的 MIT 许可范围内，这里仅用于标识对应的产品；本项目与它们没有从属或背书关系。**

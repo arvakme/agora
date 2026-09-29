@@ -5,8 +5,8 @@ and bridges canvas commands (``agora canvas …``) to the open page.
 Routing a message (``send``):
 
 - a terminal pane holds the session → deliver into the pane (bracketed paste + Enter),
-  held while the agent is still answering or someone typed in the terminal within
-  ``TYPING_HOLD_S``;
+  held while the agent is still answering or a person holds the input right (a takeover, or a
+  writable client attached to the pane: terminal.py) — the queue stays until it is given back;
 - otherwise → a headless turn in the project directory that resumes the native id
   (``AgentBackend`` from agents.py), one at a time per session.
 
@@ -39,13 +39,11 @@ from server.canvas.local import Local
 from server.canvas.model_view import model_view, versions
 from server.canvas.project import ProjectStore
 from server.canvas.runner import ExecOptions, RunRequest, make_backend
-from server.canvas.seedmux import SeedmuxError
-from server.canvas.terminal import TerminalError, Terminals
+from server.canvas.terminal import TerminalError, Terminals, gate_hold
 from server.canvas.transcript import MARKER, State, Tail, project, split_agora
 
 TICK_S = 0.4
 RELOCATE_S = 5.0  # how often a followed log is looked up again (it may have moved: Pi migration, a fork)
-TYPING_HOLD_S = 4.0
 PANE_BOOT_S = 6.0  # a freshly opened pane gets this long to start its CLI before the first paste
 DELIVERY_CONFIRM_S = 30.0
 BRIDGE_TIMEOUT_S = 25.0
@@ -307,8 +305,7 @@ class AgentHub:
     def _terminal(self, sid: str, lv: Live) -> dict[str, Any]:
         out: dict[str, Any] = {"alive": lv.pane_alive, "attach": self.terms.attach_command(sid), "clients": 0, "app": None}
         if lv.pane_alive:
-            h = self.terms.holder(sid) or {}
-            out.update(app=h.get("app"), paneId=h.get("paneId"), clients=self.terms.clients(sid))
+            out.update(app="tmux", clients=self.terms.clients(sid), inputRight=self.terms.gate(sid).input_right)
         return out
 
     def _status(self, sid: str) -> None:
@@ -568,12 +565,13 @@ class AgentHub:
                 lv.pane_alive = alive
                 if not alive:
                     lv.pane_since = None
+                    self._pane_exited(sid, lv)
                 self._status(sid)
             # A CLI that assigns its own id (Codex) does so when the interactive session starts:
             # adopt the new native session.
             if adapters.need(b["agent"]).assigns_id == "cli" and not b.get("nativeId") and not b.get("pendingFork") and lv.pane_since:
                 taken = {x.get("nativeId") for x in bound.values()}
-                tid = agents.new_native_since(b["agent"], self.store.root, lv.pane_since, taken)
+                tid = self._claim_native(sid, b, lv.pane_since, taken)
                 if tid:
                     self.store.set_native(sid, tid)
                     self.note_bind(sid, "bind")
@@ -582,10 +580,34 @@ class AgentHub:
             # native session in this project: adopt it as the session's native id.
             if b.get("pendingFork") and lv.pane_since:
                 taken = {x.get("nativeId") for x in bound.values() if x.get("nativeId")} | {b["pendingFork"].get("from")}
-                new = agents.new_native_since(b["agent"], self.store.root, lv.pane_since, {t for t in taken if t})
+                new = self._claim_native(sid, b, lv.pane_since, {t for t in taken if t})
                 if new:
                     self.adopt_fork(sid, new)
             self._follow(sid, lv)
+
+    def _claim_native(self, sid: str, b: dict[str, Any], since: float, taken: set[str]) -> str | None:
+        """The native session this pane's CLI started. A CLI whose process keeps its session log open
+        (Codex) is asked for that file: the one this pane's own process holds, never "the first new
+        log in the directory", which another session started there at the same time would also match.
+        The others have no such file; they are told by directory and time."""
+        a = adapters.need(b["agent"])
+        if a.claims_by_open_file:
+            tid = a.native_from_open_files(self.terms.process_files(sid))
+            return tid if tid and tid not in taken else None
+        return agents.new_native_since(b["agent"], self.store.root, since, taken)
+
+    def _pane_exited(self, sid: str, lv: Live) -> None:
+        """The CLI in the pane is gone. What it wrote before going is read first; a turn still open in
+        the log has no terminal record, and a message delivered but never seen in the log may or may
+        not have been taken: both outcomes are unknown, said as such, not as done or failed."""
+        self._follow(sid, lv)
+        lost = [(p, "终端里的 CLI 已退出，这一轮没有结束记录，结果未知") for p in ([lv.current] if lv.current is not None else [])]
+        lost += [(p, "终端里的 CLI 在日志里出现这条消息之前退出了，不知道它有没有收下、做了多少") for p in lv.awaiting]
+        lv.current, lv.awaiting = None, []
+        if lost:
+            lv.state.busy = False
+        for p, why in lost:
+            self.broadcast({"t": "done", "sessionId": sid, "sendId": p.send_id, "text": "", "error": why, "outcome": "unknown", "route": "terminal"})
 
     async def _tick_async(self) -> None:
         for sid, lv in list(self.live.items()):
@@ -600,16 +622,15 @@ class AgentHub:
                 lv.headless.append(lv.pane.pop(0))
                 self._kick(sid)
                 continue
-            reason = None
-            if lv.pane_since and time.time() - lv.pane_since < PANE_BOOT_S:
-                # A paste into a CLI that is still loading (resume, a Seedmux shell) is dropped.
+            # A person's input right comes first: nothing is typed over them, and nothing is lost (the queue stays).
+            reason = gate_hold(await asyncio.to_thread(self.terms.gate, sid))
+            if reason:
+                pass
+            elif lv.pane_since and time.time() - lv.pane_since < PANE_BOOT_S:
+                # A paste into a CLI that is still loading (resume) is dropped.
                 reason = "终端刚打开，等 CLI 启动好再投递"
             elif lv.state.busy:
                 reason = "agent 正在回复，回复完再投递"
-            else:
-                last = await asyncio.to_thread(self.terms.last_input, sid)
-                if last is not None and time.time() - last < TYPING_HOLD_S:
-                    reason = "终端里有人在输入，停下几秒后投递"
             if reason:
                 if reason != lv.held:
                     lv.held = reason
@@ -797,11 +818,10 @@ class AgentHub:
         return False
 
     # ——— terminal ———
-    def open_terminal(self, sid: str, *, launch: bool, canvas_id: str | None = None, app: str | None = None) -> dict[str, Any]:
+    def open_terminal(self, sid: str, *, launch: bool, canvas_id: str | None = None) -> dict[str, Any]:
         """Blocking (tmux, terminal launch): call from a worker thread after ``ensure_started``.
 
-        ``app``: ``seedmux`` runs the CLI in a new Seedmux pane; otherwise Agora's own tmux pane,
-        with a Kitty / Terminal window attached when ``launch``."""
+        Agora's own tmux pane, with a Kitty / Terminal window attached when ``launch``."""
         b = self.binding(sid)
         lv = self._get(sid)
         if lv.running:
@@ -810,16 +830,6 @@ class AgentHub:
             self.check_native(sid, b)
         argv = agents.interactive_argv(b["agent"], b.get("nativeId"), b.get("model") or None, b.get("effort") or None, new=not binding_started(b), root=self.store.root, fork=b.get("pendingFork"))
         env = {**self.env_for(sid, canvas_id), "PATH": agents.child_env()["PATH"]}
-        if app == "seedmux":
-            try:
-                r = self.terms.open_seedmux(sid, argv, env=env)
-            except SeedmuxError as exc:
-                raise TerminalError(str(exc)) from None
-            if r["created"]:
-                lv.pane_since = time.time()
-            lv.pane_alive = True
-            self._status(sid)
-            return {**r, "launched": "seedmux", "attach": self.terms.attach_command(sid), "argv": argv}
         created = self.terms.open(sid, argv, cwd=self.store.root, env=env)
         if created:
             lv.pane_since = time.time()
@@ -827,6 +837,20 @@ class AgentHub:
         launched = self.terms.launch(sid, f"Agora · {agents.NAMES[b['agent']]}") if launch else None
         self._status(sid)
         return {"created": created, "launched": launched, "attach": self.terms.attach_command(sid), "argv": argv}
+
+    def takeover(self, sid: str) -> dict[str, Any]:
+        """A person takes the pane's input: automatic delivery pauses (the queue stays) until ``give_back``."""
+        self.binding(sid)
+        self.terms.takeover(sid)
+        self._status(sid)
+        return {"inputRight": "human"}
+
+    def give_back(self, sid: str) -> dict[str, Any]:
+        """The person hands the input back: queued messages go into the pane again."""
+        self.binding(sid)
+        held = self.terms.give_back(sid)
+        self._status(sid)
+        return {"inputRight": "host", "wasHeld": held}
 
     def close_terminal(self, sid: str) -> None:
         self.terms.kill(sid)
@@ -888,8 +912,8 @@ class AgentHub:
         self._status(sid)
 
     async def forget(self, sid: str) -> bool:
-        """The session was deleted: stop its headless turn, close its terminal pane (Agora's tmux
-        or Seedmux) and drop its runtime state. Returns whether a pane was closed."""
+        """The session was deleted: stop its headless turn, close its terminal pane
+        and drop its runtime state. Returns whether a pane was closed."""
         self.dropped.add(sid)
         lv = self.live.pop(sid, None)
         if lv is not None:

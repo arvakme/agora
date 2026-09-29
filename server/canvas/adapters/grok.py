@@ -30,7 +30,7 @@ from typing import Any
 from server.canvas.adapters.base import valid_id, Adapter, NativeRef, ParentLink, VersionRange, tool_facts
 from server.canvas.adapters.common import MAX_TEXT, LogLookup, Out, State, _clip, _end, _full, _ms, _start, _summary, _usage, read_jsonl, rel_path, user_item
 from server.canvas.adapters.shell_files import shell_tool
-from server.canvas.adapters.tools import activity_of, spawn_in_output
+from server.canvas.adapters.tools import activity_of
 
 TICKS = 1e10
 KIND_ACTIVITY = {"read": "read", "edit": "edit", "write": "write", "delete": "edit", "move": "edit", "execute": "commands", "search": "search", "fetch": "webFetch", "think": "plan", "plan": "plan", "task": "subagents"}
@@ -114,8 +114,6 @@ def project(rec: dict[str, Any], st: State) -> Out:
         facts = classify(name, tm.get("kind") or u.get("kind"), args, st.root)
         tool: dict[str, Any] = {"name": name, "input": _summary(args), "args": _full(args), **{k: v for k, v in facts.items()}}
         x.setdefault("tools", {})[tid] = name
-        if isinstance(args, dict) and isinstance(args.get("command"), str):
-            x.setdefault("cmds", {})[tid] = args["command"]
         items.append({"id": tid, "kind": "tool", "at": at, "tool": tool})
     elif t == "tool_call_update":
         tid = str(u.get("toolCallId"))
@@ -133,9 +131,6 @@ def project(rec: dict[str, Any], st: State) -> Out:
         if diffs and not err:
             op = "write" if x.get("tools", {}).get(tid) == "write" else "edit"
             done["files"] = [{"path": rel_path(str(p), st.root), "op": op} for p in dict.fromkeys(diffs)]
-        sp = spawn_in_output(str(out or ""), ro.get("command") or x.get("cmds", {}).get(tid))
-        if sp:
-            done["spawn"] = sp
         items.append({"id": tid, "kind": "tool", "at": at, "endAt": at, "tool": done})
     elif t == "subagent_spawned":
         cid = u.get("child_session_id") or u.get("subagent_id")
@@ -163,7 +158,6 @@ class GrokAdapter(Adapter):
     binaries = ("grok",)
     tested = VersionRange(">=1.0.40,<1.1")
     max_tier = "T2"
-    seedmux_names = ("grok",)
     icon = "grok"
     log_hint = "~/.grok/sessions/<URL 编码的目录>/<id>/updates.jsonl"
     log_dir = "~/.grok/sessions/"

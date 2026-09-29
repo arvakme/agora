@@ -1,6 +1,6 @@
 # 早期实现：多 Agent 房间调度
 
-> 早期实现，已不是当前产品路径。当前产品是「每个项目自带一个 Agora」的架构画布工作台，见 [README](../README.md)。下面是这部分代码（`server/` 的房间路由与调度、`brain/`、`daemon/`、`host/`、`agora_ask/`、`k8s/`，依赖 Postgres 与 Redis）当初的 README 原文，代码仍在仓库里、测试仍在 CI 里跑，只是不再扩展。
+> 早期实现，已不是当前产品路径。当前产品是「每个项目自带一个 Agora」的架构画布工作台，见 [README](../README.md)。下面是这部分代码（`server/` 的房间路由与调度、`brain/`、`daemon/`、`k8s/`，依赖 Postgres 与 Redis）当初的 README 原文，代码仍在仓库里、测试仍在 CI 里跑，只是不再扩展。
 
 
 多 Agent 和人待在同一间房里的聊天后端。新消息会叫醒房间里的 Agent；每个 Agent 串行跑 turn，突发叫醒合并成一轮，避免 N 条消息打出 N 次推理。项目要解决的是多 Agent 协作里的两类失败——抢答碰撞和脑判失误——并把「时间窗上的竞态」交给代码、「语义上的对错」交给模型。目前完成到 Phase 7：房间 / 消息 / WebSocket / Redis 叫醒调度，一张 LangGraph（小模型 triage、大模型 `reply`/`claim`、代码节点 freshness HOLD、提交时事务内新鲜度校验与逐字复读拦截、按 seq 锚定的 `task_key`、`llm_calls` 账本、把 `send_anyway` 当确认而非跳过的 hold token、房间级的 agent-only 循环上限），计数游戏 / one-of-us 两条真模型协调测试，BYOA——同一张图跑在用户自己的 Computer 上，服务端不持有用户的模型 key——可选的云端 K8s Job 宿主（未开 k8s 时回退进程内），`GET /rooms/{id}/digest` 把房间沉淀为 Markdown brief（transcript / moderated 房间的决策时间线 / active claims / 模型花费，纯格式化零模型调用），以及 **moderated 房间**：指定一名 moderator，落地消息默认只叫醒主持；主持用同一张图上的 `decide` 工具点名 / 开口 / 沉默，`@Name` 是唯一写死的点名协议。没有前端，演示靠 CLI、日志和测试。
@@ -45,16 +45,6 @@ flowchart LR
 Inspired by Cumora (github.com/yetone/cumora); independently designed and implemented from scratch.
 
 设计说明见 [docs/design.md](design.md)。计划中的[本地 Agent 工作台](canvas-workbench-plan.md)由 Pi Master 协调专属 tmux 中可 attach 的原生 CLI，Docker 仅承载后端；产品尚未实现，画布范围与许可待定。开发入口见 [AGENTS.md](../AGENTS.md)，任务进度见 [Agora Project](https://github.com/users/arvakme/projects/2)。
-
-## 本地原生问答（agora_ask）
-
-在专属 tmux 里向 Codex CLI 问一个问题，等原生 JSONL 终态，回答打印到终端并写入 Postgres。这是当前第一条端到端原生控制链路，不是 HTTP API，也不做多会话并发。用法、环境变量与限制见 [docs/agora-ask.md](agora-ask.md)。
-
-```bash
-docker compose up -d --wait
-export AGORA_DATABASE_URL=postgresql://agora:agora@127.0.0.1:5433/agora
-uv run python -m agora_ask "帮我看看这段代码有没有问题"
-```
 
 ## 怎么跑
 
