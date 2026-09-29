@@ -1,6 +1,6 @@
 """``agora share create|list|revoke``: share one canvas for viewing and commenting.
 
-    agora share create [--canvas ID|名字] [--for 1h|1d|7d|10m|forever] [--max-opens N] [--quick] [--json]
+    agora share create [--canvas ID|名字] [--for 1h|1d|7d|10m|forever] [--max-opens N] [--domain ZONE] [--quick] [--json]
     agora share list   [--json]
     agora share revoke <id>|--all
     agora share export [--canvas ID|名字] [-o 文件]     the canvas as a share bundle file
@@ -139,8 +139,12 @@ def cmd_share(p, a) -> int:
         if not base:
             print("agora share: 项目服务没在运行，先 `agora up`（分享网关和隧道由它运行）")
             return 3
-        code, res = call(base, "POST", "/api/share", {"canvasId": cid, "ttl": ttl, "maxOpens": a.max_opens, "quick": a.quick}, timeout=120)
+        code, res = call(base, "POST", "/api/share", {"canvasId": cid, "ttl": ttl, "maxOpens": a.max_opens, "quick": a.quick, "domain": a.domain}, timeout=120)
         if code != 200:
+            zones = (res or {}).get("zones")
+            if zones:  # several zones and none chosen: list them, the next step is --domain
+                print(f"agora share: 账号里有多个域名，用 --domain 选一个：\n" + "\n".join(f"  {z}" for z in zones) + f"\n例如：agora share create --domain {zones[0]}（选过的会记住；也可以先用 --quick 要一个临时链接）")
+                return 1
             print(f"agora share: 创建失败：{(res or {}).get('detail') or res}")
             return 1
         if a.json:
@@ -204,6 +208,7 @@ def add_parser(sub) -> None:
     c.add_argument("--for", dest="duration", default="1d", help="how long: 10m, 1h, 1d, 7d, … or forever (until revoked); default 1d")
     c.add_argument("--max-opens", dest="max_opens", type=int, default=None, metavar="N",
                    help="the link can be opened at most N times (each new browser counts once; reopening in the same browser does not); default: unlimited")
+    c.add_argument("--domain", default=None, help="the Cloudflare zone to share under (asked for when the account has several; remembered; AGORA_SHARE_DOMAIN wins)")
     c.add_argument("--quick", action="store_true", help="no Cloudflare account: a temporary trycloudflare.com address via `cf tunnels quick-start` (one share at a time)")
     c.add_argument("--json", action="store_true")
     ex = ssub.add_parser("export", help="write the canvas (and the canvases below it) with its comments to a share bundle file")

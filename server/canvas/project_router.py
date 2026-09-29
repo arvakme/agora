@@ -91,6 +91,7 @@ class NewShare(BaseModel):
     ttl: int | None = None  # seconds; None = until revoked
     maxOpens: int | None = None  # distinct guests that may open it; None = unlimited
     quick: bool = False  # account-less trycloudflare.com address (one share at a time)
+    domain: str | None = None  # the zone picked in the share window (remembered; AGORA_SHARE_DOMAIN wins)
 
 
 def sse(events: Events, request: Request, accept=None, *, tick: float = 15.0) -> StreamingResponse:
@@ -342,6 +343,10 @@ def create_share_router(store: ProjectStore, shares: ShareManager, events: Event
     def list_shares():
         return {"shares": shares.list(), "gateway": shares.gateway_port is not None}
 
+    @router.get("/domains")
+    def share_domains():
+        return shares.domains()
+
     @router.post("")
     def create_share(body: NewShare):
         try:
@@ -351,12 +356,19 @@ def create_share_router(store: ProjectStore, shares: ShareManager, events: Event
                 raise ValueError(f"no canvas {body.canvasId!r} in this project")
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
+        from server.canvas.cloudflare import ZoneChoice, humanize
+
         try:
+            if body.domain and not body.quick:
+                shares.choose_domain(body.domain)
             share, url = shares.create(body.canvasId, body.ttl, title_of(body.canvasId), max_opens=body.maxOpens, quick=body.quick)
-        except ShareError as e:
-            raise HTTPException(status_code=502, detail=str(e)) from e
-        except Exception as e:  # Cloudflare / cloudflared failures: say what failed, keep serving
-            raise HTTPException(status_code=502, detail=f"{type(e).__name__}: {e}") from e
+        except ValueError as e:  # a zone the account does not have
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except Exception as e:  # ShareError, Cloudflare / cf failures: in plain words, with the next step, keep serving
+            zc = e if isinstance(e, ZoneChoice) else e.__cause__
+            if isinstance(zc, ZoneChoice):
+                return JSONResponse({"detail": humanize(zc), "zones": zc.zones}, status_code=409)
+            raise HTTPException(status_code=502, detail=humanize(e) if not isinstance(e, ShareError) or e.__cause__ else str(e)) from e
         return {"share": share, "url": url}
 
     @router.delete("/{id}")

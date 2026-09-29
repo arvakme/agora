@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { IconCopy, IconLock, IconShare } from "../app/icons";
 import { SPRING } from "../comments/motion";
 import { fmtLeft } from "../guest/GuestApp";
+import { createPlan, defaultTarget, domainView, type DomainInfo, type ShareTarget } from "./domainChoice";
 import "./share.css";
 
 export type ShareRow = {
@@ -106,6 +107,16 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
   const [err, setErr] = useState<string | null>(null);
   const [made, setMade] = useState<{ url: string; row: ShareRow } | null>(null);
   const [copied, setCopied] = useState(false);
+  // Which address: the person's own domain (asked when the account has several), or a temporary link (no domain needed).
+  const [info, setInfo] = useState<DomainInfo | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [target, setTarget] = useState<ShareTarget | null>(null);
+  useEffect(() => {
+    void api<DomainInfo>("GET", "/domains").then(setInfo, (e) => setInfo({ domains: [], chosen: null, fixed: false, error: `${(e as Error).message}。可以先用临时链接` }));
+  }, []);
+  const view = domainView(info, picked);
+  const kind = target ?? defaultTarget(view);
+  const plan = createPlan(view, kind);
   const ttl = (): number | null => {
     const d = DURATIONS.find((x) => x.key === dur)!;
     if (d.key === "custom") return Math.round(Number(n) * UNITS.find((u) => u.key === unit)!.s);
@@ -118,7 +129,8 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
     setErr(null);
     setMade(null);
     try {
-      const j = await api<{ url: string; share: ShareRow }>("POST", "", { canvasId, ttl: ttl(), maxOpens: limited ? Number(maxOpens) : null });
+      if (!plan.ok) return;
+      const j = await api<{ url: string; share: ShareRow }>("POST", "", { canvasId, ttl: ttl(), maxOpens: limited ? Number(maxOpens) : null, ...plan.body });
       setMade({ url: j.url, row: j.share });
       setCopied(false);
       onCreated();
@@ -148,6 +160,37 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
           {canvases.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
         </select>
       </label>
+      <div className="share-field">
+        <span>地址</span>
+        <div className="seg share-seg" data-static role="radiogroup" aria-label="地址">
+          <button role="radio" aria-checked={kind === "domain"} data-on={kind === "domain"} onClick={() => setTarget("domain")}>我的域名</button>
+          <button role="radio" aria-checked={kind === "quick"} data-on={kind === "quick"} onClick={() => setTarget("quick")}>临时链接</button>
+        </div>
+      </div>
+      <div className="share-field share-custom">
+        <span />
+        <div className="share-where">
+          {kind === "domain" ? (
+            <>
+              {view.kind === "loading" && <em>正在读取你的 Cloudflare 域名…</em>}
+              {(view.kind === "fixed" || view.kind === "single") && <span>域名：<code>{view.domain}</code></span>}
+              {view.kind === "pick" && (
+                <label>
+                  域名
+                  <select value={view.selected} onChange={(e) => setPicked(e.target.value)} aria-label="分享用的域名">
+                    {view.options.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </label>
+              )}
+              {view.kind === "error" && <em role="alert">{view.message}</em>}
+              {view.kind === "none" && <em>这个 Cloudflare 账号里没有域名。可以先用临时链接。</em>}
+              <small>地址稳定：用你自己的域名，关掉 Agora 再打开还是同一个地址（有效期内）。需要先在终端运行 <code>npx cf auth login</code>。</small>
+            </>
+          ) : (
+            <small>不需要域名和账号，随时能用；关掉 Agora 就失效，地址每次不同，同一时间只有一个临时链接。</small>
+          )}
+        </div>
+      </div>
       <div className="share-field">
         <span>有效期</span>
         <div className="seg share-seg" data-static role="radiogroup" aria-label="有效期">
@@ -192,8 +235,8 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
         另有防刷的频率限制（同一网络地址每分钟最多打开 10 次），与这里的次数无关。
       </p>
       <div className="share-actions">
-        {busy && <span className="share-busy">正在建立隧道和域名，第一次要十几秒…</span>}
-        <button className="btn primary" disabled={busy || !canvasId || customBad || opensBad} onClick={() => void create()}>
+        {busy && <span className="share-busy">{kind === "quick" ? "正在要一个临时地址，要十来秒…" : "正在建立隧道和域名，第一次要十几秒…"}</span>}
+        <button className="btn primary" disabled={busy || !canvasId || customBad || opensBad || !plan.ok} onClick={() => void create()}>
           {busy ? "创建中…" : "创建链接"}
         </button>
       </div>

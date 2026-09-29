@@ -2,8 +2,8 @@
 installed). ``cf`` owns login and credentials (``cf auth login``); Agora keeps none of its own and
 never reads them. Each call runs ``cf … `` and parses its JSON output.
 
-- DNS: ``cf dns records create|get|delete`` in the zone named by ``AGORA_SHARE_DOMAIN`` (or the
-  account's only zone).
+- DNS: ``cf dns records create|get|delete`` in the zone named by ``AGORA_SHARE_DOMAIN``, else the one the
+  person picked in the share window (share.py remembers it), else the account's only zone (``cf zones list``).
 - Tunnels: ``cf tunnels create|list|delete``. A tunnel is remotely configured
   (``config_src: cloudflare``): its single ingress — the local share gateway — is set with
   ``cf tunnels config update`` on every start, and the connector is ``cf tunnels run <id>`` (cf's
@@ -30,6 +30,38 @@ class CloudflareError(RuntimeError):
     pass
 
 
+class NotLoggedIn(CloudflareError):
+    pass
+
+
+class CfMissing(CloudflareError):
+    """No ``cf`` to run, and no ``npx cf`` to fetch (no npx, or no network for it)."""
+
+
+class ZoneChoice(CloudflareError):
+    """The account has several zones and none was chosen."""
+
+    def __init__(self, zones: list[str]) -> None:
+        super().__init__(f"the account has {len(zones)} zones: {', '.join(zones)}")
+        self.zones = zones
+
+
+_NO_NETWORK = ("enotfound", "eai_again", "econnrefused", "etimedout", "econnreset", "network", "getaddrinfo", "could not resolve")
+
+
+def humanize(e: BaseException) -> str:
+    """What to tell the person: the next step, in plain words, never an exception's class name."""
+    cause = e if isinstance(e, CloudflareError) else e.__cause__
+    if isinstance(cause, NotLoggedIn):
+        return "还没登录 Cloudflare：在终端运行 `npx cf auth login`，完成后再点一次"
+    if isinstance(cause, CfMissing):
+        return "没找到 cf，也拉不到 npx cf：检查网络，或者先装 cf"
+    if isinstance(cause, ZoneChoice):
+        return f"账号里有多个域名（{'、'.join(cause.zones)}）：先选一个（命令行用 --domain）"
+    reason = str(cause if isinstance(cause, CloudflareError) else e).strip().splitlines()[0][:200] if str(e).strip() else "原因不明"
+    return f"{reason}。可以先用临时链接"
+
+
 class CfCli:
     """Both providers (``DnsProvider`` and ``TunnelProvider`` in share.py) over the ``cf`` CLI."""
 
@@ -40,11 +72,16 @@ class CfCli:
     # ——— running cf ———
     def _run(self, *args: str, zone: bool = False) -> Any:
         argv = [*self.cmd, *args, *(["-z", self._domain] if zone and self._domain else [])]
-        r = subprocess.run(argv, capture_output=True, text=True, timeout=90, stdin=subprocess.DEVNULL, cwd=cf_cwd())
+        try:
+            r = subprocess.run(argv, capture_output=True, text=True, timeout=90, stdin=subprocess.DEVNULL, cwd=cf_cwd())
+        except FileNotFoundError:
+            raise CfMissing(f"{argv[0]} not found") from None
         if r.returncode != 0:
             text = (r.stderr or r.stdout).strip()
             if "auth login" in text or "not authenticated" in text.lower() or "unauthorized" in text.lower():
-                raise CloudflareError(LOGIN_HINT)
+                raise NotLoggedIn(LOGIN_HINT)
+            if self.cmd[0].endswith("npx") and any(w in text.lower() for w in _NO_NETWORK):
+                raise CfMissing(text[-200:])
             what = " ".join(args[:3])
             raise CloudflareError(f"cf {what}: {text[-400:]}")
         out = r.stdout.strip()
@@ -56,16 +93,25 @@ class CfCli:
     def check_login(self) -> None:
         me = self._run("auth", "whoami")
         if not (isinstance(me, dict) and me.get("authenticated")):
-            raise CloudflareError(LOGIN_HINT)
+            raise NotLoggedIn(LOGIN_HINT)
 
     # ——— DnsProvider ———
+    def zones(self) -> list[str]:
+        """The account's zones (``cf zones list``)."""
+        return [str(z["name"]) for z in self._run("zones", "list") or []]
+
+    def use_domain(self, name: str) -> None:
+        self._domain = name
+
     def zone_name(self) -> str:
         if self._domain:
             return self._domain
-        zones = self._run("zones", "list") or []
-        if len(zones) != 1:
-            raise CloudflareError("set AGORA_SHARE_DOMAIN to the Cloudflare zone to share under (the account has " + ("none" if not zones else f"{len(zones)} zones") + ")")
-        self._domain = str(zones[0]["name"])
+        zones = self.zones()
+        if not zones:
+            raise CloudflareError("这个 Cloudflare 账号里没有域名")
+        if len(zones) > 1:
+            raise ZoneChoice(zones)
+        self._domain = zones[0]
         return self._domain
 
     def create_cname(self, name: str, target: str, comment: str) -> str:
@@ -127,7 +173,7 @@ class CfCli:
 class CfDns:
     def __init__(self, cf: CfCli) -> None:
         self.cf = cf
-        self.zone_name, self.create_cname, self.delete, self.exists = cf.zone_name, cf.create_cname, cf.delete, cf.exists
+        self.zone_name, self.zones, self.use_domain, self.create_cname, self.delete, self.exists = cf.zone_name, cf.zones, cf.use_domain, cf.create_cname, cf.delete, cf.exists
 
 
 class CfTunnels:

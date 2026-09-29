@@ -45,3 +45,9 @@
 @media (max-width: 640px) {
   .share-pop { position: fixed; left: 16px; right: 16px; top: 52px; width: auto; }
 }
+
+.share-custom > .share-where { display: grid; gap: var(--space-3); min-width: 0; }
+.share-where select { min-width: 14em; max-width: 100%; }
+.share-where small { color: var(--fg-muted); font-size: var(--text-xs); line-height: var(--leading-read); }
+.share-where em { font-style: normal; color: var(--caution); }
+.share-where label { display: inline-flex; align-items: center; gap: var(--space-3); }
