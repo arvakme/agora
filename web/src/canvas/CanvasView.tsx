@@ -24,6 +24,7 @@ import { firstView, viewport } from "./viewport";
 import { BENCH_BARE } from "../bench/bench";
 import { useChrome } from "./useChrome";
 import type { Box } from "./clearance";
+import { KEEPS_CARD_OPEN } from "./pressOutside";
 import { AnimatePresence, motion } from "motion/react";
 import { SPRING } from "../comments/motion";
 
@@ -221,7 +222,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onGone, o
       onPointerDownCapture={(e) => {
         // komo-style: interacting with the canvas outside a card closes the open thread
         // and takes back an unsent pin (parked if it has text).
-        if ((e.target as HTMLElement).closest(".tcard, .pin, .drawer, .ptr-ui, .undo-toast, .nest-mark, .nest-crumbs, .ws-ui")) return;
+        if ((e.target as HTMLElement).closest(KEEPS_CARD_OPEN)) return;
         doc.store.close();
         dismissDraft(true);
       }}

@@ -1,0 +1,4 @@
+/* The small 「推荐」 tag on the recommended agent: the new-session chooser (SessionPane.tsx) and the @ list (comments/MentionField.tsx). */
+.rec-tag { flex: none; padding: 0 6px; border-radius: var(--r-sm); background: var(--accent-tint); color: var(--accent); font-size: var(--text-xs); font-style: normal; line-height: 1.6; }
+.sp-card-h { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.mention-kind .rec-tag { margin-right: var(--space-2); }
