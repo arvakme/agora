@@ -19,7 +19,7 @@
 //     behind a door), and fades out. A receipts-only worker never moves.
 // Places are node element ids or OUTSIDE (the 图外 tray next to the diagram).
 import { REF_K } from "./docks";
-import { planTrip, SUB_SCALE, type Move, type Pose, type Pt, type Trip } from "./rig";
+import { planTrip, SUB_SCALE, tripAt, type Foot, type Move, type Pose, type Pt, type Trip } from "./rig";
 import type { Leg, Route } from "./route";
 import { receiptAt, type WorkRun, type ReceiptState, type RunSeg } from "./runs/types";
 
@@ -27,6 +27,12 @@ export const OUTSIDE = "\u0000outside";
 /** Idle this long and the worker leaves the canvas. */
 export const IDLE_LEAVE_MS = 60_000;
 export const HANDOFF_MS = 1100;
+/** Work that starts while the worker is still walking to the last place waits for it to get there — unless it
+ * would arrive more than this after the new work started: then the worker drops that stop and walks to the
+ * new place from where it is. Held back more than BOOST_AFTER_MS (or catching up) it walks BOOST× as fast. */
+export const CATCH_UP_MS = 1500;
+export const BOOST_AFTER_MS = 1000;
+export const BOOST = 1.5;
 export const FADE_MS = 800;
 /** A worker fades in when it appears (never pops in). */
 export const APPEAR_MS = 320;
@@ -146,10 +152,10 @@ const through = (s: Walk, t: number, into: boolean) => {
 /**
  * Take the walk to `w` at t0, as of t: out of the door it is behind, over to the place (as a move), and
  * in at the other end when `w` lies behind a door. A walk that would only start after t (it is still
- * coming out) is not taken yet: it waits at the door. `ret`: a sub-agent's walk back to hand over (a
+ * coming out, or still walking to the last place) is not taken yet: it waits for that. `ret`: a sub-agent's walk back to hand over (a
  * move even to the same place, as the handover needs one).
  */
-function step(ctx: Ctx, s: Walk, w: Here, t0: number, t: number, o: { sub?: boolean; ret?: boolean } = {}): "moved" | "waiting" | "stayed" {
+function step(ctx: Ctx, s: Walk, w: Here, t0: number, t: number, o: { sub?: boolean; ret?: boolean; next?: number } = {}): "moved" | "waiting" | "stayed" {
   // still on its way to a door when it has to go elsewhere: it never went in
   if (s.behind && t0 < s.inAt) {
     s.doors.pop();
@@ -167,8 +173,23 @@ function step(ctx: Ctx, s: Walk, w: Here, t0: number, t: number, o: { sub?: bool
       s.portal = undefined;
       t1 = t0 + DOOR_MS;
     }
+    // still walking to the last place: it arrives first, then sets off (never cut short, never a jump) — unless that
+    // would leave it CATCH_UP_MS behind: then it drops that stop and heads for this place from where it is
+    const last = s.moves[s.moves.length - 1];
+    let take: Pick<Move, "from" | "resume" | "boost"> = { from: s.at };
+    if (last && !ctx.reduced) {
+      const lp = planFor(last, ctx);
+      if (lp.t1 - t1 > CATCH_UP_MS) {
+        const now = tripAt(lp, t1);
+        const near = (p: string) => Math.hypot(ctx.dock(p).x - now.root.x, ctx.dock(p).y - now.root.y);
+        take = { from: near(last.from) <= near(last.to) ? last.from : last.to, resume: { at: now.root, feet: now.feet.map((f) => ({ x: f.x, y: now.root.y, lift: 0 })) as [Foot, Foot] }, boost: BOOST };
+      } else t1 = Math.max(t1, lp.t1);
+      if (!take.boost && t1 - t0 > BOOST_AFTER_MS) take.boost = BOOST;
+    }
+    // a stop it would only set off for after newer work has begun is dropped: it never went (`next`: when that work began)
+    if (o.next != null && !take.resume && t1 > o.next) return "waiting";
     if (t1 > t) return "waiting";
-    const m: Move = { from: s.at, to: w.place, t: t1, slot: 0, ...(o.ret ? { ret: true } : {}), ...(o.sub ? { sub: true } : {}) };
+    const m: Move = { ...take, to: w.place, t: t1, slot: 0, ...(o.ret ? { ret: true } : {}), ...(o.sub ? { sub: true } : {}) };
     s.moves.push(m);
     if (behind) through(s, ctx.reduced ? t1 : planFor(m, ctx).t1, true);
     r = "moved";
@@ -191,7 +212,16 @@ function follow(ctx: Ctx, segs: readonly RunSeg[], t: number, from: Here, sub: b
       if (t < g.end && !s.behind) s.glance = { place: w.place };
       continue;
     }
-    step(ctx, s, w, g.start, t, { sub });
+    // the next work that moves it, if it has begun by t
+    let next: number | undefined;
+    for (let j = i + 1; j < segs.length && segs[j].start <= t; j++) {
+      const v = where(ctx, segs[j]);
+      if (v && v.place !== w.place && !glanced(ctx, segs, j, v.place)) {
+        next = segs[j].start;
+        break;
+      }
+    }
+    step(ctx, s, w, g.start, t, { sub, next });
   }
   return s;
 }
@@ -363,11 +393,11 @@ const STRAIGHT = {};
 /** The trip of a move between two docks, along the canvas's walk map (memoised per map: docks move
  * when the diagram does). Planned for the figure's size at the reference view (a sub-agent's is smaller). */
 export function planFor(m: Move, ctx: Pick<Ctx, "dock" | "route">): Trip {
-  const a = ctx.dock(m.from);
+  const a = m.resume?.at ?? ctx.dock(m.from);
   const b = ctx.dock(m.to);
   let byMove = trips.get(ctx.route ?? STRAIGHT);
   if (!byMove) trips.set(ctx.route ?? STRAIGHT, (byMove = new Map()));
-  const key = `${m.t}|${m.sub ? 1 : 0}|${m.from}|${m.to}|${a.x},${a.y}|${b.x},${b.y}`;
+  const key = `${m.t}|${m.sub ? 1 : 0}|${m.from}|${m.to}|${a.x},${a.y}|${b.x},${b.y}|${m.boost ?? 1}`;
   let p = byMove.get(key);
   if (!p) {
     if (byMove.size > 4000) byMove.clear();

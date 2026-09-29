@@ -1,11 +1,12 @@
 // 剖面 trips (./rig.ts planTrip / tripAt along ./route.ts routes; web/docs/workstation.md §2 §5): a
 // worker walks floors and bridges and climbs ladders. Walking, a planted foot is on the floor or
 // bridge under it; climbing, hands and feet hold the rungs of the ladder, the diagonal pairs taking
-// turns; a whole trip keeps to the time budget (a long one goes faster: longer, quicker steps); the
+// turns; a whole trip takes its length ÷ the walking pace (never faster, no upper limit; 2026-09-29 用户决定调慢走路); the
 // body glides from the start spot to the end spot without a jump; the same move gives the same trip.
 import { describe, expect, it } from "vitest";
 import type { Box } from "../canvas/clearance";
-import { planTrip, RIG, STEP_MAX, tripAt, TRIP_MAX_MS, TRIP_MIN_MS, type Foot, type Trip } from "./rig.ts";
+import { CLIMB_SPEED, planTrip, RAMP_MS, RIG, SET_OFF_MS, STEP_MAX, tripAt, TRIP_MIN_MS, WALK_SPEED, type Foot, type Trip } from "./rig.ts";
+import { REF_K } from "./docks.ts";
 import { route, walkMap, type Leg, type WalkMap } from "./route.ts";
 
 type Spot = { place: string; at: { x: number; y: number } };
@@ -71,16 +72,73 @@ function footfalls(p: Trip): { t: number; x: number }[] {
 const mean = (xs: number[]) => xs.reduce((n, x) => n + x, 0) / xs.length;
 
 describe("planTrip / tripAt (剖面 trips)", () => {
-  it("a whole trip lasts TRIP_MIN_MS–TRIP_MAX_MS, from the turn at set-off to the last foot down: a short one slowed to the minimum, a long one sped up to the maximum", () => {
+  // 2026-09-29 用户决定调慢走路: was "lasts TRIP_MIN_MS–TRIP_MAX_MS (0.7–2.4 s), a long one sped up to the maximum" (the hall's 1200 px trip took exactly TRIP_MAX_MS = 2400, ~600 px/s).
+  it("a whole trip takes the turn at set-off plus its length ÷ the walking pace (plus the time to get up to speed), at least TRIP_MIN_MS, with no upper limit", () => {
+    expect(WALK_SPEED).toBeGreaterThanOrEqual(0.2);
+    expect(WALK_SPEED).toBeLessThanOrEqual(0.25);
     for (const [name, map, from, to] of TRIPS) {
       const { p } = plan(map, from, to);
       expect(p.t0, name).toBe(T0);
       expect(p.t1 - p.t0, name).toBeGreaterThanOrEqual(TRIP_MIN_MS);
-      expect(p.t1 - p.t0, name).toBeLessThanOrEqual(TRIP_MAX_MS);
     }
     expect(plan(hall, H("hall", 100), H("hall", 126)).p.t1 - T0).toBe(TRIP_MIN_MS);
-    expect(plan(hall, H("hall", 100), H("hall", 1300)).p.t1 - T0).toBe(TRIP_MAX_MS);
-    expect(plan(proto, P("web", 64), P("mysql", 704)).p.t1 - T0).toBe(TRIP_MAX_MS);
+    for (const [len, k] of [[400, K], [1200, K], [2800, K], [1200, K * 0.8]]) {
+      const pace = (WALK_SPEED * k) / REF_K; // world px/ms: a smaller figure walks proportionally slower
+      const want = SET_OFF_MS + len / pace + RAMP_MS;
+      const got = plan(hall, H("hall", 100), H("hall", 100 + len), k).p.t1 - T0;
+      expect(Math.abs(got - want), `${len} px at k ${k}: ${got} ms, wanted ${want}`).toBeLessThan(1);
+    }
+    expect(plan(hall, H("hall", 100), H("hall", 1300)).p.t1 - T0).toBeGreaterThan(5000);
+    expect(plan(proto, P("web", 64), P("mysql", 704)).p.t1 - T0).toBeGreaterThan(2400); // the long way round, no longer squeezed into 2.4 s
+  });
+
+  it("nothing moves faster than the pace: the body's speed peaks at WALK_SPEED walking (CLIMB_SPEED climbing), about 220 px/s — 3.7 px a frame", () => {
+    for (const [name, map, from, to] of TRIPS) {
+      const { p } = plan(map, from, to);
+      let prev = tripAt(p, p.t0).root;
+      let peak = 0;
+      for (let t = p.t0 + 1; t <= p.t1; t++) {
+        const r = tripAt(p, t).root;
+        peak = Math.max(peak, Math.abs(r.x - prev.x), Math.abs(r.y - prev.y)); // along the way (a step's rise adds a little on top)
+        prev = r;
+      }
+      const limit = Math.max(WALK_SPEED, CLIMB_SPEED) * (K / REF_K);
+      expect(peak, `${name}: ${(peak * 1000).toFixed(0)} px/s`).toBeLessThanOrEqual(limit + 1e-6);
+    }
+    const long = plan(hall, H("hall", 100), H("hall", 1300)).p;
+    let peak = 0;
+    for (let t = long.t0 + 1; t <= long.t1; t++) peak = Math.max(peak, tripAt(long, t).root.x - tripAt(long, t - 1).root.x);
+    expect(peak * 1000, "a long walk reaches its pace").toBeGreaterThan(200);
+    expect(peak * 1000).toBeLessThanOrEqual(250);
+  });
+
+  it("a step is unhurried: a swinging foot moves at most 12 px a frame (60 fps), and each swing takes at least 4 frames at the walking pace", () => {
+    for (const [name, map, from, to] of TRIPS) {
+      const { p } = plan(map, from, to);
+      for (let off = 0; off < 16; off += 4) {
+        let prev = tripAt(p, p.t0 - 50 + off).feet;
+        for (let t = p.t0 - 50 + off + 1000 / 60; t <= p.t1 + 50; t += 1000 / 60) {
+          const now = tripAt(p, t).feet;
+          now.forEach((f, i) => expect(Math.hypot(f.x - prev[i].x, f.y - prev[i].y), `${name}: foot ${i}, +${Math.round(t - p.t0)} ms`).toBeLessThanOrEqual(12));
+          prev = now;
+        }
+      }
+    }
+    const { p } = plan(hall, H("hall", 100), H("hall", 1300));
+    const swings: number[] = [];
+    let since: number[] = [-1, -1];
+    for (let t = p.t0; t <= p.t1; t++) {
+      tripAt(p, t).feet.forEach((f, i) => {
+        if (lifted(f) && since[i] < 0) since[i] = t;
+        else if (!lifted(f) && since[i] >= 0) {
+          swings.push(t - since[i]);
+          since[i] = -1;
+        }
+      });
+    }
+    const mid = swings.slice(3, -3);
+    expect(mid.length).toBeGreaterThan(10);
+    for (const ms of mid) expect(ms).toBeGreaterThanOrEqual(4 * (1000 / 60));
   });
 
   it("the body starts on the start spot, ends on the end spot and glides between without a jump (every ms under 1 px; at 60 fps no frame changes velocity by 1.5 px)", () => {
@@ -206,15 +264,16 @@ describe("planTrip / tripAt (剖面 trips)", () => {
     expect(flat.ladders).toEqual([]);
   });
 
-  it("a longer way goes faster with longer and quicker steps together", () => {
+  // 2026-09-29 用户决定调慢走路: was "a longer way goes faster with longer and quicker steps together" (stride ×1.2, step time ×0.8 from a 300 px to a 1200 px walk).
+  it("a long way is walked at the same step as a short one: no longer, no quicker", () => {
     const steps = (p: Trip) => {
       const f = footfalls(p).slice(2, -2);
       return { stride: mean(f.slice(1).map((x, i) => Math.abs(x.x - f[i].x))), ms: mean(f.slice(1).map((x, i) => x.t - f[i].t)) };
     };
-    const walk = steps(plan(hall, H("hall", 100), H("hall", 400)).p);
-    const run = steps(plan(hall, H("hall", 100), H("hall", 1300)).p);
-    expect(run.stride).toBeGreaterThan(walk.stride * 1.2);
-    expect(run.ms).toBeLessThan(walk.ms * 0.8);
+    const walk = steps(plan(hall, H("hall", 100), H("hall", 700)).p);
+    const far = steps(plan(hall, H("hall", 100), H("hall", 1300)).p);
+    expect(Math.abs(far.stride / walk.stride - 1)).toBeLessThan(0.1);
+    expect(Math.abs(far.ms / walk.ms - 1)).toBeLessThan(0.15);
   });
 
   it("is a pure function of the move and the way: the same trip, the same pose at the same t", () => {
