@@ -56,6 +56,9 @@ class Dispatch:
     created_at: int = 0
     updated_at: int = 0
     notified: str | None = None  # the state the source was last told
+    # How the last note went out: {"state", "mark": True, "at"} when it carried the `agora-receipt-<id>:<state>` marker.
+    # Only such a note can be looked for in the source's own log; records from before the marker (no field) never are.
+    notice: dict[str, Any] | None = None
     history: list[dict[str, Any]] = field(default_factory=list)  # [{"at", "state"}], oldest first
 
 
@@ -136,6 +139,7 @@ def to_json(d: Dispatch) -> dict[str, Any]:
         "created_at": d.created_at,
         "updated_at": d.updated_at,
         "notified": d.notified,
+        "notice": d.notice,
         "history": d.history,
     }
 
@@ -157,6 +161,7 @@ def from_json(o: dict[str, Any]) -> Dispatch:
         created_at=int(o.get("created_at") or 0),
         updated_at=int(o.get("updated_at") or 0),
         notified=o.get("notified"),
+        notice=o.get("notice"),
         history=list(o.get("history") or []),
     )
 
