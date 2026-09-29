@@ -59,3 +59,13 @@
 .nest-toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 40; }
 @media (prefers-reduced-motion: reduce) { .nest-mark, .nest-crumbs li button, .nest-back, .nest-act { transition: none; } }
 .nest-pop[data-flip] { left: auto; right: 0; }
+
+/* 「可能过时」: a dot by the sub-diagram's name in the breadcrumb; its words and 「让 AI 更新」 open on hover or focus */
+.nest-stale-dot { position: relative; display: inline-flex; align-items: center; margin-left: var(--space-3); }
+.nest-dot-btn { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; }
+.nest-dot-btn:hover, .nest-dot-btn:focus-visible { background: var(--raised); }
+.nest-stale-dot .nest-dot { width: 8px; height: 8px; }
+.nest-stale-pop { position: absolute; left: 0; top: calc(100% + 6px); z-index: 30; display: none; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--frame); color: var(--caution); font-size: var(--text-xs); white-space: nowrap; }
+/* the pop is under the dot with a bridge, so the pointer can reach its buttons */
+.nest-stale-pop::before { content: ""; position: absolute; left: 0; right: 0; top: -8px; height: 8px; }
+.nest-stale-dot:hover .nest-stale-pop, .nest-stale-dot:focus-within .nest-stale-pop { display: inline-flex; }

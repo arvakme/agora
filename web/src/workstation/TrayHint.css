@@ -1,5 +1,9 @@
 /* 图外文件提示补节点 (web/docs/workstation.md「新想法」): a quiet outlined line in the dashed 图外 tray;
  * ink icon, no purple. The tray itself takes no pointer: this line does. */
+/* it shows only while the pointer is on the tray (the tray takes the pointer for that; the line keeps its place so nothing shifts) */
+.ws-tray:has(.ws-tray-hint) { pointer-events: auto; }
+.ws-tray-hint { visibility: hidden; opacity: 0; transition: opacity var(--dur-tap, 120ms) ease; }
+.ws-tray:hover .ws-tray-hint, .ws-tray:focus-within .ws-tray-hint { visibility: visible; opacity: 1; }
 .ws-tray-hint { pointer-events: auto; display: inline-flex; align-items: flex-start; max-width: 230px; gap: 5px; margin-top: 3px; padding: 3px 7px 3px 5px; border-radius: var(--r-xs); background: var(--surface); box-shadow: var(--box); color: var(--fg); font-size: var(--text-xs); line-height: 1.4; text-align: left; --icon: var(--fg); }
 .ws-tray-hint svg { flex: none; margin-top: 2px; }
 .ws-tray-hint:hover { background: var(--raised-on-surface); box-shadow: inset 0 0 0 1px var(--fg-muted); }
