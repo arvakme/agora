@@ -6,7 +6,7 @@
 //   turn     — which turn of that agent the trace covers (§11 按轮追踪: stops, route and sub-agents are
 //              that turn's only); null = its current or latest turn, worked out where the trace is drawn;
 //   itemHover / pan — the trajectory row under the pointer (its node and stop light up on the canvas) and
-//              a one-off request to glide the canvas: to the trace's first stop, or to a row's node.
+//              a one-off request to glide the canvas to a row's node.
 // A lane name "locates" its agent: the canvas the timeline belongs to pans smoothly to the figure,
 // once. Following an agent in its own pane is ./follow.ts; nothing moves the person's own view.
 import { useSyncExternalStore } from "react";
@@ -15,7 +15,7 @@ import type { TurnWindow } from "./trace";
 
 /** A timeline segment: run id and index in its segs. */
 export type SegRef = { run: string; i: number };
-export type Pan = { key: number; to: "first" } | { key: number; to: "item"; item: string };
+export type Pan = { key: number; item: string };
 export type Focus = { selected: string | null; hovered: string | null; segSel: SegRef | null; segHover: SegRef | null; traced: string | null; turn: TurnWindow | null; itemHover: string | null; pan: Pan | null };
 let state: Focus = { selected: null, hovered: null, segSel: null, segHover: null, traced: null, turn: null, itemHover: null, pan: null };
 let panKey = 0;
@@ -37,14 +37,10 @@ export const focus = {
   hoverSeg: (s: SegRef | null) => set({ segHover: s }),
   /** Trace an agent: its current or latest turn, or `turn` (letting go of the trace forgets the turn). */
   trace: (id: string | null, turn: TurnWindow | null = null) => set({ traced: id, turn: id ? turn : null }),
-  /** 「在图上看这一轮」: trace the turn and glide the canvas to its first stop (only now: nothing moves the view otherwise). */
-  traceTurn(id: string, turn: TurnWindow) {
-    set({ traced: id, turn, selected: id, pan: { key: ++panKey, to: "first" } });
-  },
   /** The trajectory row under the pointer (its transcript item id): its node and stop light up. */
   hoverItem: (id: string | null) => set({ itemHover: id }),
   /** A trajectory row clicked: glide the canvas to its node, once. */
-  panToItem: (item: string) => set({ pan: { key: ++panKey, to: "item", item } }),
+  panToItem: (item: string) => set({ pan: { key: ++panKey, item } }),
   /** Esc: leave the trace first, then stop following, then drop the selection. Returns whether it did something. */
   escape(): boolean {
     if (state.traced) {

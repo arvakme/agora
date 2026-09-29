@@ -79,6 +79,8 @@ export type Ctx = {
      * there walked) for the work starting at t0, seen at t; Infinity while it is not yet. It comes out only then. */
     leave?: (run: WorkRun, canvasId: string | undefined, t0: number, t: number) => number;
   };
+  /** Top-level workers that stay standing where they finished instead of leaving after a minute idle: the traced one, while its route shows. */
+  stay?: ReadonlySet<string>;
   reduced: boolean;
   /** The dispatcher of a sub-agent, to find where it was and where to hand back. */
   run: (id: string) => WorkRun | undefined;
@@ -357,7 +359,7 @@ function compute(run: WorkRun, t: number, ctx: Ctx): RunState {
       const lastEnd = Math.max(...b.filter((g) => g.start <= t).map((g) => g.end));
       const idle = t - lastEnd;
       fade = Math.min(1, (t - b[0].start) / APPEAR_MS);
-      if (idle > IDLE_LEAVE_MS) {
+      if (idle > IDLE_LEAVE_MS && !ctx.stay?.has(run.id)) {
         fade = Math.min(fade, Math.max(0, 1 - (idle - IDLE_LEAVE_MS) / FADE_MS));
         if (fade <= 0) present = false;
       }

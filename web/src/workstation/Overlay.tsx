@@ -50,7 +50,8 @@ import { buildGeometry, type Geometry } from "./geometry";
 import { canvasWhere, conflictAt, doorTiming, OUTSIDE, outsideProject, stateAt, writeConflicts, type Ctx, type RunState, type WriteConflict } from "./place";
 import { Glide, makeSprings, RIG, solve, SUB_SCALE, type Pt, type Springs, type Trip } from "./rig";
 import type { Leg } from "./route";
-import { ReplayBar } from "./ReplayBar";
+import { ReplayBar, TraceBar } from "./ReplayBar";
+import { stopEntryText } from "./traceText";
 import { ReplayMarks } from "./ReplayMarks";
 import { shortAgentName } from "./stripRules";
 import { liveFollow, useLiveFollow } from "./replayLive";
@@ -390,7 +391,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const keepRef = useRef(keep);
   keepRef.current = keep;
   const geom = useMemo(() => buildGeometry(view.id, view.elements, view.map, nst.scenes, (id) => nst.titles[id]), [view.id, view.version, nst.scenes, nst.titles]);
-  const ctx = useMemo<Ctx>(() => ({ locate: geom.locate, dock: geom.dock, route: geom.route, ...withDoorTiming(scenePlaces(geom.boxes, view.map, nst.index.has(canvasOfView(view.id))), canvasOfView(view.id), nst.index), reduced, run: (id) => runs.byId.get(id) }), [geom, runs, reduced, view.map, nst.index, view.id]);
+  const stay = useMemo(() => new Set(fo.traced ? [fo.traced] : []), [fo.traced]); // a route on the canvas keeps its figure
+  const ctx = useMemo<Ctx>(() => ({ stay, locate: geom.locate, dock: geom.dock, route: geom.route, ...withDoorTiming(scenePlaces(geom.boxes, view.map, nst.index.has(canvasOfView(view.id))), canvasOfView(view.id), nst.index), reduced, run: (id) => runs.byId.get(id) }), [geom, runs, reduced, view.map, nst.index, view.id, stay]);
   const conflicts = useMemo(() => writeConflicts(runs.flat.map((f) => f.run)), [runs]);
   // A canvas with nothing on it shows its own guide (「一张空白画布」): the layer gives way (no figures, bubbles, tray), the strip says so.
   const empty = useMemo(() => !view.elements.some((e) => !e.isDeleted), [view.elements, view.version]);
@@ -998,17 +1000,12 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
     ui.openSession(sid);
     setTimeout(() => dispatchEvent(new CustomEvent("agora:step", { detail: { sessionId: sid, itemId: itemOfStop(trv, trv.id, i), itemIds: itemsOfStop(trv, trv.id, i), turn } })), 60);
   };
-  // 「在图上看这一轮」 / a row clicked in the trajectory: glide this canvas there, once
+  // a row clicked in the trajectory: glide this canvas to its node, once
   useEffect(() => {
     const p = fo.pan;
     const api = canvases.get(view.id)?.api;
     if (!p || !api || pane) return;
-    let place: string | null | undefined;
-    if (p.to === "item") place = placeOfItem(p.item);
-    else if (tracedRun) {
-      const win = fo.turn ?? latestTurnWindow(tracedRun);
-      place = traceAt(tracedRun, clock.time(), ctx, Date.now(), win ? spanOf(win, Date.now()) : undefined).stops[0]?.place;
-    }
+    const place = placeOfItem(p.item);
     const b = place ? geom.boxOf(place) : undefined;
     if (b) glideTo(api, { x: b.x + b.w / 2, y: b.y + b.h / 2 });
   }, [fo.pan?.key]);
@@ -1109,7 +1106,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
           >
             {m.n}
           </i>
-          {m.entry.length > 0 && <em title={`↘ 子图 · ${m.entry.join("、")}`}>↘ 子图 · {m.entry.join("、")}</em>}
+          {m.entry.length > 0 && <em title={stopEntryText(m.n, m.entry)}>{stopEntryText(m.n, m.entry)}</em>}
           <div className="ws-stop-calls" role="tooltip">
             <b>
               第 {m.n} 站 · {placeName(m.s.place)} · {hhmmss(m.s.at)}
@@ -1218,10 +1215,11 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         );
       })}
       {playing && !only && <ReplayBar />}
+      {!playing && !only && fo.traced && trv && trv.stops.length > 0 && <TraceBar turn={fo.turn?.n ?? (tracedRun ? latestTurnWindow(tracedRun)?.n ?? null : null)} />}
       {!playing && !only && playState.starting && <div className="ws-live-bar" role="status"><span className="btn sm">正在准备回放…（Esc 取消）</span></div>}
       {!playing && !only && camFollow.run && camFollow.paused && (
         <div className="ws-live-bar" role="status">
-          <button className="btn sm primary" onClick={() => liveFollow.resume()} title={`镜头继续跟着 ${camFollow.name}`}>跟随 {shortAgentName(camFollow.name)}</button>
+          <button className="btn sm primary" onClick={() => liveFollow.resume()} title="你动了画布，镜头停下了；点一下继续跟着它走">继续跟随 {shortAgentName(camFollow.name)}</button>
         </div>
       )}
       {playing && <ReplayMarks view={view} ctx={ctx} />}

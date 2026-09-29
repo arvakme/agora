@@ -7,7 +7,7 @@ import { toModelView } from "../canvas/modelView";
 import type { Scene } from "../canvas/scene";
 import type { Turn } from "./store";
 import { canvases } from "./ui";
-import { IconCheck, IconChevron, IconSend } from "../app/icons";
+import { IconSend } from "../app/icons";
 
 type Option = { id: string; label: string; hint?: string };
 
@@ -29,22 +29,17 @@ function elementOptions(canvasId: string, q: string): Option[] {
     .slice(0, 8);
 }
 
-export function Composer({ canvasId, canvasTitle, agentName, route, onSend, initial, working, onStop, onTerminal }: {
+export function Composer({ canvasId, canvasTitle, agentName, onSend, initial, working, onStop }: {
   canvasId: string;
   canvasTitle?: string;
   agentName: string;
-  /** Where the next message goes: the terminal pane holding the session, or a headless turn. */
-  route: "terminal" | "headless";
   onSend: (text: string, refs: Turn["refs"]) => Promise<void>;
   /** Text to start with (a summary of a lost session, to edit before sending). */
   initial?: string;
   /** The agent is in a turn: new messages queue after it, and 停止 interrupts it. */
   working?: boolean;
   onStop?: () => void;
-  /** 「在终端里运行」: open the session in the terminal (messages then go there). */
-  onTerminal?: () => void;
 }) {
-  const [routeMenu, setRouteMenu] = useState(false);
   const [text, setText] = useState(initial ?? "");
   const [refs, setRefs] = useState<Turn["refs"]>([]);
   const [pick, setPick] = useState<{ q: string; start: number; i: number } | null>(null);
@@ -115,27 +110,6 @@ export function Composer({ canvasId, canvasTitle, agentName, route, onSend, init
           }}
         />
         <span className="sp-ctx">
-          {/* Where the next message runs (the canvas is already in the header). */}
-          <span className="sp-route-wrap">
-            <button className="sp-route" data-route={route} aria-haspopup="menu" aria-expanded={routeMenu} onClick={() => setRouteMenu((v) => !v)} title={route === "terminal" ? "终端里的 CLI 持有这个会话：消息发到终端" : "在这个面板里运行（Agora 在后台续接会话）"}>
-              {route === "terminal" && <i className="dot" data-tone="ok" />}
-              {route === "terminal" ? "发到终端" : "在面板运行"}
-              <IconChevron size={10} open={routeMenu} />
-            </button>
-            {routeMenu && (
-              <>
-                <div className="menu-scrim" onPointerDown={() => setRouteMenu(false)} />
-                <div className="menu sp-route-menu" role="menu">
-                  <button role="menuitemradio" aria-checked={route === "headless"} disabled={route === "terminal"} onClick={() => setRouteMenu(false)}>
-                    <span className="menu-check">{route === "headless" && <IconCheck size={14} />}</span>在面板运行
-                  </button>
-                  <button role="menuitemradio" aria-checked={route === "terminal"} onClick={() => (setRouteMenu(false), route !== "terminal" && onTerminal?.())}>
-                    <span className="menu-check">{route === "terminal" && <IconCheck size={14} />}</span>在终端里运行
-                  </button>
-                </div>
-              </>
-            )}
-          </span>
           {sel > 0 && <span className="chip"><span>选区 · {sel} 个元素</span></span>}
           {refs.map((r) => <span key={r.id} className="chip"><span>#{r.label}</span></span>)}
         </span>
