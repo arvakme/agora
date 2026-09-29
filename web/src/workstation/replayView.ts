@@ -7,7 +7,7 @@
 // reduced motion, or where the browser has no view transitions, it is a cut. Imperative, no React: it outlives the canvases it switches.
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { El } from "../canvas/scene";
-import { canvasStep, nextPaused, newCanvasMachine, type PauseEvent } from "./liveCamera";
+import { canvasStep, isBehind, nextPaused, newCanvasMachine, type PauseEvent } from "./liveCamera";
 import { cameraResume, cameraStart, cameraStep, inShot, switchView, ZOOM_MAX, ZOOM_MIN, type CameraGoal, type CameraState } from "./director";
 import { firstView, viewport, type Viewport } from "../canvas/viewport";
 import { nav, nested } from "../nested/store";
@@ -25,6 +25,7 @@ import { byCamera, userNav } from "./navOrigin";
 import { scenePlaces } from "./scenePlaces";
 import type { WorkRun } from "./runs/types";
 
+const NODE_KIND = new Set(["rectangle", "ellipse", "diamond", "frame", "image", "embeddable"]);
 /** Room over the top nodes for the figure standing there and its bubble (px), and the margin round the rest. */
 const FIGURE_ROOM = 100;
 const MARGIN = 28;
@@ -166,7 +167,7 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     const x0 = Math.min(...els.map((e) => e.x));
     const y0 = Math.min(...els.map((e) => e.y));
     const drawing: Box | null = els.length ? { x: x0, y: y0, w: Math.max(...els.map((e) => e.x + e.width)) - x0, h: Math.max(...els.map((e) => e.y + e.height)) - y0 } : null;
-    const shot = st.at === OUTSIDE ? trayShotBox(figure, drawing) : node && inShot(figure, node) ? node : null;
+    const shot = st.at === OUTSIDE ? trayShotBox(figure, drawing, undefined, els.filter((e) => NODE_KIND.has(e.type)).map((e) => ({ x: e.x, y: e.y, w: e.width, h: e.height }))) : node && inShot(figure, node) ? node : null;
     return followView({ pane: { w: appState.width, h: appState.height }, occupied: occ, margin: MARGIN, figure, node: shot, room: ROOM, zoom: ZOOM, current, dead: DEAD });
   }
   /** The view a canvas gets when it is shown (./director.ts `switchView`): the one it was entered with (leaving), else the figure close up; a play's whole diagram; live, never the whole diagram. */
@@ -286,8 +287,11 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     const want = cameraCanvas(home, doorOf);
     // the figure went in at a door of the canvas shown, and is out of sight on it: nothing to wait for
     const door = doorOf(shown!);
-    const behind = want !== shown && door.behind && door.into === want;
-    const act = canvasStep(machine, { now: Date.now(), working: live!.working(), want, shown: shown!, home, cur, busy, manual, displaced: shown !== home || !!homeView, behind, input: userNav.seq() !== navSeen });
+    const behind = isBehind(shown!, want, door);
+    // out of the door and on the canvas the path wants (it is coming out, or on the way to the next door): nothing to wait for either
+    const wantDoor = want !== shown ? doorOf(want) : null;
+    const arrived = !!wantDoor && !behind && (() => { const c = ctxFor(want); return !!c && stateAt(r, t, c).present; })();
+    const act = canvasStep(machine, { now: Date.now(), working: live!.working(), want, shown: shown!, home, cur, busy, manual, displaced: shown !== home || !!homeView, behind, arrived, input: userNav.seq() !== navSeen });
     if (!cur || cur === shown) navSeen = userNav.seq(); // nothing pending: what was noted led nowhere the camera is not already at
     if (act.type === "canvas-moved" || act.type === "user-moved") navSeen = userNav.seq();
     if (act.type === "canvas-moved") {

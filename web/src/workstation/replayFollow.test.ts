@@ -115,3 +115,24 @@ describe("FX2a · #7/#10: a figure at the tray outside the drawing is framed wit
     expect(screenX(fig.x)).toBeLessThan(base.pane.w);
   });
 });
+
+describe("FX5 · #6: the tray sits by a lone outlying node — the piece of the drawing to frame is the body of the diagram when it is near enough", () => {
+  // the FL2/B shape: a body of six nodes, a lone far node (docs) that the tray happens to be nearest to
+  const body = [0, 1, 2].flatMap((c) => [0, 1].map((r) => ({ x: 1000 + c * 240, y: 400 + r * 160, w: 160, h: 64 })));
+  const docs = { x: 200, y: 300, w: 160, h: 64 };
+  const all = [...body, docs];
+  const bounds = { x: 200, y: 300, w: 1200, h: 300 };
+  it("the tray near the lone node, the body 600 away: the body (most nodes within reach) is framed, not the lone node", () => {
+    const b = trayShotBox({ x: 260, y: 200 }, bounds, 360, all)!;
+    expect(b.x).toBeGreaterThanOrEqual(1000 - 1);
+    expect(b.x + b.w).toBeLessThanOrEqual(1000 + 2 * 240 + 160 + 1);
+  });
+  it("the body too far to show with the tray at 0.7 (over 900 away): the nearest piece, as before", () => {
+    const far = all.map((n) => (n === docs ? n : { ...n, x: n.x + 2500 }));
+    const b = trayShotBox({ x: 260, y: 200 }, { x: 200, y: 300, w: 3700, h: 300 }, 360, far)!;
+    expect(b.x).toBeLessThan(700);
+  });
+  it("with no node list it is the bounds' nearest piece, unchanged", () => {
+    expect(trayShotBox({ x: 800, y: -120 }, { x: 0, y: 0, w: 2400, h: 1600 })).toEqual({ x: 440, y: 0, w: 720, h: 360 });
+  });
+});

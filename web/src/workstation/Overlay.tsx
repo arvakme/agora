@@ -37,7 +37,7 @@ import { viewport, type Viewport } from "../canvas/viewport";
 import { useNested } from "../nested/store";
 import { canvases, ui } from "../session/ui";
 import { clock, prefersReducedMotion, useReplay } from "./clock";
-import { placeBubbles, protoSpot, type BubbleIn } from "./bubbles";
+import { boxesIn, placeBubbles, protoSpot, type BubbleIn } from "./bubbles";
 import { pickBubbles, slots } from "./crowd";
 import { EntryMarks } from "./EntryMarks";
 import { FigureNode, PeekNode } from "./figureNode";
@@ -1001,7 +1001,11 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         })(),
       });
     }
-    const { at, folded } = placeBubbles(list, { width: v.width, height: v.height, nodes, avoid: chrome });
+    // the talk box (「对 Claude Code 说…」) is in the way of a bubble as much as the toolbar is: it is measured where it is (it dodges the bubbles itself, ./TalkBubble.tsx)
+    const layerEl = rootEl.current;
+    const talkEls = layerEl ? [...layerEl.querySelectorAll<HTMLElement>(".ws-talk")].filter((t) => t.style.visibility !== "hidden") : [];
+    const talk = layerEl && talkEls.length ? boxesIn(layerEl.getBoundingClientRect(), talkEls.map((t) => t.getBoundingClientRect())) : [];
+    const { at, folded } = placeBubbles(list, { width: v.width, height: v.height, nodes, avoid: [...chrome, ...talk] });
     bubbleSize.current = sizes;
     bubbleRank.current = new Map(list.map((b, i) => [b.id, i]));
     const next = new Map<string, { dx: number; dy: number }>();
