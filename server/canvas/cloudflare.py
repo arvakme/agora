@@ -6,9 +6,9 @@ never reads them. Each call runs ``cf … `` and parses its JSON output.
   account's only zone).
 - Tunnels: ``cf tunnels create|list|delete``. A tunnel is remotely configured
   (``config_src: cloudflare``): its single ingress — the local share gateway — is set with
-  ``cf tunnels config update`` on every start, and the connector is ``cf tunnels run --token``
-  (cf's own cloudflared). The token exists only in that call's arguments; it is never written
-  anywhere.
+  ``cf tunnels config update`` on every start, and the connector is ``cf tunnels run <id>`` (cf's
+  own cloudflared). cf fetches the tunnel token itself, so Agora never handles it and no process
+  argument carries it (``--token <token>`` would show in ``ps``).
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ class CfCli:
         self._domain = domain or os.environ.get("AGORA_SHARE_DOMAIN") or None
 
     # ——— running cf ———
-    def _run(self, *args: str, zone: bool = False, secret: bool = False, text_ok: bool = False) -> Any:
+    def _run(self, *args: str, zone: bool = False) -> Any:
         argv = [*self.cmd, *args, *(["-z", self._domain] if zone and self._domain else [])]
         r = subprocess.run(argv, capture_output=True, text=True, timeout=90, stdin=subprocess.DEVNULL, cwd=cf_cwd())
         if r.returncode != 0:
@@ -46,13 +46,11 @@ class CfCli:
             if "auth login" in text or "not authenticated" in text.lower() or "unauthorized" in text.lower():
                 raise CloudflareError(LOGIN_HINT)
             what = " ".join(args[:3])
-            raise CloudflareError(f"cf {what}: {'(output withheld)' if secret else text[-400:]}")
+            raise CloudflareError(f"cf {what}: {text[-400:]}")
         out = r.stdout.strip()
         try:
             return json.loads(out) if out else None
         except json.JSONDecodeError:
-            if text_ok:
-                return out
             raise CloudflareError(f"cf {' '.join(args[:3])}: output is not JSON") from None
 
     def check_login(self) -> None:
@@ -117,15 +115,12 @@ class CfCli:
     def start(self, tunnel_id: str, port: int, log: Path) -> CfProcess:
         body = {"config": {"ingress": [{"service": f"http://127.0.0.1:{port}"}]}}
         self._run("tunnels", "config", "update", tunnel_id, "--body", json.dumps(body))
-        token = self._run("tunnels", "token", "get", tunnel_id, secret=True, text_ok=True)
-        if not isinstance(token, str) or not token:
-            raise CloudflareError("cf tunnels token get: no token")
         log.parent.mkdir(parents=True, exist_ok=True)
         start = log.stat().st_size if log.exists() else 0
         env = {**os.environ, "TUNNEL_TRANSPORT_PROTOCOL": os.environ.get("AGORA_TUNNEL_PROTOCOL") or "http2"}  # QUIC (UDP 7844) is blocked on many networks
         with open(log, "ab") as fh:
             # Same process group as the project server: `agora down` stops it with the server.
-            proc = subprocess.Popen([*self.cmd, "tunnels", "run", "--token", token], stdout=fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env, cwd=cf_cwd())
+            proc = subprocess.Popen([*self.cmd, "tunnels", "run", tunnel_id], stdout=fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env, cwd=cf_cwd())
         return CfProcess(proc, log, start, "")
 
 

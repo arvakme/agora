@@ -533,9 +533,15 @@ def _tail(log: Path, start: int) -> bytes:
         return b""
 
 
+CF_VERSION = "1.0.0-beta.5"  # the cf release this was tested with (``AGORA_CF_VERSION`` overrides)
+
+
 def cf_command() -> list[str]:
-    """``cf`` when it is installed, otherwise ``npx --yes cf``."""
-    return [shutil.which("cf") or "npx", *([] if shutil.which("cf") else ["--yes", "cf"])]
+    """An installed ``cf`` as it is; otherwise ``npx`` at the tested version, not whatever npm has newest
+    (it runs with the user's Cloudflare login)."""
+    if found := shutil.which("cf"):
+        return [found]
+    return ["npx", "--yes", f"cf@{os.environ.get('AGORA_CF_VERSION') or CF_VERSION}"]
 
 
 def cf_cwd() -> str:
@@ -592,6 +598,7 @@ class ShareManager:
         self.gateway_port: int | None = None
         self.proc: TunnelProcess | None = None
         self.lock = threading.RLock()
+        self.ops = threading.RLock()
         self.shares = self.file.load()
         # A tunnel may exist that nothing needs any more (left by a crash): check once on start.
         self.tunnel_dirty = any(s.tunnelId for s in self.shares if s.endedAt is None or s.cleanup)
@@ -699,7 +706,9 @@ class ShareManager:
         check_max_opens(max_opens)
         if self.gateway_port is None:
             raise ShareError("the share gateway is not running (start the project with `agora up`)")
-        with self.lock:
+        # ``ops`` serializes lifecycle changes (create, end, sweep, resume, shutdown); ``lock`` only guards the
+        # share records and is held briefly, so guests are never queued behind a cf call (seconds, up to 45 s).
+        with self.ops:
             if quick or any(s.quick for s in self.active()):
                 return self._create_quick(canvas_id, ttl_s, canvas_title, max_opens, quick)
             dns, _ = self.providers()
@@ -728,11 +737,13 @@ class ShareManager:
             except Exception as e:
                 self._teardown_if_idle()
                 raise ShareError(f"could not create the DNS record for {host}: {e}") from e
-            self.shares.append(share)
-            self._save()
+            with self.lock:
+                self.shares.append(share)
+                self._save()
             return share.public(now), f"https://{host}/s/{token}"
 
     def _create_quick(self, canvas_id: str, ttl_s: int | None, canvas_title: str, max_opens: int | None, quick: bool) -> tuple[dict[str, Any], str]:
+        """Called with ``ops`` held."""
         if self.active():
             raise ShareError("a quick share allows one share at a time: end the current one first (`agora share revoke --all`)" if quick else "a quick share is running and takes the only slot; end it first (`agora share revoke --all`)")
         assert self.gateway_port is not None
@@ -748,8 +759,9 @@ class ShareManager:
             id=secrets.token_hex(4), canvasId=canvas_id, canvasTitle=canvas_title, host=proc.host.lower(), tokenHash=token_hash(token),
             createdAt=now, expiresAt=None if ttl_s is None else now + ttl_s * 1000, maxOpens=max_opens, quick=True,
         )
-        self.shares.append(share)
-        self._save()
+        with self.lock:
+            self.shares.append(share)
+            self._save()
         return share.public(now), f"https://{share.host}/s/{token}"
 
     def _ensure_tunnel(self) -> str:
@@ -777,7 +789,7 @@ class ShareManager:
 
     # ——— end ———
     def revoke(self, id: str) -> dict[str, Any]:
-        with self.lock:
+        with self.ops, self.lock:
             share = self.get(id)
             if share is None:
                 raise KeyError(id)
@@ -788,7 +800,7 @@ class ShareManager:
     def end_for_canvas(self, canvas_id: str, reason: str = "canvas-deleted") -> list[str]:
         """End every live share of one canvas (it was deleted). Returns the ids ended now."""
         ended = []
-        with self.lock:
+        with self.ops, self.lock:
             for s in self.shares:
                 if s.canvasId == canvas_id and s.endedAt is None:
                     self._end(s, reason)
@@ -798,7 +810,7 @@ class ShareManager:
     def sweep(self) -> list[str]:
         """End expired shares; retry unfinished cleanup. Returns ids ended now."""
         ended = []
-        with self.lock:
+        with self.ops, self.lock:
             now = self.now_ms()
             for s in self.shares:
                 if s.endedAt is None and not s.active(now):
@@ -858,7 +870,7 @@ class ShareManager:
     # ——— process lifecycle ———
     def resume(self) -> None:
         """Server start: end what expired while it was down, reconnect the tunnel for the rest."""
-        with self.lock:
+        with self.ops, self.lock:
             self.sweep()
             if self.active() and self.gateway_port is not None:
                 try:
@@ -869,7 +881,7 @@ class ShareManager:
     def shutdown(self) -> None:
         """Server stop: stop the connector. Named shares stay recorded and resume on the next ``up``;
         a quick share cannot (its address dies with the process), so it ends here."""
-        with self.lock:
+        with self.ops, self.lock:
             for s in [s for s in self.shares if s.quick and s.endedAt is None]:
                 self._end(s, "revoked")
             if self.proc is not None:

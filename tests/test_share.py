@@ -580,3 +580,37 @@ def test_cli_share_without_server(env, capsys):
     assert "没有分享" in capsys.readouterr().out
     assert main(["share", "revoke", "--project", root]) == 2
     assert main(["share", "create", "--project", root, "--max-opens", "0"]) == 2
+
+
+async def test_creating_a_share_does_not_hold_the_guest_lock_while_cf_runs(env):
+    """cf calls (DNS, tunnel) can take many seconds: guests of other shares must not queue behind them."""
+    import threading
+    import time
+
+    store, shares, dns, tunnels, clock, app = env
+    first, _, host, token = await make_share(app, ttl=600)
+    inside, release = threading.Event(), threading.Event()
+    real = dns.create_cname
+
+    def slow(name, target, comment):
+        inside.set()
+        assert release.wait(10)
+        return real(name, target, comment)
+
+    dns.create_cname = slow
+    done: list[object] = []
+    t = threading.Thread(target=lambda: done.append(shares.create("c1", 600, "x")))
+    t.start()
+    try:
+        assert inside.wait(5)  # the second share is now inside its DNS call
+        s = shares.get(first["id"])
+        t0 = time.monotonic()
+        assert shares.admit(s, "a" * 16)
+        shares.note_visit(s, new_guest=True)
+        shares.note_comment(s)
+        assert time.monotonic() - t0 < 1.0  # guests were not queued behind the DNS call
+        assert done == []  # ... which is still running
+    finally:
+        release.set()
+        t.join(10)
+    assert len(done) == 1 and len(shares.active()) == 2

@@ -33,7 +33,7 @@ agora import x.agora-share.json        # 把别人给的分享包（文件、分
 
 - **子域名**：每个分享新建一条代理的 CNAME `<slug>-<随机>.<域名>`（一级子域名，Cloudflare 的通用证书覆盖 `*.<域名>`，不用单独签证书）。撤销或到期时按记录 id 删掉它，名字本身就不存在了（权威 DNS 返回 NXDOMAIN），不只是令牌失效。
 - **令牌**：链接是 `https://<主机名>/s/<令牌>`，令牌 32 字节随机（`secrets.token_urlsafe(32)`）。网关验证后把它放进 `HttpOnly; Secure; SameSite=Lax` 的 cookie（有效期不超过分享本身），再 303 跳到 `/`，地址栏里就不再有令牌；`Referrer-Policy: no-referrer` 防止经 Referer 外泄。
-- **隧道**：每份项目（每个实例，见 [项目存储 §1](project-storage.md#本机状态localagora-之外的注册表)）一个命名隧道 `agora-share-<项目 id 前 8 位>-<实例 id 前 6 位>`：同一项目的两个克隆或 worktree 各用各的，撤销一边的最后一个分享不会拆掉另一边正在用的隧道。第一次分享时用 `cf tunnels create --config-src cloudflare` 创建（远程配置的隧道，Agora 不存任何隧道凭据）；每次启动连接器前 `cf tunnels config update` 写入唯一的一条 ingress：本项目的分享网关；连接器是 `cf tunnels run --token <令牌>`（令牌由 `cf tunnels token get` 现取，只在这条子进程的参数里，不落盘、不进日志）。所有分享的主机名都指向这一个隧道，网关按 Host 区分分享，所以增删分享不用重启连接器。协议固定 HTTP/2（`AGORA_TUNNEL_PROTOCOL` 可改）：QUIC 用的 UDP 7844 在很多网络被挡，cloudflared 会一直重试 QUIC 连不上。DNS 记录用 `cf dns records create`（CNAME 指向 `<隧道 id>.cfargotunnel.com`，走代理），撤销用 `cf dns records delete`。没登录时报「先运行 `npx cf auth login`」。
+- **隧道**：每份项目（每个实例，见 [项目存储 §1](project-storage.md#本机状态localagora-之外的注册表)）一个命名隧道 `agora-share-<项目 id 前 8 位>-<实例 id 前 6 位>`：同一项目的两个克隆或 worktree 各用各的，撤销一边的最后一个分享不会拆掉另一边正在用的隧道。第一次分享时用 `cf tunnels create --config-src cloudflare` 创建（远程配置的隧道，Agora 不存任何隧道凭据）；每次启动连接器前 `cf tunnels config update` 写入唯一的一条 ingress：本项目的分享网关；连接器是 `cf tunnels run <隧道 id>`：令牌由 cf 自己取，Agora 不经手、不落盘、不进日志，进程参数里只有隧道 id（不用 `--token <令牌>`：它会出现在 `ps` 里，本机任何人都能读到，拿到的人可以用自己的连接器接入这条隧道）。实测 `ps` 里 cf、node、cloudflared 三个进程的参数都没有令牌；cf 怎么把令牌交给 cloudflared（环境变量等）没有进一步核实，能读到同用户进程环境的人仍然能拿到它，这与「能读作者机器」同级，见威胁模型的「不防」。所有分享的主机名都指向这一个隧道，网关按 Host 区分分享，所以增删分享不用重启连接器。协议固定 HTTP/2（`AGORA_TUNNEL_PROTOCOL` 可改）：QUIC 用的 UDP 7844 在很多网络被挡，cloudflared 会一直重试 QUIC 连不上。DNS 记录用 `cf dns records create`（CNAME 指向 `<隧道 id>.cfargotunnel.com`，走代理），撤销用 `cf dns records delete`。没登录时报「先运行 `npx cf auth login`」。
 - **进程**：`cf tunnels run`（cf → node → cloudflared）是项目服务的子进程，和它在同一个进程组，`agora down` 一起停掉；pid、隧道 id、网关端口写在 `.agora/run/share-tunnel.json`，日志 `.agora/run/cloudflared.log`。
 
 **取舍**：另一种做法是一个固定主机名 + 路径令牌（整台机器一条 DNS 记录，分享之间只靠令牌区分）。它少了每次分享一次 DNS 写入（多一两秒），但撤销只能靠令牌检查，名字一直公开可探测；所有分享同源，一个分享页里的 cookie / 本地存储对其他分享可见；多个项目同时分享时还要一个机器级的进程统一路由。每个分享一个子域名把「撤销」做成了「这个名字不存在了」，也让分享之间天然隔离，所以选它。代价：每个分享要一次 Cloudflare API 调用；刚删掉的名字在别人的递归 DNS 缓存里可能还会留几分钟（这时它指向的隧道已删，Cloudflare 返回 530；网关也已不认这个主机名）。
@@ -84,9 +84,10 @@ agora import x.agora-share.json        # 把别人给的分享包（文件、分
 
 - **判定**：令牌检查本身就看到期时间，到点那一刻起所有请求 403，不依赖清扫。
 - **清扫**：项目服务每 5 秒清扫一次：结束到期的分享，重试没做完的清理。
+- **锁**：分享记录的锁只在改记录时短暂持有；创建分享调用 `cf`（几秒到 45 秒）时不占它，访客的请求不会因此排队。创建、结束、清扫、恢复、停止互相串行（另一把锁）。
 - **结束一个分享**（撤销或到期）：先把 `endedAt / endReason` 写盘（此后令牌必然无效，Cloudflare 那边出什么错都不影响），通知在线访客页（`ended`），再按记录 id 删 DNS 记录；删失败记在 `cleanup: ["dns"]` 里，下次清扫重试（列表里显示「DNS 记录待清理」）。
 - **没有有效分享时**：停连接器，按名字 `agora-share-<项目 id 前 8 位>-<实例 id 前 6 位>` 找到这份项目的隧道并删除（先 `cf tunnels connections cleanup <id> --force` 断开连接，再 `cf tunnels delete <id> --force`；连接刚断时删除可能要重试几次）。旧版本用的是不带实例的名字 `agora-share-<项目 id 前 8 位>`（所有副本同名）：这个名字的隧道只在这份项目自己的分享记录里出现过它的 id 时才删。账号里其他隧道不碰。
-- **服务停止**（`agora down`）：连接器一起停；有效分享留在记录里，下次 `agora up` 时先结束期间到期的，再为剩下的重新连上隧道。服务停着的这段时间，访客会看到 Cloudflare 的 530。
+- **服务停止**（`agora down`）：连接器一起停；**还在有效期内的命名分享留着**——它的 DNS 记录和隧道继续留在你的 Cloudflare 账号里，记录也在，所以下次 `agora up` 时先结束期间到期的（删掉它们的 DNS 记录，没有有效分享了就连隧道一起删），再为剩下的重新连上隧道，**地址和链接不变**。服务停着的这段时间，访客会看到 Cloudflare 的 530。这意味着：`down` 之后如果再也不 `up`，有效期内的分享的记录和隧道会一直留在账号里，直到你 `agora share revoke --all` 把它们全部立即清掉（服务没开也能运行，它自己调 `cf` 删记录和隧道）。quick 分享不同：地址随进程消失，`down` 时直接结束。
 - **创建失败**：隧道连不上或 DNS 建不了时不留分享记录，已建的隧道由下一次清扫删除。
 
 ## 6. 记录与密钥放在哪
@@ -158,7 +159,7 @@ agora import x.agora-share.json        # 把别人给的分享包（文件、分
 
 ## 10. 临时分享（`--quick`）：不要 Cloudflare 账号
 
-`agora share create --quick`：起 `cf tunnels quick-start http://127.0.0.1:<网关端口>`（`PATH` 里没有 `cf` 就用 `npx --yes cf`），从它的输出里取出 `https://<随机>.trycloudflare.com`，这个主机名就是分享的主机名，其余（路径令牌 `/s/<令牌>`、cookie、打开次数、限流、白名单）和普通分享完全一样。
+`agora share create --quick`：起 `cf tunnels quick-start http://127.0.0.1:<网关端口>`（`PATH` 里有 `cf` 就直接用；没有就 `npx --yes cf@1.0.0-beta.5`，固定在测过的版本，`AGORA_CF_VERSION` 可以改；命名分享用同一个命令），从它的输出里取出 `https://<随机>.trycloudflare.com`，这个主机名就是分享的主机名，其余（路径令牌 `/s/<令牌>`、cookie、打开次数、限流、白名单）和普通分享完全一样。
 
 - **同一时间只有一个分享**：有任何有效分享时不能建 quick 分享，quick 分享在时也不能建普通分享（同一个主机名，没法靠主机名区分分享）。
 - **结束**：`agora share revoke`、到期、删除画布，或 `agora down`（服务停止时 quick 分享一并结束——地址本来就随进程消失，没法恢复）；结束时整棵进程树（cf → node → cloudflared）都被停掉。服务崩溃后遗留的 quick 记录在下次清扫时结束。cf 进程自己退出，也会在下次清扫时结束这个分享。
