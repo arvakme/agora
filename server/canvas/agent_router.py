@@ -7,7 +7,7 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -44,7 +44,6 @@ class Send(BaseModel):
 class Term(BaseModel):
     launch: bool = True
     canvasId: str | None = None
-    app: Literal["kitty", "seedmux"] | None = None
 
 
 class CanvasCall(BaseModel):
@@ -104,16 +103,16 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
         return await asyncio.to_thread(build)
 
     @router.get("/runs")
-    async def agent_runs(session: str | None = None, kind: str | None = None, native: str | None = None, depth: str = "all", canvas: str | None = None, items: int = 0, receipts: int = 1):
-        """The run tree of a session (web/docs/cli-adapters.md §7): the session, its native sub-agents
-        and its Seedmux workers (read-only receipts), each with a timeline. ``session=<sid>`` for an
+    async def agent_runs(session: str | None = None, kind: str | None = None, native: str | None = None, depth: str = "all", canvas: str | None = None, items: int = 0):
+        """The run tree of a session (web/docs/cli-adapters.md §7): the session and its native
+        sub-agents, each with a timeline. ``session=<sid>`` for an
         Agora session, or ``kind=<cli>&native=<id>`` for any native session Agora can read. ``depth``:
         levels to expand (default ``all``; each run carries ``descendants`` for folding);
         ``canvas=<id>`` adds the canvas node each segment's file maps to; ``items=1`` adds each run's
-        transcript items; ``receipts=0`` leaves out Seedmux workers."""
+        transcript items."""
         from server.canvas.adapters import runs as runs_mod
         from server.canvas.adapters.base import NativeRef, valid_id
-        from server.canvas.adapters.receipts import worktrees
+        from server.canvas.adapters.common import worktrees
         from server.canvas.project import ID_RE
 
         if canvas is not None and not ID_RE.match(canvas):  # the store's own canvas-id rule
@@ -148,7 +147,7 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
                 look = agents.locate_log(k, nid, store.root, hint=hint)
             path = look.path or (look.candidates[0] if look.candidates else None)
             ref = NativeRef(k, nid, path, str(store.root))
-            return runs_mod.build(ref, root=str(store.root), session_id=session, depth=d, store=store, canvas=canvas, with_items=bool(items), receipts=bool(receipts))
+            return runs_mod.build(ref, root=str(store.root), session_id=session, depth=d, store=store, canvas=canvas, with_items=bool(items))
 
         return await asyncio.to_thread(build)
 
@@ -245,15 +244,30 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
     async def open_terminal(sid: str, body: Term):
         hub.ensure_started()
         try:
-            return await asyncio.to_thread(hub.open_terminal, sid, launch=body.launch, canvas_id=body.canvasId, app=body.app)
+            return await asyncio.to_thread(hub.open_terminal, sid, launch=body.launch, canvas_id=body.canvasId)
         except Exception as e:
             return fail(e)
 
     @router.get("/terminals")
     async def terminals():
-        """Where「在终端打开」can open: Kitty / macOS Terminal on this machine, and Seedmux's bridge."""
-        smx = await asyncio.to_thread(hub.terms.seedmux_status)
-        return {"kitty": hub.terms.kitty() is not None, "seedmux": smx}
+        """Where「在终端打开」can open: Kitty / macOS Terminal on this machine."""
+        return {"kitty": hub.terms.kitty() is not None}
+
+    @router.post("/sessions/{sid}/takeover")
+    async def takeover(sid: str):
+        """A person takes the pane's input over: automatic delivery pauses, the queue stays. Detaching
+        does not give it back; ``/return`` does."""
+        try:
+            return await asyncio.to_thread(hub.takeover, sid)
+        except Exception as e:
+            return fail(e)
+
+    @router.post("/sessions/{sid}/return")
+    async def give_back(sid: str):
+        try:
+            return await asyncio.to_thread(hub.give_back, sid)
+        except Exception as e:
+            return fail(e)
 
     @router.delete("/sessions/{sid}/terminal")
     async def close_terminal(sid: str):

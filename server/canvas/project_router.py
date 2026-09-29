@@ -231,7 +231,7 @@ def create_project_router(store: ProjectStore, events: Events | None = None, *, 
     @router.post("/trash/session/{id}")
     async def trash_session(id: str, body: ToTrash):
         """A session goes to the trash with its binding, record, snapshot and usage; its terminal
-        pane (Agora's tmux or Seedmux) and a running headless turn end first. The native log stays."""
+        pane and a running headless turn end first. The native log stays."""
         try:
             store.check_alive()
         except Gone as e:

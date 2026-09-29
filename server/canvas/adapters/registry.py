@@ -18,7 +18,7 @@ from server.canvas.adapters.grok import GrokAdapter
 from server.canvas.adapters.pi import PiAdapter
 
 # Order matters: the session agents (T1) first, in the order the picker shows them; then the
-# observed CLIs (T2), which run as native sub-agents or Seedmux workers.
+# observed CLIs (T2), which run as native sub-agents.
 BUILTIN: tuple[type[Adapter], ...] = (PiAdapter, ClaudeAdapter, CodexAdapter, GrokAdapter, CursorAdapter, DevinAdapter)
 ADAPTERS: dict[str, Adapter] = {}
 
@@ -56,7 +56,7 @@ def implemented_tier(a: Adapter) -> Tier:
     """The highest tier the adapter's capabilities reach, capped by its ``max_tier``."""
     t2 = isinstance(a, Locator) and isinstance(a, Projector) and isinstance(a, ToolVocab)
     t1 = t2 and isinstance(a, Headless) and isinstance(a, Interactive) and isinstance(a, Catalog) and isinstance(a, Binding)
-    got: Tier = "T1" if t1 else "T2" if t2 else "T3" if getattr(a, "receipts_only", False) else "T0"
+    got: Tier = "T1" if t1 else "T2" if t2 else "T0"
     return got if TIERS.index(got) >= TIERS.index(a.max_tier) else a.max_tier
 
 
@@ -85,7 +85,6 @@ def info(a: Adapter, *, version: str | None = None, installed: bool | None = Non
         "icon": {"kind": "mark", "src": a.icon or a.kind},
         "logDir": a.log_dir,
         "deleteCommand": a.delete_hint or None,
-        "seedmuxNames": list(a.seedmux_names),
     }
 
 
@@ -122,11 +121,3 @@ def session_kinds() -> tuple[str, ...]:
     """Kinds an Agora session can be bound to (T1)."""
     return tuple(k for k, a in ADAPTERS.items() if implemented_tier(a) == "T1")
 
-
-def by_seedmux_name(name: str | None) -> Adapter | None:
-    """The adapter Seedmux's ``meta.agent`` (``cursor-agent``, ``claude``…) refers to."""
-    n = (name or "").strip()
-    for a in ADAPTERS.values():
-        if n == a.kind or n in a.seedmux_names:
-            return a
-    return None

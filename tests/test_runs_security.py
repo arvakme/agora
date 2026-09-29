@@ -2,13 +2,11 @@
 sessions; the owner app answers only to local Host names (DNS rebinding)."""
 
 import json
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from server.canvas import adapters, agents
-from server.canvas.adapters import receipts
 from server.canvas.adapters.base import valid_id
 from server.canvas.project import ProjectStore
 from server.canvas.project_router import LocalHostOnly, create_project_app, host_name
@@ -22,7 +20,6 @@ def app(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("AGORA_SEEDMUX_TASKS", str(tmp_path / "no-tasks"))
     s = ProjectStore(tmp_path / "proj")
     s.init()
     for root, nid in ((str(s.root), NID), ("/some/other/project", OTHER)):
@@ -49,13 +46,6 @@ def test_native_must_be_a_session_of_this_project(app):
     ok = c.get("/api/agent/runs", params={"kind": "claude", "native": NID, "items": 1})
     assert ok.status_code == 200 and ok.json()["root"] == f"claude:{NID}"
     assert c.get("/api/agent/runs", params={"kind": "claude", "native": NID, "canvas": "../x"}).status_code == 400
-
-
-def test_delivery_sid_goes_through_the_id_check():
-    t = {"meta": {"task": "T-1", "agent": "claude"}, "delivery": {"sid": "../../x", "native": {"sid": "a/b"}}, "reply": None, "dir": "/tmp/T-1"}
-    assert receipts.receipt(t)["sid"] is None
-    t["delivery"]["native"]["sid"] = NID
-    assert receipts.receipt(t)["sid"] == NID
 
 
 def test_owner_app_answers_only_to_local_hosts(app):

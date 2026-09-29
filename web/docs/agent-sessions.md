@@ -12,12 +12,12 @@ Agora 里的一个会话，就是用户选定的原生 coding agent 的一个原
 |---|---|
 | 选择 | 新会话先显示选择器：Pi / Claude Code / Codex、模型、强度。点「用 X 开始」后固定 |
 | 锁定 | 绑定写在 `.agora/sessions/<id>.agent.json`：`{agent, model, effort, nativeId, createdAt}`，只由服务端写。`PUT /api/agent/sessions/<id>` 再次提交不同的 agent / 模型 / 强度返回 `409 {locked: true}`；`nativeId` 只能从空设一次。界面上没有修改入口，只显示 🔒 模型 · 强度 |
-| 原生 id | Claude Code 和 Pi 在绑定时就分配 uuid（`--session-id`）；Codex 自己分配，第一轮（无头 `thread.started`，或终端里新起的 rollout）后写回 |
+| 原生 id | Claude Code 和 Pi 在绑定时就分配 uuid（`--session-id`）；Codex 自己分配，第一轮（无头 `thread.started`，或终端里 pane 进程打开的 rollout）后写回 |
 | 已开始 | 绑定里的 `started`：原生日志第一次被找到、或一轮无头续接成功后置为 true（绑定时就带着 `nativeId` 的——撤销删除——直接是 true；没有这个字段的旧绑定按 true 算）。只有没开始过的会话会用 `--session-id` 新建；开始过的永远续接 |
 | 原生记录缺失 | 开始过的会话找不到原生日志（Claude 默认 30 天清理、换机器、`~/.claude` 被清），或找到多份不知跟哪份，或 Pi 的日志只在别的目录下（项目移动过）：发消息和「在终端打开」都返回 `409 {nativeMissing: true, native: {state, candidates, message}}`，不启动 CLI；面板把输入框换成说明（丢了什么、候选文件），只读显示 Agora 保存的轨迹快照（§7），提供「带着摘要开新会话」（日志确实没了时：同一个 Agora 会话换一个新的原生会话，输入框预先填好快照生成的摘要，发送前可以改；旧 id 留在 `natives` 里）、「另开一个会话」（同一块画布、同样的 agent 和模型）和「移到回收站」。Agora 不会用同一个 id 静默新开对话。终端开着时消息照常投进终端（pane 已经持有这个会话，不会新起 CLI） |
 | 快到 30 天 | Claude Code 会话 20 天没有活动（日志的修改时间）：面板提示一次 Claude 默认 30 天清理、怎么设 `cleanupPeriodDays`，以及 Agora 已经存了快照。不改用户的全局配置 |
 | 对话记录 | 以 CLI 自己的会话日志为准（见 §4），不另存一份；`.agora/sessions/<id>.jsonl` 只记这个会话里的画布修改（每次 `agora canvas apply/anim` 一条 turn，带整批撤销数据） |
-| 删除 | 删除会话 = 连同绑定文件、改图记录、轨迹快照和用量挪进回收站（[项目存储 §1](project-storage.md#trash回收站)），关掉它的终端 pane（Agora 的 tmux 或 Seedmux）、停掉正在跑的无头续接（之后才结束的那一轮不再写回原生 id、用量和状态）；原生日志不删。从回收站恢复时绑定原样回来，按原来的原生 id 续接，不会用 `--session-id` 新建。带着原生 id 的 `PUT /sessions/{id}`（导入、恢复）不再按当前的模型目录校验 |
+| 删除 | 删除会话 = 连同绑定文件、改图记录、轨迹快照和用量挪进回收站（[项目存储 §1](project-storage.md#trash回收站)），关掉它的终端 pane、停掉正在跑的无头续接（之后才结束的那一轮不再写回原生 id、用量和状态）；原生日志不删。从回收站恢复时绑定原样回来，按原来的原生 id 续接，不会用 `--session-id` 新建。带着原生 id 的 `PUT /sessions/{id}`（导入、恢复）不再按当前的模型目录校验 |
 | 身份与恢复 | 绑定里另有 `natives`（这个会话用过的每个原生 id 和原因）、`log`（上次找到日志的路径）、`pendingFork`（下一次运行要从哪个原生会话分叉）。`nativeId` 只在记录在案的恢复流程里改：分叉（副本在这里继续、Pi 日志没能迁移）、以后的「带着摘要开新会话」。每次绑定和改绑都记进本机注册表（[项目存储 §1](project-storage.md#本机状态localagora-之外的注册表)） |
 | 移动之后 | Claude Code、Codex 按 id 全局续接，什么都不用做。Pi 只在当前目录的文件夹里找：`agora up` 发现项目移动过，就把 Pi 会话的日志挪到新目录（先写新文件再原子替换，首行 `cwd` 改成新路径，其余字节不动，旧文件改名为 `….jsonl.agora-moved.bak`）；终端里还开着的会话不动，提示关掉后重新 `up`；挪不了（目标已存在、只读）就标记为下一次分叉继续（`pi --fork <旧文件>`，新的原生 id，完整历史） |
 | 复制出来的项目 | `cp -r` 带过来的会话在副本里只读（原来那份还在用同一个原生会话）：面板把输入框换成「来自 A 的副本」，提供「在这里分叉继续」和「留给原来那份」（从副本里删掉它）。分叉后下一条消息用 `claude --resume <旧 id> --fork-session` / `pi --fork <旧日志>` 得到新的原生 id；Codex 没有无头分叉，只能「在终端打开」（`codex fork <旧 id>`），新的会话出现在这个项目里就自动接上。同一台机器上的另一份克隆或 worktree 里的会话（注册表知道它属于另一份）同样可以分叉 |
@@ -37,7 +37,7 @@ Agora 里的一个会话，就是用户选定的原生 coding agent 的一个原
 |---|---|---|
 | Claude Code | `claude -p --output-format stream-json --verbose --session-id <uuid>`（没开始过）/ `--resume <uuid>`（其余一律如此，日志没了 CLI 会明确报错），`--model`、`--effort`、`--allowedTools "Bash(agora canvas *)"`，提示词走 stdin | `claude --resume <uuid> --model … --effort …`（没开始过时 `--session-id`） |
 | Pi | `pi -p --mode json --session-id <uuid> --model <provider/id> --thinking <level> --skill <repo>/skills/agora-canvas -- "<提示词>"` | `pi --session-id <uuid> --model … --models …（锁住 Ctrl+P 轮换）--thinking … --skill …` |
-| Codex | `codex exec --json --skip-git-repo-check [-m] [-c model_reasoning_effort="…"] -`（首轮）/ `codex exec resume <id> --json … -`，提示词走 stdin | `codex resume <id> -m … -c model_reasoning_effort=…`（还没有 id 时 `codex`，id 从新 rollout 认领） |
+| Codex | `codex exec --json --skip-git-repo-check [-m] [-c model_reasoning_effort="…"] -`（首轮）/ `codex exec resume <id> --json … -`，提示词走 stdin | `codex resume <id> -m … -c model_reasoning_effort=…`（还没有 id 时 `codex`，id 从 pane 进程自己打开的 rollout 认领） |
 
 日志定位（`agents.locate_log`）：先找**当前项目根**对应的位置（Claude `~/.claude/projects/<根路径非字母数字换成 ->/`，Pi `~/.pi/agent/sessions/--<根路径>--/`），它就是 CLI 续接时用的那份；不在那里时，Claude 只有一份就跟那份（`--resume` 全局查找），多份就报「找到多份」；Pi 只在别的目录下时报「在别的目录」（`--session-id` 在这里会新开空会话）。Codex 先按 rollout 文件名找，找不到再看绑定记下的路径和 Codex 自己的索引（`~/.codex/state_5.sqlite` 的 `threads.rollout_path`，只读打开），归档或存储迁移后照样找得到。本项目那份之外还有同 id 的副本时，面板顶部提示一次，照常跟随本项目那份。跟随中每 5 秒重新定位一次，日志换了位置（Pi 迁移、分叉）就换过去；跟随中的日志被删了（服务开着时 Claude 做了 30 天清理），就转成「原生记录缺失」，面板上已有的内容留着。
 
@@ -107,24 +107,23 @@ agora canvas child create --parent c1 --node api   # 节点展开成子画布（
 
 ## 4. 在终端打开与双向同步
 
-**终端**：「在终端打开」是一个下拉（按钮 + ▾），选 **Kitty** 或 **Seedmux**（按钮和菜单项用两个应用自己的图标，取自本机应用包，见 README「许可与致谢」），选择记在浏览器 `localStorage`（`agora.terminalApp`，默认 Kitty）。
+**终端**：「在终端打开」（按钮，⋯ 菜单里还有「复制打开命令」）。每份项目一个独立的 tmux 服务器 `tmux -L agora-<实例 id 前 10 位>`（和路径无关，移动后照样找得到原来的 pane；旧版本用路径哈希，`agora down` 一并清掉），配置用 `.agora/run/tmux.conf`（不读 `~/.tmux.conf`），每个会话一个 tmux 会话 `agora-<会话 id>`，pane 里直接跑 §2 的交互式续接命令（不经 shell）：CLI 退出 = tmux 会话结束 = 不再持有。打开时创建或复用这个 pane，用 Kitty（`kitty --detach`）打开窗口，没有 Kitty 用 macOS Terminal（`osascript`），并在面板上给出 attach 命令（复制时带 `env -u TMUX`，在 tmux 的 pane 里也能直接运行）。「复制打开命令」先起 Agora 的 tmux pane，再复制 `env -u TMUX tmux -L … attach -t …`，在任意终端里粘贴即可；只想看不想动，加 `-r`（只读 attach，不占输入权，键盘输入被 tmux 丢掉）。实现只有一份：`server/canvas/terminal.py`。
 
-- **Kitty**：每份项目一个独立的 tmux 服务器 `tmux -L agora-<实例 id 前 10 位>`（和路径无关，移动后照样找得到原来的 pane；旧版本用路径哈希，`agora down` 一并清掉），配置用 `.agora/run/tmux.conf`（不读 `~/.tmux.conf`），每个会话一个 tmux 会话 `agora-<会话 id>`，pane 里直接跑 §2 的交互式续接命令（不经 shell）：CLI 退出 = tmux 会话结束 = 不再持有。打开时创建或复用这个 pane，用 Kitty（`kitty --detach`）打开窗口，没有 Kitty 用 macOS Terminal（`osascript`），并在面板上给出 attach 命令（复制时带 `env -u TMUX`，在 tmux 或 Seedmux 的 pane 里也能直接运行）。
-- **Seedmux**（`server/canvas/seedmux.py`）：经 Seedmux **官方控制桥**新开一个 pane，CLI 直接跑在里面，不经 Agora 的 tmux。桥是 Seedmux 自带、在应用内文档（`Seedmux.app/Contents/Resources/team/references/operations.md`）里写明的本机 HTTP 接口：配置 `~/Library/Application Support/Seedmux/team-bridge.json`（`port`、`token`，可用 `SEEDMUX_TEAM_BRIDGE_PATH` 覆盖），请求头 `X-Token`；Agora 只调 `GET /panes`（探测可用）和 `POST /spawn {cwd, launch, focus, direction}`，这也是它的 `smx-team` CLI 开 pane 用的那个调用。不走 `smx-team spawn` 的派工流程（不写工单、不发信封）。Seedmux 把 `launch` 敲进新 pane 的登录 shell，Agora 给的是 `cd <项目> && exec env -u <嵌套标记> AGORA_*=… PATH=<Agora bin>:"$PATH" <§2 的交互式命令>`：`exec` 让 pane 就是这个 CLI，CLI 退出时 pane 自动消失；保留 pane 自己的 PATH（实测 Seedmux 不会把这种 pane 识别成 agent pane，岛上没有它的状态，不影响同步）。
-  - 新 pane 由 Seedmux 放在**当前聚焦的标签页**旁边（它的放置规则；桥没有「新标签页」参数），`focus: true`。
-  - 谁持有：`.agora/run/seedmux/<tmux 名>.json` 记 `{paneId, at, socket}`。Seedmux 的每个 pane 是它自己 tmux 服务器（`~/.seedmux/tmux.sock`）上的会话 `smx-<paneId>`；Agora 之后**只**对这一个会话做：看它是否还在跑（`pane_current_command` 不是 shell；刚开的 20 秒内是 shell 也算启动中）、读它客户端的最后按键时间、往里 bracketed paste + Enter、「关闭终端」时 `kill-session` 它。用户已有的 pane 和会话一概不读不写。
-  - 已在 Seedmux 中持有时，再点只提示「到 Seedmux 里切到那个 pane」（桥没有聚焦已有 pane 的接口），不开第二个；此时 Kitty 也不再起第二个 CLI。
-  - 已由 Agora 的 tmux pane 持有时选 Seedmux：新开的 Seedmux pane 只是 `exec env -u TMUX tmux -L … attach` 连到同一个 pane（和 Kitty 的「新窗口」一样），不起第二个 CLI。
-  - 桥不可用（Seedmux 没开、设置 › Agent Team 关了桥）时，下拉里 Seedmux 显示不可用和原因；「复制打开命令」先起 Agora 的 tmux pane，再复制 `env -u TMUX tmux -L … attach -t …`，在 Seedmux 或任意终端里新开 pane 粘贴即可。
+「关闭终端」结束持有它的 CLI；`agora down` 关掉整个 tmux 服务器。无头一轮进行中不能打开终端（同一原生会话不能两个进程同时写）。
 
-「关闭终端」结束持有它的 CLI（Seedmux pane 随之消失）；`agora down` 关掉本项目开过的 Seedmux pane 和整个 tmux 服务器。无头一轮进行中不能打开终端（同一原生会话不能两个进程同时写）。
+**输入权**（运行时事实放 `.agora/run/`，语义对应 `native_protocol.SessionGate`）：
+
+- **接管**（`POST /sessions/{id}/takeover`，记在 `run/input-right/<tmux 名>.json`）：人占着终端输入，自动投递暂停，队列保留不丢。detach、控制连接异常断开、Agora 服务重启都不算归还，只有显式归还（`POST /sessions/{id}/return`）、关掉这个终端或换一个新的 pane 才结束；这一步不取消任何在跑的东西。
+- **可写窗口**：只要有一个不是 Agora 自己挂的可写 tmux 客户端连着这个会话（例如 Kitty 里的 attach），就暂停投递，窗口关掉后恢复；不强踢，也不把它当成接管。状态行显示「排队中：…」的原因。
+- **Agora 自己的输入**：走一个 Agora 自己挂的可写 control-mode 客户端（`tmux -C attach -f ignore-size,no-output`，首次投递时才起，不计入窗口数），回车用 `send-keys -c <这个客户端>`。tmux 3.7b 里不指定客户端的 `send-keys` 会走「当前客户端」，最后一个连上来的是只读窗口时直接报 `client is read-only`，所以只读窗口不会挡投递，也不会被拿来输入。
+- **存活**：`run/panes/<tmux 名>.json` 记着打开时登记的真实 pane id、CLI 进程 pid 和它的启动时间；判断时对照 tmux 现在报的 pane 与 `ps`：都对得上是 `running`，pane 在但没登记（旧版本开的，或 `run/` 丢了）是 `unknown`（当作在），pane 没了 / CLI 退出了 / pid 被别的进程占了是 `gone`。CLI 在一轮中途退出、日志里没有结束记录时，这一轮（以及已粘贴、日志里还没出现的消息）如实报「结果未知」（`done` 事件带 `outcome: "unknown"`，先把它退出前写下的日志读完再判断），不写成完成或失败。
 
 **终端 → 面板**：服务端每 0.4s 跟随原生会话日志（Claude `~/.claude/projects/*/<id>.jsonl`，Pi `~/.pi/agent/sessions/--<cwd>--/<时间>_<id>.jsonl`，Codex `~/.codex/sessions/YYYY/MM/DD/rollout-*-<id>.jsonl`，按 id glob 定位），把新记录映射成会话条目推到页面（SSE `/api/agent/events`）。终端里敲的话、agent 的回复和工具调用都会出现在面板上。
 
-**面板 → 终端**（Kitty 与 Seedmux 相同，只是目标 pane 不同）：Agora 发的消息末尾带一行上下文 `[[agora]] 来自 Agora · 画布「…」…`（面板显示时隐去，也用来标记来源）。pane 持有会话时：
+**面板 → 终端**：Agora 发的消息末尾带一行上下文 `[[agora]] 来自 Agora · 画布「…」…`（面板显示时隐去，也用来标记来源）。pane 持有会话时：
 
-1. 排队，直到终端打开满 6 秒（CLI 还在启动时粘贴会丢）、agent 这一轮答完（日志里看到回合结束）且终端 4 秒内没有按键（tmux `client_activity`）——面板状态行显示「排队中：…」原因。
-2. `load-buffer` + `paste-buffer -p`（bracketed paste）+ Enter，和人粘贴回车一样。
+1. 排队，直到没有人占着输入（没有接管，也没有可写窗口连着）、终端打开满 6 秒（CLI 还在启动时粘贴会丢）、agent 这一轮答完（日志里看到回合结束）——面板状态行显示「排队中：…」原因。
+2. `load-buffer` + `paste-buffer -p`（bracketed paste）+ 从 Agora 自己的客户端发 Enter，和人粘贴回车一样。
 3. 日志里出现这条用户消息即确认送达；它这一轮结束时把回复交给等待者（例如评论线程）。30 秒内日志里没出现 → 报「终端没有确认收到」。
 4. 投递时 pane 已退出 → 这条改走无头续接。
 
@@ -136,14 +135,15 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 |---|---|---|
 | GET | `/catalog` | 三个 agent 的安装状态、模型、强度 |
 | GET | `/adapters` | 每个有适配器的 CLI 的 `AgentInfo`：档位、测过的版本、能力、日志目录、删除命令、漂移提示（[CLI 适配层 §5](cli-adapters.md#5-接口)） |
-| GET | `/runs?session=…` | 会话的 run 树：它自己、原生子 agent、经 Seedmux 派出的 worker（只读回执），每个带时间线（[CLI 适配层 §5](cli-adapters.md#5-接口)） |
+| GET | `/runs?session=…` | 会话的 run 树：它自己和原生子 agent，每个带时间线（[CLI 适配层 §5](cli-adapters.md#5-接口)） |
 | PUT | `/sessions/{id}` | 绑定 `{agent, model, effort, nativeId?}`；不同选择 409 |
 | GET | `/sessions/{id}` | 状态（绑定、运行、排队、终端） |
 | POST | `/sessions/{id}/send` | `{text, canvasId?, context?}` → `{sendId, route: terminal\|headless}` |
 | POST | `/sessions/{id}/fork` | `{source?}`：在这里分叉继续（副本带来的会话；或带着 `source` 的、另一份副本的会话）→ 绑定带 `pendingFork` |
 | POST | `/sessions/{id}/interrupt` | 停止当前无头一轮并清空排队 |
-| POST / DELETE | `/sessions/{id}/terminal` | 打开（`{launch, app: kitty\|seedmux}`）/ 关闭终端；状态里的 `terminal.app` 是 `tmux` 或 `seedmux`（带 `paneId`） |
-| GET | `/terminals` | 能在哪儿打开：`{kitty, seedmux: {available, reason?}}` |
+| POST / DELETE | `/sessions/{id}/terminal` | 打开（`{launch}`）/ 关闭终端；状态里的 `terminal` 带 `alive`、`attach`、`clients`（不含 Agora 自己的客户端）、`inputRight`（`host` 或 `human`） |
+| POST | `/sessions/{id}/takeover`、`/sessions/{id}/return` | 接管终端输入（暂停自动投递、队列保留）/ 归还（恢复投递） |
+| GET | `/terminals` | 能在哪儿打开：`{kitty}` |
 | GET | `/sessions/{id}/items/{itemId}` | 一条会话记录的全文（工具输入 / 输出超过预览长度时，页面「展开全文」用） |
 | GET | `/sessions/{id}/summary` | `{text}`：按快照生成的「接着之前的讨论」摘要（最近的轮次优先，约 6000 字以内），不调用模型 |
 | POST | `/sessions/{id}/restart` | 原生日志确实没了：换一个新的原生 id（`started: false`），下一条消息新建它；日志还在时拒绝 |
@@ -155,10 +155,10 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 
 - **终端里仍能换模型**：锁定只管 Agora 这一侧；终端里用户自己 `/model` 切换，CLI 不提供禁止的开关（Pi 用 `--models` 把 Ctrl+P 轮换限制在选定模型）。下一次无头续接仍按绑定的模型启动。
 - **首次进入不信任的目录**：Claude Code / Pi 在终端里会先问是否信任该目录，需要在终端里回答；这时从面板投递的消息会等到回合空闲判断之后才发，可能落进信任提示里。
-- **输入到一半的草稿**：投递只在 4 秒无按键后进行；如果终端输入框里留着没发出去的半句话，粘贴会接在它后面。
+- **输入到一半的草稿**：投递只在没有人占着输入（接管、可写窗口）时进行；如果终端输入框里留着没发出去的半句话，粘贴会接在它后面。
 - **写需要页面**：改图和动画由打开的 Agora 页面执行；只开终端、没开页面时 `apply` 返回退出码 3。
 - **日志是同步通道**：CLI 关掉会话持久化（例如 Claude 的 `--no-session-persistence`，或继承到嵌套标记）时，面板看不到那边的对话。
-- **Codex 终端先行**：还没有原生 id 的 Codex 会话在终端里开新会话，Agora 认领打开终端之后、同一项目目录下出现的第一个未被占用的 rollout；同一时间在同一目录另起 Codex 可能认错。
+- **Codex 终端先行**：还没有原生 id 的 Codex 会话在终端里开新会话，Agora 从这个 pane 的 CLI 进程（及它启动的子进程）自己打开的文件里认 rollout（Linux 读 `/proc/<pid>/fd`，macOS 用 `lsof`），不按目录和时间猜；同一时间在同一目录另起的 Codex 各认各的。进程还没打开 rollout 时（还没发第一条消息）继续等，不退回去按目录认。
 
 ## 7. 对话与轨迹视图
 

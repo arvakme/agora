@@ -398,7 +398,7 @@ def cmd_down(p: Project, _a) -> int:
     from server.canvas.terminal import Terminals
 
     terms = Terminals(p.root, p.run, socket=p.local.socket())
-    terms.shutdown()  # Seedmux panes this project opened, then Agora's own tmux server
+    terms.shutdown()  # Agora's own tmux server for this project
     # …and tmux servers it had under other names: path-hash sockets of older builds, earlier roots.
     for name in terms.kill_other_servers(p.local.legacy_sockets()):
         print(f"stopped tmux server {name}")

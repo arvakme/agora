@@ -16,7 +16,7 @@
 .sp-meta select:hover { background: var(--raised); color: var(--fg); }
 .sp-native { flex: none; font-size: var(--text-xs); color: var(--fg-subtle); }
 .sp-term-btn { flex: none; }
-/* 「在 X 中打开」+ ▾: one split control; the menu picks Kitty or Seedmux and remembers it */
+/* 「在 Kitty 中打开」+ ▾: one split control */
 .sp-term { position: relative; flex: none; display: flex; align-items: center; gap: 1px; }
 .sp-term .sp-term-btn { border-top-right-radius: var(--r-xs); border-bottom-right-radius: var(--r-xs); }
 .sp-term-more { width: 26px; padding: 0; border-top-left-radius: var(--r-xs); border-bottom-left-radius: var(--r-xs); }
@@ -147,7 +147,7 @@
 .sp-choose-go { display: flex; gap: var(--space-4); }
 .sp-choose .notice { margin-bottom: var(--space-6); }
 @container sp (max-width: 360px) { .sp-choose-row { grid-template-columns: minmax(0, 1fr); } }
-/* Kitty / Seedmux app icons in the terminal button and its menu: the apps' own icons, unframed. */
+/* Kitty app icon in the terminal button and its menu: the app's own icon, unframed. */
 .term-app-icon { flex: none; display: block; user-select: none; }
 .sp-term-menu button:disabled .term-app-icon { filter: grayscale(1); }
 

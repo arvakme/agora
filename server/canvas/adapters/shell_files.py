@@ -36,7 +36,7 @@ EXTENSIONS = {
 _SKIP = {
     "git", "gh", "curl", "wget", "ssh", "scp", "rsync", "docker", "kubectl", "helm", "brew", "apt", "apt-get", "sudo", "kill", "pkill", "sleep",
     "echo", "printf", "true", "false", "pwd", "export", "unset", "set", "open", "which", "man", "date", "lsof", "ps", "mkdir", "rmdir", "rm",
-    "chmod", "chown", "ln", "cd", "test", "[", "wait", "nohup", "smx-team", "ego-browser", "mise", "rtk",
+    "chmod", "chown", "ln", "cd", "test", "[", "wait", "nohup", "ego-browser", "mise", "rtk",
 }
 _PKG = {"npm", "pnpm", "yarn", "bun", "pip", "pip3", "uv", "cargo", "poetry", "gem", "composer", "npx", "corepack"}
 _PKG_SKIP = {"install", "i", "add", "remove", "rm", "uninstall", "update", "up", "upgrade", "ci", "link", "unlink", "init", "create", "publish", "login", "config", "cache", "store", "outdated", "audit", "sync", "lock", "self", "global"}

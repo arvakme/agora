@@ -13,12 +13,12 @@ import type { Origin } from "../persist";
  * CLI-specific beyond these fallbacks for before that list has loaded.
  */
 export type AgentKind = string;
-export type Tier = "T1" | "T2" | "T3" | "T0";
+export type Tier = "T1" | "T2" | "T0";
 /** One CLI as the server's adapter registry describes it (server/canvas/adapters/registry.py `info`). */
 export type AgentInfo = {
   kind: AgentKind;
   name: string;
-  /** T1 session agent (picker), T2 observed (trajectory, read-only), T3 receipts only, T0 inferred. */
+  /** T1 session agent (picker), T2 observed (trajectory, read-only), T0 inferred. */
   tier: Tier;
   maxTier: Tier;
   installed: boolean;
@@ -35,18 +35,15 @@ export type AgentInfo = {
   logDir: string;
   /** Command that deletes a native session by hand ("{id}" = its id); null = remove the log file. */
   deleteCommand: string | null;
-  seedmuxNames: string[];
   catalog?: CatalogEntry;
 };
-/** Unified lifecycle of a run (server/canvas/adapters/runs.py `STATES`; Seedmux receipts map onto it). */
+/** Unified lifecycle of a run (server/canvas/adapters/runs.py `STATES`). */
 export type RunState = "dispatched" | "acknowledged" | "running" | "waiting" | "idle_no_reply" | "done" | "failed" | "blocked" | "exited" | "session_changed" | "unknown" | "idle";
 /** One lane segment of a run: what it did, when, on which file (and canvas node when `canvas=` was given). */
 export type RunSegment = { kind: "read" | "write" | "exec" | "think" | "wait"; start: number; end: number; itemId: string; turn: number; label: string; path?: string; node?: string; spawn?: NonNullable<Item["tool"]>["spawn"] };
-export type RunMoment = { kind: "dispatch" | "handoff" | "receipt"; at: number; childRunId?: string; toolCallId?: string; taskId?: string; state?: RunState | string };
-/** A Seedmux ticket as the receipts reader sees it (read-only: meta.json core keys, delivery.json, reply.md). */
-export type Receipt = { taskId: string; agent: string; cwd?: string; createdAt?: number; repliedAt?: number; seedmuxState?: string; status?: string; state: RunState; toPane?: string; fromPane?: string; sid?: string; changed?: string[]; accept?: string | null; replyPreview?: string; replyPath?: string };
+export type RunMoment = { kind: "dispatch" | "handoff"; at: number; childRunId?: string; toolCallId?: string; taskId?: string; state?: RunState | string };
 /**
- * A session, one of its native sub-agents, or a worker it dispatched through Seedmux
+ * A session or one of its native sub-agents
  * (`GET /api/agent/runs?session=…`, web/docs/cli-adapters.md §7). `parent.via` says how the link is known.
  */
 export type AgentRun = {
@@ -59,7 +56,7 @@ export type AgentRun = {
   role?: string;
   model?: string;
   depth: number;
-  parent?: { runId: string; via: "native" | "seedmux" | "inferred"; toolCallId?: string; taskId?: string; evidence: string };
+  parent?: { runId: string; via: "native" | "inferred"; toolCallId?: string; taskId?: string; evidence: string };
   cwd?: string;
   worktree?: string;
   state: RunState;
@@ -72,17 +69,13 @@ export type AgentRun = {
   childCount: number;
   /** Every run below this one (expanded or not): the page shows one level and folds the rest into this badge. */
   descendants: number;
-  /** The latest Seedmux ticket of this worker. */
-  receipt?: Receipt;
-  /** Every ticket this worker session served (resume_session reuses one session), oldest first. */
-  receipts?: Receipt[];
   timeline: { segments: RunSegment[]; turns: { n: number; start: number; end: number }[]; moments: RunMoment[]; timesInferred?: boolean };
   items?: Item[];
 };
 export type RunTree = { root: string; runs: AgentRun[]; folded: Record<string, number>; depth: number | null; generatedAt: number };
 /** The run tree of a session (no UI consumes it yet: the workstation's child figures build on it). */
-export async function fetchRuns(sessionId: string, opts: { depth?: number | "all"; canvas?: string; items?: boolean; receipts?: boolean } = {}): Promise<RunTree> {
-  const q = new URLSearchParams({ session: sessionId, depth: String(opts.depth ?? "all"), ...(opts.canvas ? { canvas: opts.canvas } : {}), ...(opts.items ? { items: "1" } : {}), ...(opts.receipts === false ? { receipts: "0" } : {}) });
+export async function fetchRuns(sessionId: string, opts: { depth?: number | "all"; canvas?: string; items?: boolean } = {}): Promise<RunTree> {
+  const q = new URLSearchParams({ session: sessionId, depth: String(opts.depth ?? "all"), ...(opts.canvas ? { canvas: opts.canvas } : {}), ...(opts.items ? { items: "1" } : {}) });
   const r = await fetch(`/api/agent/runs?${q}`);
   if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? r.statusText);
   return (await r.json()) as RunTree;
@@ -178,8 +171,8 @@ export type Item = {
     on?: string[];
     /** The call waits for the person (a question, an approval gate). */
     waitsUser?: boolean;
-    /** The call started another agent: a native sub-agent, or a Seedmux ticket (`taskId`, `pane`). */
-    spawn?: { childKind?: string; childId?: string; taskId?: string; pane?: string; role?: string; state?: string; via?: "native" | "seedmux" | "inferred" };
+    /** The call started another agent: a native sub-agent. */
+    spawn?: { childKind?: string; childId?: string; role?: string; state?: string; via?: "native" | "inferred" };
   };
   usage?: Usage;
   model?: string;
@@ -209,12 +202,10 @@ export type Status = {
   held: string | null;
   activity: string | null;
   error: string | null;
-  /** Who holds the session's terminal: Agora's own tmux pane (Kitty / Terminal attach to it) or a Seedmux pane. */
-  terminal: { alive: boolean; attach: string; clients: number; app: "tmux" | "seedmux" | null; paneId?: string | null };
+  /** The session's terminal: Agora's own tmux pane (Kitty / Terminal attach to it). `inputRight`: who may type into it (a person's takeover pauses delivery). */
+  terminal: { alive: boolean; attach: string; clients: number; app: "tmux" | null; inputRight?: "host" | "human" };
 };
-/** Where「在终端打开」opens: Kitty (Agora's tmux pane in a Kitty window) or a new Seedmux pane. */
-export type TerminalApp = "kitty" | "seedmux";
-export type TerminalApps = { kitty: boolean; seedmux: { available: boolean; reason?: string } };
+export type TerminalApps = { kitty: boolean };
 export type CatalogEntry = {
   kind: AgentKind;
   name: string;
@@ -407,10 +398,10 @@ export const agents = {
     if (f) f.turnIds.push(turnId);
   },
 
-  async openTerminal(sessionId: string, canvasId: string, launch = true, app: TerminalApp = "kitty") {
+  async openTerminal(sessionId: string, canvasId: string, launch = true) {
     return (await json(
-      await fetch(`/api/agent/sessions/${sessionId}/terminal`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ launch, canvasId, app }) }),
-    )) as { attach: string; launched: "kitty" | "terminal" | "seedmux" | null; created: boolean; paneId?: string; attached?: boolean };
+      await fetch(`/api/agent/sessions/${sessionId}/terminal`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ launch, canvasId }) }),
+    )) as { attach: string; launched: "kitty" | "terminal" | null; created: boolean };
   },
   terminalApps: async () => (await json(await fetch("/api/agent/terminals"))) as TerminalApps,
   /** A transcript item in full (tool args / output past the preview). */

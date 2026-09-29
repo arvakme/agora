@@ -1,8 +1,7 @@
 """Devin (``devin`` CLI) as an observed agent (T2): its sessions live in one SQLite database, read-only.
 The CLI saves every message as a node of a forest (an assistant message twice, recent messages again
 after a compaction), so a session's log is its distinct messages in time order; sub-agent chains are
-left out. Seedmux workers are linked to their ticket when the session was given it
-(web/docs/cli-adapters.md)."""
+left out (web/docs/cli-adapters.md)."""
 
 import hashlib
 import time
@@ -35,12 +34,12 @@ def worker_session(home, sid="brisk-otter", cwd=CWD, ticket="T-aaa111", t0=T0) -
     s = DevinSession(home, sid, cwd, t0)
     s.system(0, "sys-1")
     s.system(0.1, "sys-2")
-    s.user(0.2, "u-1", f"你是 Seedmux agent team 的 worker,任务 {ticket}。先读 /h/.seedmux/team/tasks/{ticket}/prompt.md")
+    s.user(0.2, "u-1", f"你是 worker,任务 {ticket}。先读 /h/tasks/{ticket}/prompt.md")
     s.call(3, "a-1", [("call_r", "read", {"file_path": f"{cwd}/alpha.txt"})])
     s.result(3.1, "t-1", "call_r", "alpha")
     s.call(6, "a-2", [("call_x", "exec", {"command": "cat beta.txt", "workdir": cwd})])
     s.result(6.2, "t-2", "call_x", "beta", took_s=0.5)
-    s.call(9, "a-3", [("call_w", "write", {"file_path": f"{cwd}/gamma.txt", "content": "alpha beta"}), ("call_s", "exec", {"command": f"smx-team reply {ticket} --status done"})])
+    s.call(9, "a-3", [("call_w", "write", {"file_path": f"{cwd}/gamma.txt", "content": "alpha beta"}), ("call_s", "exec", {"command": f"echo {ticket} done"})])
     s.result(9.1, "t-3", "call_w", "wrote gamma.txt")
     s.result(9.2, "t-4", "call_s", "ok")
     s.reply(12, "a-4", "done")
@@ -50,7 +49,6 @@ def worker_session(home, sid="brisk-otter", cwd=CWD, ticket="T-aaa111", t0=T0) -
 def test_devin_is_observed_only():
     a = devin()
     assert adapters.implemented_tier(a) == "T2" and a.max_tier == "T2" and "devin" not in adapters.session_kinds()
-    assert adapters.by_seedmux_name("devin") is a
 
 
 def test_a_session_is_its_distinct_messages_in_time_order(home):
@@ -120,26 +118,6 @@ def test_locate_and_sessions_are_read_only(home):
     assert a.log_format(path) == "17"
     runs.timeline("devin", path, CWD)
     assert hashlib.sha256(db.read_bytes()).hexdigest() == before
-
-
-def test_seedmux_worker_is_found_by_its_ticket(home):
-    a = devin()
-    created = time.time() - 600
-    t0 = int(created * 1000) + 5000
-    worker_session(home, t0=t0).save(last_s=60)
-    # Same directory, same time, but it only printed the ticket (a dispatcher): not the worker.
-    d = DevinSession(home, "loud-dispatcher", CWD, t0)
-    d.user(0, "du", "派一个 devin worker")
-    d.call(1, "da", [("call_d", "exec", {"command": "smx-team spawn --agent devin"})])
-    d.result(1.5, "dt", "call_d", "task=T-aaa111 pane=FDC89E5E-61FD-454D-A822-C01693AE47F2")
-    d.save(last_s=60)
-    rc = {"taskId": "T-aaa111", "cwd": CWD, "createdAt": int(created * 1000), "agent": "devin"}
-    nid, path, why = a.worker_for_ticket(rc)
-    assert nid == "brisk-otter" and path == devin_db(home) / "brisk-otter" and "T-aaa111" in why
-    assert a.worker_for_ticket({**rc, "taskId": "T-bbb222"}) is None
-    assert a.worker_for_ticket({**rc, "cwd": "/work/other"}) is None
-    # A session that ended before the ticket was created cannot be its worker.
-    assert a.worker_for_ticket({**rc, "createdAt": int((created + 3600) * 1000)}) is None
 
 
 def test_drift_scans_the_database_log(home):

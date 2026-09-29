@@ -130,7 +130,7 @@ def check_contract(kind, folder, home):
     from server.canvas.adapters import runs as runs_mod
     from server.canvas.adapters.base import NativeRef
 
-    tree = runs_mod.build(NativeRef(kind, nid, look.path, cwd), root=cwd, depth=None, home=home, receipts=False)
+    tree = runs_mod.build(NativeRef(kind, nid, look.path, cwd), root=cwd, depth=None, home=home)
     written = {s.get("path") for r in tree["runs"] for s in r["timeline"]["segments"] if s["kind"] == "write"}
     for path in exp.get("files", []):
         assert path in written, (path, written)
