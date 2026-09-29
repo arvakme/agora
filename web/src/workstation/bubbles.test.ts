@@ -187,3 +187,35 @@ describe("boxesIn (the talk box's obstacles)", () => {
     ]);
   });
 });
+
+describe("FX5 · #7: the talk box (「对 Claude Code 说…」) is something bubbles keep off, like the toolbar", () => {
+  it("seeded random scenes with room: no placed bubble overlaps the talk box passed as `avoid`", () => {
+    let seed = 11;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    let checked = 0;
+    for (let n = 0; n < 300; n++) {
+      const width = 900 + rnd() * 700;
+      const height = 600 + rnd() * 400;
+      const talk: Box = { x: 100 + rnd() * (width - 400), y: 100 + rnd() * (height - 300), w: 220, h: 80 };
+      // the talk box sits beside its figure, not on the other figures' heads
+      const near = (x: number, y: number) => x > talk.x - 130 && x < talk.x + talk.w + 130 && y > talk.y - 40 && y < talk.y + talk.h + 90;
+      const head = (i: number): [number, number] => {
+        for (let k = 0; k < 50; k++) {
+          const x = 60 + rnd() * (width - 120);
+          const y = 120 + rnd() * (height - 160);
+          if (!near(x, y)) return [x, y];
+        }
+        return [40, height - 20];
+      };
+      const list: BubbleIn[] = Array.from({ length: 1 + Math.floor(rnd() * 3) }, (_, i) => fig(`b${i}`, ...head(i), { w: 120 + rnd() * 120, h: 26 }));
+      const { at } = placeBubbles(list, { width, height, nodes: [], avoid: [talk] });
+      for (const b of list) {
+        const p = at.get(b.id);
+        if (!p) continue;
+        checked++;
+        expect(overlap(boxOf(b, p), talk), `scene ${n} ${b.id}`).toBe(false);
+      }
+    }
+    expect(checked).toBeGreaterThan(300);
+  });
+});

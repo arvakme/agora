@@ -15,6 +15,7 @@ import { useTheme } from "../app/theme";
 import { bbox, byId, live, type El } from "./scene";
 import type { ThreadStore } from "../comments/threads";
 import { useHighlight } from "../session/ui";
+import { highlightBoxes } from "./highlightBoxes";
 import { PointerLayer } from "../pointer/PointerLayer";
 import { OwnerBreadcrumb, OwnerChildMarkers } from "../nested/NestedLayer";
 import { nav } from "../nested/store";
@@ -314,7 +315,7 @@ function EmptyCanvas() {
   const run = follow.run ? runs.byId.get(follow.run) : undefined;
   const busy = run && isWorking(run, Date.now()) ? follow.name : null;
   return (
-    <div className="empty-cv" aria-label="空白画布">
+    <div className="empty-cv" aria-label="空白画布" data-busy={busy ? "" : undefined}>
       <div className="empty-cv-box">
         <span className="dither-field" aria-hidden />
         <p>{busy ? busyHint(busy) : EMPTY_HINT}</p>
@@ -352,7 +353,7 @@ export function fit(api: ExcalidrawImperativeAPI) {
 function HighlightLayer({ canvasId, view }: { canvasId: string; view: CanvasViewState }) {
   const hl = useHighlight();
   const a = view.appState;
-  const els = hl?.canvasId === canvasId ? hl.ids.map((id) => view.map.get(id)).filter(live) : [];
+  const els = hl?.canvasId === canvasId ? highlightBoxes(hl.ids.map((id) => view.map.get(id)).filter(live)) : [];
   return (
     <div className="hl-layer">
       <AnimatePresence>

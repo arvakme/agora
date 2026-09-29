@@ -3,7 +3,7 @@
 // looking at, else the top-level run most recently at work), when it holds still (the agent is idle), when
 // the person's own doing pauses it and what resumes it. Pure.
 import { describe, expect, it } from "vitest";
-import { canvasStep, ENTER_MS, HOME_AFTER_MS, isWorking, MOUNT_GRACE_MS, newCanvasMachine, newSpell, nextPaused, pickFollow, SPELL_FIRST_SIGHT_MS, spellStep, hideEmptyLayer, type CanvasIn, type Top } from "./liveCamera.ts";
+import { canvasStep, ENTER_MS, HOME_AFTER_MS, isWorking, MOUNT_GRACE_MS, newCanvasMachine, newSpell, nextPaused, pickFollow, SPELL_FIRST_SIGHT_MS, spellStep, hideEmptyLayer, isBehind, type CanvasIn, type Top } from "./liveCamera.ts";
 
 const top = (id: string, o: Partial<Top> = {}): Top => ({ id, sessionId: `s-${id}`, working: false, lastWorkAt: 0, ...o });
 const base = { on: true, playing: null, chosen: null, focusedSession: null, tops: [] as Top[] };
@@ -68,7 +68,7 @@ describe("isWorking: one standard for the strip and the camera", () => {
 
 // ── the live camera's state machine, fed a time series ──
 describe("canvasStep: which canvas the camera shows, over time", () => {
-  const base: CanvasIn = { now: 0, working: true, want: "home", shown: "home", home: "home", cur: "home", busy: false, manual: false, displaced: false, behind: false, input: true };
+  const base: CanvasIn = { now: 0, working: true, want: "home", shown: "home", home: "home", cur: "home", busy: false, manual: false, displaced: false, behind: false, arrived: false, input: true };
   /** Feeds one tick per `dt` ms; `f(t)` gives that tick's changes; returns the actions that were not "none", with their times. */
   const run = (seconds: number, f: (t: number) => Partial<CanvasIn>, dt = 200) => {
     const m = newCanvasMachine();
@@ -190,5 +190,55 @@ describe("FX2a · #1: the figures' layer on an empty canvas", () => {
     expect(hideEmptyLayer(true, true)).toBe(false);
     expect(hideEmptyLayer(false, false)).toBe(false);
     expect(hideEmptyLayer(false, true)).toBe(false);
+  });
+});
+
+describe("FX5 · #1: the camera follows the figure into the sub-diagrams and stays there while it works", () => {
+  const base2: CanvasIn = { now: 0, working: true, want: "c1", shown: "c1", home: "c1", cur: "c1", busy: false, manual: false, displaced: false, behind: false, arrived: false, input: false };
+  /** The world the camera sees, from `plan(t)`: which canvas the figure's path wants, whether the figure is behind a door on the shown canvas, whether it has arrived on the wanted one. */
+  const play = (plan: (t: number) => { want: string; behind?: boolean; arrived?: boolean }, seconds = 30, over: Partial<CanvasIn> = {}) => {
+    const m = newCanvasMachine();
+    let shown = "c1";
+    const acts: { t: number; type: string; to?: string }[] = [];
+    for (let t = 0; t <= seconds * 1000; t += 200) {
+      const p = plan(t);
+      const a = canvasStep(m, { ...base2, now: 1e6 + t, shown, cur: shown, displaced: shown !== "c1", want: p.want, behind: !!p.behind && p.want !== shown, arrived: !!p.arrived && p.want !== shown, ...over });
+      if (a.type === "go") ((shown = a.to), acts.push({ t, type: "go", to: a.to }));
+      if (a.type === "home") ((shown = "c1"), acts.push({ t, type: "home" }));
+    }
+    return acts;
+  };
+  it("in for a stop, out, in again (the way the agent draws its sub-diagrams): the camera goes in each time, at once, and out at once", () => {
+    const acts = play((t) => (t < 2000 ? { want: "c1" } : t < 7000 ? { want: "c-api", behind: true } : t < 9000 ? { want: "c1", arrived: true } : t < 14000 ? { want: "c-db", behind: true } : { want: "c1", arrived: true }));
+    expect(acts).toEqual([
+      { t: 2000, type: "go", to: "c-api" },
+      { t: 7000, type: "go", to: "c1" },
+      { t: 9000, type: "go", to: "c-db" },
+      { t: 14000, type: "go", to: "c1" },
+    ]);
+  });
+  it("several stops inside one sub-diagram: one way in, no coming and going meanwhile", () => {
+    const acts = play((t) => (t < 2000 ? { want: "c1" } : t < 20000 ? { want: "c-api", behind: true } : { want: "c1", arrived: true }));
+    expect(acts.map((a) => a.to)).toEqual(["c-api", "c1"]);
+  });
+  it("walking to a door (not behind it yet) is not a reason to go in: after ENTER_MS, as before", () => {
+    const acts = play((t) => (t < 2000 ? { want: "c1" } : { want: "c-api" }), 6);
+    expect(acts).toEqual([{ t: 2000 + ENTER_MS, type: "go", to: "c-api" }]);
+  });
+  it("the person went to another canvas meanwhile: not pulled back (the machine reports it, and goes on from there)", () => {
+    const m = newCanvasMachine();
+    const a = canvasStep(m, { ...base2, now: 1e6 + 20_000, want: "c-api", behind: true, cur: "other", shown: "c1", input: true });
+    const b = canvasStep(m, { ...base2, now: 1e6 + 20_200, want: "c-api", behind: true, cur: "other", shown: "c1", input: true });
+    expect(a.type).toBe("none");
+    expect(b).toEqual({ type: "user-moved", to: "other" });
+  });
+  it("paused: never switches, however the figure goes", () => {
+    expect(play((t) => (t < 2000 ? { want: "c1" } : { want: "c-api", behind: true }), 20, { manual: true })).toEqual([]);
+  });
+  it("isBehind: the figure behind a door on the shown canvas, whatever depth the path wants (a sub-diagram of a sub-diagram too)", () => {
+    expect(isBehind("c1", "c-api", { behind: true, into: "c-api" })).toBe(true);
+    expect(isBehind("c1", "c-users", { behind: true, into: "c-api" })).toBe(true); // two levels down
+    expect(isBehind("c1", "c1", { behind: true, into: "c-api" })).toBe(false);
+    expect(isBehind("c1", "c-api", { behind: false, into: "c-api" })).toBe(false);
   });
 });

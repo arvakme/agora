@@ -67,15 +67,46 @@ export function followView(o: FollowIn): { view: Fit; move: boolean } {
  * shot shows where the work will land and not one lonely node or bare canvas — `reach` world units either way from the nearest point of the drawing's bounds.
  * null when the figure is inside the drawing or there is no drawing. Pure.
  */
-export function trayShotBox(figure: { x: number; y: number }, bounds: Box | null, reach = 360): Box | null {
+export function trayShotBox(figure: { x: number; y: number }, bounds: Box | null, reach = 360, nodes?: readonly Box[]): Box | null {
   if (!bounds || bounds.w <= 0 || bounds.h <= 0) return null;
   const inside = figure.x >= bounds.x && figure.x <= bounds.x + bounds.w && figure.y >= bounds.y && figure.y <= bounds.y + bounds.h;
   if (inside) return null;
-  const qx = Math.max(bounds.x, Math.min(bounds.x + bounds.w, figure.x));
-  const qy = Math.max(bounds.y, Math.min(bounds.y + bounds.h, figure.y));
-  const x0 = Math.max(bounds.x, qx - reach);
-  const x1 = Math.min(bounds.x + bounds.w, qx + reach);
-  const y0 = Math.max(bounds.y, qy - reach);
-  const y1 = Math.min(bounds.y + bounds.h, qy + reach);
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+  // the drawing may be a body of nodes with a lone one far off (the tray happens to be nearest to that): with the nodes known, the piece is of the biggest cluster within
+  // BODY_NEAR of the figure (about a screen at the lowest zoom); none that near: the nearest one
+  let b = bounds;
+  if (nodes?.length) {
+    const cs = clustersOf(nodes);
+    const near = (c: { box: Box }) => Math.hypot(clamp(figure.x, c.box.x, c.box.x + c.box.w) - figure.x, clamp(figure.y, c.box.y, c.box.y + c.box.h) - figure.y);
+    const ok = cs.filter((c) => near(c) <= BODY_NEAR);
+    const pick = ok.length ? ok.reduce((a, c) => (c.n > a.n || (c.n === a.n && near(c) < near(a)) ? c : a)) : cs.reduce((a, c) => (near(c) < near(a) ? c : a));
+    b = pick.box;
+  }
+  const qx = clamp(figure.x, b.x, b.x + b.w);
+  const qy = clamp(figure.y, b.y, b.y + b.h);
+  const x0 = Math.max(b.x, qx - reach);
+  const x1 = Math.min(b.x + b.w, qx + reach);
+  const y0 = Math.max(b.y, qy - reach);
+  const y1 = Math.min(b.y + b.h, qy + reach);
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/** How far (world units) the body of the diagram may be from the tray and still be framed with it: about one pane at the lowest zoom (900 px ÷ 0.7 ≈ 1290, less the figure's room). */
+export const BODY_NEAR = 900;
+/** Nodes closer than this to one another are one cluster. */
+const CLUSTER_GAP = 260;
+
+/** The clusters of nodes (single linkage by gap), each with its bounding box and node count. */
+function clustersOf(nodes: readonly Box[]): { box: Box; n: number }[] {
+  const parent = nodes.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const gap = (a: Box, c: Box) => Math.hypot(Math.max(0, a.x - (c.x + c.w), c.x - (a.x + a.w)), Math.max(0, a.y - (c.y + c.h), c.y - (a.y + a.h)));
+  for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) if (gap(nodes[i], nodes[j]) <= CLUSTER_GAP) parent[find(i)] = find(j);
+  const groups = new Map<number, Box[]>();
+  nodes.forEach((n, i) => groups.set(find(i), [...(groups.get(find(i)) ?? []), n]));
+  return [...groups.values()].map((g) => {
+    const x0 = Math.min(...g.map((n) => n.x));
+    const y0 = Math.min(...g.map((n) => n.y));
+    return { box: { x: x0, y: y0, w: Math.max(...g.map((n) => n.x + n.w)) - x0, h: Math.max(...g.map((n) => n.y + n.h)) - y0 }, n: g.length };
+  });
 }

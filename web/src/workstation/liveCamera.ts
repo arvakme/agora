@@ -59,6 +59,9 @@ export const MOUNT_GRACE_MS = 6000;
 export function isWorking(run: { running: boolean; segs: readonly { start: number; end: number }[] }, now: number): boolean {
   return run.running || run.segs.some((s) => s.start <= now && now < s.end);
 }
+/** The figure is behind a door on the shown canvas, and the path wants another canvas: whatever depth it is (`door`: the shown canvas's door state, ./replayCamera.ts). */
+export const isBehind = (shown: string, want: string, door: { behind: boolean; into: string | null }): boolean => want !== shown && door.behind;
+
 /** An empty canvas shows its own guide and the figures' layer gives way — unless an agent is at work: then its figure is drawn (at the tray) and the camera is with it. */
 export const hideEmptyLayer = (empty: boolean, anyRunning: boolean): boolean => empty && !anyRunning;
 // ── whether the camera has a turn to follow ──
@@ -97,8 +100,10 @@ export type CanvasIn = {
   manual: boolean;
   /** The view is away from what the person had (another canvas, or moved on it). */
   displaced: boolean;
-  /** The figure has gone in through the door of a node on the shown canvas, into `want`: it is out of sight there. */
+  /** The figure has gone in through the door of a node on the shown canvas, and `want` is where it is (that door's canvas or one below it): it is out of sight here. */
   behind: boolean;
+  /** The figure is out of the door and on `want` (an outer canvas): nothing to wait for on the way out either. */
+  arrived: boolean;
   /** The person has navigated since the camera last looked (./navOrigin.ts `userNav`): a canvas change now is theirs; without it, the app's. */
   input: boolean;
 };
@@ -139,7 +144,7 @@ export function canvasStep(m: CanvasMachine, i: CanvasIn): CanvasAct {
     return { type: "none" };
   }
   if (m.want?.canvas !== i.want) m.want = { canvas: i.want, since: i.now };
-  if (i.now - m.want.since >= (i.behind ? 0 : ENTER_MS)) {
+  if (i.now - m.want.since >= (i.behind || i.arrived ? 0 : ENTER_MS)) {
     m.want = null;
     m.lastGoAt = i.now;
     return { type: "go", to: i.want };
