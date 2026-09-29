@@ -421,6 +421,7 @@ class AgentHub:
         if not recs:
             return
         changed: list[dict[str, Any]] = []
+        finished: list[dict[str, Any]] = []  # "done" events of turns the log ended in this read
         for rec in recs:
             drift.observe(b["agent"], rec)  # records its adapter does not know (notify-only)
             items, turns = project(b["agent"], rec, lv.state)
@@ -437,7 +438,7 @@ class AgentHub:
             for tc in turns:
                 if tc["turn"] == "end" and lv.current is not None:
                     done, lv.current = lv.current, None
-                    self.broadcast({"t": "done", "sessionId": sid, "sendId": done.send_id, "text": tc.get("text") or "", "error": tc.get("error"), "route": "terminal"})
+                    finished.append({"t": "done", "sessionId": sid, "sendId": done.send_id, "text": tc.get("text") or "", "error": tc.get("error"), "route": "terminal"})
         while len(lv.items) > MAX_ITEMS * 2:
             lv.items.popitem(last=False)
         for ev in lv.requests.values():  # a call the log has now, of a request that arrived first
@@ -448,6 +449,8 @@ class AgentHub:
             latest = {i["id"]: i for i in changed}  # a call and its result in one read: send the merged item once
             self._keep_snapshot(sid, lv, list(latest.values()))
             self.broadcast({"t": "transcript", "sessionId": sid, "items": [public_item(i) for i in latest.values()]})
+        for ev in finished:  # after the transcript: a page reads the finished turn when "done" comes (both can land in one read)
+            self.broadcast(ev)
         self._status(sid)
 
     def item(self, sid: str, item_id: str) -> dict[str, Any]:
