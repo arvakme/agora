@@ -16,7 +16,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-ID_RE = re.compile(r"^pr-[0-9]{1,9}$")
+ID_RE = re.compile(r"pr-[1-9][0-9]{0,8}")  # matched whole: no trailing newline, no leading zero (the importer writes pr-<int>)
+SHA_RE = re.compile(r"[0-9a-f]{7,40}")
 STATUS_OP = {"added": "add", "copied": "add", "modified": "edit", "changed": "edit", "removed": "delete", "renamed": "rename"}
 AGENT_KINDS = ("claude", "codex", "pi", "grok", "cursor", "devin", "unknown")
 GIT_OP = {"A": "add", "C": "add", "M": "edit", "T": "edit", "D": "delete", "R": "rename"}
@@ -34,7 +35,7 @@ def run_cmd(argv: list[str], cwd: Path) -> str:
 
 
 def valid_id(id: str) -> bool:
-    return bool(ID_RE.match(id or ""))
+    return bool(ID_RE.fullmatch(id or ""))
 
 
 def replays_dir(project: Path) -> Path:
@@ -74,7 +75,9 @@ def _tokens(out: str) -> list[str]:
 
 def squash_files(root: Path, sha: str, run: Run) -> list[dict[str, Any]]:
     """Files of one commit with ops and line counts, renames followed (``git show -M -z``)."""
-    status = _tokens(run(["git", "-C", str(root), "show", "--format=", "-M", "-z", "--name-status", sha], root))
+    if not SHA_RE.fullmatch(sha):
+        raise ReplayError(f"not a commit id: {sha!r}")
+    status = _tokens(run(["git", "-C", str(root), "show", "--format=", "-M", "-z", "--name-status", sha, "--"], root))
     ops: list[tuple[str, str]] = []  # (path, op) in git's order
     i = 0
     while i < len(status) and status[i]:
@@ -86,7 +89,7 @@ def squash_files(root: Path, sha: str, run: Run) -> list[dict[str, Any]]:
             ops.append((status[i + 1], GIT_OP.get(code, "edit")))
             i += 2
     counts: dict[str, tuple[int, int]] = {}
-    nums = _tokens(run(["git", "-C", str(root), "show", "--format=", "-M", "-z", "--numstat", sha], root))
+    nums = _tokens(run(["git", "-C", str(root), "show", "--format=", "-M", "-z", "--numstat", sha, "--"], root))
     i = 0
     while i < len(nums) and nums[i]:
         add, dele, path = nums[i].split("\t", 2)
@@ -134,6 +137,10 @@ def import_pr(project: Path | str, number: int, *, repo: str | None = None, agen
 
 # ——— which agent made it ———
 BEFORE_S, AFTER_S = 2 * 3600, 3600  # a session counts when its log overlaps the span from 2 h before the first commit to 1 h after the merge
+CHUNK = 1 << 20  # a session log is scanned a megabyte at a time, never read whole
+MAX_SCAN = 64 << 20  # a log bigger than this is scanned at its two ends only
+EDGE = 8 << 20  # … this many bytes of each
+SCORE_CAP = 30  # enough mentions to win: stop counting
 FIRST_TS = re.compile(rb'"timestamp"\s*:\s*"([^"]+)"')
 
 
@@ -152,6 +159,29 @@ def _began(path: Path, mtime: float) -> float:
     except OSError:
         return mtime
     return (_epoch(m.group(1).decode()) if m else None) or mtime
+
+
+def _score(path: Path, wt: re.Pattern[bytes], plain: re.Pattern[bytes], keep: int) -> int:
+    """Mentions of the branch in a log (``wt-<branch>`` ×3), streamed in blocks; ``keep`` bytes of the previous
+    block are kept so a name cut by a block boundary is still found and never counted twice."""
+    size = path.stat().st_size
+    spans = [(0, size)] if size <= MAX_SCAN else [(0, EDGE), (size - EDGE, size)]
+    score = 0
+    with path.open("rb") as f:
+        for start, end in spans:
+            f.seek(start)
+            tail = b""
+            left = end - start
+            while left > 0 and score < SCORE_CAP:
+                block = f.read(min(CHUNK, left))
+                if not block:
+                    break
+                left -= len(block)
+                buf = tail + block
+                fresh = len(tail)  # matches ending inside the kept tail were counted with the previous block
+                score += 3 * sum(m.end() > fresh for m in wt.finditer(buf)) + sum(m.end() > fresh for m in plain.finditer(buf))
+                tail = buf[-keep:]
+    return score
 
 
 def _session_of(kind: str, path: Path, base: Path) -> str:
@@ -175,6 +205,7 @@ def detect_agent(data: dict[str, Any], home: Path | None = None) -> dict[str, An
         return none
     lo, hi = min(times) - BEFORE_S, (merged if merged is not None else max(times)) + AFTER_S
     word = r"(?<![A-Za-z0-9])%s(?![A-Za-z0-9_])"
+    keep = len(branch) + 8  # the longest match is wt-<branch> plus one look-ahead character
     wt = re.compile((word % re.escape("wt-" + branch)).encode())
     plain = re.compile((word % re.escape(branch)).encode())
     home = home or Path.home()
@@ -185,10 +216,9 @@ def detect_agent(data: dict[str, Any], home: Path | None = None) -> dict[str, An
                 mtime = f.stat().st_mtime
                 if mtime < lo or _began(f, mtime) > hi:  # a session that ran on past the merge still counts
                     continue
-                blob = f.read_bytes()
+                score = _score(f, wt, plain, keep)
             except OSError:
                 continue
-            score = 3 * len(wt.findall(blob)) + len(plain.findall(blob))
             if score and (best is None or (score, mtime) > best[:2]):
                 best = (score, mtime, kind, _session_of(kind, f, base))
     return {"kind": best[2], "source": "session", "session": best[3]} if best else none

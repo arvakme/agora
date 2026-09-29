@@ -271,3 +271,48 @@ def test_cli_agent_flag(project, capsys, monkeypatch):
     assert main(["replay", "import-pr", "7", "--agent", "grok", "--project", str(project)]) == 0
     assert json.loads((project / ".agora" / "replays" / "pr-7.json").read_text())["agent"] == {"kind": "grok", "source": "flag"}
     assert "grok" in capsys.readouterr().out
+
+
+# ——— review round 3 ———
+@pytest.mark.parametrize("bad", ["pr-1\n", "pr-1 ", " pr-1", "pr-01", "pr-0", "pr--1", "pr-1\r\n"])
+def test_valid_id_is_a_full_match_without_leading_zeros(bad):
+    assert not replays.valid_id(bad)  # a trailing newline used to pass ($ matches before it); 01 would name no file the importer writes
+    assert replays.valid_id("pr-1") and replays.valid_id("pr-4315") and replays.valid_id("pr-999999999")
+
+
+def test_a_newline_id_is_refused_over_http(project):
+    assert client(project).get("/api/project/replays/pr-1%0A").status_code == 400
+
+
+def test_the_branch_is_found_across_read_blocks_and_in_big_files(project, home, monkeypatch):
+    monkeypatch.setattr(replays, "CHUNK", 64)
+    monkeypatch.setattr(replays, "MAX_SCAN", 2048)  # a log over this is read at its two ends only
+    monkeypatch.setattr(replays, "EDGE", 512)
+    d = home / ".claude" / "projects" / "-p"
+    log(d / "straddle.jsonl", "x" * 59 + " wt-gone-fix2 " + "y" * 100 + "\\n")  # the name crosses a 64-byte block boundary
+    assert agent_of(project)["session"] == "straddle"
+    (d / "straddle.jsonl").unlink()
+    big = "a" * 4000 + "\\n"
+    log(d / "tail.jsonl", big * 10 + "wt-gone-fix2\\n")  # far past the limit, but inside the last EDGE bytes
+    assert agent_of(project)["session"] == "tail"
+    (d / "tail.jsonl").unlink()
+    log(d / "middle.jsonl", "a" * 5000 + " wt-gone-fix2 " + "a" * 20000)  # in the unread middle of a big log: not looked for
+    assert agent_of(project) == {"kind": "unknown", "source": "none"}
+
+
+def test_a_log_is_never_read_whole(project, home, monkeypatch):
+    seen = []
+    real = Path.read_bytes
+    monkeypatch.setattr(Path, "read_bytes", lambda self: (seen.append(self), real(self))[1])
+    log(home / ".claude" / "projects" / "-p" / "s.jsonl", "wt-gone-fix2\\n")
+    assert agent_of(project)["session"] == "s" and not any(p.suffix == ".jsonl" for p in seen)
+
+
+def test_a_commit_id_is_checked_before_git_sees_it(project):
+    with pytest.raises(replays.ReplayError):
+        replays.squash_files(project, "--stat", broken_gh)
+    with pytest.raises(replays.ReplayError):
+        replays.squash_files(project, "HEAD; rm", broken_gh)
+    seen = []
+    replays.squash_files(project, git(project, "rev-parse", "HEAD").strip(), lambda argv, cwd: (seen.append(argv), broken_gh(argv, cwd))[1])
+    assert all(a[-1] == "--" for a in seen)  # and git is told nothing after the id is a path
