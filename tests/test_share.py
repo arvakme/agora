@@ -614,3 +614,37 @@ async def test_creating_a_share_does_not_hold_the_guest_lock_while_cf_runs(env):
         release.set()
         t.join(10)
     assert len(done) == 1 and len(shares.active()) == 2
+
+
+async def test_a_slow_cf_delete_during_a_revoke_does_not_hold_the_guest_lock(env):
+    """RVF-D E: ending a share calls cf (up to 90 s); guests of the other shares must not wait for it."""
+    import threading
+    import time
+
+    store, shares, dns, tunnels, clock, app = env
+    a, _, host_a, token_a = await make_share(app, ttl=600)
+    b, _, host_b, token_b = await make_share(app, ttl=600)
+    inside, release = threading.Event(), threading.Event()
+    real = dns.delete
+
+    def slow(rid):
+        inside.set()
+        assert release.wait(10)
+        return real(rid)
+
+    dns.delete = slow
+    t = threading.Thread(target=lambda: shares.revoke(a["id"]))
+    t.start()
+    try:
+        assert inside.wait(5)  # the revoke is now inside the cf call
+        s = shares.get(b["id"])
+        t0 = time.monotonic()
+        assert shares.admit(s, "a" * 16)
+        shares.note_visit(s, new_guest=True)
+        shares.note_comment(s)
+        assert time.monotonic() - t0 < 1.0  # guests did not queue behind it
+        assert shares.verify(host_a, token_a) is None  # and the ended share's token is already dead
+    finally:
+        release.set()
+        t.join(10)
+    assert shares.get(a["id"]).cleanup == [] and dns.records.keys() == {b["dnsRecordId"]}

@@ -621,3 +621,61 @@ async def test_an_answer_does_not_bind_again_a_thread_whose_hand_off_the_person_
     rig.show("s-b", rig.user("s-b", "u1", s["id"]), {"id": "a1", "kind": "assistant", "text": "好了", "at": 1100}, {"id": "end-u1", "kind": "end", "at": 1200, "turn": "u1"})
     await asyncio.sleep(0.3)
     assert _handoff(store) is None  # the answer is posted, the thread stays ordinary
+
+
+
+# ——— RVF-D: B (a queued note is not a delivered one), C (a failed hand-off hook), F (the log follower's lock) ———
+async def test_a_note_that_was_only_queued_when_the_server_died_is_sent_again_once(rig, store, monkeypatch):
+    """`notified` is written when the note is queued; if the server dies before it reaches the source's log the source
+    would wait for ever. A restart looks for the note in the source's own log and sends it again if it is not there."""
+    real = rig.hub.send
+    monkeypatch.setattr(rig.hub, "send", lambda sid, prompt: {"sendId": "m-q", "route": "queued"} if sid == "s-a" else real(sid, prompt))  # queued, never delivered
+    rid, _ = await go(rig)
+    await finish(rig, rid)
+    await asyncio.sleep(0.8)
+    assert rig.dp.get(rid).notified == "done" and told_a(rig) == []  # "told" as far as the record knows; the source's log has nothing
+    hub2 = AgentHub(store, terminals=FakeTerms("s-a", "s-b"))
+    dp2 = Dispatches(hub2)
+    dp2.recover()
+    await asyncio.sleep(0.8)
+    assert len([t for sid, t in hub2.terms.pastes if sid == "s-a"]) == 1  # sent again after the restart
+    hub2._get("s-a").items["n1"] = {"id": "n1", "kind": "user", "text": "[Agora 派发回执]", "at": 1, "source": "agora", "receipt": f"{rid}:done"}  # ... and it arrived
+    dp2.recover()
+    await asyncio.sleep(0.5)
+    assert len([t for sid, t in hub2.terms.pastes if sid == "s-a"]) == 1  # only once
+
+
+async def test_a_handoff_hook_that_fails_makes_the_dispatch_failed_and_a_restart_does_not_deliver_it(rig, store):
+    def broken(sid, send_id):
+        raise OSError("磁盘满了")
+
+    rig.hub.handoff_hooks.insert(0, broken)  # runs before the dispatch's own hook: the record stays `pending`
+    rid, _ = await go(rig)
+    await asyncio.sleep(1.0)
+    d = rig.dp.get(rid)
+    assert derive_state(d) == "failed" and "没能交付" in d.error and "磁盘满了" in d.error
+    assert d.delivery.turn_state == "pending"  # it was never handed over
+    hub2 = AgentHub(store, terminals=FakeTerms("s-a", "s-b"))
+    dp2 = Dispatches(hub2)
+    dp2.recover()
+    await asyncio.sleep(0.6)
+    assert [t for sid, t in hub2.terms.pastes if sid == "s-b"] == [] and derive_state(dp2.get(rid)) == "failed"
+
+
+async def test_the_log_followers_items_are_read_under_the_follow_lock(rig):
+    """`_follow_locked` changes `live.items` under `_follow_lock`; `_on_event` (the event loop) must copy it under the same lock."""
+    from collections import OrderedDict
+
+    held = []
+
+    class Watching(OrderedDict):
+        def values(self):
+            held.append(rig.hub._follow_lock.locked())
+            return super().values()
+
+    rid, _ = await go(rig)
+    lv = rig.hub._get("s-b")
+    lv.items = Watching(lv.items)
+    rig.dp._open[rid] = "s-b"
+    rig.dp._on_event({"t": "transcript", "sessionId": "s-b", "items": []})
+    assert held and all(held)

@@ -24,7 +24,10 @@ export function commentMessage(thread: Pick<Thread, "n" | "messages">, anchors: 
   const guest = (m: Thread["messages"][number]) => m.author === "you" && isGuestId(m.by?.id);
   const who = (m: Thread["messages"][number]) => (guest(m) ? `访客 ${m.by?.name ?? ""}`.trim() : m.author === "you" ? (m.by?.name ?? "用户") : m.author === "agent" ? "Agent" : "系统");
   const shown = opts.followUp ? unseen(thread.messages) : thread.messages;
-  const lines = shown.map((m) => `- ${who(m)}：${m.text}`);
+  // A guest's words are quoted and kept on one line: with a newline in them they could start a line of their own
+  // ("- 用户：…") and pass for the user.
+  const said = (m: Thread["messages"][number]) => (guest(m) ? `“${m.text.replace(/\s*[\r\n]+\s*/g, " ").trim()}”` : m.text);
+  const lines = shown.map((m) => `- ${who(m)}：${said(m)}`);
   // the first line keeps its shape in a follow-up too: the trajectory recognises a comment's turn by it (workstation/lanes.ts)
   const note = opts.followUp ? ["（这条评论有新的回复，下面只列出你还没看到的部分；前面的你已经处理过。）"] : [];
   return [`画布评论 #${thread.n}（${where}）：`, ...note, ...lines, ...(shown.some(guest) ? ["", GUEST_NOTE] : []), "", "请按这条评论处理画布，完成后用一两句话答复（会贴回评论线程）。"].join("\n");

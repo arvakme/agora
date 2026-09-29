@@ -17,25 +17,38 @@ import asyncio
 import os
 import signal
 import subprocess
+import threading
 import time
 from collections.abc import Mapping
 
 GRACE_S = 5.0
-POLL_S = 0.05
+POLL_S = 0.25  # while waiting out the grace: a `ps` costs ~35 ms on a busy machine
+SHARE_S = 0.9  # running turns share one snapshot this long
 
 
-def snapshot() -> dict[int, tuple[int, int, str]]:
-    """Every live process (zombies are already gone as far as stopping goes): pid → (ppid, pgid, start time as ``ps`` prints it)."""
-    try:
-        out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,pgid=,stat=,lstart="], capture_output=True, text=True, timeout=10).stdout
-    except (OSError, subprocess.SubprocessError):
-        return {}
-    procs: dict[int, tuple[int, int, str]] = {}
-    for line in out.splitlines():
-        parts = line.split(None, 4)
-        if len(parts) == 5 and parts[0].isdigit() and parts[1].isdigit() and parts[2].isdigit() and not parts[3].startswith("Z"):
-            procs[int(parts[0])] = (int(parts[1]), int(parts[2]), parts[4].strip())
-    return procs
+_cache: tuple[float, dict[int, tuple[int, int, str]]] | None = None
+_cache_lock = threading.Lock()
+
+
+def snapshot(max_age: float = 0.0) -> dict[int, tuple[int, int, str]]:
+    """Every live process (zombies are already gone as far as stopping goes): pid → (ppid, pgid, start time as ``ps`` prints it).
+    ``max_age``: a snapshot taken that recently (by anyone) is reused — the watches of several running turns share one
+    ``ps``; stopping asks for a fresh one (0)."""
+    global _cache
+    with _cache_lock:
+        if max_age > 0 and _cache is not None and time.monotonic() - _cache[0] < max_age:
+            return dict(_cache[1])
+        try:
+            out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,pgid=,stat=,lstart="], capture_output=True, text=True, timeout=10).stdout
+        except (OSError, subprocess.SubprocessError):
+            return {}
+        procs: dict[int, tuple[int, int, str]] = {}
+        for line in out.splitlines():
+            parts = line.split(None, 4)
+            if len(parts) == 5 and parts[0].isdigit() and parts[1].isdigit() and parts[2].isdigit() and not parts[3].startswith("Z"):
+                procs[int(parts[0])] = (int(parts[1]), int(parts[2]), parts[4].strip())
+        _cache = (time.monotonic(), procs)
+        return dict(procs)
 
 
 def descendants(root: int, snap: Mapping[int, tuple[int, int, str]] | None = None) -> dict[int, str]:
@@ -60,13 +73,14 @@ class Watch:
     def __init__(self, root: int) -> None:
         self.root = root
         self.seen: dict[int, str] = {}
+        self.root_start: str | None = (snapshot().get(root) or (0, 0, None))[2]  # the root is recognised by its start time too
 
-    def update(self) -> None:
-        self.seen.update(descendants(self.root))
+    def update(self, max_age: float = 0.0) -> None:
+        self.seen.update(descendants(self.root, snapshot(max_age)))
 
     async def run(self, every: float = 1.0) -> None:
         while True:
-            await asyncio.to_thread(self.update)
+            await asyncio.to_thread(self.update, SHARE_S)  # the running turns share one `ps`
             await asyncio.sleep(every)
 
 
@@ -82,18 +96,22 @@ def _send(pid: int, sig: int) -> None:
         pass
 
 
-def stop(root: int, seen: Mapping[int, str] | None = None, grace: float = GRACE_S) -> None:
-    """End ``root`` and everything that belongs to its turn (see the module docstring). Blocks up to ``grace`` seconds."""
+def stop(root: int, seen: Mapping[int, str] | None = None, grace: float = GRACE_S, root_start: str | None = None) -> None:
+    """End ``root`` and everything that belongs to its turn (see the module docstring). Blocks up to ``grace`` seconds.
+    ``root_start``: when the root started (``Watch.root_start``); a pid that now has another start time is not ours."""
     snap = snapshot()
-    members = {**(seen or {}), **descendants(root, snap)}
+    mine = _alive(root, snap, root_start)  # False also when the pid now belongs to another process (its start time differs)
+    members = dict(seen or {})
+    if mine:
+        members.update(descendants(root, snap))  # a reused root pid's children are not this turn's
     members = {p: s for p, s in members.items() if _alive(p, snap, s)}  # a reused pid is not ours
-    leads = _alive(root, snap) and snap[root][1] == root
+    leads = mine and snap[root][1] == root
     if leads:
         try:
             os.killpg(root, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
             pass
-    elif _alive(root, snap):
+    elif mine:
         _send(root, signal.SIGTERM)
     for pid in members:
         if not (leads and snap[pid][1] == root):
@@ -101,7 +119,7 @@ def stop(root: int, seen: Mapping[int, str] | None = None, grace: float = GRACE_
     end = time.time() + grace
     while time.time() < end:
         now = snapshot()
-        if not (_alive(root, now) or any(_alive(p, now, s) for p, s in members.items())):
+        if not (_alive(root, now, root_start) or any(_alive(p, now, s) for p, s in members.items())):
             return
         time.sleep(POLL_S)
     now = snapshot()
@@ -110,7 +128,7 @@ def stop(root: int, seen: Mapping[int, str] | None = None, grace: float = GRACE_
             os.killpg(root, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass
-    if _alive(root, now):
+    if _alive(root, now, root_start):
         _send(root, signal.SIGKILL)
     for pid, start in members.items():
         if _alive(pid, now, start):

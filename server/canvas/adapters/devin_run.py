@@ -87,7 +87,7 @@ def main(argv: list[str]) -> int:
     def on_signal(signum: int, _frame: object) -> None:
         stopping.set()
         if child is not None:
-            proctree.stop(child.pid, watch.seen if watch else None, 2.0)
+            proctree.stop(child.pid, watch.seen if watch else None, 2.0, watch.root_start if watch else None)
 
     signal.signal(signal.SIGTERM, on_signal)
     signal.signal(signal.SIGINT, on_signal)

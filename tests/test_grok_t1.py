@@ -30,7 +30,8 @@ def test_headless_stream_becomes_agora_events():
     """A real turn: thought, text, a read_file call and its result, more text, usage, end."""
     m, ev = _feed((FIX / "headless-stream.jsonl").read_text().splitlines())
     kinds = [e["t"] for e in ev]
-    assert kinds == ["text", "tool_use", "tool_result", "text", "usage"]
+    assert kinds == ["mode", "text", "tool_use", "tool_result", "text", "usage"]  # the turn opens by saying how the CLI was started
+    ev = ev[1:]  # (the mode event is checked in its own test)
     call = ev[1]
     assert call["name"] == "read_file" and call["input"]["target_file"].endswith("README.md")
     assert ev[2]["id"] == call["id"] and ev[2]["isError"] is False and "Demo" in ev[2]["text"]
@@ -145,3 +146,12 @@ def test_a_dispatch_can_go_to_a_new_grok_session():
     assert dispatch.PERMISSION["grok"]["mode"] == "headless" and "no boundary" in dispatch.PERMISSION["grok"]["detail"]
     for kind in agents.KINDS:  # every session agent can be dispatched to (the next CLI added cannot miss it again)
         assert kind in dispatch.ADAPTER and kind in dispatch.PERMISSION
+
+
+
+def test_the_turn_opens_with_the_permission_mode_the_cli_runs_in_and_the_header_can_compare_it():
+    """RVF-D A: the session header shows the mode; Grok has no event of its own for it, so the stream says it once, first."""
+    _, ev = _feed((FIX / "headless-stream.jsonl").read_text().splitlines(), model="grok-code")
+    assert ev[0] == {"t": "mode", "at": 1000, "mode": "always-approve", "model": "grok-code"}
+    assert [e["t"] for e in ev].count("mode") == 1  # once per turn, not per line
+    assert G.asked_mode == "always-approve"

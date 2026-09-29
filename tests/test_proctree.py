@@ -169,3 +169,49 @@ def test_a_leftover_turn_of_a_dead_server_is_ended_with_its_tree(fake):
     _stop_process(p.pid, argv)
     p.wait(timeout=10)
     assert gone(pids["kids"]) == []
+
+
+def test_snapshots_are_shared_between_watches_for_a_moment(monkeypatch):
+    """RVF-D G: several running turns each polled `ps` every second; within a short time they share one snapshot."""
+    calls = []
+    real = subprocess.run
+
+    def counting(*a, **k):
+        calls.append(a[0][0])
+        return real(*a, **k)
+
+    monkeypatch.setattr(proctree.subprocess, "run", counting)
+    proctree.snapshot(max_age=0)  # a fresh one
+    n = len(calls)
+    for _ in range(5):
+        proctree.snapshot(max_age=1.0)
+    assert len(calls) == n  # five more reads, no more `ps`
+    proctree.snapshot(max_age=0)
+    assert len(calls) == n + 1  # a caller that needs the truth (stopping) can ask for a fresh one
+
+
+def test_the_grace_period_polls_gently():
+    assert proctree.POLL_S >= 0.2  # not the old 50 ms: an ignored SIGTERM used to cost ~100 `ps` in five seconds
+
+
+def test_the_root_is_recognised_by_its_start_time_too():
+    """A root pid the system has reused for another process (a different start time) is not signalled."""
+    snap = proctree.snapshot(max_age=0)
+    me = os.getpid()
+    start = snap[me][2]
+    w = proctree.Watch(me)
+    assert w.root_start == start
+    assert proctree._alive(me, snap, start) and not proctree._alive(me, snap, "Thu Jan  1 00:00:00 1970")
+
+
+def test_stop_leaves_a_root_pid_alone_when_its_start_time_says_it_is_someone_else():
+    other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        time.sleep(0.2)
+        proctree.stop(other.pid, None, 0.5, root_start="Thu Jan  1 00:00:00 1970")  # the turn's root had another start time: the pid was reused
+        assert other.poll() is None  # not signalled
+        proctree.stop(other.pid, None, 2.0, root_start=proctree.snapshot()[other.pid][2])  # ... while the real one is ended
+        other.wait(5)
+    finally:
+        if other.poll() is None:
+            other.kill()

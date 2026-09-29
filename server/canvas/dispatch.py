@@ -306,6 +306,8 @@ class Dispatches:
             return
         if t == "done" and ev.get("outcome") == "unknown":
             self._uncertain(ev)  # a message that reached a pane but may or may not have been taken
+        elif t == "done" and ev.get("error"):
+            self._undelivered(ev)
         sid = ev.get("sessionId")
         with self.lock:  # `reply()` changes it from a worker thread
             rids = [r for r, s in self._open.items() if s == sid]
@@ -313,7 +315,24 @@ class Dispatches:
             live = self.hub.live.get(sid)
             d = self.files.read(rid)
             if d is not None:
-                self._sync(d, list(live.items.values()) if live else ev.get("items") or [])
+                if live:
+                    with self.hub._follow_lock:  # the log follower changes `live.items` under this lock, from its own thread
+                        items = list(live.items.values())
+                else:
+                    items = ev.get("items") or []
+                self._sync(d, items)
+
+    def _undelivered(self, ev: dict[str, Any]) -> None:
+        """The hub could not hand the message over (a hook failed before it was injected): the record was still
+        ``pending``, so it fails with the reason — and, being final, a restart does not deliver it."""
+        rid = self._sends.get(ev.get("sendId") or "")
+        if rid is None:
+            return
+        with self.lock:
+            d = self.files.read(rid)
+            if d is not None and d.delivery.turn_state == "pending" and not d.delivery.withdrawn and not d.error:
+                d.error = str(ev.get("error"))
+                self._record(d)
 
     def _uncertain(self, ev: dict[str, Any]) -> None:
         rid = self._sends.get(ev.get("sendId") or "")
@@ -425,6 +444,10 @@ class Dispatches:
                 # ended, but the source may never have been told (a crash in between, a send that failed)
                 if state != "interrupted" and d.notified != state:
                     self._notify_soon(d.id, state, restarted=True)
+                elif state != "interrupted" and d.source.get("kind") == "session" and not self._already_told(d, state):
+                    # "notified" only says the note was queued: if the server died before it reached the source's own
+                    # log, the source is still waiting. Look for it there; send again only when it is not.
+                    self._notify_soon(d.id, state, restarted=True, again=True)
                 continue
             action = plan_recovery(d.delivery)
             if action == "deliver":
@@ -480,19 +503,19 @@ class Dispatches:
         r = publishable_result(d.delivery)
         return (r.summary if r else "").strip()
 
-    def _notify_soon(self, rid: str, state: str, *, restarted: bool = False) -> None:
+    def _notify_soon(self, rid: str, state: str, *, restarted: bool = False, again: bool = False) -> None:
         """Tell the source on the loop, once per (dispatch, state) at a time. ``notified`` is written only
         after the note went out (``_notice``); until then the record says the source was not told."""
         with self.lock:
             if (rid, state) in self._notifying:
                 return
             self._notifying.add((rid, state))
-        self._on_loop(lambda: self._notice(rid, state, restarted))
+        self._on_loop(lambda: self._notice(rid, state, restarted, again))
 
-    def _notice(self, rid: str, state: str, restarted: bool) -> None:
+    def _notice(self, rid: str, state: str, restarted: bool, again: bool = False) -> None:
         try:
             d = self.files.read(rid)
-            if d is None or d.notified == state:
+            if d is None or (d.notified == state and not again):
                 return
             try:
                 if not (restarted and self._already_told(d, state)):
