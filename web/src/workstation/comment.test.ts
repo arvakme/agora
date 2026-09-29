@@ -98,7 +98,9 @@ const ITEMS: Item[] = [
   read("r4", 31 * S, 34 * S, "server/db/models.py"),
   end("x3", 35 * S),
 ];
-const DOCK: Record<string, { x: number; y: number }> = { api: { x: 0, y: 0 }, redis: { x: 400, y: 150 }, db: { x: 400, y: -150 }, pay: { x: 100, y: 300 }, [OUTSIDE]: { x: 600, y: 400 } };
+// 2026-09-29 用户决定调慢走路: the docks were 400 px apart (a walk took ≤ 2.4 s at any distance); at the walking pace that is
+// over 3 s, as long as the segments here, so they are a quarter as far apart (the walks still take 1–2 s).
+const DOCK: Record<string, { x: number; y: number }> = { api: { x: 0, y: 0 }, redis: { x: 100, y: 38 }, db: { x: 100, y: -38 }, pay: { x: 25, y: 75 }, [OUTSIDE]: { x: 150, y: 100 } };
 const ctx = (runs: WorkRun[], x: Partial<Ctx> = {}): Ctx => ({
   locate: (p) => (p.startsWith("server/cache/") ? { place: "redis" } : p.startsWith("server/db/") ? { place: "db" } : p.startsWith("server/") ? { place: "api" } : null),
   dock: (p) => DOCK[p] ?? DOCK[OUTSIDE],

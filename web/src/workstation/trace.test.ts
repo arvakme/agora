@@ -67,8 +67,9 @@ const pi = run(
     seg("delegate", 19, 20),
     seg("read", 20, 21, "web/src/api.ts"),
     seg("write", 21, 25, "server/users.py"),
-    seg("read", 25, 29, "docs/notes.md"),
-    seg("write", 29, 36, "server/users.py"),
+    // 2026-09-29 用户决定调慢走路: was read 25–29, write 29–36 — a walk to the tray is now ~4.8 s, so it stands there a while before walking back
+    seg("read", 25, 33, "docs/notes.md"),
+    seg("write", 33, 40, "server/users.py"),
   ],
   { children: [codex, w3] },
 );
@@ -81,7 +82,7 @@ describe("traceAt (追踪)", () => {
     const tr = traceAt(pi, 40 * S, C);
     expect(tr.id).toBe("pi");
     expect(places(tr)).toEqual(["api", "db", "api", OUTSIDE, "api"]);
-    expect(tr.stops.map((s) => s.t0 / S)).toEqual([0, 6.5, 12, 25, 29]);
+    expect(tr.stops.map((s) => s.t0 / S)).toEqual([0, 6.5, 12, 25, 33]);
     expect(tr.stops.every((s) => s.done)).toBe(true);
     expect(tr.ways.map((w) => [w.from, w.to])).toEqual([[0, 1], [1, 2], [2, 3], [3, 4]]);
   });
