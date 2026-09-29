@@ -79,3 +79,11 @@ export function markBackHintSeen(s: Store | undefined = storage()) {
     /* private mode: the hint may show again next time */
   }
 }
+
+/** 「可能过时」 shows as a dot by the sub-diagram's name in the breadcrumb (its words and 「让 AI 更新」 open on hover). */
+export const staleDot = (files: number) => files > 0;
+export const staleNote = (files: readonly string[]) => `可能过时：子图画好之后改过 ${files.length} 个文件`;
+
+/** The hint is once per browser: after it has been on screen this long it counts as seen (a refresh does not bring it back). */
+export const BACK_HINT_MS = 8000;
+export const backHintDue = (shownMs: number) => shownMs >= BACK_HINT_MS;

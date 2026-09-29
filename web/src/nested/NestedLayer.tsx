@@ -18,8 +18,7 @@ import { ui } from "../session/ui";
 import { pointerFollow } from "../pointer/follow";
 import { ancestry, childOf, descendants, openThreads, staleness, type Staleness } from "./graph";
 import { blankChild, nav, nested, useNested } from "./store";
-import { staleVisible } from "../workstation/replayQuiet";
-import { backHintQuiet, backHintSeen, backHintVisible, markBackHintSeen, onBackHintSeen, upKeyLabel } from "./up";
+import { BACK_HINT_MS, backHintDue, backHintQuiet, backHintSeen, backHintVisible, markBackHintSeen, onBackHintSeen, staleDot, staleNote, upKeyLabel } from "./up";
 import { writeChildLink } from "./writeChild";
 import "./nested.css";
 
@@ -108,7 +107,7 @@ export function OwnerChildMarkers({ view, canvasId, chrome }: { view: CanvasView
  * The canvas's place in its tree, shown only on a child canvas: a 「← 返回 <父画布>」 button first
  * (the obvious way back), then 总架构 › 后端 › 订单模块 (any level is one click).
  */
-export function Breadcrumb({ path, current, onGo, extra, keyLabel, hint }: { path: { id: string; title: string }[]; current: string; onGo: (id: string) => void; extra?: React.ReactNode; keyLabel?: string; hint?: React.ReactNode }) {
+export function Breadcrumb({ path, current, onGo, extra, keyLabel, hint, mark }: { path: { id: string; title: string }[]; current: string; onGo: (id: string) => void; extra?: React.ReactNode; keyLabel?: string; hint?: React.ReactNode; /** By the current canvas's name (the 「可能过时」 dot). */ mark?: React.ReactNode }) {
   if (path.length < 2) return null;
   const at = path.findIndex((p) => p.id === current);
   const up = path[(at < 0 ? path.length - 1 : at) - 1];
@@ -138,6 +137,7 @@ export function Breadcrumb({ path, current, onGo, extra, keyLabel, hint }: { pat
           </li>
         ))}
       </ol>
+      {mark}
       {extra}
     </nav>
   );
@@ -148,7 +148,15 @@ function BackHint({ keyLabel }: { keyLabel: string }) {
   const [show, setShow] = useState(() => !backHintSeen());
   useEffect(() => onBackHintSeen(() => setShow(false)), []);
   const quiet = useSyncExternalStore(backHintQuiet.subscribe, backHintQuiet.get);
-  if (!backHintVisible(!show, quiet)) return null;
+  const visible = backHintVisible(!show, quiet);
+  // once per browser: after it has been on screen a while it counts as seen (a refresh does not bring it back)
+  useEffect(() => {
+    if (!visible) return;
+    const t0 = Date.now();
+    const tm = window.setTimeout(() => backHintDue(Date.now() - t0) && markBackHintSeen(), BACK_HINT_MS);
+    return () => clearTimeout(tm);
+  }, [visible]);
+  if (!visible) return null;
   return (
     <span className="nest-hint" role="status">
       在子图里。点左上角返回，或按 {keyLabel}
@@ -173,8 +181,6 @@ export function OwnerBreadcrumb({ canvasId }: { canvasId: string }) {
   const [sent, setSent] = useState(false);
   useEffect(() => setSent(false), [canvasId]);
   const files = [...new Set(stale?.files.map((f) => f.path) ?? [])];
-  // not while a camera has taken the canvas here by itself (live follow, ▶ 放一轮): the sub-diagram is not one you went to
-  const camQuiet = useSyncExternalStore(backHintQuiet.subscribe, backHintQuiet.get);
   const keyLabel = upKeyLabel();
   return (
     <Breadcrumb
@@ -183,25 +189,30 @@ export function OwnerBreadcrumb({ canvasId }: { canvasId: string }) {
       onGo={(id) => (markBackHintSeen(), nav.go(canvasId, id))}
       keyLabel={keyLabel}
       hint={<BackHint keyLabel={keyLabel} />}
-      extra={
-        staleVisible(files.length, camQuiet) && (
-          <span className="nest-stale" role="status">
-            <span className="nest-dot" aria-hidden />
-            <span title={files.join("\n")}>可能过时：子图画好之后改过 {files.length} 个文件</span>
-            <button
-              className="nest-act"
-              disabled={sent}
-              onClick={() => {
-                setSent(true);
-                void askAgent(canvasId, updatePrompt(canvasId, st.titles[canvasId] ?? canvasId, files));
-              }}
-            >
-              <IconSparkles size={14} />
-              {sent ? "已交给 Agent" : "让 AI 更新"}
+      mark={
+        staleDot(files.length) && (
+          // a small dot by the name; the words and 「让 AI 更新」 open on hover or focus
+          <span className="nest-stale-dot">
+            <button className="nest-dot-btn" aria-label={staleNote(files)}>
+              <span className="nest-dot" aria-hidden />
             </button>
-            <button className="nest-act quiet" onClick={() => nav.review(canvasId, Date.now())} title="子图和代码仍然一致：清掉这个标记">
-              已核对
-            </button>
+            <span className="nest-stale-pop" role="status">
+              <span className="nest-stale-note" title={files.join("\n")}>{staleNote(files)}</span>
+              <button
+                className="nest-act"
+                disabled={sent}
+                onClick={() => {
+                  setSent(true);
+                  void askAgent(canvasId, updatePrompt(canvasId, st.titles[canvasId] ?? canvasId, files));
+                }}
+              >
+                <IconSparkles size={14} />
+                {sent ? "已交给 Agent" : "让 AI 更新"}
+              </button>
+              <button className="nest-act quiet" onClick={() => nav.review(canvasId, Date.now())} title="子图和代码仍然一致：清掉这个标记">
+                已核对
+              </button>
+            </span>
           </span>
         )
       }
