@@ -325,6 +325,7 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
       if (live && home && shown === home) homeView = viewport.get(home) ?? null;
       manual = false;
       resync = true;
+      overviewShown = null;
       hooks.setManual(false);
     },
     /** Once per animation frame: the camera (./director.ts `cameraStep`) moves the shown canvas toward the shot. */
@@ -338,6 +339,8 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
       const t = clock.time();
       const cur = { zoom: v.zoom, scrollX: v.scrollX, scrollY: v.scrollY };
       const pane = { w: v.width, h: v.height };
+      // the person has the view: nothing here writes it — not the overview, not reduced motion, not the way home
+      if (manual) return;
       if (now() - lastSample > 100) (lastSample = now(), zooms.length < 4000 && zooms.push([Date.now(), shown, +v.zoom.toFixed(3)]));
       // a play's first moment and its summary: the whole diagram, as a cut
       if (!live && overviewAt(w, t)) {
@@ -358,7 +361,7 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
           if (!homeView && shown === home) homeView = viewport.get(shown) ?? null;
           const f = followOf(api, shown, r, t, cur);
           goal = f && { view: f.view, move: f.move };
-        } else if (returning && homeView) goal = { view: homeView, move: true };
+        } else if (returning && homeView) goal = { view: homeView, move: true, home: true };
       } else {
         const f = followOf(api, shown, r, t, cur);
         goal = f && { view: f.view, move: f.move };
@@ -373,8 +376,7 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
       if (!cam) cam = cameraStart(cur, pane);
       else if (resync) cam = cameraResume(cam, cur, pane);
       resync = false;
-      const out = cameraStep(cam, goal, { dt: dtMs, now: now(), pane, manual });
-      if (out.mode === "manual") return;
+      const out = cameraStep(cam, goal, { dt: dtMs, now: now(), pane });
       const moved = out.state.at.x !== cam.at.x || out.state.at.y !== cam.at.y || out.state.at.zoom !== cam.at.zoom;
       cam = out.state;
       if (out.cut) cutTo(api, out.view);

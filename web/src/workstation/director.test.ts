@@ -450,3 +450,71 @@ describe("a cut the caller asks for (the figure was cut across: the build replay
     expect(c.cut).toBe(false);
   });
 });
+
+// ── FX1 (RV1): the way home keeps the person's zoom; 「继续」 after a far pan starts with no cut ─────────────────────────────────────────────
+describe("FX1 · P2: the way home goes to the person's own zoom, not into [0.7, 1]", () => {
+  const pane = { w: 900, h: 700 };
+  const home = (zoom: number) => {
+    let s = cameraStart(viewAt({ x: 400, y: 300 }, 1, pane), pane);
+    let out = cameraStep(s, { view: viewAt({ x: 0, y: 0 }, zoom, pane), move: true, home: true }, { dt: FRAME, now: 0, pane });
+    for (let t = FRAME; t < 20000; t += FRAME) {
+      s = out.state;
+      out = cameraStep(s, { view: viewAt({ x: 0, y: 0 }, zoom, pane), move: true, home: true }, { dt: FRAME, now: t, pane });
+      if (out.mode === "hold") break;
+    }
+    return out;
+  };
+  it("a person who was looking at the whole diagram at 30 % gets 30 % back, and the camera is not 'home' before it is there", () => {
+    const out = home(0.3);
+    expect(out.mode).toBe("hold");
+    expect(out.view.zoom).toBeCloseTo(0.3, 2);
+    const c = centreOf(out.view, pane);
+    expect(Math.hypot(c.x, c.y)).toBeLessThan(3);
+  });
+  it("a zoom above the range too (1.4), and one inside it is what it was", () => {
+    expect(home(1.4).view.zoom).toBeCloseTo(1.4, 2);
+    expect(home(0.85).view.zoom).toBeCloseTo(0.85, 2);
+  });
+  it("only the way home: the same goal as a shot (no `home`) is still held to [0.7, 1]", () => {
+    let s = cameraStart(viewAt({ x: 0, y: 0 }, 1, pane), pane);
+    for (let t = 0; t < 6000; t += FRAME) s = cameraStep(s, { view: viewAt({ x: 0, y: 0 }, 0.3, pane), move: true }, { dt: FRAME, now: t, pane }).state;
+    expect(s.at.zoom).toBeGreaterThanOrEqual(ZOOM_MIN - 0.001);
+  });
+});
+
+describe("FX1 · P4: 「继续」 after a far pan carries on from the view: no cut in the first frame, speed and zoom continuous", () => {
+  const pane = { w: 900, h: 700 };
+  const goal = (z = 1): CameraGoal => ({ view: viewAt({ x: 0, y: 0 }, z, pane), move: true });
+  const resumed = () => cameraResume(cameraStart(viewAt({ x: 0, y: 0 }, 1, pane), pane), viewAt({ x: 2000, y: 0 }, 0.85, pane), pane);
+  it("the first frame: no cut, the centre moves no more than a frame of the carrot, the zoom by less than 0.02", () => {
+    const s = resumed();
+    const out = cameraStep(s, goal(), { dt: FRAME, now: 10000, pane });
+    expect(out.cut).toBe(false);
+    expect(Math.abs(out.state.at.x - s.at.x)).toBeLessThanOrEqual((CARROT_SPEED * FRAME) / 1000 + 1e-9);
+    expect(Math.abs(out.view.zoom - 0.85)).toBeLessThan(0.02);
+  });
+  it("and after it: it glides the whole way (carrot speed, eased), never cut, and arrives", () => {
+    let s = resumed();
+    let cuts = 0;
+    let last = s.at.x;
+    let maxStep = 0;
+    let out = cameraStep(s, goal(), { dt: FRAME, now: 10000, pane });
+    for (let t = 10000; t < 30000 && out.mode !== "hold"; t += FRAME) {
+      out = cameraStep(s, goal(), { dt: FRAME, now: t, pane });
+      s = out.state;
+      if (out.cut) cuts++;
+      maxStep = Math.max(maxStep, Math.abs(s.at.x - last));
+      last = s.at.x;
+    }
+    expect(cuts).toBe(0);
+    expect(maxStep).toBeLessThanOrEqual((CARROT_SPEED * FRAME) / 1000 + 1e-6);
+    expect(out.mode).toBe("hold");
+    expect(Math.abs(s.at.x)).toBeLessThan(3);
+  });
+  it("a shot that is far after the handoff is over (a new figure, far away, long after) is a cut as before", () => {
+    let s = resumed();
+    for (let t = 10000; t < 16000; t += FRAME) s = cameraStep(s, goal(), { dt: FRAME, now: t, pane }).state; // arrived
+    const out = cameraStep(s, { view: viewAt({ x: 3000, y: 0 }, 1, pane), move: true }, { dt: FRAME, now: 20000, pane });
+    expect(out.cut).toBe(true);
+  });
+});

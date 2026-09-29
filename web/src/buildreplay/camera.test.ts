@@ -142,3 +142,55 @@ describe.each(["agent-history", "whole-diagram-in-one-change"] as const)("the ca
     expect(inside.length / seen.length).toBeGreaterThan(0.97);
   });
 });
+
+// ── FX1 (RV1 P2-3): the camera takes the whole play-time step at 8× and 16×, not a capped part of it ─────────────────────────────────────────
+import { planTrip, tripAt } from "../workstation/rig";
+import { stageMem, stageStep } from "./camera";
+
+describe("FX1 · P3: an uninterrupted long walk at any speed (600 px pane, no hop): the same cuts as at 1×, the figure never out of the pane", () => {
+  const size = { w: 600, h: 600 };
+  const bounds = { x: 0, y: 0, w: 6000, h: 400 };
+  const a = { x: 300, y: 0 };
+  const b = { x: 5500, y: 0 };
+  const trip = planTrip({ from: "a", to: "b", t: 0, slot: 0 }, { legs: [{ kind: "walk", a, b, temp: false }], len: 5200 }, a, 1.2);
+  const walk = (speed: number, fps = 60) => {
+    const m = stageMem(0);
+    let p = a;
+    let cuts = 0;
+    let outside = 0;
+    let n = 0;
+    const cutAt: number[] = [];
+    for (let wall = 1000 / fps; wall < trip.t1 / speed; wall += 1000 / fps) {
+      const t = wall * speed;
+      const r = stageStep(m, { now: 1000 + wall, size, bounds, figure: p, out: false, reduced: false, k: speed, gen: 0, time: t });
+      if (r.cut) (cuts++, cutAt.push(t));
+      p = tripAt(trip, t).root; // the overlay publishes this frame after the stage has run
+      const c = centreOf(r.view, size);
+      if (Math.abs(p.x - c.x) * r.view.zoom > size.w / 2) outside++;
+      n++;
+    }
+    return { cuts, outside, n, cutAt };
+  };
+  it("1×, 2×, 4×: no cut, none out (unchanged)", () => {
+    for (const s of [1, 2, 4]) expect(walk(s), `${s}×`).toMatchObject({ cuts: 0, outside: 0 });
+  });
+  it("8× and 16×: the same — no cut, no frame with the figure out of the pane", () => {
+    for (const s of [8, 16]) expect(walk(s), `${s}×`).toMatchObject({ cuts: 0, outside: 0 });
+  });
+  it("…also on a slow machine (30 fps: 533 ms of play time in a frame at 16×): the camera takes all of it", () => {
+    for (const s of [8, 16]) expect(walk(s, 30), `${s}× at 30 fps`).toMatchObject({ cuts: 0, outside: 0 });
+  });
+});
+
+describe("FX1 · P3: stepOf splits a long step into steps of at most 100 ms", () => {
+  const pane = { w: 600, h: 600 };
+  const shot = { zoom: 1, centre: { x: 3000, y: 0 } };
+  it("one 1600 ms step covers what sixteen of 100 ms do (the carrot and the spring, not a capped 100 ms)", () => {
+    const start = cameraStart(viewAt({ x: 0, y: 0 }, 1, pane), pane);
+    const once = stepOf(start, shot, { dt: 1600, now: 5000, pane }).state;
+    let s = start;
+    for (let i = 0; i < 16; i++) s = stepOf(s, shot, { dt: 100, now: 3400 + (i + 1) * 100, pane }).state;
+    expect(once.at.x).toBeCloseTo(s.at.x, 6);
+    expect(once.at.x).toBeGreaterThan(400);
+  });
+});

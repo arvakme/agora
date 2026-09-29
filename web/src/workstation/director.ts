@@ -73,9 +73,9 @@ export const CUT_COOLDOWN_MS = 1500;
 
 type Pane = { w: number; h: number };
 /** The camera: where the view is (its centre in world coordinates, and zoom), how fast it moves, the carrot it chases, and whether it is on its way. */
-export type CameraState = { at: { x: number; y: number; zoom: number }; v: { x: number; y: number; z: number }; carrot: { x: number; y: number; zoom: number }; following: boolean; lastCutAt: number };
+export type CameraState = { at: { x: number; y: number; zoom: number }; v: { x: number; y: number; z: number }; carrot: { x: number; y: number; zoom: number }; following: boolean; lastCutAt: number; /** 「继续」 took over from a view the person left: no distance cut until the camera has come within CUT_DISTANCE of the shot (it glides). */ handoff?: boolean };
 /** What the shot wants: the frame (Excalidraw's view) and whether it is off from where the view is (`move`: outside the dead zone). null: no shot. */
-export type CameraGoal = { view: Fit; move: boolean } | null;
+export type CameraGoal = { view: Fit; move: boolean; /** The way home, back to the view the person had: their own zoom is kept, not held to the shot's range. */ home?: boolean } | null;
 export type CameraOut = { state: CameraState; view: Fit; mode: "follow" | "hold" | "cut" | "manual"; /** This frame is the cut: the view is at the goal from here on. */ cut: boolean };
 
 /** Excalidraw's view (screen = (scene + scroll) × zoom) as the world point at the middle of the pane, and back. */
@@ -88,8 +88,8 @@ export function cameraStart(view: Fit, pane: Pane): CameraState {
   const at = { x: c.x, y: c.y, zoom: view.zoom };
   return { at, v: { x: 0, y: 0, z: 0 }, carrot: { ...at }, following: false, lastCutAt: -Infinity };
 }
-/** 「继续」: the camera takes over from the view the person left (no jump), keeping what it knows of its last cut. */
-export const cameraResume = (s: CameraState, view: Fit, pane: Pane): CameraState => ({ ...cameraStart(view, pane), lastCutAt: s.lastCutAt });
+/** 「继续」: the camera takes over from the view the person left (no jump, and no cut however far the shot is: it glides there), keeping what it knows of its last cut. */
+export const cameraResume = (s: CameraState, view: Fit, pane: Pane): CameraState => ({ ...cameraStart(view, pane), lastCutAt: s.lastCutAt, handoff: true });
 
 /** One step of a critically damped spring toward `target` (exact for a constant target). */
 function spring(x: number, v: number, target: number, dt: number): [number, number] {
@@ -109,12 +109,15 @@ export function cameraStep(s: CameraState, goal: CameraGoal, o: { dt: number; no
   const dt = Math.min(o.dt, 100) / 1000;
   if (o.manual) return { state: s, view: viewAt(s.at, s.at.zoom, o.pane), mode: "manual", cut: false };
   const gc = goal ? centreOf(goal.view, o.pane) : null;
-  const zmin = o.zoom?.min ?? ZOOM_MIN;
-  const zmax = o.zoom?.max ?? ZOOM_MAX;
+  // the way home goes to the person's own zoom, whatever it is; every other shot is held to the range
+  const zmin = goal?.home ? Math.min(o.zoom?.min ?? ZOOM_MIN, goal.view.zoom) : (o.zoom?.min ?? ZOOM_MIN);
+  const zmax = goal?.home ? Math.max(o.zoom?.max ?? ZOOM_MAX, goal.view.zoom) : (o.zoom?.max ?? ZOOM_MAX);
   const gz = goal ? Math.max(zmin, Math.min(zmax, goal.view.zoom)) : s.at.zoom;
   let following = !!goal && (goal.move || s.following);
   // a shot over CUT_DISTANCE away is cut to, once; the picture cross-fades in the driver, the view is simply there
-  const far = !!gc && Math.hypot(gc.x - s.at.x, gc.y - s.at.y) > CUT_DISTANCE && o.now - s.lastCutAt >= CUT_COOLDOWN_MS;
+  const dist = gc ? Math.hypot(gc.x - s.at.x, gc.y - s.at.y) : 0;
+  const handoff = !!s.handoff && dist > CUT_DISTANCE; // a resumed camera glides to a far shot; once it is near enough the handoff is over
+  const far = !!gc && dist > CUT_DISTANCE && !s.handoff && o.now - s.lastCutAt >= CUT_COOLDOWN_MS;
   if (gc && following && (far || o.cut)) {
     const at = { x: gc.x, y: gc.y, zoom: gz };
     return { state: { at, v: { x: 0, y: 0, z: 0 }, carrot: { ...at }, following: true, lastCutAt: o.now }, view: viewAt(at, gz, o.pane), mode: "cut", cut: true };
@@ -138,7 +141,7 @@ export function cameraStep(s: CameraState, goal: CameraGoal, o: { dt: number; no
   const zoom = Math.max(Math.min(zmin, s.at.zoom), Math.min(Math.max(zmax, s.at.zoom), z));
   const vz = zoom === z ? vz0 : 0;
   if (following && gc && Math.hypot(gc.x - x, gc.y - y) < 2 && Math.hypot(vx, vy) < 5 && Math.abs(gz - zoom) < 0.005) following = false;
-  const state: CameraState = { at: { x, y, zoom }, v: { x: vx, y: vy, z: vz }, carrot, following, lastCutAt: s.lastCutAt };
+  const state: CameraState = { at: { x, y, zoom }, v: { x: vx, y: vy, z: vz }, carrot, following, lastCutAt: s.lastCutAt, ...(handoff && following ? { handoff: true } : {}) };
   return { state, view: viewAt(state.at, state.at.zoom, o.pane), mode: following ? "follow" : "hold", cut: false };
 }
 
