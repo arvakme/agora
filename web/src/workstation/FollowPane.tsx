@@ -27,7 +27,7 @@ import { canvases } from "../session/ui";
 import { clock, prefersReducedMotion, useReplay, useTick, useWorkstation } from "./clock";
 import { figurePositions } from "./focus";
 import { follow, paneView, useFollow } from "./follow";
-import { useReplays } from "./replayMode";
+import { usePlay } from "./replayMode";
 import { frame } from "./frame";
 import { WorkstationOverlay } from "./Overlay";
 import { canvasWhere } from "./place";
@@ -51,9 +51,9 @@ function useFollowing(main: string) {
   const f = useFollow();
   const runs = useRuns();
   const nst = useNested();
-  // a PR replay has its own camera (./replayView.ts): no pane while it plays
-  const prOn = !!useReplays().id;
-  const on = useWorkstation() && !prOn;
+  // a played turn has its own camera (./replayView.ts): no follow view while it plays
+  const playing = !!usePlay().play;
+  const on = useWorkstation() && !playing;
   useReplay();
   useTick(250);
   const t = clock.time();

@@ -19,8 +19,6 @@ import { frame } from "./frame";
 import { canvasWhere, OUTSIDE, outsideProject, planFor, stateAt, writeConflicts } from "./place";
 import { bucketize, idleSince, isDense, recentKids } from "./density";
 import { DaySummary } from "./DaySummary";
-import { ReplayButton } from "./ReplayMenu";
-import { replays, useReplays } from "./replayMode";
 import { RunAvatar } from "./RunAvatar";
 import { useRuns } from "./runs/store";
 import { FINAL, RECEIPT_NAMES, receiptAt, receiptView, type WorkRun, type FlatRun, type RunSeg } from "./runs/types";
@@ -116,7 +114,7 @@ const hhmm = (t: number) => {
 const secs = (ms: number) => (ms < 10_000 ? `${(ms / 1000).toFixed(1).replace(/\.0$/, "")} 秒` : `${Math.round(ms / 1000)} 秒`);
 const fullName = (f: FlatRun) => (f.parent ? `${f.run.name}（${f.parent.name} 派）` : f.run.name);
 /** A segment's words in the lanes: verb + file (读 app.py, 写 users.py, 跑 pytest, 想, 派 Codex). */
-const segText = (g: RunSeg) => (g.kind === "think" ? (g.note ?? "想") : g.kind === "wait" ? "等你" : g.label);
+const segText = (g: RunSeg) => (g.kind === "think" ? "想" : g.kind === "wait" ? "等你" : g.label);
 
 /** What a run is doing at t, in a few words (lane names, the strip's state). */
 export function nowText(run: WorkRun, t: number, placeOf?: (path: string) => string | undefined): { k: string; text: string } {
@@ -178,10 +176,6 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
   const replay = useReplay();
   const fo = useFocus();
   const fl = useFollow();
-  const rp = useReplays();
-  const prOn = !!rp.id;
-  // the PR list is asked for once, so the strip can offer it even with no session on the page
-  useEffect(() => replays.load(), []);
   const [more, setMore] = useState<Record<string, boolean>>({});
   const [open, setOpen] = useState(false);
   const [fold, setFold] = useState<Record<string, boolean>>({});
@@ -512,29 +506,13 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
     </>
   );
 
-  if (empty) return null;
-  if (!runs.flat.length) {
-    // no sessions on the page, but PRs to replay: the strip is just the way in
-    if (!rp.items?.length || prOn) return null;
-    return (
-      <section className="ws-tl" ref={sectionEl} aria-label="工位时间线">
-        <div className="ws-tl-anim" style={{ height: STRIP_H }}>
-          <div className="ws-bar">
-            <span className="ttl"><IconHistory size={14} />工位</span>
-            <span className="stt" data-k="idle"><span>没有 agent 在干活 · 有 {rp.items.length} 个 PR 可以回放</span></span>
-            <span style={{ flex: 1 }} />
-            <ReplayButton canvasId={canvasId} />
-          </div>
-        </div>
-      </section>
-    );
-  }
+  if (empty || !runs.flat.length) return null;
 
   const tops = runs.flat.filter((f) => f.depth === 0);
   const kidsOf = (id: string) => runs.flat.filter((x) => x.depth === 1 && x.parent?.id === id);
   const tf = traced ? runs.flat.find((x) => x.run.id === traced) : undefined;
   // every session over for more than 10 minutes: the strip says so and draws no activity
-  const quietAt = !replay && !tf && !prOn ? idleSince(tops.map((f) => f.run), liveNow) : null;
+  const quietAt = !replay && !tf ? idleSince(tops.map((f) => f.run), liveNow) : null;
   miniRuns.current = quietAt != null ? [] : tf ? [tf.run, ...kidsOf(tf.run.id).map((x) => x.run)].slice(0, 3) : tops.slice(0, 3).map((f) => f.run);
 
   // ── the default: the 34 px strip ──
@@ -571,11 +549,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
       const on = runs.flat.filter((f) => f.run.running || f.run.segs.some((g) => g.start <= now && now < g.end)).length;
       state = { k: on ? "busy" : "idle", node: <>{on > 0 && <i className="live" />}<span>{on > 0 ? `${on} 个 agent 在干活 · ` : ""}这张图还是空的</span></> };
     }
-    if (prOn && !tf) {
-      const pr = tops[0]?.run;
-      const g = pr?.segs.find((s) => s.start <= t && t < s.end);
-      state = { k: g?.kind ?? "idle", node: <><i className="live" /><b>{pr?.name}</b><span>{g ? (g.note ?? g.label) : "回放结束"}</span></> };
-    } else if (quietAt != null) state = { k: "idle", node: <span>都空闲 · 上次活动 {hhmm(quietAt)}</span> };
+    if (quietAt != null) state = { k: "idle", node: <span>都空闲 · 上次活动 {hhmm(quietAt)}</span> };
     const subs = runs.flat.filter((f) => f.depth > 0).length;
     return (
       <div className="ws-bar">
@@ -583,7 +557,7 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
           <IconHistory size={14} />
           工位
         </button>
-        <span className="stt" data-k={state.k}>{replay && !tf && !prOn ? <><b className="rp">回放 {hhmmss(t)}</b><span>比实时晚 {dur(now - t)}</span></> : state.node}</span>
+        <span className="stt" data-k={state.k}>{replay && !tf ? <><b className="rp">回放 {hhmmss(t)}</b><span>比实时晚 {dur(now - t)}</span></> : state.node}</span>
         <div className="mini" ref={miniRef} {...scrub(maxis)} title="拖动回看任意时刻" role="slider" aria-label="回放位置" aria-valuemin={maxis.start} aria-valuemax={maxis.end} aria-valuenow={Math.round(t)} aria-valuetext={hhmmss(t)} tabIndex={0} onKeyDown={onKey}>
           <canvas ref={miniCanvas} className="mini-cv" aria-hidden />
           <span className="mph" ref={mph} data-replay={replay ? "" : undefined} />
@@ -595,7 +569,6 @@ export function Timeline({ canvasId, empty, onLocate }: { canvasId?: string; emp
           {waiting.length > 0 && <span className="need"><i className="dot-c" />{waiting.length} 等你</span>}
         </span>
         {dayAt && canvasId && <DaySummary canvasId={canvasId} anchor={dayAt} />}
-        <ReplayButton canvasId={canvasId} quiet={quietAt == null} />
         <button className="icon-btn sm muted" data-open onClick={() => toggle(true)} aria-label="展开时间线" title="展开时间线"><IconEnter size={14} /></button>
       </div>
     );

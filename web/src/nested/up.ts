@@ -56,7 +56,7 @@ export function backHintSeen(s: Store | undefined = storage()): boolean {
 }
 /** Whether the hint shows: not yet seen, and not held back. */
 export const backHintVisible = (seen: boolean, quiet: boolean) => !seen && !quiet;
-/** Held back while a PR replay plays (its camera goes in and out of sub-diagrams by itself). Marks nothing as seen. */
+/** Held back while a turn plays (its camera goes in and out of sub-diagrams by itself). Marks nothing as seen. */
 let quiet = false;
 const quietLs = new Set<() => void>();
 export const backHintQuiet = {

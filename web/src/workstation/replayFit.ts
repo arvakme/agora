@@ -1,4 +1,4 @@
-// PR 回放's camera view and the summary's place (web/docs/workstation.md「PR 回放」). Pure.
+// The camera view of a played turn and the summary's place (web/docs/workstation.md §11 按轮追踪). Pure.
 
 export type Box = { x: number; y: number; w: number; h: number };
 /** What covers the pane's edges, px from each side (the toolbar and the replay bar at the top). */

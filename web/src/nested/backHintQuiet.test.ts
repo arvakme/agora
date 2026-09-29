@@ -1,4 +1,4 @@
-// The one-time 「在子图里。点左上角返回…」 hint (nested/up.ts) stays quiet while a PR replay plays: its
+// The one-time 「在子图里。点左上角返回…」 hint (nested/up.ts) stays quiet while a turn plays: its
 // camera goes in and out of sub-diagrams by itself and the hint would sit on the menu. Nothing is
 // marked as seen, so a person who walks into a sub-diagram afterwards still gets it.
 import { describe, expect, it } from "vitest";

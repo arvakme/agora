@@ -36,10 +36,6 @@ export type RunSeg = {
   verifies?: string;
   /** Its turn works on a canvas comment (every segment of that turn carries it). */
   comment?: TurnComment;
-  /** The words a think segment says instead of 「思考」 (a PR replay: the commit's title). */
-  note?: string;
-  /** The files a write covers when it is one write for several (a PR replay: those of a commit that land on one node). */
-  files?: { path: string; op: "add" | "edit" | "delete" | "rename"; additions?: number; deletions?: number }[];
   label: string;
 };
 

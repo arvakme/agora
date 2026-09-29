@@ -52,13 +52,13 @@ import { Glide, makeSprings, RIG, solve, SUB_SCALE, type Pt, type Springs, type 
 import type { Leg } from "./route";
 import { ReplayBar } from "./ReplayBar";
 import { ReplayMarks } from "./ReplayMarks";
-import { replays, useReplays } from "./replayMode";
+import { plays, usePlay } from "./replayMode";
 import { RunAvatar } from "./RunAvatar";
 import { scenePlaces } from "./scenePlaces";
 import { useRuns, type Runs } from "./runs/store";
 import { RECEIPT_NAMES, type FlatRun } from "./runs/types";
 import { TalkBubble } from "./TalkBubble";
-import { glideTo } from "./pan";
+import { glideTo } from "../canvas/glide";
 import { itemOfStop, latestTurnWindow, pointAt, spanOf, stopForItem, traceAt, walkedAt, type Trace, type TurnWindow } from "./trace";
 import { TrayHint } from "./TrayHint";
 import "./workstation.css";
@@ -300,12 +300,12 @@ function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflic
         <button className="reply" onClick={(e) => (e.stopPropagation(), openRun(f))}>去回复</button>
       </>
     );
-  else if (kind === "think") body = <>{icon}<span className="v">{g?.note ?? (par && !g ? (st.receipt === "dispatched" ? "等它接单" : "确认任务") : "思考")}</span>{g?.note ? null : el}</>;
+  else if (kind === "think") body = <>{icon}<span className="v">{par && !g ? (st.receipt === "dispatched" ? "等它接单" : "确认任务") : "思考"}</span>{el}</>;
   else if (kind === "delegate") {
     const c = g?.child ? byId.get(g.child)?.run : undefined;
     body = <>{icon}<span className="v">派</span><span>{c ? `${c.name}：${c.task ?? ""}` : g?.label.replace(/^派 /, "")}</span>{c && <span className="el">{c.via === "seedmux" ? "经 Seedmux" : c.via === "task" ? "Task 工具" : "原生子代理"}</span>}</>;
   } else if (kind === "exec") body = <>{icon}<span className="v">{g?.verifies ? "验收 · " : ""}跑</span><span className="f">{g?.cmd ?? g?.label}</span>{el}</>;
-  else body = <>{icon}<span className="v">{g?.verifies ? "验收 · " : ""}{kind === "write" ? "写" : "读"}</span><span className="f">{g?.path ?? ""}</span>{g?.files && g.files.length > 1 ? <span className="el">等 {g.files.length} 个文件</span> : null}{g?.files?.some((x) => x.op === "delete") ? <span className="el">含删除</span> : null}{el}</>;
+  else body = <>{icon}<span className="v">{g?.verifies ? "验收 · " : ""}{kind === "write" ? "写" : "读"}</span><span className="f">{g?.path ?? ""}</span>{el}</>;
   const c = conflictAt(conflicts, run.id, t);
   if (c && g) {
     kind = "conflict";
@@ -373,7 +373,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const runs = useRuns();
   const nst = useNested();
   const replay = useReplay();
-  const prOn = !!useReplays().id;
+  const playing = !!usePlay().play;
   const fo = useFocus();
   const fl = useFollow();
   const reduced = prefersReducedMotion();
@@ -785,7 +785,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
       }
       // Playing into "now" ends the replay.
       const r = clock.get();
-      if (r?.playing && t >= r.until && !replays.active()) clock.live();
+      if (r?.playing && t >= r.until && !plays.active()) clock.live();
     });
   }, [view.id]);
 
@@ -1106,7 +1106,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
           >
             {m.n}
           </i>
-          {m.entry.length > 0 && <em>↘ 子图 · {m.entry.join("、")}</em>}
+          {m.entry.length > 0 && <em title={`↘ 子图 · ${m.entry.join("、")}`}>↘ 子图 · {m.entry.join("、")}</em>}
           <div className="ws-stop-calls" role="tooltip">
             <b>
               第 {m.n} 站 · {placeName(m.s.place)} · {hhmmss(m.s.at)}
@@ -1214,9 +1214,9 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
           </button>
         );
       })}
-      {prOn && !only && <ReplayBar />}
-      {prOn && <ReplayMarks view={view} ctx={ctx} />}
-      {replay && !prOn && (
+      {playing && !only && <ReplayBar />}
+      {playing && <ReplayMarks view={view} ctx={ctx} />}
+      {replay && !playing && (
         <div className="ws-banner" role="status">
           <IconHistory size={14} />
           正在回放 <b ref={bannerTime}>{hhmmss(t)}</b>

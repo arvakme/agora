@@ -238,7 +238,7 @@ export async function flushSaves() {
   queue.flushAll();
   await project.idle();
 }
-/** The workspace layout is not saved while a PR replay plays (its camera's canvas switches are its own temporary view); what was pending goes first. */
+/** The workspace layout is not saved while a turn plays (its camera's canvas switches are its own temporary view); what was pending goes first. */
 export const pauseLayoutSaves = (on: boolean) => (on ? queue.pause("workspace") : queue.resume("workspace"));
 layoutSaves.register(pauseLayoutSaves);
 
