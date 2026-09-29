@@ -277,6 +277,9 @@ class AgentHub:
             t.cancel()
         if runs:
             await asyncio.wait(runs, timeout=2 * KILL_GRACE_S + 2)
+        for fut in list(self.bridge_waits.values()):  # an edit waiting for a page: the server is going, tell the caller now
+            if not fut.done():
+                fut.set_exception(NoPage("Agora 服务正在关闭：这次改图没有执行。"))
 
     def _get(self, sid: str) -> Live:
         if sid not in self.live:
