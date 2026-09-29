@@ -107,7 +107,7 @@ function costStops(slices: readonly Slice[], centre: Map<string, TouchNode>, bef
 }
 
 /** The segments of one change, from `from` (the earliest they may start: when the figure is free) on; `before`: where the figure stood for the change before, when that was on this canvas. */
-export function planTouch(t: Touch, from: number, before?: TouchNode): RunSeg[] {
+export function planTouch(t: Touch, from: number, before?: TouchNode, behind = false): RunSeg[] {
   const slices = sliceNodes(t.nodes);
   if (!slices.length) return [];
   const start = Math.max(t.at, from);
@@ -117,7 +117,7 @@ export function planTouch(t: Touch, from: number, before?: TouchNode): RunSeg[] 
   // hurried — a figure that has to be somewhere sooner than it can walk drops stops and jerks (./place.ts CATCH_UP_MS).
   const spread = (m: number) => Array.from({ length: m }, (_, i) => slices[m === 1 ? slices.length - 1 : Math.round((i * (slices.length - 1)) / (m - 1))]);
   let stops = costStops(spread(1), centre, before);
-  if (start - t.at <= BACKLOG_MS)
+  if (!behind && start - t.at <= BACKLOG_MS)
     for (let m = slices.length; m >= 1; m--) {
       const c = costStops(spread(m), centre, before);
       if (m === 1 || c.reduce((n, x) => n + x.ms, 0) <= budget) {
@@ -146,8 +146,20 @@ export function mergeTouches(run: WorkRun, ts: readonly Touch[]): WorkRun {
   const writes: RunSeg[] = [];
   let free = -Infinity;
   let at: { canvas: string; node: TouchNode } | undefined;
+  const centres = new Map<string, TouchNode>();
   for (const t of [...ts].sort((a, b) => a.at - b.at)) {
-    const segs = planTouch(t, free, at?.canvas === t.canvas ? at.node : undefined);
+    for (const n of t.nodes) centres.set(`${t.canvas}|${n.id}`, n);
+    const behind = free - t.at > BACKLOG_MS;
+    if (behind) {
+      // far behind: what is still waiting on this canvas is stale — this change replaces it, the queue does not grow with every update
+      while (writes.length && writes[writes.length - 1].start > t.at && writes[writes.length - 1].edit?.canvas === t.canvas) writes.pop();
+      free = writes.length ? writes[writes.length - 1].end : -Infinity;
+      const lastW = writes[writes.length - 1];
+      const pn = lastW && lastW.edit ? parseNodePath(lastW.path!) : null;
+      at = pn ? { canvas: pn.canvas, node: centres.get(`${pn.canvas}|${pn.id}`)! } : undefined;
+      if (at && !at.node) at = undefined;
+    }
+    const segs = planTouch(t, free, at?.canvas === t.canvas ? at.node : undefined, behind);
     writes.push(...segs);
     if (segs.length) {
       free = segs[segs.length - 1].end;

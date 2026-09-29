@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import type { RunSeg, WorkRun } from "./runs/types.ts";
 import { fileCounts, summaryOf, turnWrites } from "./playCounts.ts";
+import { nodePath } from "./runs/nodePath.ts";
 
 const seg = (kind: RunSeg["kind"], start: number, end: number, path?: string): RunSeg => ({ kind, start, end, path, label: kind });
 const run = (id: string, segs: RunSeg[], children: WorkRun[] = []): WorkRun => ({ id, agent: "claude", name: id, segs, receipts: [], running: false, lastAt: 0, children });
@@ -57,5 +58,20 @@ describe("summaryOf: X nodes, Y files", () => {
   });
   it("a turn that wrote nothing", () => {
     expect(summaryOf(run("q", [seg("read", 1000, 1100, "a")]), win, place)).toEqual({ nodes: 0, files: 0 });
+  });
+});
+
+describe("FX4 · P2 #7: a canvas edit is not a file — nodes come from the edit's ids, files exclude node paths", () => {
+  const editSeg = (start: number, canvas: string, ids: string[]): RunSeg => ({ kind: "write", start, end: start + 900, label: "改图", path: nodePath(canvas, ids[0]), edit: { canvas, ids } });
+  const er = run("e", [editSeg(1100, "c", ["n1", "n2"])]);
+  it("two nodes drawn in one stop: 2 nodes, 0 files", () => {
+    expect(summaryOf(er, win, (p) => p)).toEqual({ nodes: 2, files: 0 });
+  });
+  it("mixed with real files: the files count is the files, the nodes are both kinds", () => {
+    const mixed = run("m", [editSeg(1100, "c", ["n1", "n2"]), seg("write", 1300, 1400, "api/a.py"), seg("write", 1500, 1600, "api/b.py")]);
+    expect(summaryOf(mixed, win, place)).toEqual({ nodes: 3, files: 2 });
+  });
+  it("the +N on a node counts files only: a node path adds none", () => {
+    expect(fileCounts(er, win, 5000, (p) => p).size).toBe(0);
   });
 });

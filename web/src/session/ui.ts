@@ -18,6 +18,8 @@ export const ui = {
   openSession: (_sessionId: string, _turnId?: string) => {},
   /** A closed canvas has no live API: reopen its tab (without moving focus) and resolve once it is mounted. */
   ensureCanvas: async (id: string): Promise<CanvasEntry | undefined> => canvases.get(id),
+  /** A call is going to use this canvas (an agent's read or edit): the canvas is not taken away until the returned function is called (app/App.tsx, ../workspace/quietTabs.ts). */
+  holdCanvas: (_id: string): (() => void) => () => {},
   /** No agent session on this canvas yet: open one and let the person pick its agent. Resolves with the bound session. */
   chooseAgent: async (_canvasId: string): Promise<string | undefined> => undefined,
   /** A fresh session from nothing: a draft with the agent picker, placed like a comment hand-off's (into the session column, else split off the canvas's right). */

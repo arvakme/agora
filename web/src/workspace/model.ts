@@ -271,6 +271,8 @@ export function savedWorkspace(
   ws: { docs: Doc[]; root: Node; focused: string },
   isDraft: (sessionId: string) => boolean,
   meta: (sessionId: string) => SessionMeta | undefined = () => undefined,
+  /** Canvases whose tabs are the executor's (opened quietly for an agent, not taken by the person: ./quietTabs.ts): not part of the layout the person made, so not saved. */
+  hidden: ReadonlySet<string> = new Set(),
 ): { v: 2; docs: Doc[]; root: Node; focused: string } {
   // Each session entry carries its identity as it is now (what is not known stays as saved).
   const withMeta = (d: Doc): Doc => {
@@ -282,12 +284,13 @@ export function savedWorkspace(
     return next;
   };
   ws = { ...ws, docs: ws.docs.map(withMeta) };
-  const drafts = ws.docs.filter((d) => d.kind === "session" && isDraft(d.sessionId)).map((d) => d.id);
+  const drafts = [...ws.docs.filter((d) => d.kind === "session" && isDraft(d.sessionId)).map((d) => d.id), ...[...hidden].filter((id) => groupOf(ws.root, id))];
   if (!drafts.length) return { v: 2, ...ws };
   let root: Node = ws.root;
   for (const id of drafts) if (groupOf(root, id)) root = removeTab(root, id) ?? emptyGroup();
   const focused = drafts.includes(ws.focused) ? (groups(root).find((g) => g.active)?.active ?? "") : ws.focused;
-  return { v: 2, docs: ws.docs.filter((d) => !drafts.includes(d.id)), root, focused };
+  const kept = ws.docs.filter((d) => !drafts.includes(d.id) || hidden.has(d.id)); // a draft session leaves the docs too; a quiet canvas is still a canvas of the project
+  return { v: 2, docs: kept, root, focused };
 }
 
 /**

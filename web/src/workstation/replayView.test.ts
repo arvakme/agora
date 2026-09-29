@@ -60,6 +60,7 @@ afterEach(() => {
 });
 
 const { createCamera } = await import("./replayView");
+const { byCamera, userNav } = await import("./navOrigin");
 const liveHooks = (paused: { on: boolean }, working = () => true) => ({ setManual: (x: boolean) => void (paused.on = x), live: { current: () => "c", working, away: () => {} } });
 
 describe("FX1 · P1: a manual pause is not got round by the reduced-motion branch, the overview or the way home", () => {
@@ -178,7 +179,18 @@ describe("FX2a · #2: the canvas in front changes with no input of the person's 
     expect(c.shown()).toBe("d");
     c.stop();
   });
-  it("a click a moment before it: the person went there — paused, as before", () => {
+  it("the person's own navigation (the app says so where it happens): paused at once — however the canvas change is seen later", () => {
+    const paused = { on: false };
+    const hooks = { setManual: (x: boolean) => void (paused.on = x), live: { current: () => "c", working: () => true, away: () => {} } };
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_000_000);
+    const c = createCamera(() => null, () => run, () => ({ start: 0, end: null }), hooks);
+    c.tick();
+    userNav.note(); // the browser's back, a breadcrumb, a tab: no pointer, key or wheel reaches the page for some of them
+    expect(paused.on).toBe(true);
+    c.stop();
+  });
+  it("F4: the camera's own move and the person's 'back' half a second later: still theirs when the canvas change is seen after the mount grace", () => {
     const paused = { on: false };
     let cur = "c";
     const hooks = { setManual: (x: boolean) => void (paused.on = x), live: { current: () => cur, working: () => true, away: () => {} } };
@@ -186,10 +198,31 @@ describe("FX2a · #2: the canvas in front changes with no input of the person's 
     vi.setSystemTime(1_000_000);
     const c = createCamera(() => null, () => run, () => ({ start: 0, end: null }), hooks);
     c.tick();
-    w.listeners.get("pointerdown")!({ type: "pointerdown", target: { closest: () => null } });
+    byCamera(() => userNav.note()); // the camera's own navigation
+    expect(paused.on).toBe(false);
+    vi.setSystemTime(Date.now() + 500);
+    userNav.note(); // the person goes back
     cur = "d";
-    for (let i = 0; i < 10; i++) (vi.setSystemTime(Date.now() + 200), c.tick());
+    for (let i = 0; i < 40; i++) (vi.setSystemTime(Date.now() + 200), c.tick());
     expect(paused.on).toBe(true);
+    expect(c.shown()).toBe("d");
+    c.stop();
+  });
+  it("a note that no canvas change follows is not held against a later change the app made", () => {
+    const paused = { on: false };
+    let cur = "c";
+    const hooks = { setManual: (x: boolean) => void (paused.on = x), live: { current: () => cur, working: () => true, away: () => {} } };
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_000_000);
+    const c = createCamera(() => null, () => run, () => ({ start: 0, end: null }), hooks);
+    c.tick();
+    userNav.note();
+    c.resume(); // handed back
+    for (let i = 0; i < 10; i++) (vi.setSystemTime(Date.now() + 200), c.tick());
+    expect(paused.on).toBe(false);
+    cur = "d"; // the app opens another canvas (an agent's read)
+    for (let i = 0; i < 10; i++) (vi.setSystemTime(Date.now() + 200), c.tick());
+    expect(paused.on).toBe(false);
     c.stop();
   });
 });

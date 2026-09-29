@@ -41,6 +41,8 @@ import { liveFollow } from "../workstation/replayLive";
 import { BENCH, installBench } from "../bench/bench";
 import { ShareButton } from "../share/SharePanel";
 import { Workspace } from "../workspace/Workspace";
+import { createQuietTabs } from "../workspace/quietTabs";
+import { userNav } from "../workstation/navOrigin";
 import { activate, groupOf, groups, moveTab, preset, type Node, type Preset } from "../workspace/layout";
 import { defaultLayout } from "../workspace/twoColumns";
 import {
@@ -72,8 +74,6 @@ import {
 } from "../workspace/model";
 
 const params = new URLSearchParams(location.search);
-/** A canvas opened only for an agent's read or edit is closed again after this long unused, unless the person took it. */
-const QUIET_TAB_MS = 8000;
 const EVAL_MODE = params.has("eval");
 // ?eval&task=t1 runs one task; ?runs=N overrides the 3 runs per task.
 const EVAL_ONLY = params.get("task")?.split(",").map((t) => TASKS[Number(t.replace(/\D/g, "")) - 1]?.id).filter(Boolean);
@@ -250,9 +250,9 @@ export function App({ boot }: { boot: Boot }) {
   // Persist the workspace shape (drafts left out) with each session's identity (canvas, agent,
   // native id); sessions persist their records themselves on every change.
   const [committed, setCommitted] = useState(0);
-  const saveWorkspace = () => PERSIST && save("workspace", () => savedWorkspace({ docs: docsRef.current, root: rootRef.current, focused: focusedRef.current }, sessions.isDraft, sessionMeta));
+  const saveWorkspace = () => PERSIST && save("workspace", () => savedWorkspace({ docs: docsRef.current, root: rootRef.current, focused: focusedRef.current }, sessions.isDraft, sessionMeta, quiet.current.quiet()));
   useEffect(() => {
-    if (PERSIST) save("workspace", () => savedWorkspace({ docs, root, focused }, sessions.isDraft, sessionMeta));
+    if (PERSIST) save("workspace", () => savedWorkspace({ docs, root, focused }, sessions.isDraft, sessionMeta, quiet.current.quiet()));
   }, [docs, root, focused, committed]);
   // A binding or a canvas link changed: the entry's identity follows (unchanged content writes nothing).
   const identityKey = useSyncExternalStore(sessions.subscribe, () => Object.values(sessions.get().sessions).map((s) => `${s.id}:${s.canvasId}`).join(","));
@@ -347,6 +347,8 @@ export function App({ boot }: { boot: Boot }) {
   const onSettled = useCallback(() => handles.current.forEach((h) => h.api.refresh()), []);
 
   // Refs for callbacks that outlive a render (ui actions, timers).
+  /** Canvases opened only for an agent (`ui.ensureCanvas`): leased while a call uses them, closed when idle unless the person took them (./workspace/quietTabs.ts). */
+  const quiet = useRef(createQuietTabs());
   const rootRef = useRef(root);
   rootRef.current = root;
   const docsRef = useRef(docs);
@@ -358,6 +360,7 @@ export function App({ boot }: { boot: Boot }) {
 
   const focus = (id: string) => {
     if (id === focused) return;
+    if (kindOf(id) === "canvas") userNav.note(); // a tab clicked
     setFocused(id);
     if (kindOf(id) === "canvas") setLastCanvas(id);
     setMode("browse");
@@ -365,7 +368,9 @@ export function App({ boot }: { boot: Boot }) {
 
   /** Open (or bring forward) a doc's tab. Without a group it goes to its home group (docs/workspace-model.md §4). */
   const openDoc = (id: string, opts: { groupId?: string; focus?: boolean; kind?: Doc["kind"]; linkedCanvas?: string; keepVisible?: string } = {}) => {
+    quiet.current.own(id); // opened on purpose: a canvas the executor had opened quietly is the person's from now on
     const kind = opts.kind ?? docsRef.current.find((d) => d.id === id)?.kind ?? "canvas";
+    if (opts.focus !== false && kind === "canvas") userNav.note();
     setRoot((r) => {
       if (isOpen(r, id) || opts.groupId) return openTab(r, id, opts.groupId);
       return placeDoc(r, id, kind, {
@@ -584,6 +589,7 @@ export function App({ boot }: { boot: Boot }) {
    * record it in the address bar so the browser's back / forward walk the levels.
    */
   const go = (from: string, to: string, push = true) => {
+    userNav.note(); // the camera's own switches say so themselves (workstation/navOrigin.ts `byCamera`): every other way here is the person's
     if (!docsRef.current.some((d) => d.id === to && d.kind === "canvas")) return;
     // Keep what the leaving canvas holds right now. Its view reports scene changes one frame
     // late (CanvasView onChange → onScene), and it unmounts below: a link just written into a
@@ -698,14 +704,15 @@ export function App({ boot }: { boot: Boot }) {
     });
     return () => buildReplay.setCommenter(null);
   }, []);
-  /** Canvases opened only for an agent (`ui.ensureCanvas`): id → when one of its calls last used it. */
-  const quietTabs = useRef(new Map<string, number>());
+  // the person took a quiet canvas: focused it, or it came to the front (a tab clicked, dragged, opened): theirs at that moment
+  useEffect(() => {
+    quiet.current.own(focused);
+    for (const g of groups(root)) if (g.active) quiet.current.own(g.active);
+  }, [focused, root]);
   useEffect(() => {
     const t = setInterval(() => {
-      for (const [id, at] of quietTabs.current) {
-        if (Date.now() - at < QUIET_TAB_MS) continue;
-        quietTabs.current.delete(id);
-        // the person took it (it is in front, or focused): it stays, as theirs
+      for (const id of quiet.current.due(Date.now())) {
+        // checked again as it is closed: in front, or focused, is the person's
         const g = groupOf(rootRef.current, id);
         if (!g || g.active === id || focusedRef.current === id) continue;
         setRoot((r) => closeTab(r, id));
@@ -718,18 +725,18 @@ export function App({ boot }: { boot: Boot }) {
       if (!docsRef.current.some((d) => d.id === id)) return;
       openRef.current(id);
     };
+    ui.holdCanvas = (id) => quiet.current.hold(id, Date.now);
     ui.ensureCanvas = async (id) => {
-      if (canvases.get(id)) return (quietTabs.current.has(id) && quietTabs.current.set(id, Date.now()), canvases.get(id));
+      if (canvases.get(id)) return canvases.get(id);
       if (!docsRef.current.some((d) => d.id === id && d.kind === "canvas")) return undefined;
       // for an agent's read or edit, not for the person: the tab joins quietly (never the active one, no split beside the canvas in use) and goes again once
-      // nothing has used it for a while and the person has not taken it (./workspace/model.ts `placeQuiet`)
+      // nothing uses it (no call holds it: `ui.holdCanvas`) and the person has not taken it (./workspace/model.ts `placeQuiet`, ./workspace/quietTabs.ts)
       if (!isOpen(rootRef.current, id)) {
-        const quiet = { kindOf: (t: string) => docsRef.current.find((d) => d.id === t)?.kind, recentCanvas: lastCanvasRef.current, focused: focusedRef.current };
-        setRoot((r) => (isOpen(r, id) ? r : placeQuiet(r, id, quiet)));
-        quietTabs.current.set(id, Date.now());
+        const q = { kindOf: (t: string) => docsRef.current.find((d) => d.id === t)?.kind, recentCanvas: lastCanvasRef.current, focused: focusedRef.current };
+        quiet.current.opened(id, Date.now());
+        setRoot((r) => (isOpen(r, id) ? r : placeQuiet(r, id, q)));
       }
       for (let i = 0; i < 60 && !canvases.get(id); i++) await new Promise((ok) => setTimeout(ok, 50));
-      if (quietTabs.current.has(id)) quietTabs.current.set(id, Date.now());
       return canvases.get(id);
     };
     ui.openThread = (canvasId, threadId) => {
