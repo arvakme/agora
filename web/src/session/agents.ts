@@ -5,6 +5,8 @@
 // Canvas bridge requests from `agora canvas …` are executed by ./agentBridge.ts.
 import { retryable } from "./retryable";
 import { sendable } from "./pickSession";
+import { steerAbility, type SendMode } from "./steerModel";
+import type { SelectionPayload } from "./selection";
 import { removeRequest, upsertRequest, type Decision, type HostRequest } from "./requestModel";
 import { useSyncExternalStore } from "react";
 import type { Origin } from "../persist";
@@ -31,7 +33,7 @@ export type AgentInfo = {
   /** Notify-only for now: the tier drift would take it to, and why (`agora doctor --agents`). */
   degraded?: { from: Tier; to: Tier; reason: string; trusted?: boolean } | null;
   drift?: { unknown: Record<string, number>; records: number; versionOk: boolean | null } | null;
-  caps: { headless: boolean; terminal: boolean; catalog: boolean; subagents: boolean; forkHeadless: boolean; cost: boolean; waits: "native" | "inferred" | "none" };
+  caps: { headless: boolean; terminal: boolean; catalog: boolean; subagents: boolean; forkHeadless: boolean; cost: boolean; waits: "native" | "inferred" | "none"; /** Words written while a headless turn runs are read by it (server: adapters `steer`); else `noSteer` says why not. */ steer?: boolean; noSteer?: string };
   icon: { kind: "mark" | "svg" | "bitmap"; src: string };
   /** Where its native conversations live, for people. */
   logDir: string;
@@ -134,6 +136,7 @@ export function useAgentName(): (kind: AgentKind | undefined) => string {
 export const sessionKinds = (): AgentKind[] => (adapterList?.length ? adapterList.filter((a) => a.tier === "T1").map((a) => a.kind) : AGENT_KINDS);
 export const logDirOf = (kind: AgentKind | undefined): string => agentInfo(kind)?.logDir || (kind && FALLBACK[kind]?.logDir) || "CLI 自己的目录";
 export const deleteCommandOf = (kind: AgentKind | undefined): string | null => agentInfo(kind)?.deleteCommand ?? (kind ? FALLBACK[kind]?.deleteCommand : null) ?? null;
+export const steerOf = (kind: AgentKind | undefined, status?: Pick<Status, "steer" | "steerWhy">): { steer: boolean | undefined; noSteer: string } => steerAbility({ steer: agentInfo(kind)?.caps.steer, noSteer: agentInfo(kind)?.caps.noSteer }, status);
 export const forkHeadless = (kind: AgentKind | undefined): boolean => agentInfo(kind)?.caps.forkHeadless ?? (kind ? FALLBACK[kind]?.forkHeadless : undefined) ?? true;
 
 /**
@@ -168,7 +171,9 @@ export type Item = {
   id: string;
   kind: "user" | "assistant" | "tool" | "usage" | "context" | "end" | "run" | "notice";
   /** A `notice` (server: an action auto mode blocked; a turn a restart ended). */
-  tone?: "denied" | "interrupted";
+  tone?: "denied" | "interrupted" | "steer";
+  /** A `steer` notice: the tool call the turn had just made when the words came in. */
+  afterId?: string | null;
   text?: string;
   at: number;
   endAt?: number;
@@ -178,6 +183,12 @@ export type Item = {
   /** Model message this text / tool call belongs to (one request = one trajectory step). */
   msg?: string;
   source?: "agora" | "terminal";
+  /** A user message Agora wrote (server/canvas/agora_msg.py): a dispatch receipt or task envelope, drawn as a card, not as words the person said. */
+  card?: { kind: "receipt" | "task" } & Record<string, unknown>;
+  /** The full id of the dispatch this message belongs to (its task envelope, or a comment hand-off). */
+  dispatch?: string;
+  /** What was selected on the canvas when the message was sent: a saved picture (`id`), or only the ids (messages from before pictures). */
+  selection?: { id: string } | { ids: string[] };
   tool?: {
     name?: string;
     input?: string;
@@ -235,6 +246,9 @@ export type Status = {
   busy: boolean;
   queued: number;
   held: string | null;
+  /** Words said now go into the running turn (`null`: a Codex / Pi process is not up yet). `steerWhy`: the last turn fell back to the one-shot way, and why. */
+  steer?: boolean | null;
+  steerWhy?: string | null;
   activity: string | null;
   error: string | null;
   /** The session's terminal: Agora's own tmux pane (Kitty / Terminal attach to it). `inputRight`: who may type into it (a person's takeover pauses delivery). */
@@ -288,6 +302,8 @@ export type Dispatch = {
   state: RunState;
   source: { kind: "session" | "comment" | "user"; sessionId?: string; canvasId?: string; threadId?: string; threadN?: number };
   target: { sessionId: string; agent: string; new: boolean };
+  /** The task as the giver wrote it: `summary` is its first line (the rest is in the task file). */
+  task?: { summary: string };
   error?: string | null;
   queuedBecause?: string;
   reply?: { status: "done" | "failed" | "blocked"; summary: string } | null;
@@ -486,10 +502,12 @@ export const agents = {
   },
 
   /** Send a message into the native session (terminal pane if one holds it, else a headless turn). */
-  async send(sessionId: string, text: string, opts: { canvasId?: string; context?: string; thread?: Omit<Inflight, "sendId" | "sessionId" | "turnIds" | "canvasId"> } = {}) {
+  async send(sessionId: string, text: string, opts: { canvasId?: string; context?: string; /** While a turn runs: steer into it, stop it and say this, or wait (server `send` modes). */ mode?: SendMode; /** Canvas elements the words name with # (the server writes them into the footer as 名字（id）). */ refs?: { id: string; name: string }[]; /** What is selected, as names and a picture (./selection.ts): the server keeps it and writes it into the footer. */ selection?: SelectionPayload; thread?: Omit<Inflight, "sendId" | "sessionId" | "turnIds" | "canvasId"> } = {}) {
     const r = (await json(
-      await fetch(`/api/agent/sessions/${sessionId}/send`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, canvasId: opts.canvasId, context: opts.context ?? "" }) }),
-    )) as { sendId: string; route: "terminal" | "headless" };
+      await fetch(`/api/agent/sessions/${sessionId}/send`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, canvasId: opts.canvasId, context: opts.context ?? "", ...(opts.mode && { mode: opts.mode }), ...(opts.refs?.length && { refs: opts.refs }), ...(opts.selection && { selection: opts.selection }) }) }),
+    )) as { sendId: string; route: "terminal" | "headless"; how?: "turn" | "steer" | "interrupt" | "queued" };
+    // words steered into the running turn are part of it: no turn of their own to follow, and the running one stays what is in flight
+    if (r.how === "steer") return { ...r, done: Promise.resolve({ sessionId, sendId: r.sendId, text: "", route: r.route, turnIds: [] as string[] }) };
     const inflight: Inflight = { sendId: r.sendId, sessionId, canvasId: opts.canvasId ?? "", turnIds: [], ...opts.thread };
     set({ inflight: { ...state.inflight, [sessionId]: inflight }, activeAt: { ...state.activeAt, [sessionId]: Date.now() } });
     const done = new Promise<DoneEvent>((ok) => doneWaiters.set(r.sendId, ok)).then((d) => {

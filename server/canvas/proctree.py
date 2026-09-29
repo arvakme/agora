@@ -23,7 +23,7 @@ from collections.abc import Mapping
 
 GRACE_S = 5.0
 POLL_S = 0.25  # while waiting out the grace: a `ps` costs ~35 ms on a busy machine
-SHARE_S = 0.9  # running turns share one snapshot this long
+SHARE_S = 0.5  # running turns share one snapshot this long (well under the 1 s a Watch waits: a poll never reuses the previous round's)
 
 
 _cache: tuple[float, dict[int, tuple[int, int, str]]] | None = None
@@ -79,8 +79,10 @@ class Watch:
         self.seen.update(descendants(self.root, snapshot(max_age)))
 
     async def run(self, every: float = 1.0) -> None:
+        first = True
         while True:
-            await asyncio.to_thread(self.update, SHARE_S)  # the running turns share one `ps`
+            await asyncio.to_thread(self.update, 0.0 if first else SHARE_S)  # the first look is always fresh; later ones share one `ps` with the other turns
+            first = False
             await asyncio.sleep(every)
 
 

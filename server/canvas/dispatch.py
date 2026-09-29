@@ -53,6 +53,7 @@ from native_protocol import (
     withdraw,
 )
 from server.canvas import adapters, agents
+from server.canvas.agora_msg import envelope, receipt_text
 from server.canvas.dispatch_store import REPLY_STATUSES, Dispatch, DispatchStore, derive_state, is_final
 from server.canvas.project import NotFound
 from server.canvas.sessions import AgentHub, agora_prompt, canvas_names
@@ -76,15 +77,6 @@ class DispatchError(ValueError):
 
 def _ms() -> int:
     return int(time.time() * 1000)
-
-
-def envelope(rid: str, source_name: str, task_path: Path, scope: list[str]) -> str:
-    """The one line B reads first (the task itself is in the file)."""
-    where = f"范围：{'、'.join(scope)}。" if scope else ""
-    return (
-        f"[Agora 派发 {rid[:8]}] 来自 {source_name}：先读任务文件 {task_path}。{where}"
-        f"做完后运行 `agora reply --request {rid} --status done|failed|blocked -f <你的答复文件>` 交回执（受阻用 blocked，做不了用 failed，一两句话说明）。"
-    )
 
 
 class Dispatches:
@@ -567,9 +559,7 @@ class Dispatches:
         if src.get("kind") == "comment":
             self._post_thread(d, state, answer)
         elif src.get("kind") == "session" and src.get("sessionId"):
-            head = {"done": "完成了", "failed": "失败了", "blocked": "受阻", "idle_no_reply": "对方这一轮结束了，但没有交回执"}.get(state, state)
-            more = f"答复：{answer}" if answer else "没有答复内容"
-            msg = f"[Agora 派发回执 {d.id[:8]}] 你派给 {target} 的任务：{head}。{more}（记录 {self.files.folder(d.id)}；`agora dispatch status {d.id}` 查看）（这是通知，不需要回复；有下一步再做。）"
+            msg = receipt_text(d.id, target, state, answer, self.files.folder(d.id))
             self.hub.send(src["sessionId"], agora_prompt(msg, canvas_id=None, canvas_name=None, extra=f"dispatch-receipt={d.id} agora-receipt-{d.id}:{state}", session_id=src["sessionId"]))
 
     def _bind_thread(self, src: dict[str, Any], sid: str, agent: str, *, if_absent: bool = False) -> None:

@@ -84,11 +84,13 @@ agora canvas apply --base r-… [--note "…"] <<'JSON'   # 类型化改图，�
 [{"op": "update_text", "id": "redis", "text": "Redis 集群"}]
 JSON
 agora canvas anim <<'JSON' … JSON     # 挂载算法动画
-agora canvas schema ops|anim          # 精确 JSON Schema
+agora canvas schema ops|anim          # 精确 JSON Schema（ops 里含末尾的 layout）
+agora canvas lint                     # 量：交叉、穿节点、重叠、标签遮挡、线长（见 diagram-layout.md）
+agora canvas layout --nodes a,b|--all # 排已有节点：默认只说会动哪些，--apply 才执行
 agora canvas child create --parent c1 --node api   # 节点展开成子画布（见 nested-canvas.md）
 ```
 
-退出码：0 成功 · 1 被拒（invalid / stale / error，见输出）· 2 用法错误 · 3 需要服务或打开的页面。`read` / `list` / `search` / `schema` / `child list` 没有页面也能用；`apply` / `anim` / `link` / `child create|link|unlink` 需要打开的页面。
+退出码：0 成功 · 1 被拒（invalid / stale / error，见输出）· 2 用法错误 · 3 需要服务或打开的页面。`read` / `list` / `search` / `schema` / `lint` / `child list` 没有页面也能用；`apply` / `anim` / `link` / `layout --apply` / `child create|link|unlink` 需要打开的页面。图怎么排、怎么量、怎么画连线见[图要读得懂](diagram-layout.md)。
 
 - **找项目**：`--project`，否则 `$AGORA_PROJECT`，否则向上找最近的 `.agora/config.toml`。画布默认 `$AGORA_CANVAS` → 会话关联的画布 → 聚焦画布 → 唯一画布。
 - **读**：服务在跑且有页面打开时读页面上的实时场景（可能有还没落盘的编辑），否则读 `.agora/canvases/<id>.excalidraw`（`server/canvas/model_view.py`，与前端 `toModelView` 同构）。服务没开也能读。每次读把元素版本记到 `.agora/run/reads/<base>.json`。
@@ -138,7 +140,8 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 | GET | `/runs?session=…` | 会话的 run 树：它自己和原生子 agent，每个带时间线（[CLI 适配层 §5](cli-adapters.md#5-接口)） |
 | PUT | `/sessions/{id}` | 绑定 `{agent, model, effort, nativeId?}`；不同选择 409 |
 | GET | `/sessions/{id}` | 状态（绑定、运行、排队、终端） |
-| POST | `/sessions/{id}/send` | `{text, canvasId?, context?}` → `{sendId, route: terminal\|headless}` |
+| POST | `/sessions/{id}/send` | `{text, canvasId?, context?, mode?, refs?, selection?}` → `{sendId, route: terminal\|headless}`。`refs`：消息里用 # 引用的元素 `[{id, name}]`；`selection`：发消息时选中的元素 `{canvasId, elements: [{id, name}], svg, png?}`（png 是 base64）。两者服务端都写进页脚，写成「名字（id）」，不进正文；`selection` 另存成图（见下），并把 `agora-sel-<id>` 写进页脚 |
+| GET | `/selections/{id}`、`/selections/{id}/thumb.svg` | 一次选区的记录 `{id, canvasId, elements, at, hasThumb, hasImage}` 和它的缩略图（SVG）；对话里消息下面的选区小图就取这个 |
 | POST | `/sessions/{id}/fork` | `{source?}`：在这里分叉继续（副本带来的会话；或带着 `source` 的、另一份副本的会话）→ 绑定带 `pendingFork` |
 | POST | `/sessions/{id}/interrupt` | 停止当前无头一轮并清空排队 |
 | POST / DELETE | `/sessions/{id}/terminal` | 打开（`{launch}`）/ 关闭终端；状态里的 `terminal` 带 `alive`、`attach`、`clients`（不含 Agora 自己的客户端）、`inputRight`（`host` 或 `human`） |
@@ -170,12 +173,26 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 
 | kind | 内容 |
 |---|---|
-| `user` / `assistant` | 消息文字；assistant 带 `msg`（同一次模型请求的文字和工具调用共用，轨迹里是一「步」） |
+| `user` / `assistant` | 消息文字；assistant 带 `msg`（同一次模型请求的文字和工具调用共用，轨迹里是一「步」）。`user` 另带 `source`（`agora` / `terminal`）；Agora 发的还可能带 `card`、`selection`、`dispatch`、`receipt`（下一节） |
 | `tool` | `name`、一行摘要 `input`、完整输入 `args`、输出 `output`、`isError`、开始 `at` / 结束 `endAt`、写到的文件 `files` |
 | `usage` | 一次模型请求的 tokens（输入不含缓存、输出、缓存读、缓存写）和模型；Pi 带花费。Claude 一条消息拆成多条记录时按消息 id 合并，Codex 用每次响应的 `token_usage_record` |
 | `context` | 生效的模型 / 强度：Codex 的 `turn_context`，Pi 的 `model_change` / `thinking_level_change` |
 | `end` | 这一轮结束：Claude 交互模式的 `turn_duration`、Codex 的 `task_complete.duration_ms` 给出耗时；没有就用结束时间减开始时间 |
 | `run` | 无头续接时 runner 的结果用量（Claude 的花费只在这里：原生日志不记花费）。存 `.agora/run/usage/<会话>.jsonl`，重启后还在 |
+
+**Agora 写进会话的用户消息不是用户说的话**（`server/canvas/agora_msg.py`，`adapters/common.py` 的 `user_item` 对每家 CLI 的日志、包括老日志都读一遍）：
+
+| 消息 | 服务端标出 | 对话里怎么画 |
+|---|---|---|
+| 派发回执（`[Agora 派发回执 …]`：派活方收到的「你派给 X 的任务：完成了…」） | `card: {kind: "receipt", id, state, agent, session, answer}`；新的另带 `receipt`（页脚标记，重启补发靠它） | 一张卡片：「Codex 交回了你派的任务 · 完成」，下面是答复的开头，展开看全文，「打开 Codex 那个会话」；没有路径、`agora dispatch status`、「这是通知，不需要回复」；这一轮的轮头写「收到回执」；agent 对它的简短确认（没做别的事、160 字以内）淡显 |
+| 派发的任务信封（`[Agora 派发 …] 来自 …：先读任务文件 …`：被派会话收到的） | `card: {kind: "task", id, from, session?, scope}`、`dispatch`（完整的派发 id） | 卡片「Claude 会话 s-… 派来一个任务」，第一行是派发记录里的任务摘要，范围；轮头「收到任务」 |
+| 评论交接（`画布评论 #n（锚点：名字（id）…）：`，经派发送达） | `dispatch`；页面自己读（`comments/handoff.ts` `parseCommentMessage`，和写它的 `commentMessage` 放在一起） | 卡片「画布评论 #2」，第一条评论的开头，展开看整条线程，「在画布上看这条评论」；轮头「收到评论」 |
+| 发消息时的选区、`#` 引用 | `selection: {id}`（页脚里的 `agora-sel-<id>`）；老消息正文末尾的 `（当前选区：a, b）` 服务端读成 `selection: {ids}` 并从正文里去掉 | 用户气泡下面一张小图：选中元素的缩略图 + 「选区 · 21 个元素」；悬停列出名字，点击在画布上高亮这些元素；老消息没有图，只有这个标签 |
+| 「上一轮随服务重启中断了」「这一轮被停止了」「被 auto 拦下」「你在这里插了一句」 | 服务端加的 `notice` 条目，不是用户消息 | 一行小字，本来就不是气泡 |
+
+这些消息的 `text` 仍是 CLI 日志里的原文（轨迹里点开看到的是原文，标着「来自 Agora · 原文」；轨迹的一行和会话标题用卡片的一句话）；只有对话里的画法变了。按钮触发、由页面写的提示（「让 AI 画子图」的展开提示、「画出这个项目的架构」）目前仍按用户气泡画。
+
+**选区的图**存在 `.agora/local/selections/<id>/`（`server/canvas/selection.py`，`local/` 本机、不进 git、每天备份）：`meta.json`（画布、选中元素的名字和 id）、`thumb.svg`（缩略图，≤ 1.5 MB）、`selection.png`（给能收图的 CLI，最长边 1024 px，≤ 3 MB），几十 KB 一份，不自动清理。消息页脚里的 `agora-sel-<id>` 让这张图跟着那条消息，刷新、重启、元素以后改了都还在。哪些 CLI 收图见 [CLI 适配层 · 图片](cli-adapters.md)。
 
 工具输入 / 输出服务端保留全文（每条最多 256k 字符），推给页面的是前 4000 字符的预览加总长度，页面点「展开全文」再取。
 
@@ -215,3 +232,14 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 请求先交给第一个页面；它 6 秒内没有**认领**，就把同一个请求交给下一个，全部加起来不超过 25 秒。**页面认领之后才执行**：服务端只把认领给正被交给的那个页面、且只给一次，所以被跳过的页面（比如浏览器冻住的后台标签）过后醒来，认领会被拒绝，它不会去执行；它迟到的回报也会被丢掉。已经认领的页面不会被换掉（它的改动可能已经落在它的画布上），服务端一直等它回报，等不到就报「页面已接手这次改图但没有回报：图上可能已经改了，先看一眼图，再决定要不要重试」；没有页面认领时报「开着的 Agora 页面都没有回应：把 Agora 的标签页切到前台再试一次」。
 
 `apply` 本身不是幂等的（每次都生成新的批次、新的元素）；靠上面的认领保证一个请求只被一个页面执行一次。分享链接的访客页面不当执行者：分享网关只提供 `/api/guest/*`，访客连不到 `/api/agent/events`。
+
+### 画不上去时自己找地方画（BR2）
+
+页面都不认领（或根本没有页面）时，Agora 不让用户动手，按顺序自己想办法，**前一步不行才走后一步**，每一步都写进这次 `agora canvas apply` 返回的 `notes`（agent 在轨迹里看得到、也会转述）；`server/canvas/page_help.py` 是这段流程：
+
+1. **已有页面里挑**（上面 BR1）。有页面**认领了却没回报**（`PageTookIt`）就停在这里报错，不走后面几步：那次改图可能已经落在它的画布上，绝不再换个地方执行第二遍。
+2. **自己打开一个页面**：用系统的打开命令（macOS `open`，其他 `xdg-open`）打开这个项目的地址（`run/server.json` 里的 `url`）。同一个项目 **2 分钟内最多自动打开一次**（不开一堆标签）；偏好里可以关掉，**默认开**（`GET/PUT /api/agent/auto-open`，存在 `.agora/local/settings.json` 的 `autoOpenPage`，不提交；页面上的开关还没做，要关先 `curl -X PUT …/api/agent/auto-open -d '{"enabled":false}'`）。新页面带 `executor=2` 连上来最多等 15 秒，连上就把同一个请求交给它（它也要先认领，同一批只落一次）。
+3. **服务端直接改文件**（`server/canvas/fallback.py`）：只对 `apply`。做和页面一样的三项检查：结构（`web/generated/plan.schema.json`）、引用、新鲜度，然后改 `.agora/canvases/<id>.excalidraw`，并写一份和页面一样的撤销记录（会话里的一轮 + 一个批次，页面里照样能「撤销这次修改」）；之后页面连上来直接读这份文件，页面在此期间保存的手改会和它冲突、由页面报告，不会被覆盖（`project.py` 的带版本写入）。**能力比页面小，而且是有意的**：改图引擎（`applyPlan`：摆放、连线、素材库）不复制到 Python，服务端只做不需要引擎的操作，眼下是「改节点或画框的文字」；别的（`move`、`resize`、`add_shape`、`add_arrow`、`delete`、`insert_library_item`，以及箭头和素材库组件的文字）一律在改任何东西之前返回 `needs-page`，写明「这条要打开页面才能做」，**整条计划一条都不执行**。`fallback.EXTRA_OPS` 是以后布局 / lint 模块登记「不需要页面也能做」的操作的地方。
+4. 三步都不行才报错，话里说清每一步试了什么（「开着的页面…没有认领；自己打开了页面…没连上；服务端直接改文件也做不了这一种」）。`link`、`child`、`anim` 没有服务端后备（它们要页面持有的工作区或动画播放器），走 1、2 之后直接是这条报错。
+
+**校验只有一份规则**：`web/generated/plan.rules.json`（每个 op 收哪些字段、每个字段能指向哪几种元素、各种上限、`ref` 的正则）。页面的 `validatePlan`（`web/src/ops/ops.ts`）读它，服务端的 `server/canvas/plan_rules.py` 读它（`load()` 和 `scene_kinds()` 是给布局、lint 这些服务端工具复用的），`web/generated/plan.cases.json` 是两边必须给出**完全相同**错误的同一批用例（`web/src/ops/planRules.test.ts`、`tests/test_plan_rules.py` 各跑一遍）。规则文件里少一种元素类型，两边一起变；只改一边，两个测试里有一个会红。新鲜度是 `staleIds`（`web/src/canvas/context.ts`）在服务端的孪生（`plan_rules.stale_ids`，版本串用 `model_view.version_of`）。结构 schema 还是原来从 TS 生成的 `plan.schema.json`。

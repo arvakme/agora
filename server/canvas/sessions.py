@@ -34,11 +34,12 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
-from server.canvas import adapters, agents, executors as executors_mod, nested, proctree, schemas
+from server.canvas import adapters, agents, executors as executors_mod, fallback as fallback_mod, graph_hub, nested, page_help, proctree, schemas
 from server.canvas.adapters import drift
 from server.canvas.local import Local
 from server.canvas.model_view import model_view, versions
 from server.canvas.project import ProjectStore
+from server.canvas.resident import ResidentPool
 from server.canvas.adapters.claude import answer_response, approve_response, deny_response, interrupt_request
 from server.canvas.runner import KILL_GRACE_S, Control, ExecOptions, RunRequest, make_backend
 from server.canvas.terminal import PasteSubmitFailed, TerminalError, Terminals, gate_hold
@@ -57,11 +58,16 @@ SUMMARY_MAX = 6000  # characters of the "carry on with a summary" message
 STALE_DAYS = 20  # a Claude Code session idle this long is warned about Claude's 30-day cleanup
 INTERRUPT_GRACE_S = 15.0  # a two-way turn that has not ended this long after an interrupt is stopped the hard way
 DETACH_GRACE_S = 3.0  # the last window has been gone this long (and the CLI is idle): the background pane is closed
+SEND_MODES = ("auto", "steer", "interrupt", "wait")
 ASKED_MODE = "auto"  # the permission mode Agora asks a two-way CLI for (adapters/claude.py headless_args)
 
 
 class NoPage(RuntimeError):
     """A write needs an open Agora page (it owns the live scene) and none is connected."""
+
+
+class PageTookIt(NoPage):
+    """A page took the request and did not report back: the edit may already be on its canvas, so nothing else may run it."""
 
 
 class Busy(RuntimeError):
@@ -161,6 +167,7 @@ class Pending:
     at: float
     delivered_at: float | None = None
     force: bool = False  # the person said "send it now": this one message goes past the input-right gate
+    images: tuple[str, ...] = ()  # picture files that go with the words (a headless turn of a CLI that takes them)
 
 
 def public_item(it: dict[str, Any]) -> dict[str, Any]:
@@ -207,6 +214,12 @@ class Live:
     control: Control | None = None  # where answers and the interrupt are written while the turn runs
     mode: str | None = None  # the permission mode the CLI reported in its init (``auto``, or ``default`` when the model has no auto)
     interrupting: bool = False
+    last_tool: str | None = None  # the tool call the running headless turn made last (where a steer lands)
+    # Whether what the running headless turn reads (steer, a soft interrupt) is live: a two-way CLI (Claude) from the start; Codex
+    # and Pi once their resident process says so (``resident`` event), None until then, False when the turn fell back to the one-shot
+    # way. ``steer_why`` (says why the last turn fell back) stays until a turn is resident again.
+    live_control: bool | None = None
+    steer_why: str | None = None
     asked: set[str] = field(default_factory=set)  # tool calls put to the person this turn (the CLI lists a denied or interrupted one in permission_denials too: not auto's doing)
     seen_window: bool = False  # a terminal window has been attached to this pane (an unattended pane is not closed)
     detached_at: float | None = None  # since when no window is attached (only while the pane is otherwise idle)
@@ -255,6 +268,15 @@ class AgentHub:
         self.listeners: list[Callable[[dict[str, Any]], None]] = []
         self.handoff_hooks: list[Callable[[str, str], None]] = []
         self.start_hooks: list[Callable[[], None]] = []
+        # When no page can take an edit (page_help.py): the open command (set by the app; None = never open one), its clock and
+        # timings (tests shorten them), and when a page was last opened.
+        self.opener: Callable[[str], None] | None = None
+        self.clock: Callable[[], float] = time.monotonic
+        self.open_wait_s: float = page_help.OPEN_WAIT_S
+        self.page_reply_s: float = executors_mod.PAGE_REPLY_S
+        self.bridge_timeout_s: float = BRIDGE_TIMEOUT_S
+        self._last_open: float | None = None
+        self.residents = ResidentPool(store.run_dir / "residents")  # Codex / Pi: one long-lived process per session (resident.py)
         self._reap_orphans()
 
     # ——— lifecycle ———
@@ -277,6 +299,10 @@ class AgentHub:
             t.cancel()
         if runs:
             await asyncio.wait(runs, timeout=2 * KILL_GRACE_S + 2)
+        try:  # the resident processes and what they started go with the server (bounded: proctree's grace is KILL_GRACE_S)
+            await asyncio.wait_for(self.residents.close_all(), 2 * KILL_GRACE_S + 2)
+        except (TimeoutError, Exception):
+            pass
         for fut in list(self.bridge_waits.values()):  # an edit waiting for a page: the server is going, tell the caller now
             if not fut.done():
                 fut.set_exception(NoPage("Agora 服务正在关闭：这次改图没有执行。"))
@@ -352,6 +378,8 @@ class AgentHub:
             "busy": lv.state.busy,
             "queued": len(lv.headless) + len(lv.pane),
             "held": lv.held,
+            "steer": self._steer_state(b, lv),
+            "steerWhy": lv.steer_why,
             "activity": lv.activity,
             "error": lv.last_error,
             "terminal": self._terminal(sid, lv),
@@ -795,7 +823,16 @@ class AgentHub:
             lv.native = None
             self._status(sid)
 
-    def send(self, sid: str, prompt: str) -> dict[str, Any]:
+    def send(self, sid: str, prompt: str, mode: str = "auto", images: tuple[str, ...] = ()) -> dict[str, Any]:
+        """Say something to the session. ``how`` in the answer: ``turn`` (nothing was running: a new turn),
+        ``steer`` (written into the running turn, which reads it at its next step), ``interrupt`` (the running
+        turn was stopped and this starts a new one), ``queued`` (it waits for the turn to end).
+
+        ``mode`` says what to do while a headless turn runs: ``steer`` (an error for a CLI that cannot), ``interrupt``,
+        ``wait`` (the queue), or ``auto`` — steer when the CLI can, else wait: a caller that is not a person at a
+        box (dispatch, the CLI's own) is not put to a choice. A terminal pane keeps its own rules (input right, busy)."""
+        if mode not in SEND_MODES:
+            raise ValueError(f"unknown send mode {mode!r}")
         self.ensure_started()
         b = self.binding(sid)
         if sid in self.local.copies():
@@ -805,18 +842,55 @@ class AgentHub:
             # CLI): only a headless turn needs the log check — same rule as the page's composer.
             self.check_native(sid, b)
         lv = self._get(sid)
-        p = Pending(send_id=f"m-{secrets.token_hex(5)}", prompt=prompt, at=time.time())
+        p = Pending(send_id=f"m-{secrets.token_hex(5)}", prompt=prompt, at=time.time(), images=images if adapters.need(b["agent"]).images else ())
         lv.last_error = None
         if self.terms.alive(sid):
             lv.pane_alive = True
             lv.pane.append(p)
-            route = "terminal"
-        else:
-            lv.headless.append(p)
-            route = "headless"
-            self._kick(sid)
+            self._status(sid)
+            return {"sendId": p.send_id, "route": "terminal", "how": "queued" if lv.state.busy or len(lv.pane) > 1 else "turn"}
+        ad = adapters.need(b["agent"])
+        turn_runs = bool(lv.running and lv.run and not lv.run.done())
+        if mode == "steer" and turn_runs and (not ad.steer or lv.live_control is False):
+            raise ValueError(f"{ad.name} 不能中途插话：{lv.steer_why or ad.no_steer}")
+        # (a resident CLI that has not said yet that its process is up, ``live_control`` None: the words wait, none get lost)
+        if turn_runs and mode in ("auto", "steer") and ad.steer and lv.live_control and lv.control is not None and not lv.interrupting:
+            lv.control.send(ad.steer_line(prompt))
+            self._steered(sid, lv, p)
+            return {"sendId": p.send_id, "route": "headless", "how": "steer"}
+        how = "turn"
+        if turn_runs or lv.headless:
+            how = "queued"
+            if mode == "interrupt" and self.interrupt(sid):
+                how = "interrupt"
+                run = lv.run
+                run.add_done_callback(lambda _t: self._kick(sid))
+        lv.headless.append(p)
+        self._kick(sid)
         self._status(sid)
-        return {"sendId": p.send_id, "route": route}
+        return {"sendId": p.send_id, "route": "headless", "how": how}
+
+    def _steer_state(self, b: dict[str, Any], lv: Live) -> bool | None:
+        """Whether words said now go into the turn: False for a CLI that cannot; for one that can, what the running turn said
+        (None until its process is up); while idle, what the last turn found (a fallback says no)."""
+        ad = adapters.get(b.get("agent")) if b else None
+        if ad is None or not ad.steer:
+            return False
+        if lv.running:
+            return lv.live_control
+        return not lv.steer_why
+
+    def _steered(self, sid: str, lv: Live, p: Pending) -> None:
+        """The words went into the running turn: the transcript says at which step, the pages hear of it."""
+        at = int(time.time() * 1000)
+        text = p.prompt.split(MARKER)[0].strip()
+        note = {"id": f"steer-{p.send_id}", "kind": "notice", "tone": "steer", "at": at, "afterId": lv.last_tool, "text": f"你在这里插了一句：{text}"}
+        lv.items[note["id"]] = note
+        changed = [note]
+        self._keep_snapshot(sid, lv, changed)
+        self.broadcast({"t": "transcript", "sessionId": sid, "items": [public_item(i) for i in changed]})
+        self.broadcast({"t": "steered", "sessionId": sid, "sendId": p.send_id, "at": at, "afterTool": lv.last_tool, "text": text})
+        self._status(sid)
 
     def _kick(self, sid: str) -> None:
         lv = self._get(sid)
@@ -850,13 +924,20 @@ class AgentHub:
                 self._status(sid)
                 continue
             backend = self.make_backend(b["agent"])
-            lv.control = Control() if adapters.need(b["agent"]).duplex else None
+            attach = getattr(backend, "attach_pool", None)
+            if attach is not None:  # Codex / Pi: the way that takes words mid-turn keeps one process per session in this pool
+                attach(self.residents)
+            ad = adapters.need(b["agent"])
+            lv.control = Control() if (ad.duplex or ad.steer) else None
+            lv.live_control = True if ad.duplex else None
             lv.interrupting = False
+            lv.last_tool = None
             lv.asked.clear()
             req = RunRequest(
                 schema=None,
                 system=None,
                 prompt=p.prompt,
+                images=p.images,
                 options=ExecOptions(
                     backend=b["agent"],
                     model=b.get("model") or "",
@@ -890,6 +971,7 @@ class AgentHub:
                         lv.activity = "思考中"
                     elif ev["t"] == "tool_use":
                         lv.activity = f"{ev.get('name')}"
+                        lv.last_tool = ev.get("id")
                     elif ev["t"] == "text":
                         lv.activity = "回复中"
                     elif ev["t"] == "session" and ev.get("session") and not b.get("nativeId") and not fork and sid not in self.dropped:
@@ -901,6 +983,11 @@ class AgentHub:
                         result = ev
                     elif ev["t"] == "spawned":
                         self._write_marker(sid, ev)
+                        continue
+                    elif ev["t"] == "resident":
+                        lv.live_control = bool(ev.get("ok"))
+                        lv.steer_why = None if ev.get("ok") else str(ev.get("why") or "常驻进程起不来")
+                        self._status(sid)
                         continue
                     elif ev["t"] == "mode":
                         lv.mode = ev["mode"]
@@ -982,7 +1069,7 @@ class AgentHub:
         lv.headless.clear()
         if not (lv.run and not lv.run.done()):
             return False
-        if lv.control is None:
+        if lv.control is None or not lv.live_control:  # a process nobody can talk to (one-shot, or a resident one not up yet)
             lv.run.cancel()
             return True
         lv.interrupting = True
@@ -1067,6 +1154,7 @@ class AgentHub:
         for rid in list(lv.requests):
             self._close_request(sid, lv, rid)
         lv.control = None
+        lv.live_control = None
         lv.interrupting = False
         self._marker(sid).unlink(missing_ok=True)
 
@@ -1166,6 +1254,10 @@ class AgentHub:
             _stop_process(m.get("pid"), m.get("argv"))
             at = int(m.get("at") or time.time() * 1000)
             self._get(sid).notes.append({"id": f"notice-{sid}-{at}", "kind": "notice", "tone": "interrupted", "at": int(time.time() * 1000), "text": "上一轮随服务重启中断了：它没有做完，也不会自动重来。"})
+        # Resident processes (Codex / Pi) an earlier server left: stopped, and nothing is said about them — the session's next turn
+        # starts a new process that resumes its thread from the CLI's own log, and no message is sent again.
+        for m in self.residents.leftovers():
+            _stop_process(m.get("pid"), m.get("argv"))
 
     # ——— terminal ———
     def open_terminal(self, sid: str, *, launch: bool, canvas_id: str | None = None) -> dict[str, Any]:
@@ -1366,7 +1458,7 @@ class AgentHub:
                     try:
                         return await asyncio.wait_for(fut, max(deadline - loop.time(), 0.01))
                     except TimeoutError:
-                        raise NoPage("页面已接手这次改图但没有回报：图上可能已经改了，先看一眼图，再决定要不要重试。") from None
+                        raise PageTookIt("页面已接手这次改图但没有回报：图上可能已经改了，先看一眼图，再决定要不要重试。") from None
                 sub.failed_at = time.time()  # did not take it: behind the others until it does
                 offer["to"] = None
             raise NoPage("开着的 Agora 页面都没有回应：把 Agora 的标签页切到前台再试一次。")
@@ -1380,6 +1472,16 @@ class AgentHub:
             return False  # late: the request was given to another page, or is over
         fut.set_result(result)
         return True
+
+    def auto_open_enabled(self) -> bool:
+        return page_help.auto_open_enabled(self)
+
+    def set_auto_open(self, on: bool) -> None:
+        page_help.set_auto_open(self, on)
+
+    async def edit(self, kind: str, payload: dict[str, Any], fallback: Callable[[], Any] | None = None) -> dict[str, Any]:
+        """Have an edit done: an open page, else a page Agora opens, else the server (page_help.py)."""
+        return await page_help.edit(self, kind, payload, fallback)
 
     async def canvas_read(self, canvas: str | None, session: str | None) -> dict[str, Any]:
         cid = resolve_canvas(self.store, canvas, session)
@@ -1408,7 +1510,14 @@ class AgentHub:
         cid = resolve_canvas(self.store, canvas or read["canvasId"], session)
         if cid != read["canvasId"]:
             raise ValueError(f"base {base} was read from canvas {read['canvasId']}, not {cid}")
-        return await self.bridge("apply", {"canvasId": cid, "sessionId": session, "plan": {"ops": ops, **({"note": note} if note else {})}, "versions": read["versions"]})
+        ops, layout = await graph_hub.expand(self, cid, session, ops)  # a trailing {"op": "layout"} becomes plain ops (graph_ops.py)
+        plan = {"ops": ops, **({"note": note} if note else {})}
+
+        async def by_server() -> dict[str, Any]:  # the few ops that need no page (fallback.py)
+            return await asyncio.to_thread(fallback_mod.apply, self.store, cid, session, plan, read["versions"])
+
+        done = await self.edit("apply", {"canvasId": cid, "sessionId": session, "plan": plan, "versions": read["versions"]}, by_server)
+        return await graph_hub.annotate(self, cid, session, done, layout)  # …and the answer says how the diagram measures now
 
     async def canvas_link(self, canvas: str | None, session: str | None, links: dict[str, list[str]], clear: bool = False) -> dict[str, Any]:
         """Associate diagram elements with code paths (globs) — stored in the element's customData."""
@@ -1421,7 +1530,7 @@ class AgentHub:
             if not gs and not clear:
                 raise ValueError(f"no globs for {el!r} (use --clear to remove its paths)")
             clean[str(el)] = gs
-        return await self.bridge("link", {"canvasId": cid, "sessionId": session, "links": clean, "clear": clear})
+        return await self.edit("link", {"canvasId": cid, "sessionId": session, "links": clean, "clear": clear})
 
     async def canvas_child(self, op: str, canvas: str | None, session: str | None, node: str | None, child: str | None, title: str | None) -> dict[str, Any]:
         """Nested canvases: ``create`` a child canvas for a node (or return the one it has),
@@ -1445,14 +1554,14 @@ class AgentHub:
                 raise ValueError(f"linking {payload['child']} under {cid} would make a loop")
         if op == "create" and title:
             payload["title"] = title.strip()[:80]
-        return await self.bridge("child", payload)
+        return await self.edit("child", payload)
 
     async def canvas_anim(self, canvas: str | None, session: str | None, script: Any) -> dict[str, Any]:
         cid = resolve_canvas(self.store, canvas, session)
         errors = schemas.validate(schemas.load("anim.schema.json"), script)
         if errors:
             return {"status": "invalid", "errors": errors[:12]}
-        return await self.bridge("anim", {"canvasId": cid, "sessionId": session, "script": script})
+        return await self.edit("anim", {"canvasId": cid, "sessionId": session, "script": script})
 
 
 def _summarize(inp: dict[str, Any]) -> str:

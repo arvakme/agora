@@ -22,7 +22,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from server.canvas import shutdown
+from server.canvas import build_log, shutdown
 from server.canvas.backup import Backups, FileHistory
 from server.canvas.discover import full_text, session_history
 from server.canvas.events import Events
@@ -92,6 +92,7 @@ class NewShare(BaseModel):
     maxOpens: int | None = None  # distinct guests that may open it; None = unlimited
     quick: bool = False  # account-less trycloudflare.com address (one share at a time)
     domain: str | None = None  # the zone picked in the share window (remembered; AGORA_SHARE_DOMAIN wins)
+    buildReplay: bool = False  # guests may watch how the canvas was built (the owner ticks it in the share window)
 
 
 def sse(events: Events, request: Request, accept=None, *, tick: float = 15.0) -> StreamingResponse:
@@ -148,6 +149,15 @@ def create_project_router(store: ProjectStore, events: Events | None = None, *, 
         # ``local``: which copy this is and what changed since the page last looked (moved, copied,
         # a fresh clone); ``origins``: listed sessions that cannot simply be resumed here.
         return {**store.snapshot(), "local": {"instanceId": local.instance_id(), "change": local.change()}, "origins": session_origins(store, local)}
+
+    @router.get("/build")
+    def build(canvas: str):
+        """How a canvas (and the canvases below it) was built, step by step (web/docs/share-build-replay.md): from the
+        construction log, and for what came before it the agents' recorded changes, in the words a guest of the canvas may read."""
+        try:
+            return build_log.build_timeline(store, canvas)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e)) from e
 
     @router.post("/local/ack")
     def ack_change():
@@ -361,7 +371,7 @@ def create_share_router(store: ProjectStore, shares: ShareManager, events: Event
         try:
             if body.domain and not body.quick:
                 shares.choose_domain(body.domain)
-            share, url = shares.create(body.canvasId, body.ttl, title_of(body.canvasId), max_opens=body.maxOpens, quick=body.quick)
+            share, url = shares.create(body.canvasId, body.ttl, title_of(body.canvasId), max_opens=body.maxOpens, quick=body.quick, build_replay=body.buildReplay)
         except ValueError as e:  # a zone the account does not have
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:  # ShareError, Cloudflare / cf failures: in plain words, with the next step, keep serving
@@ -475,6 +485,10 @@ def create_project_app(
     probe = Terminals(store.root, store.run_dir, socket=local.socket(), legacy=local.legacy_sockets())
     local.reconcile(alive=probe.alive)
     hub = hub or AgentHub(store, local=local)
+    if gateway and hub.opener is None:  # the running app (not a test) may open a page itself when an edit finds none (page_help.py)
+        from server.canvas.page_help import default_opener
+
+        hub.opener = default_opener
     events = Events()
     hub.events = events  # a dispatch answering a comment thread tells open pages (dispatch.py)
     shares = shares or ShareManager(store)

@@ -149,8 +149,12 @@ async def test_read_falls_back_to_files_and_apply_needs_a_page(store):
     assert got["scene"]["nodes"] == [{"id": "redis", "type": "rectangle", "label": "Redis", "x": 10, "y": 20, "width": 160, "height": 64}]
     saved = json.loads((store.run_dir / "reads" / f"{got['base']}.json").read_text())
     assert saved["versions"] == {"redis": "3.2", "redis-t": "2"}
-    with pytest.raises(NoPage):
-        await hub.canvas_apply(None, None, got["base"], [{"op": "update_text", "id": "redis", "text": "Redis 集群"}], None)
+    # no page: the server edits the file itself for what needs no page (fallback.py) and says "open a page" for the rest
+    done = await hub.canvas_apply(None, None, got["base"], [{"op": "update_text", "id": "redis", "text": "Redis 集群"}], None)
+    assert done["status"] == "applied" and done["source"] == "server-fallback" and any("没有打开的 Agora 页面" in n for n in done["notes"])
+    again = await hub.canvas_read(None, None)
+    needs = await hub.canvas_apply(None, None, again["base"], [{"op": "move", "id": "redis", "x": 1, "y": 1}], None)
+    assert needs["status"] == "needs-page" and "这条要打开页面才能做" in needs["errors"][0]
     with pytest.raises(ValueError, match="unknown base"):
         await hub.canvas_apply(None, None, "r-1-nope", [], None)
     bad = await hub.canvas_anim(None, None, {"title": "x", "nodes": [], "steps": []})

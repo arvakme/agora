@@ -229,6 +229,7 @@ def migrate_log(src: Path, new_root: Path | str) -> Path:
 
 class PiAdapter(Adapter):
     kind = "pi"
+    steer = True  # ``pi --mode rpc`` (the resident way, server/canvas/resident.py): ``steer`` puts words into the running turn
     name = "Pi"
     binaries = ("pi",)
     tested = VersionRange(">=0.80,<0.88")
@@ -239,6 +240,7 @@ class PiAdapter(Adapter):
     has_cost = True
     waits = "inferred"
 
+    images = True  # ``@file`` arguments before the prompt (measured: pi 0.87.1)
     assigns_id = "agora"
     can_fork_headless = True
     terminal_fork = "pi --fork"
@@ -332,10 +334,24 @@ class PiAdapter(Adapter):
             args += ["--thinking", o.effort]
         if skill_dir is not None and skill_dir.is_dir():
             args += ["--skill", str(skill_dir)]
-        return [*args, "--", req.prompt]
+        return [*args, "--", *(f"@{p}" for p in req.images), req.prompt]
 
     def headless_stdin(self, req: Any) -> bytes | None:
         return None  # the prompt is the last argument
+
+    def rpc_args(self, cmd: list[str], req: Any, *, skill_dir: Path | None = None) -> list[str]:
+        """The resident way: ``pi --mode rpc`` for one session (the prompt comes as a ``prompt`` command, not an argument)."""
+        o = req.options
+        args = [*cmd, "--mode", "rpc"]
+        if o.session:
+            args += ["--session-id", o.session]
+        if o.model:
+            args += ["--model", o.model]
+        if o.effort:
+            args += ["--thinking", o.effort]
+        if skill_dir is not None and skill_dir.is_dir():
+            args += ["--skill", str(skill_dir)]
+        return args
 
     # ——— Interactive ———
     def fork_argv(self, fork: dict[str, Any]) -> list[str]:

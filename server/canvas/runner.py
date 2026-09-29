@@ -111,6 +111,8 @@ class RunRequest:
     env: dict[str, str] | None = None
     # Two-way backends (Claude): where the host writes what it sends to the running turn.
     control: Control | None = None
+    # Picture files that go with the prompt (only for a CLI whose adapter says it ``images``: adapters/base.py).
+    images: tuple[str, ...] = ()
 
 
 class Usage(TypedDict):

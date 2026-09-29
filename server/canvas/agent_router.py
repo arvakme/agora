@@ -4,18 +4,20 @@ canvas bridge the ``agora canvas`` CLI talks to. Business rules live in sessions
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
-from server.canvas import adapters, agents, nested
+from server.canvas import adapters, agents, agora_msg, graph_hub, nested
 from server.canvas.dispatch import DispatchError, Dispatches
 from server.canvas.project import Gone, Locked, NotFound
+from server.canvas.selection import Selections
 from server.canvas.sessions import AgentHub, Busy, Copied, NoPage, agora_prompt, canvas_names
 from server.canvas.terminal import TerminalError
 
@@ -43,12 +45,30 @@ class PageState(BaseModel):
     focusedAt: float = 0.0
 
 
+class Element(BaseModel):
+    id: str
+    name: str = ""
+
+
+class SelectionIn(BaseModel):
+    canvasId: str
+    elements: list[Element]
+    svg: str
+    png: str | None = None  # base64
+
+
 class Send(BaseModel):
     text: str
     canvasId: str | None = None
     # Extra context line for the footer (e.g. which comment thread this came from).
     context: str = ""
     raw: bool = False  # send text as-is (no Agora footer)
+    # Canvas elements the message names with # (id and name), and the elements selected when it was sent
+    # with their picture: the footer says them as 名字（id）, the picture is kept beside the project (selection.py).
+    refs: list[Element] = []
+    selection: SelectionIn | None = None
+    # While a turn runs: steer (into it), interrupt (stop it, then say this), wait (queue), auto (steer if the CLI can, else queue)
+    mode: Literal["auto", "steer", "interrupt", "wait"] = "auto"
 
 
 class Answer(BaseModel):
@@ -98,11 +118,15 @@ class CanvasCall(BaseModel):
     node: str | None = None
     child: str | None = None
     title: str | None = None
+    nodes: list[str] | None = None  # layout: the existing nodes to re-arrange …
+    everything: bool = False  # … or all of them
+    execute: bool = False  # layout: do it (default: only say what would move)
 
 
 def create_agent_router(hub: AgentHub) -> APIRouter:
     router = APIRouter()
     store = hub.store
+    selections = Selections(store.dir)
 
     dispatches: Dispatches = getattr(hub, "dispatches", None) or Dispatches(hub)
     hub.dispatches = dispatches  # type: ignore[attr-defined]
@@ -262,6 +286,38 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
             raise HTTPException(404, "no agent binding")
         return hub.status(sid)
 
+    def _attach(body: Send) -> tuple[str, tuple[str, ...]]:
+        """The footer words for the # references and the selection (name and id of each), the selection kept as a
+        picture and named by its token; and the picture file for a CLI that takes one."""
+        notes = [body.context, agora_msg.refs_note([e.model_dump() for e in body.refs])]
+        images: tuple[str, ...] = ()
+        if body.selection:
+            els = [e.model_dump() for e in body.selection.elements]
+            try:
+                png = base64.b64decode(body.selection.png) if body.selection.png else None
+                saved = selections.save(canvas_id=body.selection.canvasId, elements=els, svg=body.selection.svg, png=png)
+            except ValueError:  # too big to keep, or not base64: the words still go, the picture does not
+                saved = None
+            notes.append(agora_msg.selection_note(els))
+            if saved:
+                notes.append(f"agora-sel-{saved['id']}")
+                images = (str(p),) if (p := selections.png_path(saved["id"])) else ()
+        return " ".join(n for n in notes if n), images
+
+    @router.get("/selections/{sel_id}")
+    async def get_selection(sel_id: str):
+        meta = selections.read(sel_id)
+        if meta is None:
+            raise HTTPException(404, "no such selection")
+        return meta
+
+    @router.get("/selections/{sel_id}/thumb.svg")
+    async def get_selection_svg(sel_id: str):
+        svg = selections.svg(sel_id)
+        if svg is None:
+            raise HTTPException(404, "no such selection")
+        return Response(svg, media_type="image/svg+xml", headers={"cache-control": "private, max-age=31536000, immutable", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'"})
+
     @router.post("/sessions/{sid}/send")
     async def send(sid: str, body: Send):
         if not body.text.strip():
@@ -269,8 +325,11 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
         try:
             names = canvas_names(store)
             pid = str(store.info().get("id") or "")
-            prompt = body.text if body.raw else agora_prompt(body.text, canvas_id=body.canvasId, canvas_name=names.get(body.canvasId or ""), extra=body.context, session_id=sid, project_id=pid)
-            return hub.send(sid, prompt)
+            extra, images = body.context, ()
+            if not body.raw and (body.refs or body.selection):
+                extra, images = await asyncio.to_thread(_attach, body)
+            prompt = body.text if body.raw else agora_prompt(body.text, canvas_id=body.canvasId, canvas_name=names.get(body.canvasId or ""), extra=extra, session_id=sid, project_id=pid)
+            return hub.send(sid, prompt, body.mode, images)
         except Exception as e:
             return fail(e)
 
@@ -467,6 +526,16 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
             "page": hub.executor() is not None,
         }
 
+    @router.get("/auto-open")
+    def get_auto_open():
+        """Whether Agora may open a page itself when an edit finds none (default on; kept in .agora/local/settings.json)."""
+        return {"enabled": hub.auto_open_enabled()}
+
+    @router.put("/auto-open")
+    def put_auto_open(body: dict[str, Any]):
+        hub.set_auto_open(bool(body.get("enabled", True)))
+        return {"enabled": hub.auto_open_enabled()}
+
     @router.post("/canvas/read")
     async def canvas_read(body: CanvasCall):
         try:
@@ -480,6 +549,20 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
             return JSONResponse(status_code=400, content={"error": "missing base: pass the `base` printed by `agora canvas read`"})
         try:
             return await hub.canvas_apply(body.canvas, body.session, body.base, body.ops or [], body.note)
+        except Exception as e:
+            return fail(e)
+
+    @router.post("/canvas/lint")
+    async def canvas_lint(body: CanvasCall):
+        try:
+            return await graph_hub.canvas_lint(hub, body.canvas, body.session)
+        except Exception as e:
+            return fail(e)
+
+    @router.post("/canvas/layout")
+    async def canvas_layout(body: CanvasCall):
+        try:
+            return await graph_hub.canvas_layout(hub, body.canvas, body.session, body.nodes, body.everything, body.execute, body.note)
         except Exception as e:
             return fail(e)
 

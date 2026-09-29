@@ -104,6 +104,66 @@ class CodexStream(StreamMapper):
         return out
 
 
+class CodexAppStream(StreamMapper):
+    """``codex app-server`` (JSON-RPC notifications, one thread per process; shapes recorded 2026-09-29, codex 0.157.1,
+    tests/fixtures/agents/codex-appserver/): what ``CodexStream`` says of ``codex exec --json``, from the camel-case items."""
+
+    def __init__(self, model: str | None, session: str | None) -> None:
+        super().__init__(model, session)
+        self.interrupted = False
+        self._total: dict[str, Any] | None = None  # the thread's running token total: a turn's usage is what it added
+
+    def _used(self, total: dict[str, Any], at: int) -> list[dict[str, Any]]:
+        prev, self._total = self._total or {}, total
+        d = {k: (_int(total.get(k)) or 0) - (_int(prev.get(k)) or 0) for k in ("inputTokens", "cachedInputTokens", "cacheWriteInputTokens", "outputTokens")}
+        if not any(d.values()):
+            return []  # the same total announced again
+        u = codex_usage({"input_tokens": d["inputTokens"], "cached_input_tokens": d["cachedInputTokens"], "output_tokens": d["outputTokens"], "cache_write_input_tokens": d["cacheWriteInputTokens"]}, self.model)
+        self.usage = add_usage(self.usage, u)
+        return [{"t": "usage", "at": at, "usage": u}]
+
+    def baseline(self, total: dict[str, Any] | None) -> None:
+        """The total before this turn began (announced when the thread is resumed, or the last turn's end)."""
+        self._total = total
+
+    def feed(self, d: dict[str, Any], at: int) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        method, p = d.get("method"), d.get("params") or {}
+        if method in ("item/started", "item/completed"):
+            item = p.get("item") or {}
+            kind, iid, started = item.get("type"), str(item.get("id")), method == "item/started"
+            if kind == "agentMessage" and not started:
+                text = str(item.get("text") or "")
+                if text.strip():
+                    self.text = text
+                    out.append({"t": "text", "at": at, "text": text})
+            elif kind == "commandExecution":
+                if started:
+                    out.append({"t": "tool_use", "at": at, "id": iid, "name": "shell", "input": {"command": item.get("command")}})
+                else:
+                    code = item.get("exitCode")
+                    out.append({"t": "tool_result", "at": at, "id": iid, "text": str(item.get("aggregatedOutput") or ""), "isError": code not in (0, None)})
+            elif kind in ("mcpToolCall", "dynamicToolCall", "fileChange", "webSearch") and not started:
+                name = str(item.get("tool") or {"fileChange": "file_change", "webSearch": "web_search"}.get(kind, kind))
+                out.append({"t": "tool_use", "at": at, "id": iid, "name": name, "input": item.get("arguments") or item.get("changes") or item.get("query")})
+                out.append({"t": "tool_result", "at": at, "id": iid, "text": str(item.get("status") or ""), "isError": item.get("status") == "failed"})
+        elif method == "thread/tokenUsage/updated":
+            total = (p.get("tokenUsage") or {}).get("total")
+            if isinstance(total, dict):
+                out += self._used(total, at)
+        elif method == "turn/completed":
+            turn = p.get("turn") or {}
+            status = turn.get("status")
+            if status == "interrupted":
+                self.interrupted = True
+            elif status == "failed":
+                self.error = f"codex: {str((turn.get('error') or {}).get('message') or 'turn failed')[:300]}"
+            self.done = True
+        elif method == "error" and not p.get("willRetry"):
+            self.error = f"codex: {str((p.get('error') or {}).get('message') or 'error')[:300]}"
+        return out
+
+
 # ——— files a tool call writes: FileChange items (``changes`` keyed by path) ———
 CHANGE = {"update": "edit", "add": "add", "delete": "delete"}
 
@@ -400,6 +460,7 @@ def index_rows(roots: list[str], home: Path) -> list[dict[str, Any]]:
 
 class CodexAdapter(Adapter):
     kind = "codex"
+    steer = True  # ``codex app-server`` (the resident way, server/canvas/resident.py): ``turn/steer`` puts words into the running turn
     name = "Codex"
     binaries = ("codex",)
     tested = VersionRange(">=0.149,<0.158")
@@ -410,6 +471,7 @@ class CodexAdapter(Adapter):
     delete_hint = "codex delete {id}"
     waits = "native"
 
+    images = True  # ``-i <file>``, also after ``exec resume`` (measured: codex 0.157.1)
     assigns_id = "cli"
     can_fork_headless = False
     terminal_fork = "codex fork"
@@ -596,6 +658,8 @@ class CodexAdapter(Adapter):
         args = [*cmd, "exec"]
         if o.session:
             args += ["resume", o.session]
+        for img in req.images:  # before the next flag: -i takes many values, the prompt's dash must not become one
+            args += ["-i", img]
         args += ["--json", "--skip-git-repo-check"]
         if o.model:
             args += ["-m", o.model]

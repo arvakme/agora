@@ -224,10 +224,20 @@ class Adapter:
     # Whether the CLI process keeps its own session log open, so the files a pane's process holds
     # name its native session (``native_from_open_files``).
     claims_by_open_file: bool = False
+    # Whether a headless turn can be handed picture files (``req.images``) with the words: measured per CLI, docs/cli-adapters.md §图片.
+    images: bool = False
     # Two-way headless: the turn's stdin stays open (the host answers the CLI's requests and can interrupt).
     duplex: bool = False
+    # Whether words written while a headless turn runs are read by that turn (``steer_line`` is the line), else why not.
+    steer: bool = False
+    no_steer: str = ""
     # The permission mode Agora asks the CLI for; the session header compares it with the mode the CLI reports.
     asked_mode: str = "auto"
+
+    def steer_line(self, prompt: str) -> dict[str, Any]:
+        """The words the person adds while the turn runs, as the line the host sends a two-way turn (``Control``): one more
+        user message. Backends put it into the CLI's own protocol (Claude's stdin takes it as is; Codex ``turn/steer``; Pi ``steer``)."""
+        return {"type": "user", "message": {"role": "user", "content": prompt}}
 
     def native_from_open_files(self, paths: list[str], home: Path | None = None) -> str | None:
         """The native session id named by the files a CLI process has open, None when none does."""
