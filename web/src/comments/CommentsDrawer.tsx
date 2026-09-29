@@ -2,6 +2,7 @@
 // the 「在画布上显示已解决」 switch (the same one as in ⋯), and a 「锚点已失效」 group for threads whose
 // element is gone (never drawn on the canvas): 重新钉到… another element, or 删除. Picking a thread
 // pans to its pin (if it is off screen) and opens it; a resolved one opens here, with 重新打开.
+import { pinState } from "./handoffState";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
@@ -77,6 +78,7 @@ export function CommentsDrawer({ title, api, store, view, open, onClose, focusId
             <span className="ditem-foot">
               {t.messages.length > 1 && <span>{t.messages.length - 1} 条回复</span>}
               {t.agent === "running" && <span><i className="dot" data-tone="ok" />Agent 处理中</span>}
+              {pinState(t) === "answered" && <span><i className="dot" data-tone="answered" />Agent 已答复</span>}
               {t.resolved && <span>已解决{t.resolvedBy ? ` · ${t.resolvedBy.name}` : ""}{t.resolvedAt ? ` · ${ago(t.resolvedAt)}` : ""}</span>}
             </span>
           </span>

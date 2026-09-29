@@ -296,3 +296,9 @@ export function itemOfStop(tr: Trace, runId: string, index: number): string | nu
   const stops = runId === tr.id ? tr.stops : tr.subs.find((k) => k.id === runId)?.stops;
   return stops?.[index]?.calls.find((c) => c.itemId)?.itemId ?? null;
 }
+/** Every call of a stop that has a transcript item, in time order — the rows that light together when the stop is clicked. */
+export function itemsOfStop(tr: Trace, runId: string, index: number): string[] {
+  const stops = runId === tr.id ? tr.stops : tr.subs.find((k) => k.id === runId)?.stops;
+  const ids = (stops?.[index]?.calls ?? []).flatMap((c) => (c.itemId ? [c.itemId] : []));
+  return [...new Set(ids)];
+}

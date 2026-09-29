@@ -1,6 +1,7 @@
 // Pins over one canvas + the thread card / composer anchored to them. While an agent works on a
 // comment, a line joins its pin to the worker, and a check pops on the pin when it answers
 // (../workstation/CommentWork.tsx).
+import { PIN_LABEL, pinState } from "./handoffState";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useRef, useState } from "react";
@@ -111,13 +112,14 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
             data-resolved={t.resolved}
             data-status={st.status}
             data-running={t.agent === "running"}
+            data-state={pinState(t)}
             data-mock={fake || undefined}
             style={{ transform: `translate3d(${p.x}px, ${p.y}px, 0)` }}
             onPointerDown={(e) => e.stopPropagation()}
             onPointerEnter={() => !fake && hover(t.id)}
             onPointerLeave={() => hover(null)}
             onClick={() => (fake ? undefined : t.resolved ? onOpenResolved?.(t.id) : store.open(t.id))}
-            aria-label={`线程 ${t.n}${t.resolved ? "（已解决）" : ""}`}
+            aria-label={`线程 ${t.n}（${PIN_LABEL[pinState(t)]}）`}
           >
             <span className="pin-body">
               {t.resolved ? (
@@ -130,6 +132,7 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
               )}
             </span>
             {t.agent === "running" && <span className="pin-orbit" />}
+            {pinState(t) === "answered" && <span className="pin-answered" aria-hidden />}
           </button>
         );
       })}

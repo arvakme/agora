@@ -10,7 +10,7 @@ import { OUTSIDE, stateAt, type Ctx } from "./place.ts";
 import { tripAt } from "./rig.ts";
 import { route, walkMap } from "./route.ts";
 import type { RunSeg, WorkRun } from "./runs/types.ts";
-import { pointAt, traceAt, walkedAt, type Trace } from "./trace.ts";
+import { itemOfStop, itemsOfStop, pointAt, spanOf, stopForItem, traceAt, turnWindowOf, walkedAt, type Trace } from "./trace.ts";
 
 const S = 1000;
 const seg = (kind: RunSeg["kind"], start: number, end: number, path?: string): RunSeg => ({ kind, start: start * S, end: end * S, label: kind, ...(path ? { path } : {}) });
@@ -183,5 +183,87 @@ describe("traceAt (追踪)", () => {
     const later = traceAt(r, 82 * S, c);
     expect(places(later)).toEqual(["web", "api"]);
     expect(later.stops.map((s) => [s.t0 / S, s.done])).toEqual([[80, true], [85, false]]);
+  });
+});
+
+// ——— a real session: s-7xzd5n5 of the 圆桌 AI copy (Claude Code, 8 turns; E1, 2026-09-29) ———
+// The trajectory rows and the trace's stops are two views of the same transcript items: the row's id is the
+// tool call's `toolu_…` id, the stop's call carries the lane segment's `itemId` — they must be the same string.
+// Segments below are the ones the server's /api/agent/runs gave (turn 1: reads, edits, `go vet`; turn 2: `sleep 20`,
+// reads; turn 8: a comment's reads), times relative to the first.
+const T_REAL = 1_790_659_665_879;
+const REAL: [RunSeg["kind"], number, number, string | null, string, number][] = [
+  ["read", 0, 300, "controlplane/internal/a2aext/a2aext.go", "toolu_01QdGvYyTrXrXaztrs47TsVe", 1],
+  ["read", 425, 725, "webapp/src/start.ts", "toolu_01B1XoZUWzVsfSaPLPugTcY4", 1],
+  ["write", 3910, 4772, "controlplane/internal/a2aext/a2aext.go", "toolu_01EbbCnv139vtC2uDCSjXnJN", 1],
+  ["write", 4753, 5053, "webapp/src/start.ts", "toolu_01GhJ4E9XkxqM5CgPRnGEhWS", 1],
+  ["exec", 6572, 40616, "controlplane/internal/a2aext", "toolu_01Hnky9CqJtzig3G9cfZB9Tx", 1],
+  ["exec", 295252, 316442, null, "toolu_01M2xQkeJX21SkoFPKCLBCqk", 2],
+  ["read", 318681, 318981, "controlplane/internal/a2aext/a2aext.go", "toolu_01B3DHcS2MZghMjsnoXeiNuF", 2],
+  ["read", 318862, 319162, "webapp/src/start.ts", "toolu_0185XPCkDGZfGpXbP3qViyzk", 2],
+  ["exec", 320803, 341840, null, "toolu_01N3rJwgGEcYydGneasyVo7X", 2],
+  ["read", 722422, 723651, null, "toolu_01QuHZnXk2Pp5hYEJDaXAoE5", 8],
+  ["read", 726406, 727480, "controlplane/internal/ratelimit/ratelimit.go", "toolu_01RBpPKmdfeNH6hQ76JedVMs", 8],
+  ["read", 730265, 731405, "controlplane/internal/auth/ratelimit.go", "toolu_01Q7VVS9zvfWSm37AnMqzZhg", 8],
+];
+const realRun = run(
+  "claude:6680fa1f",
+  REAL.map(([kind, s, e, path, itemId, turn]) => ({ kind, start: T_REAL + s, end: T_REAL + e, label: kind, ...(path ? { path } : {}), itemId, turn })),
+);
+const RBOX: Record<string, Box> = { controlplane: { x: 300, y: 300, w: 200, h: 72 }, webapp: { x: 40, y: 100, w: 200, h: 72 }, [OUTSIDE]: { x: 620, y: 470, w: 200, h: 56 } };
+const rctx: Ctx = {
+  locate: (p) => (p.startsWith("controlplane/") ? { place: "controlplane" } : p.startsWith("webapp/") ? { place: "webapp" } : null),
+  dock: (p) => ({ x: RBOX[p].x + 24, y: RBOX[p].y }),
+  reduced: false,
+  run: () => realRun,
+};
+
+describe("a real session: trajectory rows ↔ stops (E1)", () => {
+  const turn = (n: number) => turnWindowOf(realRun, n)!;
+  const trace = (n: number) => traceAt(realRun, T_REAL + 900_000, rctx, Date.now(), spanOf(turn(n), T_REAL + 900_000));
+
+  it("every tool call of a turn is on a stop, and its row (the item id) leads to exactly that stop and back", () => {
+    for (const n of [1, 2, 8]) {
+      const tr = trace(n);
+      for (const [, , , , itemId, t] of REAL.filter((x) => x[5] === n)) {
+        const at = stopForItem(tr, itemId);
+        expect(at, `turn ${t} ${itemId}`).not.toBeNull();
+        expect(tr.stops[at!.index].calls.some((c) => c.itemId === itemId)).toBe(true);
+        const first = itemOfStop(tr, at!.run, at!.index)!;
+        expect(stopForItem(tr, first)).toEqual(at);
+      }
+    }
+  });
+
+  it("turn 1: reads/edits of the two files are on their nodes' stops (controlplane, then webapp); a command with no file stays on the stop it was run at", () => {
+    const tr = trace(1);
+    // (the server's segment for `go vet` names the package folder, so it is a third stop, back at controlplane)
+    expect(tr.stops.map((s) => s.place)).toEqual(["controlplane", "webapp", "controlplane"]);
+    expect(stopForItem(tr, "toolu_01QdGvYyTrXrXaztrs47TsVe")).toMatchObject({ index: 0 });
+    expect(stopForItem(tr, "toolu_01GhJ4E9XkxqM5CgPRnGEhWS")).toMatchObject({ index: 1 });
+    // the turn-2 `sleep 20` has no file and no node: it is where the worker stood
+    const t2 = trace(2);
+    expect(stopForItem(t2, "toolu_01M2xQkeJX21SkoFPKCLBCqk")).not.toBeNull();
+  });
+
+  it("a stop's whole set of calls (the rows that light together when it is clicked), in time order, only those with a transcript item", () => {
+    const tr = trace(1);
+    const edit = stopForItem(tr, "toolu_01EbbCnv139vtC2uDCSjXnJN")!;
+    const all = itemsOfStop(tr, tr.id, edit.index);
+    expect(all).toContain("toolu_01EbbCnv139vtC2uDCSjXnJN");
+    expect(itemsOfStop(tr, tr.id, 0)).toContain("toolu_01QdGvYyTrXrXaztrs47TsVe");
+    for (let i = 0; i < tr.stops.length; i++) {
+      const ids = itemsOfStop(tr, tr.id, i);
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(itemOfStop(tr, tr.id, i)).toBe(ids[0] ?? null);
+    }
+    expect(itemsOfStop(tr, tr.id, 99)).toEqual([]);
+    expect(itemsOfStop(tr, "nobody", 0)).toEqual([]);
+  });
+
+  it("the second turn's stops point at the second turn's rows, not the first's", () => {
+    const t2 = trace(2);
+    const rows = new Set(REAL.filter((x) => x[5] === 2).map((x) => x[4]));
+    for (let i = 0; i < t2.stops.length; i++) for (const id of itemsOfStop(t2, t2.id, i)) expect(rows.has(id)).toBe(true);
   });
 });
