@@ -316,17 +316,17 @@ def reach(store: ProjectStore, share: Share) -> set[str]:
     return nested.reachable(store, share.canvasId)
 
 
-def project_tabs(store: ProjectStore) -> list[str]:
+def project_tabs(store: ProjectStore, sc: dict[str, list[dict[str, Any]]] | None = None) -> list[str]:
     """The project's top-level canvases (not nested under another), in the owner's tab order; what the guest's tab row lists."""
-    sc = nested.scenes(store)
+    sc = nested.scenes(store) if sc is None else sc
     children = nested.parent_index(sc)
     order = {cid: i for i, cid in enumerate(canvas_titles(store))}
     return sorted((c for c in sc if c not in children), key=lambda c: (order.get(c, len(order)), c))
 
 
-def project_tree(store: ProjectStore) -> list[dict[str, Any]]:
+def project_tree(store: ProjectStore, sc: dict[str, list[dict[str, Any]]] | None = None) -> list[dict[str, Any]]:
     """``project_tabs`` with what is nested under each, flattened depth-first (``depth`` 1 = its direct children): the guest's tab row folds the latter under the former."""
-    sc = nested.scenes(store)
+    sc = nested.scenes(store) if sc is None else sc
     owner = {child: parent for child, (parent, _) in nested.parent_index(sc).items()}
 
     def below(cid: str, depth: int) -> list[dict[str, Any]]:
@@ -336,7 +336,15 @@ def project_tree(store: ProjectStore) -> list[dict[str, Any]]:
                 out += [{"id": child, "depth": depth}, *below(child, depth + 1)]
         return out
 
-    return [{"id": cid, "children": below(cid, 1)} for cid in project_tabs(store)]
+    return [{"id": cid, "children": below(cid, 1)} for cid in project_tabs(store, sc)]
+
+
+def scope_signature(store: ProjectStore) -> tuple[str, set[str]]:
+    """(a fingerprint of what a project share shows — its tabs, their nesting and titles, no canvas content — and the canvases it reaches now). The gateway tells a guest's page "the scope changed" when it differs."""
+    sc = nested.scenes(store)
+    titles = canvas_titles(store)
+    shown = {"tabs": project_tree(store, sc), "titles": {c: titles.get(c, "") for c in sorted(sc)}}
+    return json.dumps(shown, sort_keys=True, ensure_ascii=False), set(sc)
 
 
 def landing(store: ProjectStore, share: Share) -> str | None:

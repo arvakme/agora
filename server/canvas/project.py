@@ -14,6 +14,7 @@ session logs, and otherwise treats payloads as opaque JSON.
 
 from __future__ import annotations
 
+import copy
 import fcntl
 import getpass
 import hashlib
@@ -21,6 +22,7 @@ import json
 import os
 import re
 import secrets
+import stat
 import subprocess
 import threading
 import time
@@ -279,6 +281,7 @@ class ProjectStore:
         # Called with a committed file's old bytes just before it is replaced (backup.FileHistory.keep).
         self.on_overwrite: Callable[[str, bytes], Any] | None = None
         self._bl_versions: dict[tuple[str, int], str] | None = None  # which agent made which element version (buildlog.py); rebuilt on demand
+        self._contained = False  # see ``contained()``
         self._ident: tuple[int, int] | None = self._identity()
         self._pid: str | None = self._project_id() if self._ident else None
 
@@ -404,12 +407,39 @@ class ProjectStore:
                 finally:
                     fcntl.flock(fh, fcntl.LOCK_UN)
 
-    @staticmethod
-    def _bytes(path: Path) -> bytes | None:
+    def contained(self) -> ProjectStore:
+        """A view of this store for code that hands files to people outside (the share gateway): a file is read only if it really
+        lives in this project's ``.agora/`` — a symbolic link in its place (to another project's canvas, say) reads as absent, so
+        whatever lists or reads files through this view can never reach beyond the project. Same locks and state; the owner's own
+        store is unchanged (it follows links as it always did)."""
+        view = copy.copy(self)
+        view._contained = True
+        return view
+
+    def _bytes(self, path: Path) -> bytes | None:
+        if self._contained:
+            return self._contained_bytes(path)
         try:
             return path.read_bytes()
         except FileNotFoundError:
             return None
+
+    def read_raw(self, path: Path) -> bytes | None:
+        """The bytes of a file under ``.agora/`` as this store reads its own files (None: not there)."""
+        return self._bytes(path)
+
+    def _contained_bytes(self, path: Path) -> bytes | None:
+        """The file's bytes if it is a regular file in its place in ``.agora/``: its directories resolve to themselves and the file
+        itself is not a link (opened without following one, so a link swapped in after a listing is refused too)."""
+        try:
+            want = Path(os.path.realpath(self.dir)) / path.parent.relative_to(self.dir)
+            if Path(os.path.realpath(path.parent)) != want:
+                return None
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except (OSError, ValueError):
+            return None  # absent, a link (ELOOP), or not ours
+        with os.fdopen(fd, "rb") as fh:
+            return fh.read() if stat.S_ISREG(os.fstat(fh.fileno()).st_mode) else None
 
     @staticmethod
     def _atomic(path: Path, data: bytes) -> None:
