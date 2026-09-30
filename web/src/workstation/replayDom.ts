@@ -10,8 +10,16 @@ export const excalidrawEl = () => document.querySelector<HTMLElement>('[data-pan
 /** What covers the top of the pane: Excalidraw's toolbar, the replay bar, the breadcrumb, and the follow status capsule that hangs under the toolbar. */
 export const TOP = ".App-menu_top, .ws-play-bar, .nest-crumbs, .ws-follow-status";
 export const BOTTOM = ".layer-ui__wrapper__footer";
-/** What floats over the pane (app/floatShell.ts): a floating shell's panel or its capsule, in any of the panes. */
+/** What floats over the pane (app/floatShell.ts): a floating shell — a card, a bar, a pill, a rail tab — in any of the panes. A card's resize handles reach outside it: `data-float-pad` is how far, and counts as part of it. */
 export const FLOATS = "[data-float-shell]";
+/** The client rectangles of the shells on the page, each grown by its own `data-float-pad`. */
+export function shellRects(root: ParentNode = document): { left: number; top: number; width: number; height: number }[] {
+  return [...root.querySelectorAll<HTMLElement>(FLOATS)].map((el) => {
+    const r = el.getBoundingClientRect();
+    const p = Number(el.dataset.floatPad) || 0;
+    return { left: r.left - p, top: r.top - p, width: r.width + 2 * p, height: r.height + 2 * p };
+  });
+}
 
 type R = { top: number; bottom: number; width: number; height: number };
 type FR = R & { left: number };
@@ -37,5 +45,5 @@ export function occupiedOf(ex: HTMLElement): Occupied {
   const pane = ex.closest<HTMLElement>("[data-pane]") ?? document;
   const rects = (sel: string, root: ParentNode = pane) => [...root.querySelectorAll<HTMLElement>(sel)].map((el) => el.getBoundingClientRect());
   // a floating shell is not inside the canvas's pane: look in the whole page (a shell that floats in this pane is found too)
-  return occupiedFrom({ top: r.top, bottom: r.bottom, left: r.left, right: r.right }, rects(TOP), rects(BOTTOM), rects(FLOATS, document));
+  return occupiedFrom({ top: r.top, bottom: r.bottom, left: r.left, right: r.right }, rects(TOP), rects(BOTTOM), shellRects().map((r) => ({ ...r, right: r.left + r.width, bottom: r.top + r.height })));
 }

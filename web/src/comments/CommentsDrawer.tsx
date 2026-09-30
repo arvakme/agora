@@ -1,11 +1,11 @@
 // The comment list for one canvas: a panel floating over the drawing at its top right (it takes no room from the canvas), in the shell the session panel
-// floats in too (app/floatShell.ts, web/docs/workstation.md §15): dragged by its head, as wide as the viewer pulled it, folded to a small button, one open at a time
-// with the session panel; where it is and whether it is folded stay in this browser. 进行中 / 已解决 tabs,
+// floats in too (app/floatShell.ts, web/docs/workstation.md §15): dragged by its head, sized by its eight handles, folded to a tab at the window's right edge (under the
+// session's), one open at a time with the session card; where it is, how big and whether it is folded stay in this browser. 进行中 / 已解决 tabs,
 // the 「在画布上显示已解决」 switch (the same one as in ⋯), and a 「锚点已失效」 group for threads whose
 // element is gone (never drawn on the canvas): 重新钉到… another element, or 删除. Picking a thread
 // pans to its pin (if it is off screen) and opens it; a resolved one opens here, with 重新打开.
-import { BOTTOM_CLEAR, floatFocus, MIN_W, MAX_W, shellBox } from "../app/floatShell";
-import { ShellCapsule, useClaim, useReach, useReporter, useShell, useShellGestures } from "../app/shellParts";
+import { floatFocus, HANDLE, railTop, RAIL_H, RAIL_W, shellBox } from "../app/floatShell";
+import { RailTab, ResizeHandles, useClaim, useRail, useShell, useShellGestures } from "../app/shellParts";
 import { pinState } from "./handoffState";
 import { useAuthorColors } from "./authorColor";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
@@ -58,28 +58,35 @@ export function CommentsDrawer({ title, api, store, view, open, onOpen, onClose,
   }, [el]);
   const [shell, setShell] = useShell("comments");
   // Opening the list from the dock shows it whole; closing it (✕ or the dock) leaves nothing behind. Only a folded list
-  // that was never closed stays as its small button, also after a reload.
+  // that was never closed stays as its rail tab, also after a reload.
   const wasOpen = useRef(open);
   useEffect(() => {
     if (open !== wasOpen.current && shell.folded) setShell({ ...shell, folded: false });
     wasOpen.current = open;
   }, [open]);
-  // One shell open at a time: the session panel being open folds this one to its capsule (what the viewer chose for it stays).
-  const openShell = useClaim("comments", open && !shell.folded);
-  const folded = shell.folded || (open && openShell === "session");
-  const sessionReach = useReach("session");
-  useReporter("comments", el, host, open && !folded);
-  const at = shellBox(shell, pane, { bottom: BOTTOM_CLEAR });
-  const [height, setHeight] = useState(0);
-  useLayoutEffect(() => {
-    if (!el || folded) return;
-    const measure = () => setHeight(el.offsetHeight);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [el, folded]);
-  const gestures = useShellGestures(shell, setShell, pane, height);
+  // One card open at a time: the session card being the open one folds this one to its rail tab (what the viewer chose for it stays). The session's bar does not: they can be up together.
+  const openCard = useClaim("comments", open && !shell.folded);
+  const folded = shell.folded || (open && openCard === "session");
+  const shown_ = open || shell.folded;
+  useEffect(() => (shown_ ? floatFocus.mount("comments") : undefined), [shown_]);
+  // a folded session card's rail tab is at the window's right edge: this card stays clear of it, and this list's own tab goes under that one
+  const sessionRail = useRail("session");
+  const cardPane = { w: pane.w - (sessionRail ? RAIL_W : 0), h: pane.h };
+  const at = shellBox(shell, cardPane, "comments");
+  const gestures = useShellGestures({ shell, set: setShell, pane: cardPane, kind: "comments", onFold: () => setShell({ ...shell, folded: true }) });
+  const railed = shown_ && folded;
+  // the bar of the session keeps clear of this card: tell it where the card is
+  useEffect(() => {
+    if (!shown_ || folded) return;
+    floatFocus.setCard("comments", { x: at.x, y: at.y, w: at.w, h: at.h });
+    return () => floatFocus.setCard("comments", null);
+  }, [shown_, folded, at.x, at.y, at.w, at.h]);
+  const tabTop = railed ? railTop(at.y + at.h / 2, RAIL_H, { top: 0, height: pane.h }, sessionRail ? [sessionRail] : []) : 0;
+  useEffect(() => {
+    if (!railed) return;
+    floatFocus.setRail("comments", { top: tabTop, bottom: tabTop + RAIL_H });
+    return () => floatFocus.setRail("comments", null);
+  }, [railed, tabTop]);
   const [tab, setTab] = useState<"open" | "resolved">("open");
   const [expanded, setExpanded] = useState<string | null>(null);
   const g = groupThreads(threads, (t) => resolveAnchor(t.anchor, view.map));
@@ -108,7 +115,7 @@ export function CommentsDrawer({ title, api, store, view, open, onOpen, onClose,
     store.open(id);
   };
 
-  if (!open && !shell.folded) return null;
+  if (!shown_) return null;
   const row = (t: Thread, lost = false) => {
     const st = resolveAnchor(t.anchor, view.map);
     const isOpen = expanded === t.id;
@@ -153,27 +160,27 @@ export function CommentsDrawer({ title, api, store, view, open, onOpen, onClose,
   };
   if (folded)
     return (
-      <ShellCapsule
+      <RailTab
         name="comments"
-        shell={shell}
-        others={[sessionReach]}
-        icon={<IconList size={16} />}
+        top={tabTop}
+        avatar={<IconList size={20} />}
         count={g.open.length}
+        label="评论"
         aria={`展开「${title}」的评论列表 · ${g.open.length} 条进行中`}
         onOpen={() => (onOpen(), setShell({ ...shell, folded: false }), floatFocus.set("comments"))}
         forwardRef={setEl}
       />
     );
   return (
-    <aside ref={setEl} className="drawer" data-float-shell="comments" style={{ left: at.x, top: at.y, width: at.w, maxHeight: at.h }} aria-label={`「${title}」的评论`} onPointerDown={(e) => e.stopPropagation()}>
-      <div className="float-grip" role="separator" aria-orientation="vertical" aria-label="调整评论列表的宽度（←→）" aria-valuemin={MIN_W} aria-valuemax={MAX_W} aria-valuenow={Math.round(at.w)} tabIndex={0} style={{ left: 0, top: 0, bottom: 0, width: 8 }} {...gestures.resize} onKeyDown={(e) => (e.key === "Escape" ? setShell({ ...shell, folded: true }) : gestures.resize.onKeyDown(e))} />
-      <header className="drawer-head float-head" tabIndex={0} {...gestures.move} onKeyDown={(e) => (e.key === "Escape" ? setShell({ ...shell, folded: true }) : gestures.move.onKeyDown(e))} title="拖动可以挪位置 · Alt+方向键移动 · Esc 收起">
+    <aside ref={setEl} className="drawer" data-float-shell="comments" data-float-pad={HANDLE} style={{ left: at.x, top: at.y, width: at.w, height: at.h }} aria-label={`「${title}」的评论`} onPointerDown={(e) => e.stopPropagation()}>
+      <header className="drawer-head float-head" tabIndex={0} {...gestures.head} title="拖动可以挪位置 · 双击换宽度 · Alt+方向键移动 · Esc 收起">
         <h2 className="drawer-title" title={title}>{title}<span> 的评论</span></h2>
-        <button className="icon-btn muted" onClick={() => setShell({ ...shell, folded: true })} aria-label="收成小按钮" title="收成小按钮">
+        <button className="icon-btn muted" onClick={() => setShell({ ...shell, folded: true })} aria-label="收起" title="收起（Esc）">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="M6 12h12" /></svg>
         </button>
         <button className="icon-btn muted" onClick={onClose} aria-label="关闭评论列表" title="关闭"><IconClose size={16} /></button>
       </header>
+      <ResizeHandles handle={gestures.handle} />
       <div className="drawer-bar">
         <div className="seg" role="tablist">
           {(["open", "resolved"] as const).map((k) => (
