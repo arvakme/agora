@@ -3,6 +3,7 @@
 // drag sashes to resize.
 // Canvases live in one flat layer keyed by id, so moving a tab never remounts Excalidraw;
 // they glide to their new rect via CSS transitions.
+import { useDragGuard } from "../app/dragGuard";
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { SPRING } from "../comments/motion";
@@ -58,6 +59,7 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [drag, setDrag] = useState<Drag | null>(null);
+  const guard = useDragGuard();
   const [resizing, setResizing] = useState(false);
   useLayoutEffect(() => {
     const el = ref.current!;
@@ -100,7 +102,8 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
 
   const onTabDown = (e: React.PointerEvent, tab: string) => {
     if ((e.target as HTMLElement).closest(".wm-tab-close, .wm-tab-input") || e.button !== 0) return;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    // a tab held down: no text selected, the pointer is the tab's; Esc, a lost pointer or a blur gives the drag up (nothing is moved)
+    guard(e, { cursor: "grabbing", onEnd: (why) => why !== "up" && setDrag(null) });
     const box = ref.current!.getBoundingClientRect();
     const t = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setDrag({ tab, x: e.clientX - box.left, y: e.clientY - box.top, ox: e.clientX - t.left, oy: e.clientY - t.top, active: false, target: null });
@@ -122,10 +125,10 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
   };
 
   const onSashDown = (e: React.PointerEvent, s: Sash) => {
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     let last = s.dir === "row" ? e.clientX : e.clientY;
     let current = root;
     setResizing(true);
+    const end = guard(e, { cursor: s.dir === "row" ? "col-resize" : "row-resize", onEnd: () => (setResizing(false), window.removeEventListener("pointermove", move)) });
     const move = (ev: PointerEvent) => {
       const now = s.dir === "row" ? ev.clientX : ev.clientY;
       current = resize(current, s.splitId, s.index, (now - last) / s.span, MIN_PANE / s.span);
@@ -133,13 +136,8 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
       setRoot(current);
       onSettled();
     };
-    const up = () => {
-      setResizing(false);
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
     window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    void end;
   };
 
   useEffect(() => {

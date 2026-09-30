@@ -105,3 +105,55 @@ describe("talkSent: waiting for delivery does not depend on the box", () => {
     expect(talkDismissed.run).toBe("sub-run");
   });
 });
+
+// ── FX9: the talk box is always whole inside the pane: narrower than the pane when the pane is narrow, and inside it wherever the figure is ──
+import { fitEllipsis, talkWidth } from "./talk.ts";
+describe("FX9 · the talk box inside the pane", () => {
+  it("talkWidth: its own width, or the pane's (less the margins) when the pane is narrower — never under 120", () => {
+    expect(talkWidth({ x: 8, y: 0, w: 1000, h: 500 }, 232)).toBe(232);
+    expect(talkWidth({ x: 8, y: 0, w: 200, h: 500 }, 232)).toBe(200);
+    expect(talkWidth({ x: 8, y: 0, w: 60, h: 500 }, 232)).toBe(120);
+  });
+  it("any pane width 320–1600, the figure anywhere (left, right, top edge, middle): the box, at its clamped width, is inside the area", () => {
+    const h = 60;
+    for (let w = 320; w <= 1600; w += 97) {
+      const area = { x: 8, y: 110, w: w - 16, h: 600 };
+      const bw = talkWidth(area, 232);
+      for (const fx of [0, 10, 60, w / 2, w - 60, w - 5, w]) for (const fy of [area.y - 40, area.y + 10, 300, area.y + area.h - 5, area.y + area.h + 30]) {
+        const r = placeTalk({ feet: { x: fx, y: fy }, size: { w: bw, h }, area, obstacles: [] });
+        expect(r.x, `w${w} fx${fx} fy${fy}`).toBeGreaterThanOrEqual(area.x);
+        expect(r.x + bw).toBeLessThanOrEqual(area.x + area.w + 1e-6);
+        expect(r.y).toBeGreaterThanOrEqual(area.y);
+        expect(r.y + h).toBeLessThanOrEqual(area.y + area.h + 1e-6);
+      }
+    }
+  });
+  it("without the width clamp a narrow pane cuts the box (the old behaviour): a 232 box in a 200 area runs out of it", () => {
+    const area = { x: 8, y: 110, w: 200, h: 600 };
+    const r = placeTalk({ feet: { x: 100, y: 300 }, size: { w: 232, h: 60 }, area, obstacles: [] });
+    expect(r.x + 232).toBeGreaterThan(area.x + area.w);
+  });
+});
+
+describe("FX9 · fitEllipsis: the placeholder is cut at a character, with …, never half of one", () => {
+  const long = "对 Claude Code · 画出这个项目的架构…（回车发送）";
+  const est = (s: string) => [...s].reduce((n, ch) => n + ((ch.codePointAt(0) ?? 0) >= 0x2e80 ? 1 : 0.56) * 13 * 1.04, 0);
+  it("fits: unchanged; does not fit: ends in … and is within the width", () => {
+    expect(fitEllipsis("对 Pi 说…（回车发送）", 400)).toBe("对 Pi 说…（回车发送）");
+    for (const px of [80, 120, 180, 208, 260]) {
+      const r = fitEllipsis(long, px);
+      expect(est(r), `${px}`).toBeLessThanOrEqual(px + 0.01);
+      expect(r.endsWith("…")).toBe(true);
+      expect(long.startsWith(r.slice(0, -1).trimEnd())).toBe(true);
+    }
+  });
+  it("wider box shows more, never less", () => {
+    let prev = 0;
+    for (let px = 60; px < 400; px += 20) {
+      const n = fitEllipsis(long, px).length;
+      expect(n).toBeGreaterThanOrEqual(prev);
+      prev = n;
+    }
+  });
+  it("nothing fits: just the ellipsis", () => expect(fitEllipsis("画出这个", 4)).toBe("…"));
+});

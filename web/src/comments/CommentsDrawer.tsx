@@ -3,6 +3,7 @@
 // the 「在画布上显示已解决」 switch (the same one as in ⋯), and a 「锚点已失效」 group for threads whose
 // element is gone (never drawn on the canvas): 重新钉到… another element, or 删除. Picking a thread
 // pans to its pin (if it is off screen) and opens it; a resolved one opens here, with 重新打开.
+import { useDragGuard } from "../app/dragGuard";
 import { pinState } from "./handoffState";
 import { useAuthorColors } from "./authorColor";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
@@ -64,10 +65,11 @@ export function CommentsDrawer({ title, api, store, view, open, onOpen, onClose,
   const place = clampPlace(panel.place, pane);
   const at = panelBox(place, pane);
   const drag = useRef<{ x: number; y: number; from: typeof place } | null>(null);
+  const guard = useDragGuard();
   const grab = (e: RPointerEvent) => {
     if ((e.target as HTMLElement).closest("button")) return;
     drag.current = { x: e.clientX, y: e.clientY, from: place };
-    e.currentTarget.setPointerCapture(e.pointerId);
+    guard(e, { cursor: "grabbing", onEnd: (why) => void (why !== "up" && (drag.current = null)) }); // a release is `drop`'s; Esc, a lost pointer or a blur leaves the panel where it is
   };
   const move = (e: RPointerEvent) => {
     const d = drag.current;
