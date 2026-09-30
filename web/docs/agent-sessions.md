@@ -187,7 +187,7 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 | 派发回执（`[Agora 派发回执 …]`：派活方收到的「你派给 X 的任务：完成了…」） | `card: {kind: "receipt", id, state, agent, session, answer}`；新的另带 `receipt`（页脚标记，重启补发靠它） | 一张卡片：「Codex 交回了你派的任务 · 完成」，下面是答复的开头，展开看全文，「打开 Codex 那个会话」；没有路径、`agora dispatch status`、「这是通知，不需要回复」；这一轮的轮头写「收到回执」；agent 对它的简短确认（没做别的事、160 字以内）淡显 |
 | 派发的任务信封（`[Agora 派发 …] 来自 …：先读任务文件 …`：被派会话收到的） | `card: {kind: "task", id, from, session?, scope}`、`dispatch`（完整的派发 id） | 卡片「Claude 会话 s-… 派来一个任务」，第一行是派发记录里的任务摘要，范围；轮头「收到任务」 |
 | 评论交接（`画布评论 #n（锚点：名字（id）…）：`，经派发送达） | `dispatch`；页面自己读（`comments/handoff.ts` `parseCommentMessage`，和写它的 `commentMessage` 放在一起） | 卡片「画布评论 #2」，第一条评论的开头，展开看整条线程，「在画布上看这条评论」；轮头「收到评论」 |
-| 发消息时的选区、`#` 引用 | `selection: {id}`（页脚里的 `agora-sel-<id>`）；老消息正文末尾的 `（当前选区：a, b）` 服务端读成 `selection: {ids}` 并从正文里去掉 | 用户气泡下面一张小图：选中元素的缩略图 + 「选区 · 21 个元素」；悬停列出名字，点击在画布上高亮这些元素；老消息没有图，只有这个标签 |
+| 发消息时的选区、`#` 引用 | `selection: {id}`（页脚里的 `agora-sel-<id>`）；老消息正文末尾的 `（当前选区：a, b）` 服务端读成 `selection: {ids}` 并从正文里去掉 | 用户气泡下面一张小图：选中元素的缩略图 + 「选区 · 21 个元素」；悬停列出名字，点击在图上标出这些元素（再点取消）；老消息没有图，只有这个标签 |
 | 「上一轮随服务重启中断了」「这一轮被停止了」「被 auto 拦下」「你在这里插了一句」 | 服务端加的 `notice` 条目，不是用户消息 | 一行小字，本来就不是气泡 |
 
 这些消息的 `text` 仍是 CLI 日志里的原文（轨迹里点开看到的是原文，标着「来自 Agora · 原文」；轨迹的一行和会话标题用卡片的一句话）；只有对话里的画法变了。按钮触发、由页面写的提示（「让 AI 画子图」的展开提示、「画出这个项目的架构」）目前仍按用户气泡画。
@@ -250,7 +250,7 @@ Pi 日志里的 `system` 消息、`custom`（扩展写的）、`bashExecution`�
 
 1. **已有页面里挑**（上面 BR1）。有页面**认领了却没回报**（`PageTookIt`）就停在这里报错，不走后面几步：那次改图可能已经落在它的画布上，绝不再换个地方执行第二遍。
 2. **自己打开一个页面**：用系统的打开命令（macOS `open`，其他 `xdg-open`）打开这个项目的地址（`run/server.json` 里的 `url`）。同一个项目 **2 分钟内最多自动打开一次**（不开一堆标签）；偏好里可以关掉，**默认开**（`GET/PUT /api/agent/auto-open`，存在 `.agora/local/settings.json` 的 `autoOpenPage`，不提交；页面上的开关还没做，要关先 `curl -X PUT …/api/agent/auto-open -d '{"enabled":false}'`）。新页面带 `executor=2` 连上来最多等 15 秒，连上就把同一个请求交给它（它也要先认领，同一批只落一次）。
-3. **服务端直接改文件**（`server/canvas/fallback.py`）：只对 `apply`。做和页面一样的三项检查：结构（`web/generated/plan.schema.json`）、引用、新鲜度，然后改 `.agora/canvases/<id>.excalidraw`，并写一份和页面一样的撤销记录（会话里的一轮 + 一个批次，页面里照样能「撤销这次修改」）；之后页面连上来直接读这份文件，页面在此期间保存的手改会和它冲突、由页面报告，不会被覆盖（`project.py` 的带版本写入）。**能力比页面小，而且是有意的**：改图引擎（`applyPlan`：摆放、连线、素材库）不复制到 Python，服务端只做不需要引擎的操作，眼下是「改节点或画框的文字」；别的（`move`、`resize`、`add_shape`、`add_arrow`、`delete`、`insert_library_item`，以及箭头和素材库组件的文字）一律在改任何东西之前返回 `needs-page`，写明「这条要打开页面才能做」，**整条计划一条都不执行**。`fallback.EXTRA_OPS` 是以后布局 / lint 模块登记「不需要页面也能做」的操作的地方。
+3. **服务端直接改文件**（`server/canvas/fallback.py`）：只对 `apply`。做和页面一样的三项检查：结构（`web/generated/plan.schema.json`）、引用、新鲜度，然后改 `.agora/canvases/<id>.excalidraw`，并写一份和页面一样的撤销记录（会话里的一轮 + 一个批次，页面里照样能「撤销」）；之后页面连上来直接读这份文件，页面在此期间保存的手改会和它冲突、由页面报告，不会被覆盖（`project.py` 的带版本写入）。**能力比页面小，而且是有意的**：改图引擎（`applyPlan`：摆放、连线、素材库）不复制到 Python，服务端只做不需要引擎的操作，眼下是「改节点或画框的文字」；别的（`move`、`resize`、`add_shape`、`add_arrow`、`delete`、`insert_library_item`，以及箭头和素材库组件的文字）一律在改任何东西之前返回 `needs-page`，写明「这条要打开页面才能做」，**整条计划一条都不执行**。`fallback.EXTRA_OPS` 是以后布局 / lint 模块登记「不需要页面也能做」的操作的地方。
 4. 三步都不行才报错，话里说清每一步试了什么（「开着的页面…没有认领；自己打开了页面…没连上；服务端直接改文件也做不了这一种」）。`link`、`child`、`anim` 没有服务端后备（它们要页面持有的工作区或动画播放器），走 1、2 之后直接是这条报错。
 
 **校验只有一份规则**：`web/generated/plan.rules.json`（每个 op 收哪些字段、每个字段能指向哪几种元素、各种上限、`ref` 的正则）。页面的 `validatePlan`（`web/src/ops/ops.ts`）读它，服务端的 `server/canvas/plan_rules.py` 读它（`load()` 和 `scene_kinds()` 是给布局、lint 这些服务端工具复用的），`web/generated/plan.cases.json` 是两边必须给出**完全相同**错误的同一批用例（`web/src/ops/planRules.test.ts`、`tests/test_plan_rules.py` 各跑一遍）。规则文件里少一种元素类型，两边一起变；只改一边，两个测试里有一个会红。新鲜度是 `staleIds`（`web/src/canvas/context.ts`）在服务端的孪生（`plan_rules.stale_ids`，版本串用 `model_view.version_of`）。结构 schema 还是原来从 TS 生成的 `plan.schema.json`。

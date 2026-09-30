@@ -8,6 +8,7 @@ import { SPRING } from "../comments/motion";
 import { fmtLeft } from "../guest/GuestApp";
 import { replayText } from "./replayText";
 import { buildSwitch, dnsWait } from "./shareLive";
+import { DomainRow } from "./DomainRow";
 import { createPlan, defaultTarget, domainView, type DomainInfo, type ShareTarget } from "./domainChoice";
 import "./share.css";
 
@@ -177,34 +178,18 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
       <div className="share-field">
         <span>地址</span>
         <div className="seg share-seg" data-static role="radiogroup" aria-label="地址">
-          <button role="radio" aria-checked={kind === "domain"} data-on={kind === "domain"} onClick={() => setTarget("domain")}>我的域名</button>
+          <button role="radio" aria-checked={kind === "domain"} data-on={kind === "domain"} onClick={() => setTarget("domain")} title="用你自己的域名：地址稳定，关掉 Agora 再打开还是同一个（有效期内）。需要先在终端运行 npx cf auth login">我的域名</button>
           <button role="radio" aria-checked={kind === "quick"} data-on={kind === "quick"} onClick={() => setTarget("quick")}>临时链接</button>
         </div>
       </div>
-      <div className="share-field share-custom">
-        <span />
-        <div className="share-where">
-          {kind === "domain" ? (
-            <>
-              {view.kind === "loading" && <em>正在读取你的 Cloudflare 域名…</em>}
-              {(view.kind === "fixed" || view.kind === "single") && <span>域名：<code>{view.domain}</code></span>}
-              {view.kind === "pick" && (
-                <label>
-                  域名
-                  <select value={view.selected} onChange={(e) => setPicked(e.target.value)} aria-label="分享用的域名">
-                    {view.options.map((d) => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </label>
-              )}
-              {view.kind === "error" && <em role="alert">{view.message}</em>}
-              {view.kind === "none" && <em>这个 Cloudflare 账号里没有域名。可以先用临时链接。</em>}
-              <small>地址稳定：用你自己的域名，关掉 Agora 再打开还是同一个地址（有效期内）。需要先在终端运行 <code>npx cf auth login</code>。</small>
-            </>
-          ) : (
-            <small>不需要域名和账号，随时能用；关掉 Agora 就失效，地址每次不同，同一时间只有一个临时链接。</small>
-          )}
+      {kind === "domain" ? (
+        <DomainRow view={view} onPick={setPicked} />
+      ) : (
+        <div className="share-field share-custom">
+          <span />
+          <small className="share-quick-note">不需要域名和账号，随时能用；关掉 Agora 就失效，地址每次不同，同一时间只有一个临时链接。</small>
         </div>
-      </div>
+      )}
       <div className="share-field">
         <span>有效期</span>
         <div className="seg share-seg" data-static role="radiogroup" aria-label="有效期">

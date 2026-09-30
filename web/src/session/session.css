@@ -190,15 +190,18 @@ label.sp-cv .sp-cv-t { flex: none; }
 .ds-convo-head button { color: var(--fg-subtle); font-variant-numeric: tabular-nums; }
 .ds-convo-head button:hover { color: var(--fg-muted); text-decoration: none; }
 .sp-change1 { padding: 0; box-shadow: none; gap: 0; border-radius: var(--r-sm); }
-.sp-line { display: flex; align-items: center; gap: var(--space-2); min-height: 26px; color: var(--fg-muted); font-size: var(--text-sm); }
+.sp-line { position: relative; container-type: inline-size; display: flex; align-items: center; gap: var(--space-2); min-height: 26px; color: var(--fg-muted); font-size: var(--text-sm); }
 /* the layers mark says the agent wrote the canvas: purple; the chevron after it stays ink */
 .sp-line-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-3); text-align: left; --icon: var(--accent); }
 .sp-line-main b { flex: none; color: var(--fg); font-weight: var(--weight-medium); }
 .sp-line-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-line-text[data-undone] { text-decoration: line-through; text-decoration-color: var(--fg-faint); }
 .sp-origin-n { flex: none; color: var(--accent-ink); font-size: var(--text-xs); }
-.sp-line-acts { flex: none; display: inline-flex; gap: 2px; opacity: 0; transition: opacity var(--dur-tap) var(--ease-out); }
-.sp-change1:hover .sp-line-acts, .sp-change1:focus-within .sp-line-acts, .sp-change1[data-open="true"] .sp-line-acts { opacity: 1; }
+/* the buttons lie over the end of the line while it is hovered, so the summary keeps its width the rest of the time */
+.sp-line-acts { position: absolute; right: 18px; top: 0; bottom: 0; display: inline-flex; align-items: center; gap: 2px; padding-left: var(--space-8); background: linear-gradient(90deg, transparent, var(--bg) var(--space-8)); opacity: 0; pointer-events: none; transition: opacity var(--dur-tap) var(--ease-out); }
+.sp-change1:hover .sp-line-acts, .sp-change1:focus-within .sp-line-acts, .sp-change1[data-open="true"] .sp-line-acts { opacity: 1; pointer-events: auto; }
+/* 已撤销 in the line gives way to the same words inside the buttons while they show */
+.sp-change1:hover .sp-line > .act-status, .sp-change1:focus-within .sp-line > .act-status, .sp-change1[data-open="true"] .sp-line > .act-status { visibility: hidden; }
 .sp-line-act { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: var(--r-xs); --icon: var(--fg-muted); }
 .sp-line-act:hover:not(:disabled) { background: var(--raised); --icon: var(--fg); }
 .sp-change1[data-status="invalid"], .sp-change1[data-status="stale"], .sp-change1[data-status="error"] { background: none; }

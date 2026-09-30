@@ -11,6 +11,7 @@ import { freeze, staleIds, type FrozenContext, type Request } from "../canvas/co
 import type { LibraryItem } from "../library/libraryInsert";
 import { referencedIds, validatePlan, type Op } from "../ops/ops";
 import { byId, isArrow, isShape, libraryMeta, live, nameOf, type Scene } from "../canvas/scene";
+import { redoBatch, redoOf, versionsAfterRedo, type Redo } from "./redo";
 import { sessions, type Origin, type Turn, type Usage } from "./store";
 import { ENTITY_ASSETS, pickEngine, type EnginePick } from "../anim/enginePick";
 
@@ -208,6 +209,10 @@ export async function runTurn(input: {
 }
 
 /** Undo exactly the batch of a turn; refuses when anything it touched changed since. */
+/** What each undone turn took off, in memory: 重做 puts it back (./redo.ts). A reload forgets it; the turn stays 已撤销. */
+const redoStash = new Map<string, Redo>();
+export const canRedoTurn = (turnId: string) => redoStash.has(turnId);
+
 export function undoTurn(api: ExcalidrawImperativeAPI, turnId: string): { ok: boolean; stale: string[] } {
   const turn = sessions.get().turns[turnId];
   const batch = turn?.reply?.batchId ? sessions.batch(turn.reply.batchId) : undefined;
@@ -220,8 +225,29 @@ export function undoTurn(api: ExcalidrawImperativeAPI, turnId: string): { ok: bo
     sessions.patchTurn(turnId, (t) => ({ ...t, reply: { ...t.reply!, undoError } }));
     return { ok: false, stale: r.stale };
   }
+  redoStash.set(turnId, redoOf(now, r.scene, batch));
   api.updateScene({ elements: r.scene, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
   sessions.patchTurn(turnId, (t) => ({ ...t, reply: { ...t.reply!, undone: true, undoError: undefined } }));
+  return { ok: true, stale: [] };
+}
+
+/** 重做: put an undone step back, unless its elements were changed since the undo. */
+export function redoTurn(api: ExcalidrawImperativeAPI, turnId: string): { ok: boolean; stale: string[] } {
+  const turn = sessions.get().turns[turnId];
+  const redo = redoStash.get(turnId);
+  if (!turn || !redo || !turn.reply?.undone) return { ok: false, stale: [] };
+  const now = all(api);
+  const r = redoBatch(now, redo);
+  if (!r.scene) {
+    const map = byId(now);
+    const undoError = `无法重做：${r.stale.map((id) => (map.get(id) ? nameOf(map.get(id)!, map) : id)).join("、")} 在撤销后又被改动过。`;
+    sessions.patchTurn(turnId, (t) => ({ ...t, reply: { ...t.reply!, undoError } }));
+    return { ok: false, stale: r.stale };
+  }
+  redoStash.delete(turnId);
+  if (turn.reply.batchId) sessions.setBatchAfter(turn.reply.batchId, versionsAfterRedo(r.scene as Scene, redo));
+  api.updateScene({ elements: r.scene, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+  sessions.patchTurn(turnId, (t) => ({ ...t, reply: { ...t.reply!, undone: false, undoError: undefined } }));
   return { ok: true, stale: [] };
 }
 

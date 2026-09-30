@@ -15,6 +15,7 @@ import { useTheme } from "../app/theme";
 import { bbox, byId, live, type El } from "./scene";
 import type { ThreadStore } from "../comments/threads";
 import { useHighlight } from "../session/ui";
+import { HighlightNote } from "../session/HighlightNote";
 import { highlightBoxes } from "./highlightBoxes";
 import { PointerLayer } from "../pointer/PointerLayer";
 import { OwnerBreadcrumb, OwnerChildMarkers } from "../nested/NestedLayer";
@@ -356,6 +357,7 @@ function HighlightLayer({ canvasId, view }: { canvasId: string; view: CanvasView
   const els = hl?.canvasId === canvasId ? highlightBoxes(hl.ids.map((id) => view.map.get(id)).filter(live)) : [];
   return (
     <div className="hl-layer">
+      <HighlightNote canvasId={canvasId} />
       <AnimatePresence>
         {els.map((e) => {
           const b = bbox(e);

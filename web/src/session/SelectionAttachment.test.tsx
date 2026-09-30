@@ -29,7 +29,7 @@ describe("SelectionView", () => {
     expect(out).toContain("选区 · 2 个元素");
   });
 
-  it("is one button that highlights the elements on the canvas", () => {
-    expect(html()).toMatch(/<button[^>]*aria-label="在画布上高亮这 2 个元素"/);
+  it("is one button that marks the elements on the canvas", () => {
+    expect(html()).toMatch(/<button[^>]*aria-label="在图上标出这 2 个元素（再点取消）"/);
   });
 });

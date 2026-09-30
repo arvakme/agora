@@ -11,8 +11,8 @@
 import { chooserView, type CatalogState } from "./chooserModel";
 import { ConflictNotice } from "../multi/ConflictNotice";
 import { AnimatePresence, motion } from "motion/react";
-import { startTransition, useEffect, useMemo, useRef, useState } from "react";
-import { IconChevron, IconCode, IconCommentSolid, IconCopy, IconLayers, IconLock, IconMore, IconPath, IconTarget, IconUndo } from "../app/icons";
+import { startTransition, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { IconChevron, IconCode, IconCommentSolid, IconCopy, IconLayers, IconLock, IconMore, IconPath } from "../app/icons";
 import { panelView, replayTime, useReplay, useTick, type PanelView } from "../workstation/clock";
 import { usePlay } from "../workstation/replayMode";
 import { useRuns } from "../workstation/runs/store";
@@ -42,7 +42,9 @@ import { useNested } from "../nested/store";
 import "./recommend.css";
 import { effortGroups, modelGroups } from "./pickerModel";
 import { TerminalAppIcon } from "../app/terminals/TerminalAppIcon";
-import { undoTurn } from "./runTurn";
+import { canRedoTurn, redoTurn, undoTurn } from "./runTurn";
+import { MarkButton, UndoButtons, UndoStatus } from "./StepActs";
+import { byId, live, type Scene } from "../canvas/scene";
 import { sessions, useSessions, type Turn } from "./store";
 import { agentChoice, canvases, draftText, highlight, openSessions, ui } from "./ui";
 import { JumpPill, useJumpToBottom } from "./JumpPill";
@@ -773,7 +775,7 @@ const kindLabel = (t: Turn) => {
 
 /**
  * A canvas change as one line: 「改了画布 · 新建子图「API 服务」：4 个节点…」. Hovering the line
- * shows 撤销 / 在画布中高亮 and lights the elements; ▸ opens the list of changes.
+ * shows 撤销 / 标出改动 (with their words, ./StepActs.tsx) and lights the elements; ▸ opens the list of changes.
  */
 function TurnCard({ t, canvasTitle, flash }: { t: Turn; canvasTitle?: string; flash: boolean }) {
   const [open, setOpen] = useState(false);
@@ -783,8 +785,16 @@ function TurnCard({ t, canvasTitle, flash }: { t: Turn; canvasTitle?: string; fl
   const detail = t.steps.map((s) => s.detail).filter(Boolean).join(" · ");
   const summary = t.reply?.changes?.length ? `${t.request}` : t.reply?.text ?? t.request;
   const undone = !!t.reply?.undone;
+  const pin = useSyncExternalStore(highlight.subscribe, () => highlight.pinned()?.key === t.id);
+  // How many of the touched elements are still on the canvas: counted when the person reaches for the buttons, not on every render (the canvas changes without this row knowing).
+  const [stillThere, setStillThere] = useState<number | null>(null);
+  const countStill = () => {
+    if (!api) return;
+    const map = byId(api.getSceneElements() as unknown as Scene);
+    setStillThere(touched.filter((id) => live(map.get(id))).length);
+  };
   return (
-    <article className="sp-change sp-change1" data-status={t.status} data-turn={t.id} data-flash={flash} data-open={open} data-tone={t.reply?.tone} onPointerEnter={() => hover(touched)} onPointerLeave={() => hover(undefined)}>
+    <article className="sp-change sp-change1" data-status={t.status} data-turn={t.id} data-flash={flash} data-open={open} data-tone={t.reply?.tone} onPointerEnter={() => (countStill(), hover(touched))} onPointerLeave={() => hover(undefined)} onFocusCapture={countStill}>
       <div className="sp-line">
         <button className="sp-line-main" onClick={() => setOpen(!open)} aria-expanded={open} title={detail || summary}>
           <IconLayers size={14} />
@@ -794,30 +804,39 @@ function TurnCard({ t, canvasTitle, flash }: { t: Turn; canvasTitle?: string; fl
         </button>
         <span className="sp-line-acts">
           {t.origin.kind === "comment" && (
-            <button className="sp-line-act" onClick={() => t.origin.kind === "comment" && ui.openThread(t.canvasId, t.origin.threadId)} title={`来自「${canvasTitle ?? "画布"}」的评论 #${t.origin.threadN}：${t.origin.anchor}`}>
+            <button className="sp-line-act" onClick={() => t.origin.kind === "comment" && ui.openThread(t.canvasId, t.origin.threadId)} title={`来自「${canvasTitle ?? "画布"}」的评论 #${t.origin.threadN}：${t.origin.anchor}`} aria-label={`来自评论 #${t.origin.threadN}，点开这条评论`}>
               <IconCommentSolid size={12} />
             </button>
           )}
-          {t.reply?.batchId && !undone && (
-            <button className="sp-line-act" disabled={!api} onClick={() => api && undoTurn(api, t.id)} title="撤销这次修改">
-              <IconUndo size={14} />
-            </button>
-          )}
-          {touched.length > 0 && !undone && (
-            <button
-              className="sp-line-act"
-              title="在画布中高亮"
-              onClick={() => {
-                ui.focusPane(t.canvasId);
-                highlight.set({ canvasId: t.canvasId, ids: touched });
-                setTimeout(() => highlight.get()?.ids === touched && highlight.set(null), 2600);
+          {t.reply?.batchId && (
+            <UndoButtons
+              undone={undone}
+              canRedo={canRedoTurn(t.id)}
+              canAct={!!api}
+              onUndo={() => {
+                if (!api) return;
+                highlight.unpin(t.id);
+                undoTurn(api, t.id);
               }}
-            >
-              <IconTarget size={14} />
-            </button>
+              onRedo={() => {
+                if (!api) return;
+                redoTurn(api, t.id);
+                setStillThere(null); // the elements are back: count again when the pointer next comes
+              }}
+            />
           )}
+          <MarkButton
+            touched={touched}
+            live={stillThere}
+            undone={undone}
+            on={pin}
+            onToggle={() => {
+              ui.focusPane(t.canvasId);
+              highlight.toggle({ canvasId: t.canvasId, ids: touched, key: t.id });
+            }}
+          />
         </span>
-        {undone && <span className="sp-undone">已撤销</span>}
+        {t.reply?.batchId && <UndoStatus undone={undone} canRedo={canRedoTurn(t.id)} />}
         <IconChevron open={open} />
       </div>
       <AnimatePresence initial={false}>
