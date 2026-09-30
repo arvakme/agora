@@ -6,7 +6,7 @@
 // (≤ 1 px), so is the bottom bar's middle over it; with no room for the pill's words it is the round avatar, still centred. Those cases need a project with a session to fold
 // (the page shows the session bar only from 1100 × 640 up), so they run against such a url with --centre; the level checks want a canvas without a session column (a mock url).
 //
-//   node scripts/bottom-row-check.ts <agora url, e.g. http://localhost:5200/?mock=runs&canvas=c1>             the level checks
+//   node scripts/bottom-row-check.ts <agora url, e.g. http://localhost:5200/?mock=runs&canvas=c1>             the level checks, and no overlap / centred dock at 1440, 1024, 768 and 640 wide
 //   node scripts/bottom-row-check.ts <agora url of a project with a session, e.g. http://localhost:5200/> --centre   the group-centre checks
 //
 // Read-only: non-GET /api requests are refused. Exit 1 on any violation; prints one line per (window, theme, state) with the measured numbers.
@@ -88,6 +88,58 @@ for (const [w, h] of centre ? [] : [[1440, 900], [1000, 800], [640, 800]]) {
       console.log(`${bad.length ? "FAIL" : "ok  "} ${w}×${h} ${theme} ${name}: ${line}${bad.length ? `  ← ${bad.join("; ")}` : ""}`);
       if (bad.length) failed++;
     }
+    await ctx.close();
+  }
+}
+
+// ——— nothing on the bottom row sits on anything else, at the common window widths ———
+// Every control on the row is a horizontal span; no two may overlap (the compact bar's own buttons count; the bar's island holds the others, so it is left out), and the dock is centred on the canvas body
+// (≤ 1 px) — also in a narrow pane, where a session docked beside the canvas leaves it only a few hundred px (run against a project with a session for that case). The dock drops its words, then 「整张图」
+// does, before anything sits on anything (canvas/dockPlace.ts roomFor).
+const SPANS = {
+  menu: ".excalidraw .App-bottom-bar .main-menu-trigger",
+  barUndo: '.excalidraw .App-bottom-bar button[aria-label="撤销"]',
+  barRedo: '.excalidraw .App-bottom-bar button[aria-label="重做"]',
+  zoom: CONTROLS.zoom,
+  undo: CONTROLS.undo,
+  dock: CONTROLS.dock,
+  whole: CONTROLS.whole,
+  help: CONTROLS.help,
+  pill: CONTROLS.pill,
+} as const;
+export function overlaps(spans: Record<string, { l: number; r: number } | null>): string[] {
+  const on = Object.entries(spans).filter((e): e is [string, { l: number; r: number }] => e[1] !== null);
+  const bad: string[] = [];
+  for (let i = 0; i < on.length; i++)
+    for (let j = i + 1; j < on.length; j++) {
+      const w = Math.min(on[i][1].r, on[j][1].r) - Math.max(on[i][1].l, on[j][1].l);
+      if (w > 0.5) bad.push(`${on[i][0]} and ${on[j][0]} overlap by ${w.toFixed(1)} px`);
+    }
+  return bad;
+}
+for (const w of centre ? [] : [1440, 1024, 768, 640]) {
+  for (const theme of ["light", "dark"] as const) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: 800 }, colorScheme: theme });
+    await ctx.addInitScript((t) => localStorage.setItem("agora.theme", t), theme);
+    const page = await ctx.newPage();
+    await page.route("**/api/**", (r) => (r.request().method() === "GET" ? r.continue() : r.abort()));
+    await page.goto(url);
+    await page.waitForFunction(() => (window as unknown as { __agora?: { api?: unknown } }).__agora?.api && document.querySelector(".canvas-view") && document.querySelector(".dock"));
+    await page.waitForTimeout(1500);
+    const m = await page.evaluate((sel) => {
+      const span = (s: string) => {
+        const r = document.querySelector(s)?.getBoundingClientRect();
+        return r && r.width > 0 ? { l: r.left, r: r.right } : null;
+      };
+      return { spans: Object.fromEntries(Object.entries(sel).map(([k, s]) => [k, span(s)])), pane: span('[data-pane] .canvas-layers') };
+    }, SPANS);
+    const bad = overlaps(m.spans);
+    const dock = m.spans.dock;
+    if (!m.pane || !dock) bad.push("no canvas or dock on screen");
+    else if (!m.spans.pill && Math.abs((dock.l + dock.r) / 2 - (m.pane.l + m.pane.r) / 2) > TOL) bad.push(`dock centre is ${((dock.l + dock.r) / 2 - (m.pane.l + m.pane.r) / 2).toFixed(2)} px off the canvas body's`);
+    const line = Object.entries(m.spans).filter(([, v]) => v).map(([k, v]) => `${k} ${v!.l.toFixed(0)}–${v!.r.toFixed(0)}`).join(" | ");
+    console.log(`${bad.length ? "FAIL" : "ok  "} overlap ${w}×800 ${theme}: pane ${m.pane ? `${m.pane.l.toFixed(0)}–${m.pane.r.toFixed(0)}` : "-"} | ${line}${bad.length ? `  ← ${bad.join("; ")}` : ""}`);
+    if (bad.length) failed++;
     await ctx.close();
   }
 }

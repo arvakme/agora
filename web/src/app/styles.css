@@ -714,6 +714,9 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .dock-count { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border-radius: var(--r-sm); color: var(--fg-muted); font-size: var(--text-sm); --icon: var(--fg-muted); transition: background var(--dur-tap) var(--ease-out), color var(--dur-tap) var(--ease-out); }
 .dock-count:hover { background: var(--raised); color: var(--fg); --icon: var(--fg); }
 .dock-count[data-on="true"] { background: var(--accent-wash); box-shadow: inset 0 0 0 1px var(--accent-ring); color: var(--accent-ink); --icon: var(--accent); }
+.dock[data-tight] .dock-label { display: none; } /* a narrow pane: icons only, the room is kept for the controls either side (canvas/dockPlace.ts roomFor) */
+.dock[data-tight] .dock-seg button { padding: 0 9px; }
+.dock[data-tight] .dock-count { padding: 0 9px; }
 .dock-count em { min-width: 16px; height: 16px; padding: 0 4px; display: inline-grid; place-items: center; border-radius: var(--r-xs); box-shadow: var(--box); color: var(--fg-muted); font: var(--weight-medium) 11px/1 var(--font-mono); font-style: normal; font-variant-numeric: tabular-nums; }
 /* Excalidraw's hint line under the toolbar: only on an empty canvas, or when asked for in ⋯. */
 .canvas-view:not([data-hints]) .excalidraw .HintViewer { display: none; }

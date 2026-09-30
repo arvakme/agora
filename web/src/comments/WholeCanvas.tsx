@@ -52,7 +52,7 @@ export function WholeCanvas({ api, store, width, height }: { api: ExcalidrawImpe
     <div className="whole" onPointerDown={(e) => e.stopPropagation()}>
       <button className="whole-btn" data-on={panel !== null || !!active} aria-expanded={panel !== null} onClick={() => (store.close(), setPanel(panel ? null : "list"))} title="评论整张图：不钉在元素上">
         <IconComment size={16} />
-        <span>整张图</span>
+        <span className="whole-label">整张图</span>
         {open.length > 0 && <em>{open.length}</em>}
       </button>
       <AnimatePresence>
