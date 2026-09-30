@@ -1,8 +1,9 @@
 // 姿势体检 (web/docs/workstation.md §小人 · 姿势体检): the rules themselves, and every pose, gesture, pose change, trip and door ladder held to them frame by frame.
 import { describe, expect, it } from "vitest";
-import { ACCEL_MAX, checkJoints, ELBOW_MAX, ELBOW_MAX_WALKING, elbowJumps, frames, jumps, layerJumps, speedOf, standRange, speeds, sweep, type Expect } from "./poseHealth.ts";
+import { ACCEL_MAX, checkJoints, ELBOW_MAX, ELBOW_MAX_WALKING, elbowJumps, frames, gaits, HIP_SHAKE_MAX, jumps, layerJumps, RUNG_OFF_MAX, speedOf, standRange, speeds, SWAP_MAX, sweep, type Expect } from "./poseHealth.ts";
 import { REF_K } from "./docks.ts";
-import { makeSprings, planDoor, RAISED, RIG, solve, WALK_SPEED, type Joints } from "./rig.ts";
+import { ladderShape } from "./hatch.ts";
+import { DOOR_H, DOOR_MS, makeSprings, planDoor, RAISED, RIG, RUNG, rungCount, solve, WALK_SPEED, type Joints } from "./rig.ts";
 
 const stand = (pose: Parameters<typeof solve>[0]["pose"] = "idle"): Joints => solve({ t: 0, pose, since: 0, dock: { x: 0, y: 0 }, trip: null, still: true, reset: true, k: REF_K }, makeSprings());
 const ok: Expect = { ground: [true, true], climbing: false, sitting: false, crouching: false, turning: false };
@@ -71,14 +72,14 @@ describe("the raised hand and the stretch keep clear of the head", () => {
 
 describe("a trip's speed (DR4)", () => {
   const all = speeds();
-  // how long each trip took before DR4 (ms, from set-off to the last foot down): the trips may not get slower than 10 % over it
-  const BEFORE: Record<string, number> = {
-    "api → mysql (ladder up)": 3440, "mysql → api (ladder down)": 3424, "web → api (a bridge)": 2048,
-    "web → pay (bridge, then down beside api)": 4032, "pay → api (up beside api)": 2832, "web → the tray (a scaffold)": 6192, "a few steps on one floor": 672,
-  };
-  it("tops out at the walking pace and at the climbing pace on a door's ladder", () => {
+  // how long each trip took before DR4 (ms, from set-off to the last foot down): the trips may not get slower than 10 % over it — those with no ladder in them
+  const BEFORE: Record<string, number> = { "web → api (a bridge)": 2048, "a few steps on one floor": 672 };
+  // …and before POL3 (梯子档距放大: a ladder is climbed at 0.0625 px/ms, not 0.13, so a pair of hands and feet changes over 3 times a second, not 10–20): those with one climb over most of a ladder's length, at most 75 % longer
+  // (measured: 3076 → 4048, 3076 → 4048, 3740 → 5616, 2668 → 4544, 5648 → 8256 ms; the ladder's own part of a trip about twice as long)
+  const BEFORE_POL3: Record<string, number> = { "api → mysql (ladder up)": 3076, "mysql → api (ladder down)": 3076, "web → pay (bridge, then down beside api)": 3740, "pay → api (up beside api)": 2668, "web → the tray (a scaffold)": 5648 };
+  it("tops out at the walking pace and, on a door's ladder, at the climbing pace (0.0625 px/ms: a pair changes over 3.1 times a second)", () => {
     for (const s of all) expect(s.maxV).toBeLessThanOrEqual(WALK_SPEED * 1.02);
-    expect(all.find((s) => s.name.startsWith("door"))!.maxV).toBeCloseTo(0.13, 2);
+    expect(all.find((s) => s.name.startsWith("door"))!.maxV).toBeCloseTo(0.0625, 3);
   });
   it("never changes speed faster than 1200 px/s² (0.0012 px/ms²): a start, a stop and the change between walking and climbing all ease", () => {
     expect(all.filter((s) => s.maxAccel > ACCEL_MAX).map((s) => `${s.name} ${(s.maxAccel * 1000).toFixed(0)}`)).toEqual([]);
@@ -90,10 +91,11 @@ describe("a trip's speed (DR4)", () => {
   it("no frame changes the speed by more than 0.019 px/ms (the 1200 px/s² limit over one 16 ms frame)", () => {
     for (const s of all) for (let i = 1; i < s.samples.length; i++) expect(Math.abs(s.samples[i].v - s.samples[i - 1].v), `${s.name} @${s.samples[i].t}`).toBeLessThanOrEqual(0.0195);
   });
-  it("a trip is not slower than before: at most 10 % longer", () => {
+  it("a trip is not slower than before: at most 10 % longer without a ladder, at most 75 % longer with one (POL3)", () => {
+    const took = (s: (typeof all)[number]) => s.samples[s.samples.length - 1].t - s.samples[0].t;
     for (const s of all) {
-      const was = BEFORE[s.name];
-      if (was) expect(s.samples[s.samples.length - 1].t - s.samples[0].t, s.name).toBeLessThanOrEqual(was * 1.1);
+      if (BEFORE[s.name]) expect(took(s), s.name).toBeLessThanOrEqual(BEFORE[s.name] * 1.1);
+      if (BEFORE_POL3[s.name]) expect(took(s), s.name).toBeLessThanOrEqual(BEFORE_POL3[s.name] * 1.75);
     }
   });
   it("a door's ladder is one steady climb: no dips", () => {
@@ -146,5 +148,32 @@ describe("the standing pose and the layers (DR4)", () => {
     expect(layerJumps(all).map((x) => `${x.a.label} ${x.a.t} ${x.joint} ${x.d.toFixed(1)}`)).toEqual([]);
     expect(layers.some((f) => f.expect.handsBack)).toBe(true);
     expect(sweep(layers).map((b) => `${b.frame.label} ${b.frame.t} ${b.issues[0].detail}`).slice(0, 4)).toEqual([]);
+  });
+});
+
+describe("the gait on a ladder (POL3)", () => {
+  const all = gaits();
+  it("covers the trips with a ladder and every door, both ways", () => {
+    expect(all.length).toBeGreaterThanOrEqual(13);
+    expect(all.every((g) => g.swaps.length >= 2)).toBe(true);
+  });
+  it("a diagonal pair of hands and feet changes over at most SWAP_MAX (3.2) times a second, on every ladder", () => {
+    expect(all.filter((g) => g.maxRate > SWAP_MAX).map((g) => `${g.name} ${g.maxRate.toFixed(1)}/s`)).toEqual([]);
+  });
+  it("hands and feet on a rung are on the drawn rung (within 1 figure unit), and the hips do not shake (0.6)", () => {
+    expect(all.filter((g) => g.offRung > RUNG_OFF_MAX).map((g) => `${g.name} ${g.offRung.toFixed(2)}`)).toEqual([]);
+    expect(all.filter((g) => g.hipShake > HIP_SHAKE_MAX).map((g) => `${g.name} ${g.hipShake.toFixed(2)}`)).toEqual([]);
+  });
+  it("a door's whole trip (in or out) takes at most 1.3 s", () => {
+    expect(DOOR_MS).toBeLessThanOrEqual(1300);
+    expect(DOOR_MS).toBeGreaterThan(1000); // not hurried back to a scurry
+  });
+  it("a door's ladder is drawn with the rungs its hands and feet hold: the same count, at most RUNG apart, and a limb reaches 4 of them a move", () => {
+    const shape = ladderShape(1);
+    const sp = shape.rungs[0] - shape.rungs[1];
+    expect(sp).toBeCloseTo(DOOR_H / rungCount(DOOR_H), 9);
+    expect(sp).toBeLessThanOrEqual(RUNG);
+    expect(sp).toBeGreaterThan(7);
+    expect(rungCount(DOOR_H / REF_K * REF_K)).toBe(rungCount(DOOR_H)); // whatever the figure's size
   });
 });

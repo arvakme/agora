@@ -8,8 +8,9 @@
 // them. Pure (no DOM): it runs under vitest, and scripts/pose-check.ts prints the offending frames and draws them.
 import { REF_K } from "./docks";
 import { gesture, type Gesture, type GestureIn } from "./gestures";
+import { ladderShape } from "./hatch";
 import { route, walkMap, type WalkMap } from "./route";
-import { DOOR_H, DOOR_MS, makeSprings, planDoor, planTrip, poseTargets, RIG, solve, tripAt, type Foot, type Joints, type Pose, type Springs, type Trip } from "./rig";
+import { CLIMB_SPEED, DOOR_H, DOOR_MS, makeSprings, planDoor, planTrip, poseTargets, RIG, rungGrid, solve, tripAt, type Foot, type Joints, type Pose, type Springs, type Trip } from "./rig";
 import type { Box } from "../canvas/clearance";
 
 export type Issue = { rule: string; detail: string };
@@ -316,7 +317,7 @@ function doors(): Frame[] {
           const inTrip = t >= 0 && t < DOOR_MS;
           const j = solve(base({ t, wall: t, dt: first ? undefined : STEP / 1000, reset: first, pose: "idle", since: Math.max(0, t - DOOR_MS), dock: { x: 0, y: leaving ? 0 : 0 }, trip: inTrip ? trip : null, k }), sp);
           first = false;
-          const hidden = inTrip && (dir === 1 ? j.root.y + (j.hy - RIG.head) * k >= 0 : j.root.y + Math.max(j.legN.ey, j.legF.ey) * k <= -DOOR_H * k);
+          const hidden = (leaving && t >= DOOR_MS) || inTrip && (dir === 1 ? j.root.y + (j.hy - RIG.head) * k >= 0 : j.root.y + Math.max(j.legN.ey, j.legF.ey) * k <= -DOOR_H * k);
           out.push({ hidden, scenario: "door", label: `${dir === 1 ? "down (parent canvas)" : "up (sub-diagram)"}, ${leaving ? "going in" : "coming out"}, k ${k.toFixed(2)}`, t, joints: j, expect: standing({ climbing: j.climb > 0.02, ground: j.climb > 0.02 || inTrip ? [false, false] : [true, true], turning: Math.abs(j.turn) < 0.98 }), k, ladder: inTrip || (t < 0 || t >= DOOR_MS) ? { dir } : undefined });
         }
       }
@@ -418,11 +419,11 @@ export function speedOf(name: string, trip: Trip): Speed {
   for (let i = 1; i < samples.length; i++) maxAccel = Math.max(maxAccel, Math.abs(samples[i].v - samples[i - 1].v) / STEP);
   const first = samples.findIndex((s) => s.v > 0.04 * maxV);
   const setOff = first < 0 ? trip.t1 - trip.t0 : samples[first].t - trip.t0;
-  // a dip: a local minimum under a fifth of the top speed after the set-off and before the arrival (a leg ends at rest and the next starts from it)
+  // a dip: a local minimum under a fifth of the top speed (of the climbing pace, if that is lower: a walk eases to 0.6 of it at a ladder) after the set-off and before the arrival (a leg ends at rest and the next starts from it)
   const dips: number[] = [];
   for (let i = Math.max(1, first + 8); i < samples.length - 8; i++) {
     const s = samples[i];
-    if (s.v < 0.2 * maxV && s.v <= samples[i - 1].v && s.v < samples[i + 1].v) dips.push(s.t);
+    if (s.v < 0.2 * Math.min(maxV, CLIMB_SPEED) && s.v <= samples[i - 1].v && s.v < samples[i + 1].v) dips.push(s.t);
   }
   return { name, samples, maxV, maxAccel, setOff, dips };
 }
@@ -451,4 +452,98 @@ export function standRange(fs: readonly Frame[]): { hips: number; sway: number; 
 /** Frames of the blends between layers (起势/收势): no joint jumps more than `max` figure units in one frame. */
 export function layerJumps(fs: readonly Frame[], max = 5): ReturnType<typeof jumps> {
   return jumps(fs.filter((f) => f.scenario === "layer"), max);
+}
+
+// ——— the gait on a ladder (POL3) ———
+/** Hands and feet change over (a diagonal pair lets go and reaches for its next rungs) no more often than this many times a second: at 3.2 a pair goes every 312 ms. */
+export const SWAP_MAX = 3.2;
+/** A foot (or a hand) that is on a rung is within this many figure units of it: not hanging in the air, not through the rung's line. */
+export const RUNG_OFF_MAX = 1;
+/** On a ladder the hips rise and fall no more than this many figure units against the body, once the slow settling of the pose is taken off (the legs' work must not shake the trunk). */
+export const HIP_SHAKE_MAX = 0.6;
+export type Gait = {
+  name: string;
+  /** When (ms) each diagonal pair let go, feet and hands together: the moments a foot came off its rung. */
+  swaps: number[];
+  /** Changes a second, at each change: 1000 ÷ the time since the one before. */
+  rates: { t: number; rate: number }[];
+  maxRate: number;
+  /** The most a hand or a foot resting on a rung is off it (figure units). */
+  offRung: number;
+  /** How far the hips move against the body while it climbs (figure units). */
+  hipShake: number;
+  /** How long the whole trip takes (ms), and how much of it is spent on ladders. */
+  ms: number;
+  climbMs: number;
+};
+/** How far world y is from the nearest drawn rung: a trip's ladders' rungs, or a door's (./hatch.ts: the ladder goes on the same way below the floor line, where the body is cut off). */
+function offRungAt(y: number, trip: Trip, door: { dir: 1 | -1 } | null): number {
+  const k = trip.k;
+  if (door) {
+    const r = ladderShape(door.dir).rungs.map((v) => v * k);
+    const sp = r[0] - r[1];
+    return Math.abs((y - r[0]) / sp - Math.round((y - r[0]) / sp)) * (sp / k);
+  }
+  const rungs = trip.ladders.flatMap((l) => l.rungs);
+  return rungs.length ? Math.min(...rungs.map((v) => Math.abs(v - y))) / k : 0;
+}
+/** How far a series wobbles: the range of what is left of it once its slow drift (a mean over ±HIP_DRIFT frames: the pose settling into the climb) is taken off. */
+const HIP_DRIFT = 10;
+function shake(v: readonly number[]): number {
+  const res = v.map((x, i) => {
+    const w = v.slice(Math.max(0, i - HIP_DRIFT), i + HIP_DRIFT + 1);
+    return x - w.reduce((a, b) => a + b, 0) / w.length;
+  });
+  return res.length ? Math.max(...res) - Math.min(...res) : 0;
+}
+/** How a trip climbs: when the pairs change over, how far the hands and feet on rungs are off the drawn rungs, how much the hips shake — sampled every 4 ms (the hands and feet) and every 16 ms (the hips). */
+export function gaitOf(name: string, trip: Trip, door: { dir: 1 | -1 } | null = null): Gait {
+  const k = trip.k;
+  const swaps: number[] = [];
+  let offRung = 0;
+  let prev: ReturnType<typeof tripAt> | null = null;
+  for (let t = trip.t0; t <= trip.t1; t += 4) {
+    const p = tripAt(trip, t);
+    if (p.climb >= 0.999 && p.hands) {
+      if (prev && prev.climb >= 0.999 && p.feet.some((f, i) => f.lift > 0 && !(prev!.feet[i].lift > 0))) swaps.push(t);
+      for (const f of [...p.feet, ...p.hands]) {
+        if (f.lift > 0) continue;
+        offRung = Math.max(offRung, offRungAt(f.y, trip, door));
+      }
+    }
+    prev = p;
+  }
+  // both feet lifting at once (two frames apart) is one change
+  const once = swaps.filter((t, i) => i === 0 || t - swaps[i - 1] > 40);
+  const rates = once.slice(1).map((t, i) => ({ t, rate: 1000 / (t - once[i]) }));
+  const py: number[][] = []; // one series to each stretch on a ladder
+  const sp = makeSprings();
+  sp.seed = 0; // breathing at the same beat every run
+  let first = true;
+  let lastOn = false;
+  for (let t = trip.t0 - 200; t <= trip.t1 + 200; t += STEP) {
+    const j = solve(base({ t, wall: t, dt: first ? undefined : STEP / 1000, reset: first, pose: "idle", since: 0, dock: trip.a, trip, k }), sp);
+    first = false;
+    if (t >= trip.t0 && t < trip.t1 && j.climb >= 0.999) {
+      if (!lastOn) py.push([]);
+      py[py.length - 1].push(j.py);
+    }
+    lastOn = t >= trip.t0 && t < trip.t1 && j.climb >= 0.999;
+  }
+  return { name, swaps: once, rates, maxRate: Math.max(0, ...rates.map((r) => r.rate)), offRung, hipShake: Math.max(0, ...py.map(shake)), ms: trip.t1 - trip.t0, climbMs: trip.phases.filter((x) => x.kind === "climb").reduce((n, x) => n + x.t1 - x.t0, 0) };
+}
+
+/** The gait of every ladder the sweep climbs: the trips with one and the doors' (both ways, both sizes). */
+export function gaits(): Gait[] {
+  const out: Gait[] = [];
+  const k = REF_K;
+  for (const [name, a, ax, b, bx] of TRIPS) {
+    const from = spot(a, ax);
+    const trip = planTrip({ from: a, to: b, t: 0, slot: 0 }, route(MAP, from, spot(b, bx)), from.at, k);
+    if (rungGrid(trip).length) out.push(gaitOf(name, trip));
+  }
+  for (const size of [1, 0.8]) {
+    for (const [name, dir, leaving] of [["door down, going in", 1, true], ["door down, coming out", 1, false], ["door up, going in", -1, true], ["door up, coming out", -1, false]] as const) out.push(gaitOf(`${name}, k ${(k * size).toFixed(2)}`, planDoor(k * size, dir, leaving, 1), { dir }));
+  }
+  return out;
 }

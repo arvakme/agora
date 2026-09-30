@@ -13,8 +13,9 @@ const S = 1000;
 const seg = (kind: RunSeg["kind"], start: number, end: number, path?: string, x: Partial<RunSeg> = {}): RunSeg => ({ kind, start: start * S, end: end * S, label: kind, ...(path ? { path } : {}), ...x });
 const run = (segs: RunSeg[], x: Partial<WorkRun> = {}): WorkRun => ({ id: "r", agent: "pi", name: "Pi", segs, receipts: [], running: false, lastAt: 0, children: [], ...x });
 // 2026-09-29 用户决定调慢走路: the docks were 400 px apart (a walk took ≤ 2.4 s at any distance); at the walking pace that is
-// over 3 s, longer than the segments here, so they are a quarter as far apart (the walks still take 1–2 s).
-const DOCK: Record<string, { x: number; y: number }> = { api: { x: 0, y: 0 }, db: { x: 100, y: -38 }, redis: { x: 100, y: 38 }, app: { x: 0, y: 0 }, users: { x: 75, y: 50 }, [OUTSIDE]: { x: 50, y: 100 } };
+// over 3 s, longer than the segments here, so they are a quarter as far apart (the walks still take 1–2 s). POL3 (梯子档距放大、
+// 爬慢到每秒 3 次换手脚): a ladder is climbed at 0.0625 px/ms, half the pace of before, so the ways up and down are half as high.
+const DOCK: Record<string, { x: number; y: number }> = { api: { x: 0, y: 0 }, db: { x: 100, y: -19 }, redis: { x: 100, y: 19 }, app: { x: 0, y: 0 }, users: { x: 75, y: 25 }, [OUTSIDE]: { x: 50, y: 50 } };
 // The main canvas: API 服务 opens a sub-diagram (c-api) that has server/app.py and server/users.py.
 const main = (runs: WorkRun[], x: Partial<Ctx> = {}): Ctx => ({
   locate: (p) =>

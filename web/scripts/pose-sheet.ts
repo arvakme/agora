@@ -7,7 +7,7 @@
 // poseHealth.ts (its name is under the time). One <h3> per scenario-label group.
 import "../src/app/tokens.css";
 import "../src/app/styles.css";
-import { cutLine } from "../src/workstation/hatch";
+import { cutLine, ladderShape } from "../src/workstation/hatch";
 import { FigureNode } from "../src/workstation/figureNode";
 import { checkJoints, frames, type Frame } from "../src/workstation/poseHealth";
 import { DOOR_H } from "../src/workstation/rig";
@@ -70,6 +70,14 @@ function tile(fr: Frame): HTMLElement {
   const dir = fr.ladder?.dir;
   if (dir) {
     // a door's rails: on the parent's canvas standing HATCH_POST above the floor, on the sub-diagram's hanging from one figure's height above
+    // the rungs, as far as the body goes (below the floor line on the parent's canvas: cut off there, but the ladder goes on)
+    const shape = ladderShape(dir);
+    const step = shape.rungs[0] - shape.rungs[1];
+    for (let y = dir === 1 ? DOOR_H : 0; y >= shape.top - 1e-6; y -= step) {
+      const r = document.createElementNS(NS, "line");
+      for (const [k, v] of Object.entries({ x1: W / 2 - 2.6 * SCALE, x2: W / 2 + 2.6 * SCALE, y1: GROUND + y * SCALE, y2: GROUND + y * SCALE, stroke: "#999" })) r.setAttribute(k, String(v));
+      svg.appendChild(r);
+    }
     for (const dx of [-2.6, 2.6]) {
       const l = document.createElementNS(NS, "line");
       const top = dir === 1 ? -34 : -DOOR_H;
