@@ -50,7 +50,7 @@ Agora 把这三件事放到同一张图上：图就在仓库里，agent 能读�
 
 ### 6. 经 quietharbor.de 分享给别人只读评论
 
-`agora share create --for 1d`（或顶栏「分享」）经 Cloudflare Tunnel 给一块画布开一个独立子域名，访客只能看图、读评论、发评论和回复；改图、会话、终端、代码路径和本地路径都不下发。到期或撤销后 DNS 记录和隧道一起删除。域名来自你自己的 Cloudflare zone（作者本机用的是 `quietharbor.de`）。没有账号也行：`agora share create --quick` 用 `cf tunnels quick-start` 开一个临时 trycloudflare.com 地址（一次一个分享，撤销或 `agora down` 即失效）。想把画布交给别的开发者：`agora share export` 导出分享包（访客页也有「导入到我的 Agora」），对方 `agora import` 就成了他项目里的新画布，评论作为只读历史；**分享包一旦给出去就收不回来**。见[分享](web/docs/sharing.md)。
+`agora share create --for 1d`（或顶栏「分享」）经 Cloudflare Tunnel 给一块画布（或 `--whole-project` 整个项目，之后新建的画布也自动可见）开一个独立子域名，访客只能看图、读评论、发评论和回复；改图、会话、终端、代码路径和本地路径都不下发。到期或撤销后 DNS 记录和隧道一起删除。域名来自你自己的 Cloudflare zone（作者本机用的是 `quietharbor.de`）。没有账号也行：`agora share create --quick` 用 `cf tunnels quick-start` 开一个临时 trycloudflare.com 地址（一次一个分享，撤销或 `agora down` 即失效）。想把画布交给别的开发者：`agora share export` 导出分享包（访客页也有「导入到我的 Agora」），对方 `agora import` 就成了他项目里的新画布，评论作为只读历史；**分享包一旦给出去就收不回来**。见[分享](web/docs/sharing.md)。
 
 | 作者：选画布和有效期 | 访客：只读画布，可评论 |
 |---|---|

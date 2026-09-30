@@ -99,11 +99,16 @@ export function AllDocs({ docs, titles, open, focused, confirm, setConfirm, canv
 function Confirm({ doc, title, comments, sessions: linked, kids, onCancel, onConfirm }: { doc: Doc; title: string; comments: number; sessions: number; kids: number; onCancel: () => void; onConfirm: () => void }) {
   const nameOf = useAgentName();
   const [shares, setShares] = useState(0);
+  const [whole, setWhole] = useState(0); // "整个项目" links: they go on, this canvas just drops out of them
   useEffect(() => {
     if (doc.kind !== "canvas") return;
     void fetch("/api/share")
       .then((r) => r.json())
-      .then((j: { shares?: { canvasId: string; status: string }[] }) => setShares((j.shares ?? []).filter((s) => s.canvasId === doc.id && s.status === "active").length))
+      .then((j: { shares?: { scope?: string; canvasId: string; status: string }[] }) => {
+        const live = (j.shares ?? []).filter((s) => s.status === "active");
+        setShares(live.filter((s) => s.scope !== "project" && s.canvasId === doc.id).length);
+        setWhole(live.filter((s) => s.scope === "project").length);
+      })
       .catch(() => {});
   }, [doc]);
   const turns = doc.kind === "session" ? (sessions.get().sessions[doc.sessionId]?.turnIds.length ?? 0) : 0;
@@ -113,7 +118,7 @@ function Confirm({ doc, title, comments, sessions: linked, kids, onCancel, onCon
   // What moves to the trash, what stays, what ends — the plan's wording (web/docs/workspace-model.md §1).
   const what =
     doc.kind === "canvas"
-      ? `画布${comments ? `和 ${comments} 条评论` : ""}移到回收站，30 天内可恢复；关联的 ${linked} 个会话保留${shares ? `；这块画布上的 ${shares} 个分享会立即结束（恢复画布不会恢复分享）` : ""}。${kids ? `它下面的 ${kids} 张子图不删，只断开链接，留在列表里。` : ""}`
+      ? `画布${comments ? `和 ${comments} 条评论` : ""}移到回收站，30 天内可恢复；关联的 ${linked} 个会话保留${shares ? `；这块画布上的 ${shares} 个分享会立即结束（恢复画布不会恢复分享）` : ""}${whole ? `；${whole} 个「整个项目」的分享不会结束，这块画布会马上从访客那边消失` : ""}。${kids ? `它下面的 ${kids} 张子图不删，只断开链接，留在列表里。` : ""}`
       : `会话${turns ? `（${turns} 次改图）` : ""}移到回收站，30 天内可恢复；${agent} 的原生对话不受影响（${where}）；终端里正在运行的 ${agent} 会被关闭。`;
   return (
     <li className="ad-confirm" role="alertdialog" aria-label={`删除 ${title}`}>
