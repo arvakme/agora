@@ -38,6 +38,7 @@ type State = {
   canvases?: Record<string, { title: string; open: number }>;
 };
 
+import { afterProbe, GuestEmpty, type Probe, type Step } from "./scope";
 import { GuestTabs, replayRoot, type GuestTab } from "./tabs";
 
 const NAME_KEY = "agora.guestName";
@@ -59,12 +60,23 @@ const saveName = (n: string) => {
 export async function loadGuest(canvas?: string): Promise<State> {
   const r = await fetch(`/api/guest/state${canvas ? `?canvas=${encodeURIComponent(canvas)}` : ""}`, { credentials: "same-origin" });
   if (r.status === 403) throw new Ended();
-  if (r.status === 404) throw new Error("这个项目里暂时没有画布");
+  if (r.status === 404) throw new Empty();
   if (!r.ok) throw new Error(`加载失败（${r.status}）`);
   return (await r.json()) as State;
 }
 
 export class Ended extends Error {}
+/** A whole-project share whose project has no canvas left. */
+export class Empty extends Error {}
+
+/** Ask the server where this guest is, as what the page decides on (./scope.tsx). */
+async function probe(canvas?: string): Promise<{ probe: Probe; state?: State }> {
+  try {
+    return { probe: "ok", state: await loadGuest(canvas) };
+  } catch (e) {
+    return { probe: e instanceof Ended ? "ended" : e instanceof Empty ? "empty" : "failed" };
+  }
+}
 
 export function GuestEnded() {
   return (
@@ -80,6 +92,9 @@ export function GuestEnded() {
 
 export function GuestApp({ initial }: { initial: State }) {
   const [ended, setEnded] = useState(false);
+  const [empty, setEmpty] = useState(false); // a whole-project share whose project has no canvas left
+  const emptyRef = useRef(false);
+  emptyRef.current = empty;
   const [name, setName] = useState(readName);
   const [asking, setAsking] = useState<null | "welcome" | "needed">(() => (readName() ? null : "welcome"));
   const [mode, setMode] = useState<"browse" | "comment">("browse");
@@ -110,7 +125,7 @@ export function GuestApp({ initial }: { initial: State }) {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ ...body, canvasId, name: nameRef.current }),
         });
-        if (r.status === 403) return void lost();
+        if (r.status === 403) return lost();
         if (r.status === 429) return flash("发得太快了，稍等一会儿再试");
         if (!r.ok) return flash(`没有发出去：${((await r.json().catch(() => ({}))) as { error?: string }).error ?? r.status}`);
       };
@@ -167,22 +182,43 @@ export function GuestApp({ initial }: { initial: State }) {
       setMode("browse");
       if (push) history.pushState({ canvas: id }, "", urlFor(id));
     } catch (e) {
-      if (e instanceof Ended) void lost();
+      if (e instanceof Ended) lost();
       else flash("打不开这一层");
     }
   };
-  /** A request was refused. In a project share the canvas may just be one the owner deleted: if the link still opens, go back to where it opens; otherwise the share has ended. */
-  const lost = async () => {
-    if (initial.share.scope !== "project") return setEnded(true);
-    try {
-      const home = await loadGuest();
-      setCur(home);
+  const project = initial.share.scope === "project";
+  /** Load where the share opens and show it; `why` is told to the guest when it was not their own move (a canvas went away). */
+  const goHome = async (why?: string) => {
+    const got = await probe();
+    if (got.probe === "ok") {
+      setCur(got.state!);
+      setEmpty(false);
       setMode("browse");
-      history.replaceState({ canvas: home.canvas.id }, "", urlFor(home.canvas.id));
-      flash("这张画布已经被作者删除了");
-    } catch (e) {
-      if (e instanceof Ended) setEnded(true);
+      history.replaceState({ canvas: got.state!.canvas.id }, "", urlFor(got.state!.canvas.id));
+      if (why) flash(why);
+    } else if (got.probe === "ended") setEnded(true); // the landing canvas itself is refused: the link is over
+    else if (got.probe === "empty") setEmpty(true);
+  };
+  const act = (step: Step) => {
+    if (step === "ended") setEnded(true);
+    else if (step === "empty") setEmpty(true);
+    else if (step === "home") void goHome("这张画布已经被作者删除了");
+  };
+  /** A request was refused. In a project share the canvas may just be one the owner deleted: if the link still opens, go back to where it opens; otherwise the share has ended. */
+  const lost = () => act(afterProbe({ project, probe: "ended", showingEmpty: false }));
+  /** The project's shape may have changed (the stream said so, or a comment moved the counts): take its tabs and titles again, and leave a canvas that is gone. */
+  const resync = async () => {
+    if (emptyRef.current) {
+      const got = await probe();
+      if (got.probe === "ok") void goHome();
+      else act(afterProbe({ project, probe: got.probe, showingEmpty: true }));
+      return;
     }
+    const got = await probe(curRef.current.canvas.id);
+    const step = afterProbe({ project, probe: got.probe, showingEmpty: false });
+    if (step !== "update") return act(step);
+    const n = got.state!;
+    setCur((c) => (c.canvas.id === n.canvas.id ? { ...c, canvas: { ...c.canvas, title: n.canvas.title }, canvases: n.canvases, share: n.share, path: n.path } : c));
   };
   const goRef = useRef(goTo);
   goRef.current = goTo;
@@ -198,7 +234,7 @@ export function GuestApp({ initial }: { initial: State }) {
   const refresh = useRef(0);
   const refreshCounts = () => {
     clearTimeout(refresh.current);
-    refresh.current = window.setTimeout(() => void loadGuest(curRef.current.canvas.id).then((n) => setCur((c) => (c.canvas.id === n.canvas.id ? { ...c, canvases: n.canvases, share: n.share } : c)), () => {}), 300);
+    refresh.current = window.setTimeout(() => void resync(), 300);
   };
 
   const flash = (msg: string) => {
@@ -218,24 +254,24 @@ export function GuestApp({ initial }: { initial: State }) {
         refreshCounts();
       } else if (ev.t === "canvas" && ev.elements && handle.current && here) {
         handle.current.api.updateScene({ elements: ev.elements as never });
+      } else if (ev.t === "scope") {
+        refreshCounts(); // the owner made, deleted or renamed a canvas: a signal only, the page asks for what it shows
       } else if (ev.t === "ended") {
         setEnded(true);
       }
     };
     const poll = async () => {
-      let n: State;
-      try {
-        n = await loadGuest(curRef.current.canvas.id);
-      } catch (e) {
-        if (e instanceof Ended) void lost();
-        return;
-      }
+      if (emptyRef.current) return resync();
+      const got = await probe(curRef.current.canvas.id);
+      const step = afterProbe({ project, probe: got.probe, showingEmpty: false });
+      if (step !== "update") return act(step);
+      const n = got.state!;
       if (n.canvas.id !== curRef.current.canvas.id) return;
       const snap = threadsFromFile(n.threads);
       const target = stores.current.get(n.canvas.id);
       if (snap && target) target.merge(snap);
       if (JSON.stringify(n.canvas.elements) !== JSON.stringify(curRef.current.canvas.elements)) handle.current?.api.updateScene({ elements: n.canvas.elements as never });
-      setCur((c) => (c.canvas.id === n.canvas.id ? { ...c, canvas: n.canvas, canvases: n.canvases, share: n.share } : c));
+      setCur((c) => (c.canvas.id === n.canvas.id ? { ...c, canvas: n.canvas, canvases: n.canvases, share: n.share, path: n.path } : c));
     };
     return openLive({ onEvent, poll });
   }, []);
@@ -297,7 +333,7 @@ export function GuestApp({ initial }: { initial: State }) {
       <div className="app guest" data-mode={mode}>
         <header className="guest-top">
           <span className="brand"><IconWorkspace size={18} />Agora</span>
-          <span className="guest-title" title={cur.canvas.title}>{cur.canvas.title || "画布"}</span>
+          <span className="guest-title" title={cur.canvas.title}>{empty ? initial.project.name : cur.canvas.title || "画布"}</span>
           <span className="guest-project">{initial.project.name}</span>
           <span className="guest-gap" />
           {replayOn && (
@@ -314,8 +350,9 @@ export function GuestApp({ initial }: { initial: State }) {
             <IconUser size={16} /><span>{name || "填写名字"}</span>
           </button>
         </header>
-        {cur.share.tabs && <GuestTabs tabs={cur.share.tabs} path={cur.path ?? []} current={cur.canvas.id} canvases={cur.canvases ?? {}} onGo={(id) => void goTo(id)} />}
-        <div className="guest-canvas" data-pane={cur.canvas.id}>
+        {!empty && cur.share.tabs && <GuestTabs tabs={cur.share.tabs} path={cur.path ?? []} current={cur.canvas.id} canvases={cur.canvases ?? {}} onGo={(id) => void goTo(id)} />}
+        {empty && <GuestEmpty />}
+        {!empty && <div className="guest-canvas" data-pane={cur.canvas.id}>
           <CanvasView
             key={cur.canvas.id}
             doc={{ id: cur.canvas.id, title: cur.canvas.title, store }}
@@ -333,8 +370,8 @@ export function GuestApp({ initial }: { initial: State }) {
               <ChildMarkers view={view} chrome={chrome} canvasId={cur.canvas.id} info={(k) => (cur.canvases?.[k] ? { title: cur.canvases[k].title || "子图", open: cur.canvases[k].open } : null)} onEnter={(id) => void goTo(id)} />
             )}
           />
-        </div>
-        <GuestDock mode={mode} setMode={(m) => (m === "comment" ? startComment() : setMode(m))} drawer={drawer} toggleDrawer={() => setDrawer((d) => !d)} store={store} />
+        </div>}
+        {!empty && <GuestDock mode={mode} setMode={(m) => (m === "comment" ? startComment() : setMode(m))} drawer={drawer} toggleDrawer={() => setDrawer((d) => !d)} store={store} />}
         {mode === "comment" && (
           <motion.div className="mode-hint" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
             <IconComment size={14} />点一个元素钉评论 · Esc 退出

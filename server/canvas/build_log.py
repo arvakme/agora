@@ -426,7 +426,7 @@ def _logged_steps(store: ProjectStore, cid: str, children: set[str], records: li
 
 def _canvas_steps(store: ProjectStore, cid: str, children: set[str]) -> tuple[list[Element], list[dict[str, Any]], dict[str, int]]:
     """(the elements before the first step, the steps, counts of what was and was not recoverable) of one canvas."""
-    records = buildlog.read(store.dir, cid)
+    records = buildlog.parse(store.read_raw(buildlog.path_of(store.dir, cid)))
     if records and "base" in records[0]:
         start, steps, counts = _logged_steps(store, cid, children, records)
     else:

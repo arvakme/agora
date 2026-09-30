@@ -174,7 +174,10 @@ def create_project_router(store: ProjectStore, events: Events | None = None, *, 
 
     @router.put("/workspace")
     def put_workspace(body: Write):
-        return guard(lambda: {"version": store.write("workspace", None, body.data, base=body.base, force=body.force)})
+        out = guard(lambda: {"version": store.write("workspace", None, body.data, base=body.base, force=body.force)})
+        if isinstance(out, dict):
+            events.publish({"t": "workspace"})  # canvas titles live here: a project share's tabs may need to follow (share_gateway.py)
+        return out
 
     @router.get("/canvases/{id}")
     def get_canvas(id: str):

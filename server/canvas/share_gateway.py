@@ -38,7 +38,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from server.canvas import build_log, nested
 from server.canvas.events import Events
 from server.canvas.project import ID_RE, NotFound, NotYours, ProjectStore
-from server.canvas.share import MAX_NAME, MAX_TEXT, SCOPE_PROJECT, RateLimiter, Share, ShareManager, canvas_titles, clean_anchor, clean_moment, clean_text, export_bundle, finite, guest_canvas, guest_elements, guest_threads, landing, project_tree, reach as share_reach, slug
+from server.canvas.share import MAX_NAME, MAX_TEXT, SCOPE_PROJECT, RateLimiter, Share, ShareManager, canvas_titles, clean_anchor, clean_moment, clean_text, export_bundle, finite, guest_canvas, guest_elements, guest_threads, landing, project_tree, reach as share_reach, scope_signature, slug
 
 SHARE_COOKIE = "agora_share"
 GUEST_COOKIE = "agora_guest"
@@ -50,6 +50,7 @@ LIMITS = {
     "stream": (10, 60.0),
 }
 MAX_STREAMS_PER_SHARE = 50
+PROJECT_EVENTS = ("canvas", "threads", "trash", "workspace")  # what a project share's stream listens to (canvases come and go)
 
 SECURITY_HEADERS = {
     "x-robots-tag": "noindex, nofollow, noarchive",
@@ -79,6 +80,45 @@ FULL_PAGE = GONE_PAGE.replace("<title>链接已失效", "<title>打开次数已�
 )
 
 
+class GuestFeed:
+    """What one guest's live stream sends for each owner-side event (web/docs/sharing.md §11): comment threads and the drawing of a canvas the share
+    reaches, and — for a whole-project share, whose canvases come and go — a content-free ``scope`` signal when its tabs, their nesting or titles
+    changed, so the page asks for them itself. Nothing outside the share's reach is ever sent."""
+
+    def __init__(self, store: ProjectStore, share: Share) -> None:
+        self.store, self.share = store, share
+        self.project = share.scope == SCOPE_PROJECT
+        self.sig, self.allowed = scope_signature(store) if self.project else (None, share_reach(store, share))
+
+    def frames(self, ev: dict[str, Any]) -> list[dict[str, Any]]:
+        kind, cid = ev.get("t"), ev.get("canvasId")
+        out: list[dict[str, Any]] = []
+        if self.project:
+            if kind in ("canvas", "trash", "workspace"):
+                seen, self.allowed = scope_signature(self.store)
+                if seen != self.sig:
+                    self.sig = seen
+                    out.append({"t": "scope"})
+            elif kind == "threads":
+                self.allowed = share_reach(self.store, self.share)
+        elif kind == "canvas":
+            self.allowed = share_reach(self.store, self.share)  # the owner may have linked or unlinked a child
+        if kind not in ("canvas", "threads") or cid not in self.allowed:
+            return out
+        if kind == "threads":
+            th = ev.get("data")
+            out.append({"t": "threads", "canvasId": cid, "open": open_count(self.store, cid), "data": guest_threads(th)})
+        else:
+            scene = self.store.read("canvas", cid)
+            out.append({"t": "canvas", "canvasId": cid, "elements": guest_elements((scene or ({}, ""))[0].get("elements") or [], self.allowed)})
+        return out
+
+
+def open_count(store: ProjectStore, cid: str) -> int:
+    th = store.read("threads", cid)
+    return sum(1 for t in (th[0] if th else {}).get("threads") or [] if not t.get("resolved") and not t.get("deleted") and any(not m.get("deleted") for m in t.get("messages") or []))
+
+
 def forbidden(request: Request, status: int = 403) -> Response:
     if request.url.path.startswith("/api/"):
         return JSONResponse({"error": "forbidden"}, status_code=status)
@@ -90,6 +130,7 @@ def client_addr(request: Request) -> str:
 
 
 def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events, *, dist: Path) -> FastAPI:
+    store = store.contained()  # everything a guest is given is read through a view that refuses files not really in the project (symbolic links)
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     limiter = RateLimiter(LIMITS)
     streams: dict[str, int] = {}
@@ -170,10 +211,6 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
         """What this share lets a guest open (share.py ``reach``); nothing else is readable."""
         return share_reach(store, share)
 
-    def open_count(cid: str) -> int:
-        th = store.read("threads", cid)
-        return sum(1 for t in (th[0] if th else {}).get("threads") or [] if not t.get("resolved") and not t.get("deleted") and any(not m.get("deleted") for m in t.get("messages") or []))
-
     @app.get("/api/guest/state")
     def state(request: Request, canvas: str | None = None):
         share = share_for(request)
@@ -202,7 +239,7 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
             "share": {"expiresAt": share.expiresAt, "root": share.canvasId or cid, "buildReplay": share.buildReplay, "scope": share.scope, **({"tabs": project_tree(store)} if project else {})},
             "path": [{"id": c, "title": title(c)} for c in chain],
             # Open comments per canvas, counting everything below it (the marker on its parent node).
-            "canvases": {c: {"title": title(c), "open": sum(open_count(x) for x in {c} | nested.descendants(c, sc))} for c in sorted(allowed)},
+            "canvases": {c: {"title": title(c), "open": sum(open_count(store, x) for x in {c} | nested.descendants(c, sc))} for c in sorted(allowed)},
         }
 
     @app.get("/api/guest/bundle")
@@ -304,8 +341,9 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
         host = request.headers.get("host", "")
         token = request.cookies.get(SHARE_COOKIE)
         allowed = reach(share)
-        project = share.scope == SCOPE_PROJECT  # canvases come and go: each event is checked against the reach of the moment
-        sub = events.subscribe(lambda ev: (ev.get("canvasId") is not None if project else ev.get("canvasId") in allowed) or ev.get("t") == "shares")
+        project = share.scope == SCOPE_PROJECT  # canvases come and go: the stream listens to more and each event is checked against the reach of the moment
+        sub = events.subscribe(lambda ev: (ev.get("t") in PROJECT_EVENTS if project else ev.get("canvasId") in allowed) or ev.get("t") == "shares")
+        feed = GuestFeed(store, share)
         streams[share.id] = streams.get(share.id, 0) + 1
 
         async def gen():
@@ -323,14 +361,9 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
                         break
                     if ev is None:
                         yield ": keepalive\n\n"
-                    elif project and ev.get("canvasId") not in reach(share):
                         continue
-                    elif ev.get("t") == "threads":
-                        yield f"data: {json.dumps({'t': 'threads', 'canvasId': ev['canvasId'], 'open': open_count(ev['canvasId']), 'data': guest_threads(ev['data'])}, ensure_ascii=False)}\n\n"
-                    elif ev.get("t") == "canvas":
-                        allowed = reach(share)  # the owner may have linked or unlinked a child
-                        scene = store.read("canvas", ev["canvasId"])
-                        yield f"data: {json.dumps({'t': 'canvas', 'canvasId': ev['canvasId'], 'elements': guest_elements((scene or ({}, ''))[0].get('elements') or [], allowed)}, ensure_ascii=False)}\n\n"
+                    for frame in feed.frames(ev):
+                        yield f"data: {json.dumps(frame, ensure_ascii=False)}\n\n"
             finally:
                 events.unsubscribe(sub)
                 streams[share.id] = max(0, streams.get(share.id, 1) - 1)
