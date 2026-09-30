@@ -1,14 +1,16 @@
-// The comment list for one canvas: a panel floating over the drawing at its top right (it takes no room from the canvas),
-// dragged by its head, folded to a small button; where it is and whether it is folded stay in this browser (./drawerPlace.ts). 进行中 / 已解决 tabs,
+// The comment list for one canvas: a panel floating over the drawing at its top right (it takes no room from the canvas), in the shell the session panel
+// floats in too (app/floatShell.ts, web/docs/workstation.md §15): dragged by its head, as wide as the viewer pulled it, folded to a small button, one open at a time
+// with the session panel; where it is and whether it is folded stay in this browser. 进行中 / 已解决 tabs,
 // the 「在画布上显示已解决」 switch (the same one as in ⋯), and a 「锚点已失效」 group for threads whose
 // element is gone (never drawn on the canvas): 重新钉到… another element, or 删除. Picking a thread
 // pans to its pin (if it is off screen) and opens it; a resolved one opens here, with 重新打开.
-import { useDragGuard } from "../app/dragGuard";
+import { BOTTOM_CLEAR, floatFocus, MIN_W, MAX_W, shellBox } from "../app/floatShell";
+import { ShellCapsule, useClaim, useReach, useReporter, useShell, useShellGestures } from "../app/shellParts";
 import { pinState } from "./handoffState";
 import { useAuthorColors } from "./authorColor";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as RPointerEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { resolveAnchor } from "../canvas/anchors";
 import type { CanvasViewState } from "../canvas/CanvasView";
 import { IconCheck, IconClose, IconList, IconRetry, IconTarget, IconTrash } from "../app/icons";
@@ -21,7 +23,6 @@ import { AnchorTag } from "./AnchorTag";
 import { MomentChip } from "./MomentChip";
 import { ago } from "./ThreadCard";
 import { GUEST } from "../guest/mode";
-import { clampPlace, loadPanel, panelBox, savePanel, type Panel } from "./drawerPlace";
 import "./drawerFloat.css";
 
 export function CommentsDrawer({ title, api, store, view, open, onOpen, onClose, focusId, onRepin }: {
@@ -42,43 +43,43 @@ export function CommentsDrawer({ title, api, store, view, open, onOpen, onClose,
   const colors = useAuthorColors(store);
   const { showResolved } = usePrefs();
   // the canvas pane the panel floats over: its size decides the panel's, and where a dragged panel may go
-  const box = useRef<HTMLElement>(null);
+  const [el, setEl] = useState<HTMLElement | null>(null);
+  const [host, setHost] = useState<HTMLElement | null>(null);
   const [pane, setPane] = useState({ w: view.appState.width, h: view.appState.height });
   useLayoutEffect(() => {
-    const host = box.current?.parentElement;
-    if (!host) return;
-    const measure = () => setPane({ w: host.clientWidth, h: host.clientHeight });
+    const h = el?.parentElement;
+    if (!h) return;
+    setHost(h);
+    const measure = () => setPane({ w: h.clientWidth, h: h.clientHeight });
     measure();
     const ro = new ResizeObserver(measure);
-    ro.observe(host);
+    ro.observe(h);
     return () => ro.disconnect();
-  }, [open]);
-  const [panel, setPanel] = useState<Panel>(() => loadPanel());
-  const keep = (p: Panel) => (setPanel(p), savePanel(p));
+  }, [el]);
+  const [shell, setShell] = useShell("comments");
   // Opening the list from the dock shows it whole; closing it (✕ or the dock) leaves nothing behind. Only a folded list
   // that was never closed stays as its small button, also after a reload.
   const wasOpen = useRef(open);
   useEffect(() => {
-    if (open !== wasOpen.current && panel.folded) keep({ ...panel, folded: false });
+    if (open !== wasOpen.current && shell.folded) setShell({ ...shell, folded: false });
     wasOpen.current = open;
   }, [open]);
-  const place = clampPlace(panel.place, pane);
-  const at = panelBox(place, pane);
-  const drag = useRef<{ x: number; y: number; from: typeof place } | null>(null);
-  const guard = useDragGuard();
-  const grab = (e: RPointerEvent) => {
-    if ((e.target as HTMLElement).closest("button")) return;
-    drag.current = { x: e.clientX, y: e.clientY, from: place };
-    guard(e, { cursor: "grabbing", onEnd: (why) => void (why !== "up" && (drag.current = null)) }); // a release is `drop`'s; Esc, a lost pointer or a blur leaves the panel where it is
-  };
-  const move = (e: RPointerEvent) => {
-    const d = drag.current;
-    if (d) setPanel((p) => ({ ...p, place: clampPlace({ right: d.from.right - (e.clientX - d.x), top: d.from.top + (e.clientY - d.y) }, pane) }));
-  };
-  const drop = () => {
-    if (drag.current) savePanel({ ...panel, place });
-    drag.current = null;
-  };
+  // One shell open at a time: the session panel being open folds this one to its capsule (what the viewer chose for it stays).
+  const openShell = useClaim("comments", open && !shell.folded);
+  const folded = shell.folded || (open && openShell === "session");
+  const sessionReach = useReach("session");
+  useReporter("comments", el, host, open && !folded);
+  const at = shellBox(shell, pane, { bottom: BOTTOM_CLEAR });
+  const [height, setHeight] = useState(0);
+  useLayoutEffect(() => {
+    if (!el || folded) return;
+    const measure = () => setHeight(el.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [el, folded]);
+  const gestures = useShellGestures(shell, setShell, pane, height);
   const [tab, setTab] = useState<"open" | "resolved">("open");
   const [expanded, setExpanded] = useState<string | null>(null);
   const g = groupThreads(threads, (t) => resolveAnchor(t.anchor, view.map));
@@ -100,14 +101,14 @@ export function CommentsDrawer({ title, api, store, view, open, onOpen, onClose,
     const a = view.appState;
     const sx = (st.point.x + a.scrollX) * a.zoom.value, sy = (st.point.y + a.scrollY) * a.zoom.value;
     // The panel floats over the canvas: pan when the pin is off the canvas or under the panel.
-    const under = !panel.folded && sx > at.x - 24 && sx < at.x + at.w && sy > at.y - 24 && sy < at.y + at.h;
+    const under = !folded && sx > at.x - 24 && sx < at.x + at.w && sy > at.y - 24 && sy < at.y + at.h;
     if (sx < 40 || sy < 40 || sx > a.width - 40 || sy > a.height - 80 || under) {
       api.updateScene({ appState: { scrollX: a.width / 2 / a.zoom.value - st.point.x, scrollY: a.height / 2 / a.zoom.value - st.point.y } });
     }
     store.open(id);
   };
 
-  if (!open && !panel.folded) return null;
+  if (!open && !shell.folded) return null;
   const row = (t: Thread, lost = false) => {
     const st = resolveAnchor(t.anchor, view.map);
     const isOpen = expanded === t.id;
@@ -150,18 +151,25 @@ export function CommentsDrawer({ title, api, store, view, open, onOpen, onClose,
       </motion.div>
     );
   };
-  if (panel.folded)
+  if (folded)
     return (
-      <button ref={box as never} className="drawer-fab" style={{ right: place.right, top: place.top }} onPointerDown={(e) => e.stopPropagation()} onClick={() => (onOpen(), keep({ ...panel, place, folded: false }))} aria-label={`展开「${title}」的评论列表 · ${g.open.length} 条进行中`} title="展开评论列表">
-        <IconList size={16} />
-        <em>{g.open.length}</em>
-      </button>
+      <ShellCapsule
+        name="comments"
+        shell={shell}
+        others={[sessionReach]}
+        icon={<IconList size={16} />}
+        count={g.open.length}
+        aria={`展开「${title}」的评论列表 · ${g.open.length} 条进行中`}
+        onOpen={() => (onOpen(), setShell({ ...shell, folded: false }), floatFocus.set("comments"))}
+        forwardRef={setEl}
+      />
     );
   return (
-    <aside ref={box} className="drawer" style={{ left: at.x, top: at.y, width: at.w, maxHeight: at.h }} aria-label={`「${title}」的评论`} onPointerDown={(e) => e.stopPropagation()}>
-      <header className="drawer-head" onPointerDown={grab} onPointerMove={move} onPointerUp={drop} onPointerCancel={drop} title="拖动可以挪位置">
+    <aside ref={setEl} className="drawer" data-float-shell="comments" style={{ left: at.x, top: at.y, width: at.w, maxHeight: at.h }} aria-label={`「${title}」的评论`} onPointerDown={(e) => e.stopPropagation()}>
+      <div className="float-grip" role="separator" aria-orientation="vertical" aria-label="调整评论列表的宽度（←→）" aria-valuemin={MIN_W} aria-valuemax={MAX_W} aria-valuenow={Math.round(at.w)} tabIndex={0} style={{ left: 0, top: 0, bottom: 0, width: 8 }} {...gestures.resize} onKeyDown={(e) => (e.key === "Escape" ? setShell({ ...shell, folded: true }) : gestures.resize.onKeyDown(e))} />
+      <header className="drawer-head float-head" tabIndex={0} {...gestures.move} onKeyDown={(e) => (e.key === "Escape" ? setShell({ ...shell, folded: true }) : gestures.move.onKeyDown(e))} title="拖动可以挪位置 · Alt+方向键移动 · Esc 收起">
         <h2 className="drawer-title" title={title}>{title}<span> 的评论</span></h2>
-        <button className="icon-btn muted" onClick={() => keep({ ...panel, place, folded: true })} aria-label="收成小按钮" title="收成小按钮">
+        <button className="icon-btn muted" onClick={() => setShell({ ...shell, folded: true })} aria-label="收成小按钮" title="收成小按钮">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="M6 12h12" /></svg>
         </button>
         <button className="icon-btn muted" onClick={onClose} aria-label="关闭评论列表" title="关闭"><IconClose size={16} /></button>

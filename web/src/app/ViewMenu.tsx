@@ -80,6 +80,7 @@ export function ViewMenu({ onLayout, onRestore, layouts }: { onLayout: (p: Prese
             <hr />
             {sw(ws, "工位视图（小人）", <IconUser size={14} />, () => clock.setEnabled(!ws))}
             {sw(p.followCamera, "镜头跟随主 agent", <IconTarget size={14} />, () => prefs.set({ followCamera: !p.followCamera }))}
+            {sw(p.floatSession, "悬浮会话面板", <IconMessage size={14} />, () => prefs.set({ floatSession: !p.floatSession }))}
             {sw(p.footprints, "小人的脚印", <IconPath size={14} />, () => prefs.set({ footprints: !p.footprints }))}
             {canNotify() && sw(p.notifyWait, notifyBlocked() ? "等你时通知我（浏览器已拦截）" : "等你时通知我", <IconMessage size={14} />, () => void setWaitNotify(!p.notifyWait))}
             {sw(p.showResolved, "显示已解决的评论", <IconCheck size={14} />, () => prefs.set({ showResolved: !p.showResolved }))}

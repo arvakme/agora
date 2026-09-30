@@ -1,11 +1,8 @@
-/* The comment list floats over the canvas (CommentsDrawer.tsx, ./drawerPlace.ts): out of the layout, so opening it
-   never changes the canvas's size; rounded, with a shadow; dragged by its head; folded to a small round button.
+/* The comment list floats over the canvas (CommentsDrawer.tsx, the shell of app/floatShell.ts): out of the layout, so opening it
+   never changes the canvas's size; rounded, with a shadow; dragged by its head; folded to the shared capsule (styles.css `.float-capsule`).
    These rules replace the flush column of styles.css `.drawer`. */
 .canvas-view .drawer { position: absolute; flex: none; z-index: 7; display: flex; flex-direction: column; min-height: 0; overflow: hidden; border: 0; border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--frame), 0 12px 32px rgb(0 0 0 / 0.16); color: var(--fg); }
 .canvas-view .drawer-head { cursor: grab; touch-action: none; user-select: none; }
 .canvas-view .drawer-head:active { cursor: grabbing; }
 .canvas-view .drawer-head button { cursor: pointer; }
 .canvas-view .drawer-list { min-height: 0; }
-.canvas-view .drawer-fab { position: absolute; z-index: 7; display: inline-flex; align-items: center; gap: var(--space-2); height: 36px; padding: 0 var(--space-5); border-radius: 999px; background: var(--surface); box-shadow: var(--frame), 0 6px 18px rgb(0 0 0 / 0.16); color: var(--fg); font-size: var(--text-sm); --icon: var(--accent); }
-.canvas-view .drawer-fab:hover { background: var(--raised); }
-.canvas-view .drawer-fab em { font-style: normal; font-variant-numeric: tabular-nums; color: var(--fg-muted); }

@@ -155,6 +155,24 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 }
 .ws[data-resizing="true"] :is(.wm-group, .wm-slot, .wm-sash) { transition: none; }
 .wm-group { background: var(--bg); overflow: hidden; }
+/* The floating shell (web/docs/workstation.md §15): the session panel's group leaves the layout and floats over the canvas, rounded, with a shadow; its panes stay in the
+   flat layer (nothing remounts), so the slot carries the same z-index and the bottom corners. The comment list (comments/drawerFloat.css) looks the same and shares the capsule. */
+.wm-group[data-float] { z-index: 7; border-radius: var(--r-lg); box-shadow: var(--frame), 0 12px 32px rgb(0 0 0 / 0.16); }
+.wm-group[data-float] .wm-head { border-radius: var(--r-lg) var(--r-lg) 0 0; }
+.wm-slot[data-float] { z-index: 7; border-radius: 0 0 var(--r-lg) var(--r-lg); }
+.float-head { cursor: grab; touch-action: none; user-select: none; }
+.float-head:active { cursor: grabbing; }
+.float-head:focus-visible, .canvas-view .drawer-head:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: -2px; }
+.float-head .wm-tab, .float-head button { cursor: pointer; }
+.float-acts { display: flex; align-items: center; margin-left: auto; flex: none; }
+.float-grip { position: absolute; z-index: 9; cursor: col-resize; touch-action: none; outline: 0; }
+.float-grip::after { content: ""; position: absolute; top: 14px; bottom: 14px; left: 3px; width: 2px; border-radius: 2px; background: var(--accent); opacity: 0; transition: opacity var(--dur-tap) var(--ease-out); }
+.float-grip:hover::after, .float-grip:focus-visible::after, .ws[data-resizing="true"] .float-grip::after { opacity: 1; }
+.float-capsule { position: absolute; z-index: 7; display: inline-flex; align-items: center; gap: var(--space-2); max-width: 240px; height: 36px; padding: 0 var(--space-5); border-radius: 999px; background: var(--surface); box-shadow: var(--frame), 0 6px 18px rgb(0 0 0 / 0.16); color: var(--fg); font-size: var(--text-sm); --icon: var(--accent); }
+.float-capsule:hover { background: var(--raised); }
+.float-capsule em { font-style: normal; font-variant-numeric: tabular-nums; color: var(--fg-muted); }
+.float-capsule-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.float-capsule-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 .wm-head { position: relative; display: flex; align-items: stretch; gap: 2px; height: 36px; padding: 0 var(--space-3); background: var(--bg); box-shadow: inset 0 -1px var(--line); overflow: hidden; }
 .wm-tab {
   position: relative; display: flex; align-items: center; gap: var(--space-3); max-width: 220px; min-width: 0; flex: 0 1 auto;

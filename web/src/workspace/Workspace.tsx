@@ -4,6 +4,8 @@
 // Canvases live in one flat layer keyed by id, so moving a tab never remounts Excalidraw;
 // they glide to their new rect via CSS transitions.
 import { useDragGuard } from "../app/dragGuard";
+import { ShellCapsule, useReach, useReporter, useShellGestures } from "../app/shellParts";
+import { DEFAULT_SHELL, MAX_W, MIN_W, shellBox, withoutGroup, type Shell } from "../app/floatShell";
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { SPRING } from "../comments/motion";
@@ -24,6 +26,22 @@ const ITEMS: Record<NewWhat, { icon: ReactNode; label: string }> = {
   session: { icon: <IconMessage size={14} />, label: "新建会话" },
   sample: { icon: <IconLayers size={14} />, label: "从示例新建画布" },
   open: { icon: <IconFolder size={14} />, label: "打开画布" },
+};
+/** One group drawn floating over the rest, out of the layout (the session panel, web/docs/workstation.md §15): the panes stay where they are in the flat layer, so nothing remounts. */
+export type FloatSpec = {
+  group: string;
+  shell: Shell;
+  set: (s: Shell, keep?: boolean) => void;
+  /** Drawn as its capsule (its own fold, or the comment list is the open shell): the panes stay mounted, hidden. */
+  folded: boolean;
+  /** The capsule's words (the session's name) and whether something new came while it was folded. */
+  label: string;
+  dot: boolean;
+  /** How tall the active pane's content is (px, `Infinity`: as tall as it may be): the shell is as tall as its content up to the window. */
+  measure: (slot: HTMLElement) => number;
+  onFold: () => void;
+  onUnfold: () => void;
+  onDock: () => void;
 };
 type Props = {
   root: Node;
@@ -52,9 +70,10 @@ type Props = {
   onRename: (tab: string, title: string) => void;
   onSettled: () => void;
   renderCanvas: (id: string) => ReactNode;
+  float?: FloatSpec;
 };
 
-export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, marks = {}, focused, onFocus, onNew, canvasCount = 0, onClose, onDelete, renderEmpty, editing, setEditing, onRename, onSettled, renderCanvas }: Props) {
+export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, marks = {}, focused, onFocus, onNew, canvasCount = 0, onClose, onDelete, renderEmpty, editing, setEditing, onRename, onSettled, renderCanvas, float }: Props) {
   const [menu, setMenu] = useState<{ tab: string; x: number; y: number } | { group: string; x: number; y: number; kind: "canvas" | "mixed" } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -73,8 +92,49 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
     return () => clearTimeout(t);
   }, [root, size, onSettled]);
 
-  const { rects, sashes } = layout(root, { x: PAD, y: PAD, w: size.w - PAD * 2, h: size.h - PAD * 2 }, GAP);
   const all = groups(root);
+  // A floating group leaves the layout (the other columns take its room) and is drawn at the shell's rectangle; it needs something to float over.
+  const flt = float && all.length > 1 && all.some((g) => g.id === float.group) ? float : undefined;
+  const { rects, sashes } = layout((flt && withoutGroup(root, flt.group)) || root, { x: PAD, y: PAD, w: size.w - PAD * 2, h: size.h - PAD * 2 }, GAP);
+  const [content, setContent] = useState<number | undefined>();
+  // the shell floats over the canvas body: its frame is what is under the tab bar, so its place means the same as the comment list's (from the canvas's own top)
+  const shellPane = { w: size.w, h: Math.max(0, size.h - HEADER) };
+  const frect: Rect | null = flt ? (({ x, y, w, h }) => ({ x, y: y + HEADER, w, h }))(shellBox(flt.shell, shellPane, { content: content === undefined ? undefined : content + HEADER })) : null;
+  const rectOf = (id: string) => (flt && id === flt.group ? frect! : rects.get(id)!);
+  const gestures = useShellGestures(flt?.shell ?? DEFAULT_SHELL, flt?.set ?? noop, shellPane, frect?.h ?? 0);
+  const [capsuleEl, setCapsuleEl] = useState<HTMLButtonElement | null>(null);
+  const [sectionEl, setSectionEl] = useState<HTMLElement | null>(null);
+  const commentsReach = useReach("comments");
+  useReporter("session", flt?.folded ? capsuleEl : sectionEl, ref.current, !!flt);
+  const floatTab = flt ? all.find((g) => g.id === flt.group)!.active : null;
+  // The shell is as tall as the pane's content: measured again when the content or the panel's parts change size.
+  useLayoutEffect(() => {
+    const slot = floatTab && !flt?.folded ? ref.current?.querySelector<HTMLElement>(`[data-pane="${floatTab}"]`) : null;
+    if (!slot || !flt) return void setContent(undefined);
+    const measure = flt.measure;
+    let raf = 0;
+    const run = () => {
+      raf = 0;
+      const h = Math.ceil(measure(slot));
+      setContent((c) => (c === h ? c : h));
+    };
+    const kick = () => void (raf || (raf = requestAnimationFrame(run)));
+    const ro = new ResizeObserver(kick);
+    const watch = () => (ro.disconnect(), [slot, ...slot.querySelectorAll(":scope > *, :scope > * > *")].forEach((el) => ro.observe(el)));
+    const mo = new MutationObserver(() => (watch(), kick()));
+    mo.observe(slot, { childList: true, subtree: true, characterData: true });
+    watch();
+    run();
+    return () => (mo.disconnect(), ro.disconnect(), void (raf && cancelAnimationFrame(raf)));
+  }, [floatTab, flt?.group, flt?.folded, flt?.measure]);
+  // Folding or unfolding by keyboard leaves focus with the shell's other form.
+  const wasFolded = useRef(flt?.folded);
+  useEffect(() => {
+    if (!flt || wasFolded.current === flt.folded) return void (wasFolded.current = flt?.folded);
+    wasFolded.current = flt.folded;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    (flt.folded ? capsuleEl : ref.current?.querySelector<HTMLElement>(`[data-group="${flt.group}"] [role="tab"][aria-selected="true"]`))?.focus();
+  }, [flt?.folded, capsuleEl]);
   const focusedGroup = groupOf(root, focused)?.id;
   const kindOf = (t: string) => kinds[t];
   /** 「+」 or a double-click on the tab bar: a session group gets a new session; canvas and mixed groups a small menu (the one place to create or open canvases). */
@@ -88,9 +148,10 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
   const plusLabel = (tabs: string[]) => ({ canvas: "新建或打开画布", session: "新建会话", mixed: "新建…" })[groupKind(tabs, kindOf)];
 
   const targetAt = (x: number, y: number): Target | null => {
-    const g = all.find((g) => within(rects.get(g.id)!, x, y));
+    // the floating group is on top: it is looked at first (not at all while it is only a capsule)
+    const g = [...all].sort((a) => (a.id === flt?.group ? -1 : 1)).find((g) => !(flt?.folded && g.id === flt.group) && within(rectOf(g.id), x, y));
     if (!g) return null;
-    const r = rects.get(g.id)!;
+    const r = rectOf(g.id);
     if (y < r.y + HEADER) {
       const tabs = [...ref.current!.querySelectorAll<HTMLElement>(`[data-group="${g.id}"] .wm-tab`)];
       const box = ref.current!.getBoundingClientRect();
@@ -155,15 +216,22 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
   const tabIds = all.flatMap((g) => g.tabs);
 
   return (
-    <div className="ws" ref={ref} data-dragging={!!drag?.active} data-resizing={resizing} data-multi={all.length > 1}>
+    <div className="ws" ref={ref} data-dragging={!!drag?.active} data-resizing={resizing || gestures.active} data-multi={all.length > 1}>
       {/* Mount panes only once measured, so they start at their real size instead of gliding in from 0. */}
       {size.w > 0 && <>
       <LayoutGroup>
         {all.map((g) => {
-          const r = rects.get(g.id)!;
+          const isFloat = flt?.group === g.id;
+          if (isFloat && flt.folded) return null;
+          const r = rectOf(g.id);
           return (
-            <section key={g.id} className="wm-group" data-group={g.id} data-focused={g.id === focusedGroup} data-empty={!g.tabs.length} style={box(r)}>
-              <div className="wm-head" role="tablist" onDoubleClick={(e) => e.target === e.currentTarget && plus(g.id, e.currentTarget.querySelector(".wm-add")!)}>
+            <section key={g.id} ref={isFloat ? setSectionEl : undefined} className="wm-group" data-group={g.id} data-focused={g.id === focusedGroup} data-empty={!g.tabs.length} data-float={isFloat || undefined} data-float-shell={isFloat ? "session" : undefined} style={box(r)}>
+              <div
+                className={isFloat ? "wm-head float-head" : "wm-head"}
+                role="tablist"
+                onDoubleClick={(e) => e.target === e.currentTarget && plus(g.id, e.currentTarget.querySelector(".wm-add")!)}
+                {...(isFloat ? { ...gestures.move, tabIndex: 0, onKeyDown: (e: React.KeyboardEvent) => (e.key === "Escape" ? (e.stopPropagation(), flt.onFold()) : gestures.move.onKeyDown(e)), title: "拖动可以挪位置 · Alt+方向键移动 · Esc 收起" } : {})}
+              >
                 {g.tabs.map((t) => (
                   <motion.div
                     layout="position"
@@ -201,26 +269,55 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
                   </motion.div>
                 ))}
                 <button className="wm-add" onClick={(e) => plus(g.id, e.currentTarget)} aria-label={plusLabel(g.tabs)} title={plusLabel(g.tabs)}><IconPlus size={16} /></button>
+                {isFloat && (
+                  <span className="float-acts">
+                    <button className="wm-add" onClick={flt.onDock} aria-label="停靠到右侧" title="停靠到右侧">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M14 5v14" /></svg>
+                    </button>
+                    <button className="wm-add" onClick={flt.onFold} aria-label="收成小胶囊" title="收成小胶囊（Esc）">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="M6 12h12" /></svg>
+                    </button>
+                  </span>
+                )}
               </div>
             </section>
           );
         })}
       </LayoutGroup>
       {all.filter((g) => !g.tabs.length).map((g) => (
-        <div key={`empty-${g.id}`} className="wm-slot" style={box(body(rects.get(g.id)!))}>{renderEmpty(g.id)}</div>
+        <div key={`empty-${g.id}`} className="wm-slot" style={box(body(rectOf(g.id)))}>{renderEmpty(g.id)}</div>
       ))}
       {tabIds.map((t) => {
         const g = groupOf(root, t)!;
-        const shown = g.active === t;
+        const isFloat = flt?.group === g.id;
+        const shown = g.active === t && !(isFloat && flt.folded);
         // Panes that were already on screen glide to their new rect; panes that just became
         // visible appear in place (gliding from a stale rect would sweep across other panes).
         const entering = shown && !wasShown.current.has(t);
         return (
-          <div key={t} className="wm-slot" data-pane={t} data-hidden={!shown} data-entering={entering} style={box(body(rects.get(g.id)!))} onPointerDownCapture={() => t !== focused && onFocus(t)}>
+          <div key={t} className="wm-slot" data-pane={t} data-hidden={!shown} data-entering={entering} data-float={isFloat || undefined} style={box(body(rectOf(g.id)))} onPointerDownCapture={() => t !== focused && onFocus(t)}>
             {renderCanvas(t)}
           </div>
         );
       })}
+      {flt && !flt.folded && frect && (
+        <div
+          className="float-grip"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整会话面板的宽度（←→）"
+          aria-valuemin={MIN_W}
+          aria-valuemax={MAX_W}
+          aria-valuenow={Math.round(frect.w)}
+          tabIndex={0}
+          style={{ left: frect.x - 4, top: frect.y, width: 8, height: frect.h }}
+          {...gestures.resize}
+          onKeyDown={(e) => (e.key === "Escape" ? flt.onFold() : gestures.resize.onKeyDown(e))}
+        />
+      )}
+      {flt?.folded && (
+        <ShellCapsule name="session" shell={flt.shell} others={[commentsReach]} icon={<IconMessage size={16} />} label={flt.label} dot={flt.dot} aria={`展开「${flt.label}」的会话面板${flt.dot ? "（有新消息）" : ""}`} onOpen={flt.onUnfold} forwardRef={setCapsuleEl} />
+      )}
       {sashes.map((s) => (
         <div
           key={`${s.splitId}-${s.index}`}
@@ -281,6 +378,7 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
   );
 }
 
+const noop = () => {};
 const within = (r: Rect, x: number, y: number) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 const box = (r: Rect) => ({ left: r.x, top: r.y, width: Math.max(0, r.w), height: Math.max(0, r.h) });
 

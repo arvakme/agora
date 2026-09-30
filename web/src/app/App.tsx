@@ -18,6 +18,7 @@ import { TrashPanel } from "../workspace/TrashPanel";
 import { HistoryPanel } from "../workspace/HistoryPanel";
 import { byId, type El } from "../canvas/scene";
 import { SessionPane } from "../session/SessionPane";
+import { useSessionFloat } from "./useSessionFloat";
 import { sessions, type Session, type Turn } from "../session/store";
 import { agentChoice, canvases, ui } from "../session/ui";
 import { agents, useAgentName, type Binding } from "../session/agents";
@@ -228,6 +229,15 @@ export function App({ boot }: { boot: Boot }) {
       return { agent: kind && agentLabel(kind) };
     }),
   };
+  const float = useSessionFloat({
+    root,
+    kindOf: (t) => docs.find((d) => d.id === t)?.kind,
+    sessionOf: (t) => {
+      const d = docs.find((x) => x.id === t);
+      return d?.kind === "session" ? d.sessionId : undefined;
+    },
+    title: (t) => names[t] ?? "",
+  });
   const isDraftDoc = (d: Doc | undefined) => d?.kind === "session" && sessions.isDraft(d.sessionId);
   // Pointer labels and the 工位视图 name sessions the way the tabs do.
   useEffect(() => sessionNames.set(Object.fromEntries(docs.flatMap((d) => (d.kind === "session" ? [[d.sessionId, names[d.id] ?? ""]] : [])))));
@@ -940,6 +950,7 @@ export function App({ boot }: { boot: Boot }) {
             </div>
           )}
           onSettled={onSettled}
+          float={float}
           renderCanvas={(id) => {
             const doc = docs.find((d) => d.id === id);
             if (!doc || !synced) return null;

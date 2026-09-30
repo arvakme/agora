@@ -57,6 +57,7 @@ import type { Leg } from "./route";
 import { ReplayBar, TraceBar } from "./ReplayBar";
 import { stopEntryNote, stopEntryText } from "./traceText";
 import { entryCapsuleBox, pillSpot } from "./stopPill";
+import { useFloatBoxes } from "./floatBoxes";
 import { ReplayMarks } from "./ReplayMarks";
 import { shortAgentName } from "./stripRules";
 import { liveFollow, useLiveFollow } from "./replayLive";
@@ -474,6 +475,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
 
   // ── imperative nodes: figures and tethers, created per snapshot, moved per frame ──
   const rootEl = useRef<HTMLDivElement>(null);
+  // the floating shells (the session panel, the comment list) over this pane: bubbles, the talk box and the stops' notes keep off them like off the toolbar
+  const floats = useFloatBoxes(rootEl);
   const svgWorld = useRef<SVGGElement>(null);
   const figLayer = useRef<SVGGElement>(null);
   const tetherLayer = useRef<SVGGElement>(null);
@@ -1018,7 +1021,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
     const layerEl = rootEl.current;
     const talkEls = layerEl ? [...layerEl.querySelectorAll<HTMLElement>(".ws-talk")].filter((t) => t.style.visibility !== "hidden") : [];
     const talk = layerEl && talkEls.length ? boxesIn(layerEl.getBoundingClientRect(), talkEls.map((t) => t.getBoundingClientRect())) : [];
-    const { at, folded } = placeBubbles(list, { width: v.width, height: v.height, nodes, avoid: [...chrome, ...talk] });
+    const { at, folded } = placeBubbles(list, { width: v.width, height: v.height, nodes, avoid: [...chrome, ...talk, ...floats] });
     bubbleSize.current = sizes;
     bubbleRank.current = new Map(list.map((b, i) => [b.id, i]));
     const next = new Map<string, { dx: number; dy: number }>();
@@ -1071,7 +1074,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
     bubbleOff.current = next;
     for (const id of bubbleCur.current.keys()) if (!bubbleEls.current.has(id)) bubbleCur.current.delete(id);
     frame.flush();
-  }, [snap, chrome, foldCounts]);
+  }, [snap, chrome, floats, foldCounts]);
   // Any other commit can change a bubble's words (its width): settle positions and visibility before
   // the browser can paint it.
   useLayoutEffect(() => {
@@ -1147,6 +1150,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
       const r = el.getBoundingClientRect();
       if (r.width > 0 && el.closest<HTMLElement>(".ws-bub-pos")?.style.opacity !== "0") floaters.push({ x: (r.left - layerBox.left) / zoomNow - view.appState.scrollX, y: (r.top - layerBox.top) / zoomNow - view.appState.scrollY, w: r.width / zoomNow, h: r.height / zoomNow });
     }
+  for (const b of floats) floaters.push({ x: b.x / zoomNow - view.appState.scrollX, y: b.y / zoomNow - view.appState.scrollY, w: b.w / zoomNow, h: b.h / zoomNow });
   const stopMarks = (trv?.stops ?? []).flatMap((s, i) => {
     const b = geom.boxOf(s.place);
     const k = visits.get(s.place) ?? 0;
@@ -1268,7 +1272,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
           <g ref={peekLayer} className="ws-peeks" />
         </g>
       </svg>
-      {figuresOn && <TalkBubble canvasId={view.id} obstacles={() => (geomRef.current.tray ? [...geomRef.current.obstacles, geomRef.current.tray] : geomRef.current.obstacles)} />}
+      {figuresOn && <TalkBubble canvasId={view.id} obstacles={() => [...geomRef.current.obstacles, ...(geomRef.current.tray ? [geomRef.current.tray] : []), ...floats.map((b) => ({ x: b.x / a.zoom.value - a.scrollX, y: b.y / a.zoom.value - a.scrollY, w: b.w / a.zoom.value, h: b.h / a.zoom.value }))]} />}
       <EntryMarks view={view} peeks={peekMap} />
       {snap.tray && (
         <div className="ws-tray" ref={trayEl}>
