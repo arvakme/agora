@@ -220,7 +220,7 @@ def test_a_codex_read_of_a_project_file_lands_on_its_node(home):
     (the rollout's real record, stdout left out). The file is recognised and mapped to the node whose
     codePaths cover it; the command starts and ends in the same millisecond, so the segment is the
     fixed short one (what the page then draws as a glance, not a walk)."""
-    cwd = "/Users/zhijie/Devs/.worktrees/yuanzhuoai-dev/agora-validate"
+    cwd = "/Users/alice/Devs/demo-project/agora-validate"
     at = 1790669019092
     rec = {"type": "event_msg", "timestamp": ts(5), "payload": {"type": "item_completed", "item": {
         "type": "CommandExecution", "id": "exec-b971d135", "command": ["/bin/zsh", "-lc", "nl -ba controlplane/internal/ratelimit/ratelimit.go"],

@@ -180,13 +180,13 @@ def test_build_prompt_thread_and_chat():
     ctx = {
         "origin": "thread",
         "anchors": [{"id": "e1", "label": "缓存"}],
-        "messages": [{"author": "zhijie", "text": "把缓存换成 Redis"}],
+        "messages": [{"author": "alice", "text": "把缓存换成 Redis"}],
         "selection": ["e1"],
         "scene": [{"id": "e1", "type": "node", "label": "缓存"}],
     }
     prompt = build_prompt(ctx)
     assert 'anchored to: e1 "缓存"' in prompt
-    assert "zhijie: 把缓存换成 Redis" in prompt
+    assert "alice: 把缓存换成 Redis" in prompt
     assert "Current selection: e1" in prompt
     chat = build_prompt({**ctx, "origin": "chat"})
     assert "Act on the LAST user message" in chat

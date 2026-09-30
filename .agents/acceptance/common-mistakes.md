@@ -27,7 +27,7 @@
   检查：长会话往上翻时有回到最新的入口：`cd web && mise exec -- npx vitest run src/session/jumpToBottom.test.ts` 全绿；在 5210 上打开有长输出的会话往上翻，胶囊「回到最新 ↓」出现，来了新内容改写成「↓ N 条新消息」，点击或按 End 回到底部。
 
 - **P9 · 2026-09-29 · 预览地址混用打回** 给用户看的地址（5210）跑的是开发中的工作树，用户看到的不是验收过的版本。
-  检查：5210 只跑验收过的提交，前端和后端都来自 `/Users/zhijie/Job/agora-preview`；开发用别的端口（5212）。命令：`lsof -a -p $(lsof -nP -iTCP:5210 -sTCP:LISTEN -t | head -1) -d cwd -Fn` 应是 `agora-preview/web`；55430 同理是 `agora-preview`；`git -C /Users/zhijie/Job/agora-preview status --short` 应为空；`git -C /Users/zhijie/Job/agora-preview rev-parse --short HEAD` 应等于报告里写的提交。
+  检查：5210 只跑验收过的提交，前端和后端都来自 `~/Job/agora-preview`；开发用别的端口（5212）。命令：`lsof -a -p $(lsof -nP -iTCP:5210 -sTCP:LISTEN -t | head -1) -d cwd -Fn` 应是 `agora-preview/web`；55430 同理是 `agora-preview`；`git -C ~/Job/agora-preview status --short` 应为空；`git -C ~/Job/agora-preview rev-parse --short HEAD` 应等于报告里写的提交。
 
 - **P10 · 2026-09-29 · 环境泄漏** 在某个 worker 窗格里重启服务，会把 `SEEDMUX_*` 漏进用户的会话（无头、面板、被派会话）。
   检查：起服务和会话都要去掉 `SEEDMUX_*`。`ps eww -p $(lsof -nP -iTCP:55430 -sTCP:LISTEN -t | head -1) | tr ' ' '\n' | grep -c SEEDMUX_` 应输出 0（grep 退出码 1 也算通过）；`.venv/bin/python -m pytest -q tests/test_terminal_input.py -k "seedmux" -p no:cacheprovider` 三条用例全绿。

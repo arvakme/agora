@@ -10,7 +10,7 @@ import pytest
 from server.canvas.adapters.runs import timeline
 from server.canvas.adapters.shell_files import shell_files, shell_tool
 
-WT = "/Users/zhijie/Job/intern/wt-rail-dot"  # the work tree the agent worked in: the project root here
+WT = "/Users/alice/Job/intern/wt-rail-dot"  # the work tree the agent worked in: the project root here
 CD = f"cd {WT}/webapp"
 SHELL_DIR = "webapp/src/components/shell"
 
