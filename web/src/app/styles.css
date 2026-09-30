@@ -707,7 +707,7 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .help-pop dd { margin: 0; color: var(--fg-muted); }
 .help-note { margin: var(--space-4) 0 0; color: var(--fg-subtle); font-size: var(--text-xs); line-height: 1.6; }
 
-.dock { gap: 4px; padding: 4px; }
+.dock { gap: 4px; padding: 3px; } /* 30 (the segments, 「评论」) + 2×3 = the height of Excalidraw's islands (canvas/dockPlace.ts DOCK_H) */
 .dock .dock-seg { padding: 2px; }
 .dock .dock-seg button { height: 26px; padding: 0 10px; gap: 5px; font-size: var(--text-sm); }
 .dock-count { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border-radius: var(--r-sm); color: var(--fg-muted); font-size: var(--text-sm); --icon: var(--fg-muted); transition: background var(--dur-tap) var(--ease-out), color var(--dur-tap) var(--ease-out); }

@@ -256,15 +256,17 @@ describe("the bottom bar", () => {
     expect(barBox(resizeBar({ ...DEFAULT_BAR, expanded: true }, "n", 0, -9999, pane, dock), pane, dock).h).toBeLessThanOrEqual(pane.h - H_EDGE);
     expect(barBox(resizeBar({ ...DEFAULT_BAR, expanded: true }, "n", 0, 9999, pane, dock), pane, dock).h).toBe(H_MIN);
   });
-  it("the pill: right of the bar, as tall as it, 8 px off it; when the room to the next control is short it is only the round avatar", () => {
-    const p = pillBox(dock, pane.w - MARGIN - 130);
-    expect(p.x).toBe(dock.x + dock.w + 8);
-    expect(p.h).toBe(dock.h);
-    expect(p.y).toBe(dock.y);
-    expect(p.x + p.w).toBeLessThanOrEqual(pane.w - MARGIN - 130 - 8 + 1e-6);
-    const tight = pillBox(dock, dock.x + dock.w + 8 + 60);
-    expect(tight.w).toBe(dock.h);
-    expect(tight.x + tight.w).toBeLessThanOrEqual(dock.x + dock.w + 8 + 60);
+  it("the pill: right of the bar, as tall as it, 8 px off it, as wide as it is told (canvas/dockPlace.ts groupPlace says)", () => {
+    const p = pillBox(dock, 176);
+    expect(p).toEqual({ x: dock.x + dock.w + 8, y: dock.y, w: 176, h: dock.h });
+    expect(pillBox(dock, dock.h).w).toBe(dock.h);
+  });
+  it("the bar's middle is the one it is given (the canvas body's), not where the bar below happens to be; it narrows before it would lean off that middle", () => {
+    const b = barBox(DEFAULT_BAR, pane, dock, undefined, 500);
+    expect(b.x + b.w / 2).toBe(500);
+    const edge = barBox({ ...DEFAULT_BAR, width: 1000 }, pane, dock, undefined, 300);
+    expect(edge.x + edge.w / 2).toBe(300);
+    expect(edge.x).toBeGreaterThanOrEqual(MARGIN);
   });
   it("remembered per browser: width, height, half screen, folded; garbage gives the default", () => {
     const m = new Map<string, string>();
