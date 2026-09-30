@@ -43,3 +43,15 @@
 .guest-cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--text-sm); color: var(--fg); }
 .guest-dialog a.btn { justify-content: center; text-decoration: none; }
 .guest-dialog .guest-warn { display: flex; align-items: flex-start; gap: var(--space-3); font-size: var(--text-sm); }
+
+/* The tab row of a whole-project share: top-level canvases; the viewed one's sub-canvases follow it. */
+.guest-tabs { flex: none; display: flex; align-items: flex-end; gap: var(--space-1); padding: var(--space-3) var(--space-5) 0; overflow-x: auto; background: var(--bg); border-bottom: 1px solid var(--line); scrollbar-width: none; }
+.guest-tabs::-webkit-scrollbar { display: none; }
+.guest-tab { flex: none; display: inline-flex; align-items: center; gap: var(--space-2); max-width: 220px; height: var(--control-md, 32px); padding: 0 var(--space-5); border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--fg-muted); font: inherit; font-size: var(--text-sm); cursor: pointer; }
+.guest-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guest-tab:hover { color: var(--fg); }
+.guest-tab[data-on="true"] { color: var(--fg); font-weight: var(--weight-medium); border-bottom-color: var(--accent); }
+.guest-tab[data-sub] { color: var(--fg-subtle); font-size: var(--text-xs); }
+.guest-tab[data-sub]::before { content: "└"; opacity: 0.6; }
+.guest-tab em { font-style: normal; font-size: var(--text-xs); color: var(--fg-subtle); font-variant-numeric: tabular-nums; }
+.guest-tab .guest-tab-open { color: var(--accent); }

@@ -15,7 +15,7 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -28,7 +28,7 @@ from server.canvas.discover import full_text, session_history
 from server.canvas.events import Events
 from server.canvas.local import Local, session_origins
 from server.canvas.project import Conflict, EmptyOverwrite, Gone, NotEmpty, ProjectStore
-from server.canvas.share import ShareError, ShareManager, check_max_opens, check_ttl
+from server.canvas.share import PROJECT_TITLE, SCOPE_PROJECT, ShareError, ShareManager, check_max_opens, check_ttl, project_summary
 from server.canvas.trash import Trash, TrashError, canvas_sessions
 from server.canvas.runner import DEFAULT_BACKEND, DEFAULT_MODEL, EFFORTS, ExecOptions
 from server.canvas.version import running_version
@@ -88,7 +88,8 @@ class ToTrash(BaseModel):
 
 
 class NewShare(BaseModel):
-    canvasId: str
+    scope: Literal["canvas", "project"] = "canvas"  # one canvas (``canvasId``) or every canvas of the project
+    canvasId: str = ""
     ttl: int | None = None  # seconds; None = until revoked
     maxOpens: int | None = None  # distinct guests that may open it; None = unlimited
     quick: bool = False  # account-less trycloudflare.com address (one share at a time)
@@ -358,7 +359,7 @@ def create_share_router(store: ProjectStore, shares: ShareManager, events: Event
 
     @router.get("")
     def list_shares():
-        return {"shares": shares.list(), "gateway": shares.gateway_port is not None}
+        return {"shares": shares.list(), "gateway": shares.gateway_port is not None, "project": project_summary(store)}
 
     @router.get("/domains")
     def share_domains():
@@ -369,7 +370,10 @@ def create_share_router(store: ProjectStore, shares: ShareManager, events: Event
         try:
             check_ttl(body.ttl)
             check_max_opens(body.maxOpens)
-            if store.read("canvas", body.canvasId) is None:
+            if body.scope == SCOPE_PROJECT:
+                if not project_summary(store)["canvases"]:
+                    raise ValueError("这个项目里还没有画布")
+            elif store.read("canvas", body.canvasId) is None:
                 raise ValueError(f"no canvas {body.canvasId!r} in this project")
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
@@ -378,7 +382,8 @@ def create_share_router(store: ProjectStore, shares: ShareManager, events: Event
         try:
             if body.domain and not body.quick:
                 shares.choose_domain(body.domain)
-            share, url = shares.create(body.canvasId, body.ttl, title_of(body.canvasId), max_opens=body.maxOpens, quick=body.quick, build_replay=body.buildReplay)
+            project = body.scope == SCOPE_PROJECT
+            share, url = shares.create("" if project else body.canvasId, body.ttl, PROJECT_TITLE if project else title_of(body.canvasId), max_opens=body.maxOpens, quick=body.quick, build_replay=body.buildReplay, scope=body.scope)
         except ValueError as e:  # a zone the account does not have
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:  # ShareError, Cloudflare / cf failures: in plain words, with the next step, keep serving

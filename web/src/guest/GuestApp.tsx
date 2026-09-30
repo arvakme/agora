@@ -22,12 +22,23 @@ type State = {
   canvas: { id: string; title: string; elements: El[] };
   threads: ThreadsFile;
   me: { id: string } | null;
-  share: { expiresAt: number | null; root?: string; /** The owner let guests watch how the canvas was built. */ buildReplay?: boolean };
+  share: {
+    expiresAt: number | null;
+    root?: string;
+    /** The owner let guests watch how the canvas was built. */
+    buildReplay?: boolean;
+    /** A whole-project share (else one canvas). */
+    scope?: "canvas" | "project";
+    /** Project share: the top-level canvases in the owner's order, each with what is nested under it. */
+    tabs?: GuestTab[];
+  };
   /** From the shared canvas down to this one (nested canvases). */
   path?: { id: string; title: string }[];
   /** Every canvas this share reaches: its name and open comments (including those below it). */
   canvases?: Record<string, { title: string; open: number }>;
 };
+
+import { GuestTabs, replayRoot, type GuestTab } from "./tabs";
 
 const NAME_KEY = "agora.guestName";
 const readName = () => {
@@ -48,6 +59,7 @@ const saveName = (n: string) => {
 export async function loadGuest(canvas?: string): Promise<State> {
   const r = await fetch(`/api/guest/state${canvas ? `?canvas=${encodeURIComponent(canvas)}` : ""}`, { credentials: "same-origin" });
   if (r.status === 403) throw new Ended();
+  if (r.status === 404) throw new Error("这个项目里暂时没有画布");
   if (!r.ok) throw new Error(`加载失败（${r.status}）`);
   return (await r.json()) as State;
 }
@@ -98,7 +110,7 @@ export function GuestApp({ initial }: { initial: State }) {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ ...body, canvasId, name: nameRef.current }),
         });
-        if (r.status === 403) return setEnded(true);
+        if (r.status === 403) return void lost();
         if (r.status === 429) return flash("发得太快了，稍等一会儿再试");
         if (!r.ok) return flash(`没有发出去：${((await r.json().catch(() => ({}))) as { error?: string }).error ?? r.status}`);
       };
@@ -118,19 +130,29 @@ export function GuestApp({ initial }: { initial: State }) {
     return created;
   };
   const store = storeFor(cur);
-  // a comment made while watching the build replay goes on the shared canvas itself, whichever level the guest is looking at
-  const rootStore = storeFor(initial);
-  const rootRef = useRef(rootStore);
-  rootRef.current = rootStore;
+  // a comment made while watching the build replay goes on the canvas the replay is of (the shared one, or for a project the top-level canvas the guest pressed the button on), whichever level the guest is looking at
   const replayOn = !!initial.share.buildReplay;
   useEffect(() => {
     if (!replayOn) return;
     buildReplay.setCommenter((text, step) => {
       if (!nameRef.current.trim()) return setAsking("needed");
-      rootRef.current.create(null, text, { step });
+      const on = buildReplay.get();
+      const target = on ? stores.current.get(on) : undefined;
+      if (target) target.create(null, text, { step });
     });
     return () => buildReplay.setCommenter(null);
   }, [replayOn]);
+  const openReplay = async () => {
+    const root = replayRoot(curRef.current);
+    if (!stores.current.has(root)) {
+      try {
+        storeFor(await loadGuest(root));
+      } catch {
+        return flash("打不开这张画布的搭建过程");
+      }
+    }
+    buildReplay.open(root);
+  };
   const curRef = useRef(cur);
   curRef.current = cur;
   /** Step into a child canvas or back up (the gateway refuses anything the share does not reach). */
@@ -145,8 +167,21 @@ export function GuestApp({ initial }: { initial: State }) {
       setMode("browse");
       if (push) history.pushState({ canvas: id }, "", urlFor(id));
     } catch (e) {
-      if (e instanceof Ended) setEnded(true);
+      if (e instanceof Ended) void lost();
       else flash("打不开这一层");
+    }
+  };
+  /** A request was refused. In a project share the canvas may just be one the owner deleted: if the link still opens, go back to where it opens; otherwise the share has ended. */
+  const lost = async () => {
+    if (initial.share.scope !== "project") return setEnded(true);
+    try {
+      const home = await loadGuest();
+      setCur(home);
+      setMode("browse");
+      history.replaceState({ canvas: home.canvas.id }, "", urlFor(home.canvas.id));
+      flash("这张画布已经被作者删除了");
+    } catch (e) {
+      if (e instanceof Ended) setEnded(true);
     }
   };
   const goRef = useRef(goTo);
@@ -163,7 +198,7 @@ export function GuestApp({ initial }: { initial: State }) {
   const refresh = useRef(0);
   const refreshCounts = () => {
     clearTimeout(refresh.current);
-    refresh.current = window.setTimeout(() => void loadGuest(curRef.current.canvas.id).then((n) => setCur((c) => (c.canvas.id === n.canvas.id ? { ...c, canvases: n.canvases } : c)), () => {}), 300);
+    refresh.current = window.setTimeout(() => void loadGuest(curRef.current.canvas.id).then((n) => setCur((c) => (c.canvas.id === n.canvas.id ? { ...c, canvases: n.canvases, share: n.share } : c)), () => {}), 300);
   };
 
   const flash = (msg: string) => {
@@ -192,7 +227,7 @@ export function GuestApp({ initial }: { initial: State }) {
       try {
         n = await loadGuest(curRef.current.canvas.id);
       } catch (e) {
-        if (e instanceof Ended) setEnded(true);
+        if (e instanceof Ended) void lost();
         return;
       }
       if (n.canvas.id !== curRef.current.canvas.id) return;
@@ -200,7 +235,7 @@ export function GuestApp({ initial }: { initial: State }) {
       const target = stores.current.get(n.canvas.id);
       if (snap && target) target.merge(snap);
       if (JSON.stringify(n.canvas.elements) !== JSON.stringify(curRef.current.canvas.elements)) handle.current?.api.updateScene({ elements: n.canvas.elements as never });
-      setCur((c) => (c.canvas.id === n.canvas.id ? { ...c, canvas: n.canvas, canvases: n.canvases } : c));
+      setCur((c) => (c.canvas.id === n.canvas.id ? { ...c, canvas: n.canvas, canvases: n.canvases, share: n.share } : c));
     };
     return openLive({ onEvent, poll });
   }, []);
@@ -266,7 +301,7 @@ export function GuestApp({ initial }: { initial: State }) {
           <span className="guest-project">{initial.project.name}</span>
           <span className="guest-gap" />
           {replayOn && (
-            <button className="btn quiet" onClick={() => buildReplay.open(initial.share.root ?? initial.canvas.id)} title="看这张图从空白到现在是怎么一步步搭起来的">
+            <button className="btn quiet" onClick={() => void openReplay()} title="看这张图从空白到现在是怎么一步步搭起来的">
               <IconPlay size={16} /><span>看搭建过程</span>
             </button>
           )}
@@ -279,6 +314,7 @@ export function GuestApp({ initial }: { initial: State }) {
             <IconUser size={16} /><span>{name || "填写名字"}</span>
           </button>
         </header>
+        {cur.share.tabs && <GuestTabs tabs={cur.share.tabs} path={cur.path ?? []} current={cur.canvas.id} canvases={cur.canvases ?? {}} onGo={(id) => void goTo(id)} />}
         <div className="guest-canvas" data-pane={cur.canvas.id}>
           <CanvasView
             key={cur.canvas.id}
@@ -307,7 +343,7 @@ export function GuestApp({ initial }: { initial: State }) {
         {toast && <div className="toast" role="status"><span>{toast}</span></div>}
         {importing && <ImportDialog onClose={() => setImporting(false)} />}
         {replayOn && <BuildReplayHost />}
-        {asking && <NameDialog initial={name} welcome={asking === "welcome"} title={cur.canvas.title} onOk={confirmName} onSkip={skipName} />}
+        {asking && <NameDialog initial={name} welcome={asking === "welcome"} title={initial.share.scope === "project" ? initial.project.name : cur.canvas.title} project={initial.share.scope === "project"} onOk={confirmName} onSkip={skipName} />}
       </div>
     </MotionConfig>
   );
@@ -352,7 +388,7 @@ function GuestDock({ mode, setMode, drawer, toggleDrawer, store }: { mode: "brow
   );
 }
 
-function NameDialog({ initial, welcome, title, onOk, onSkip }: { initial: string; welcome: boolean; title: string; onOk: (n: string) => void; onSkip: () => void }) {
+function NameDialog({ initial, welcome, title, project, onOk, onSkip }: { initial: string; welcome: boolean; title: string; project: boolean; onOk: (n: string) => void; onSkip: () => void }) {
   const [v, setV] = useState(initial);
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => ref.current?.focus(), []);
@@ -369,7 +405,7 @@ function NameDialog({ initial, welcome, title, onOk, onSkip }: { initial: string
       >
         {welcome && <IconEye size={48} />}
         <h2>{welcome ? `你正在查看「${title || "画布"}」` : "评论前留个名字"}</h2>
-        <p>{welcome ? "可以浏览这块画布，也可以在元素上钉评论、或评论整张图；作者会看到并回复。不能修改画图。" : "名字会显示在你的评论旁边，作者靠它认出你。"}</p>
+        <p>{welcome ? `可以浏览${project ? "项目里的画布" : "这块画布"}，也可以在元素上钉评论、或评论整张图；作者会看到并回复。不能修改画图。` : "名字会显示在你的评论旁边，作者靠它认出你。"}</p>
         <label>
           <span>显示名</span>
           <input ref={ref} value={v} maxLength={40} placeholder="例如：小王" onChange={(e) => setV(e.target.value)} />
