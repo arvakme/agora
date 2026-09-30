@@ -1,0 +1,33 @@
+/* The colour of who wrote a comment (authorColor.ts): yours is Agora's purple, everyone else's one of five, picked
+ * from their id. Chosen to stay apart for colour-blind eyes (simulated protan / deutan / normal: no pair closer than
+ * ΔE 17 in light, 9 in dark) and to carry white text at 4.5:1 or better. Not red against green. */
+:root {
+  --author-1: #b45309; /* orange */
+  --author-2: #0f766e; /* teal */
+  --author-3: #be185d; /* pink */
+  --author-4: #7c4a1d; /* brown */
+  --author-5: #0e7490; /* cyan */
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --author-1: #bf5509; --author-2: #0f7f77; --author-3: #c72f78; --author-4: #94612f; --author-5: #167d9a; }
+}
+:root[data-theme="dark"] { --author-1: #bf5509; --author-2: #0f7f77; --author-3: #c72f78; --author-4: #94612f; --author-5: #167d9a; }
+
+[data-author="1"] { --author: var(--author-1); }
+[data-author="2"] { --author: var(--author-2); }
+[data-author="3"] { --author: var(--author-3); }
+[data-author="4"] { --author: var(--author-4); }
+[data-author="5"] { --author: var(--author-5); }
+
+/* the pin: the teardrop takes the author's colour (yours stays purple: the default) */
+.pin[data-author]:not([data-author="self"]):not([data-resolved="true"]) .pin-body { background: var(--author); color: #fff; --icon: #fff; }
+.pin[data-author]:not([data-author="self"]):not([data-resolved="true"]):hover .pin-body { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px color-mix(in srgb, var(--author) 45%, transparent); }
+.pin[data-author]:not([data-author="self"])[data-active="true"] .pin-body { box-shadow: 0 0 0 2px color-mix(in srgb, var(--author) 35%, transparent); }
+.pin[data-author]:not([data-author="self"]) .pin-orbit { border-color: var(--author); }
+
+/* the circle around a person's initial in the card (an agent keeps its own mark) */
+.avatar[data-author="self"] { background: var(--accent-fill); color: var(--accent-fg); }
+.avatar[data-author]:not([data-author="self"]) { background: var(--author); color: #fff; }
+
+/* the comment list: the number of each entry */
+.ditem-pin[data-author]:not([data-author="self"]):not([data-resolved="true"]):not([data-lost]) { background: var(--author); color: #fff; --icon: #fff; }

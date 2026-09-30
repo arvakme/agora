@@ -1,0 +1,363 @@
+{
+ "type": "object",
+ "additionalProperties": false,
+ "required": [
+  "ops"
+ ],
+ "properties": {
+  "note": {
+   "type": "string",
+   "maxLength": 300
+  },
+  "ops": {
+   "type": "array",
+   "maxItems": 20,
+   "items": {
+    "anyOf": [
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "op": {
+        "const": "update_text"
+       },
+       "id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "text": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       }
+      },
+      "required": [
+       "op",
+       "id",
+       "text"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "op": {
+        "const": "move"
+       },
+       "id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "x": {
+        "type": "number"
+       },
+       "y": {
+        "type": "number"
+       }
+      },
+      "required": [
+       "op",
+       "id",
+       "x",
+       "y"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "op": {
+        "const": "resize"
+       },
+       "id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "width": {
+        "type": "number"
+       },
+       "height": {
+        "type": "number"
+       }
+      },
+      "required": [
+       "op",
+       "id",
+       "width",
+       "height"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "op": {
+        "const": "add_shape"
+       },
+       "ref": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "shape": {
+        "enum": [
+         "rectangle",
+         "ellipse",
+         "diamond"
+        ]
+       },
+       "text": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "x": {
+        "type": "number"
+       },
+       "y": {
+        "type": "number"
+       },
+       "width": {
+        "type": "number"
+       },
+       "height": {
+        "type": "number"
+       },
+       "frameId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       }
+      },
+      "required": [
+       "op",
+       "ref",
+       "shape",
+       "text",
+       "x",
+       "y"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "op": {
+        "const": "add_arrow"
+       },
+       "ref": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "from": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "to": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "text": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "bothEnds": {
+        "type": "boolean"
+       },
+       "path": {
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 64,
+        "items": {
+         "type": "array",
+         "minItems": 2,
+         "maxItems": 2,
+         "items": {
+          "type": "number"
+         }
+        }
+       },
+       "plain": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "op",
+       "from",
+       "to"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "op": {
+        "const": "add_junction"
+       },
+       "ref": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "x": {
+        "type": "number"
+       },
+       "y": {
+        "type": "number"
+       }
+      },
+      "required": [
+       "op",
+       "ref",
+       "x",
+       "y"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "op": {
+        "const": "route"
+       },
+       "id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "path": {
+        "anyOf": [
+         {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 64,
+          "items": {
+           "type": "array",
+           "minItems": 2,
+           "maxItems": 2,
+           "items": {
+            "type": "number"
+           }
+          }
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "op",
+       "id",
+       "path"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "op": {
+        "const": "delete"
+       },
+       "id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       }
+      },
+      "required": [
+       "op",
+       "id"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "op": {
+        "const": "insert_library_item"
+       },
+       "ref": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "item": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "near": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+         "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+         },
+         "side": {
+          "enum": [
+           "right",
+           "left",
+           "above",
+           "below"
+          ]
+         },
+         "gap": {
+          "type": "number"
+         }
+        },
+        "required": [
+         "id",
+         "side"
+        ]
+       },
+       "at": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+         "x": {
+          "type": "number"
+         },
+         "y": {
+          "type": "number"
+         }
+        },
+        "required": [
+         "x",
+         "y"
+        ]
+       },
+       "label": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "width": {
+        "type": "number"
+       },
+       "frameId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       }
+      },
+      "required": [
+       "op",
+       "ref",
+       "item"
+      ]
+     }
+    ]
+   }
+  }
+ }
+}

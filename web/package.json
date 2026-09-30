@@ -1,0 +1,36 @@
+{
+  "name": "agora-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "node scripts/export-schemas.ts && tsc -p . && vite build",
+    "typecheck": "tsc -p .",
+    "schemas": "node scripts/export-schemas.ts",
+    "test": "vitest run",
+    "eval": "node scripts/eval.ts",
+    "eval:replay": "node scripts/eval-replay.ts",
+    "eval:report": "node scripts/eval-report.ts",
+    "libraries:fetch": "node scripts/libraries/fetch.ts"
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.1",
+    "@unlocalhosted/dither-icons": "^0.2.5",
+    "motion": "^13.4.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "playwright": "^1.55.0",
+    "svg-path-properties": "^2.1.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^3.2.4"
+  }
+}

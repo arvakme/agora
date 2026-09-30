@@ -1,0 +1,1183 @@
+[
+ {
+  "name": "a valid move",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "move",
+     "id": "a",
+     "x": 10,
+     "y": 20
+    }
+   ]
+  },
+  "errors": []
+ },
+ {
+  "name": "no ops array",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "nope": 1
+  },
+  "errors": [
+   "缺少 ops 数组"
+  ]
+ },
+ {
+  "name": "not an object at all",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": 5,
+  "errors": [
+   "缺少 ops 数组"
+  ]
+ },
+ {
+  "name": "empty ops",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": []
+  },
+  "errors": [
+   "ops 为空"
+  ]
+ },
+ {
+  "name": "an op that is not an object",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    3
+   ]
+  },
+  "errors": [
+   "ops[0] 不是对象"
+  ]
+ },
+ {
+  "name": "unknown op",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "explode",
+     "id": "a"
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].op 未知：explode"
+  ]
+ },
+ {
+  "name": "extra and missing fields",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "move",
+     "id": "a",
+     "x": 1,
+     "z": 2
+    }
+   ]
+  },
+  "errors": [
+   "ops[0] 多余字段 z",
+   "ops[0] 缺少 y",
+   "ops[0].z 不是非空字符串"
+  ]
+ },
+ {
+  "name": "numbers must be finite numbers",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "move",
+     "id": "a",
+     "x": "1",
+     "y": 2
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].x 不是有限数字"
+  ]
+ },
+ {
+  "name": "size out of range",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "resize",
+     "id": "a",
+     "width": 4,
+     "height": 3000
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].width 超出 8–2000",
+   "ops[0].height 超出 8–2000"
+  ]
+ },
+ {
+  "name": "coordinate out of the canvas",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "move",
+     "id": "a",
+     "x": 30000,
+     "y": 0
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].x 超出画布范围"
+  ]
+ },
+ {
+  "name": "strings must be non-empty and short",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "update_text",
+     "id": "a",
+     "text": "  "
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].text 不是非空字符串"
+  ]
+ },
+ {
+  "name": "a string that is too long",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "update_text",
+     "id": "a",
+     "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].text 不是非空字符串"
+  ]
+ },
+ {
+  "name": "an id that does not exist",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "move",
+     "id": "zzz",
+     "x": 1,
+     "y": 1
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].id 指向不存在的元素 zzz"
+  ]
+ },
+ {
+  "name": "a kind the op does not take",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "move",
+     "id": "ar",
+     "x": 1,
+     "y": 1
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].id 类型 arrow 不支持 move"
+  ]
+ },
+ {
+  "name": "resize does not take a library component",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "resize",
+     "id": "lib1",
+     "width": 50,
+     "height": 50
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].id 类型 library 不支持 resize"
+  ]
+ },
+ {
+  "name": "update_text on an arrow is fine",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "update_text",
+     "id": "ar",
+     "text": "调用"
+    }
+   ]
+  },
+  "errors": []
+ },
+ {
+  "name": "add_shape with a new ref",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "add_shape",
+     "ref": "cache",
+     "shape": "ellipse",
+     "text": "缓存",
+     "x": 0,
+     "y": 0
+    }
+   ]
+  },
+  "errors": []
+ },
+ {
+  "name": "add_shape with a bad shape and a bad ref",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "add_shape",
+     "ref": "Bad Ref",
+     "shape": "star",
+     "text": "x",
+     "x": 0,
+     "y": 0
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].shape 非法",
+   "ops[0].ref 需匹配 /^[a-z][a-z0-9_-]{0,31}$/"
+  ]
+ },
+ {
+  "name": "a ref that names an existing element",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "add_shape",
+     "ref": "a",
+     "shape": "rectangle",
+     "text": "x",
+     "x": 0,
+     "y": 0
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].ref a 与已有元素重名"
+  ]
+ },
+ {
+  "name": "a ref used twice in one plan",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "add_shape",
+     "ref": "n1",
+     "shape": "rectangle",
+     "text": "x",
+     "x": 0,
+     "y": 0
+    },
+    {
+     "op": "add_shape",
+     "ref": "n1",
+     "shape": "rectangle",
+     "text": "y",
+     "x": 100,
+     "y": 0
+    }
+   ]
+  },
+  "errors": [
+   "ops[1].ref n1 与已有元素重名"
+  ]
+ },
+ {
+  "name": "add_shape into a frame that is not a frame",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "add_shape",
+     "ref": "n2",
+     "shape": "rectangle",
+     "text": "x",
+     "x": 0,
+     "y": 0,
+     "frameId": "a"
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].frameId 类型 shape 不支持 add_shape"
+  ]
+ },
+ {
+  "name": "an arrow between a new shape and an old one",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "add_shape",
+     "ref": "n3",
+     "shape": "rectangle",
+     "text": "x",
+     "x": 0,
+     "y": 0
+    },
+    {
+     "op": "add_arrow",
+     "from": "a",
+     "to": "n3",
+     "text": "用"
+    }
+   ]
+  },
+  "errors": []
+ },
+ {
+  "name": "an arrow from a shape to itself",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "add_arrow",
+     "from": "a",
+     "to": "a"
+    }
+   ]
+  },
+  "errors": [
+   "ops[0] 起止相同"
+  ]
+ },
+ {
+  "name": "an arrow to an arrow",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "add_arrow",
+     "from": "a",
+     "to": "ar"
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].to 类型 arrow 不支持 add_arrow"
+  ]
+ },
+ {
+  "name": "bothEnds must be a boolean",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "add_arrow",
+     "from": "a",
+     "to": "b",
+     "bothEnds": "yes"
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].bothEnds 不是布尔值"
+  ]
+ },
+ {
+  "name": "delete then use",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "delete",
+     "id": "a"
+    },
+    {
+     "op": "move",
+     "id": "a",
+     "x": 1,
+     "y": 1
+    }
+   ]
+  },
+  "errors": [
+   "ops[1].id 指向不存在的元素 a"
+  ]
+ },
+ {
+  "name": "library item that is not in the library",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "insert_library_item",
+     "ref": "db",
+     "item": "official/none#9",
+     "at": {
+      "x": 0,
+      "y": 0
+     }
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].item 不是素材库里的组件 id：official/none#9（先用 search_library 查）"
+  ]
+ },
+ {
+  "name": "library item with neither near nor at",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "insert_library_item",
+     "ref": "db",
+     "item": "official/aws#1"
+    }
+   ]
+  },
+  "errors": [
+   "ops[0] 需要 near 或 at 其中之一"
+  ]
+ },
+ {
+  "name": "library item with both near and at",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "insert_library_item",
+     "ref": "db",
+     "item": "official/aws#1",
+     "at": {
+      "x": 0,
+      "y": 0
+     },
+     "near": {
+      "id": "a",
+      "side": "right"
+     }
+    }
+   ]
+  },
+  "errors": [
+   "ops[0] 需要 near 或 at 其中之一"
+  ]
+ },
+ {
+  "name": "library item near something, with a bad side and gap",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "insert_library_item",
+     "ref": "db",
+     "item": "official/aws#1",
+     "near": {
+      "id": "a",
+      "side": "middle",
+      "gap": 900
+     }
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].near.side 非法",
+   "ops[0].near.gap 超出 0–800"
+  ]
+ },
+ {
+  "name": "library item near a missing element",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "insert_library_item",
+     "ref": "db",
+     "item": "official/aws#1",
+     "near": {
+      "id": "nope",
+      "side": "left"
+     }
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].near.id 指向不存在的元素 nope"
+  ]
+ },
+ {
+  "name": "library item at a non-finite position",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "insert_library_item",
+     "ref": "db",
+     "item": "official/aws#1",
+     "at": {
+      "x": "0",
+      "y": 1
+     }
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].at 需要有限的 x/y"
+  ]
+ },
+ {
+  "name": "a valid library item",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "insert_library_item",
+     "ref": "db",
+     "item": "official/aws#1",
+     "near": {
+      "id": "a",
+      "side": "below",
+      "gap": 40
+     },
+     "label": "数据库"
+    }
+   ]
+  },
+  "errors": []
+ },
+ {
+  "name": "a bent arrow with a path is valid",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "add_arrow",
+     "from": "a",
+     "to": "b",
+     "path": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       50
+      ],
+      [
+       80,
+       50
+      ]
+     ]
+    }
+   ]
+  },
+  "errors": []
+ },
+ {
+  "name": "a plain arrow (no arrowheads) is valid",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "add_arrow",
+     "from": "a",
+     "to": "b",
+     "plain": true
+    }
+   ]
+  },
+  "errors": []
+ },
+ {
+  "name": "a path needs 2 to 64 points of two numbers",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "add_arrow",
+     "from": "a",
+     "to": "b",
+     "path": [
+      [
+       0,
+       0
+      ]
+     ]
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].path 需要 2–64 个 [x, y] 点"
+  ]
+ },
+ {
+  "name": "a path's coordinates are finite and on the canvas",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "add_arrow",
+     "from": "a",
+     "to": "b",
+     "path": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       99999
+      ]
+     ]
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].path 的坐标要是有限数字，绝对值不超过 20000"
+  ]
+ },
+ {
+  "name": "plain is a boolean",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "add_arrow",
+     "from": "a",
+     "to": "b",
+     "plain": "yes"
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].plain 不是布尔值"
+  ]
+ },
+ {
+  "name": "a junction dot can be created and a line can end on it",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "add_junction",
+     "ref": "j1",
+     "x": 10,
+     "y": 20
+    },
+    {
+     "op": "add_arrow",
+     "from": "a",
+     "to": "j1",
+     "plain": true
+    }
+   ]
+  },
+  "errors": []
+ },
+ {
+  "name": "a junction dot's ref is unique",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "add_junction",
+     "ref": "a",
+     "x": 10,
+     "y": 20
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].ref a 与已有元素重名"
+  ]
+ },
+ {
+  "name": "a route names an arrow, and null puts it back to straight",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "route",
+     "id": "ar",
+     "path": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       40
+      ],
+      [
+       90,
+       40
+      ]
+     ]
+    },
+    {
+     "op": "route",
+     "id": "ar",
+     "path": null
+    }
+   ]
+  },
+  "errors": []
+ },
+ {
+  "name": "a route is for arrows only",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "route",
+     "id": "a",
+     "path": [
+      [
+       0,
+       0
+      ],
+      [
+       5,
+       5
+      ]
+     ]
+    }
+   ]
+  },
+  "errors": [
+   "ops[0].id 类型 shape 不支持 route"
+  ]
+ },
+ {
+  "name": "a route needs its path",
+  "scene": {
+   "a": "shape",
+   "b": "shape",
+   "f": "frame",
+   "ar": "arrow",
+   "lib1": "library"
+  },
+  "library": [
+   "official/aws#1"
+  ],
+  "plan": {
+   "ops": [
+    {
+     "op": "route",
+     "id": "ar"
+    }
+   ]
+  },
+  "errors": [
+   "ops[0] 缺少 path"
+  ]
+ }
+]

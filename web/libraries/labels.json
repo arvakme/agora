@@ -1,0 +1,6796 @@
+{
+ "official/thijsdev/snowflake#0": {
+  "name": "zigzag pipe connector",
+  "keywords": [
+   "connector",
+   "zigzag",
+   "pipe",
+   "diamond",
+   "link",
+   "flow",
+   "line",
+   "snowflake"
+  ]
+ },
+ "official/thijsdev/snowflake#1": {
+  "name": "grid table icon",
+  "keywords": [
+   "grid",
+   "table",
+   "matrix",
+   "cells",
+   "data",
+   "warehouse",
+   "spreadsheet"
+  ]
+ },
+ "official/thijsdev/snowflake#2": {
+  "name": "sunburst circle icon",
+  "keywords": [
+   "sun",
+   "burst",
+   "star",
+   "circle",
+   "spark",
+   "snowflake",
+   "icon"
+  ]
+ },
+ "official/thijsdev/snowflake#3": {
+  "name": "checklist rows icon",
+  "keywords": [
+   "checklist",
+   "list",
+   "rows",
+   "form",
+   "tasks",
+   "menu",
+   "items"
+  ]
+ },
+ "official/thijsdev/snowflake#4": {
+  "name": "process flow diagram",
+  "keywords": [
+   "flowchart",
+   "process",
+   "diagram",
+   "nodes",
+   "circles",
+   "boxes",
+   "workflow"
+  ]
+ },
+ "official/thijsdev/snowflake#5": {
+  "name": "data transfer link icon",
+  "keywords": [
+   "dumbbell",
+   "connector",
+   "transfer",
+   "link",
+   "sync",
+   "pipeline",
+   "bridge"
+  ]
+ },
+ "official/thijsdev/snowflake#6": {
+  "name": "labeled container frame",
+  "keywords": [
+   "frame",
+   "container",
+   "border",
+   "box",
+   "label",
+   "diagram",
+   "rectangle",
+   "icon corner"
+  ]
+ },
+ "official/thijsdev/snowflake#7": {
+  "name": "snowflake burst icon",
+  "keywords": [
+   "snowflake",
+   "star",
+   "burst",
+   "spark",
+   "circle",
+   "warehouse",
+   "icon"
+  ]
+ },
+ "official/kaligule/robots#0": {
+  "name": "round-head robot",
+  "keywords": [
+   "robot",
+   "character",
+   "mascot",
+   "antenna",
+   "round head",
+   "cute",
+   "bot"
+  ]
+ },
+ "official/kaligule/robots#1": {
+  "name": "cheerful robot",
+  "keywords": [
+   "robot",
+   "character",
+   "mascot",
+   "antenna",
+   "square head",
+   "smiling",
+   "arms up",
+   "bot"
+  ]
+ },
+ "official/kaligule/robots#2": {
+  "name": "waving robot",
+  "keywords": [
+   "robot",
+   "character",
+   "mascot",
+   "antenna",
+   "arms out",
+   "friendly",
+   "bot"
+  ]
+ },
+ "official/kaligule/robots#3": {
+  "name": "hovering robot head",
+  "keywords": [
+   "robot",
+   "character",
+   "mascot",
+   "trapezoid head",
+   "floating",
+   "antenna",
+   "bot"
+  ]
+ },
+ "official/kaligule/robots#4": {
+  "name": "angry robot",
+  "keywords": [
+   "robot",
+   "character",
+   "mascot",
+   "angry",
+   "rectangular head",
+   "antenna",
+   "bot"
+  ]
+ },
+ "official/kaligule/robots#5": {
+  "name": "fierce robot",
+  "keywords": [
+   "robot",
+   "character",
+   "mascot",
+   "angry",
+   "glitch",
+   "antenna",
+   "bot"
+  ]
+ },
+ "official/kaligule/robots#6": {
+  "name": "dizzy robot",
+  "keywords": [
+   "robot",
+   "character",
+   "mascot",
+   "x eyes",
+   "confused",
+   "antenna",
+   "bot"
+  ]
+ },
+ "official/lipis/polygons#0": {
+  "name": "red triangle",
+  "keywords": [
+   "triangle",
+   "shape",
+   "polygon",
+   "red",
+   "geometry",
+   "three sides"
+  ]
+ },
+ "official/lipis/polygons#1": {
+  "name": "pink pentagon",
+  "keywords": [
+   "pentagon",
+   "shape",
+   "polygon",
+   "pink",
+   "geometry",
+   "five sides"
+  ]
+ },
+ "official/lipis/polygons#2": {
+  "name": "purple hexagon",
+  "keywords": [
+   "hexagon",
+   "shape",
+   "polygon",
+   "purple",
+   "geometry",
+   "six sides"
+  ]
+ },
+ "official/lipis/polygons#3": {
+  "name": "purple heptagon",
+  "keywords": [
+   "heptagon",
+   "shape",
+   "polygon",
+   "purple",
+   "geometry",
+   "seven sides"
+  ]
+ },
+ "official/lipis/polygons#4": {
+  "name": "blue octagon",
+  "keywords": [
+   "octagon",
+   "shape",
+   "polygon",
+   "blue",
+   "geometry",
+   "eight sides",
+   "stop sign"
+  ]
+ },
+ "official/lipis/polygons#5": {
+  "name": "blue nonagon",
+  "keywords": [
+   "nonagon",
+   "shape",
+   "polygon",
+   "blue",
+   "geometry",
+   "nine sides",
+   "circle-like"
+  ]
+ },
+ "official/lipis/stars#0": {
+  "name": "red triangle rotated",
+  "keywords": [
+   "triangle",
+   "shape",
+   "polygon",
+   "red",
+   "geometry",
+   "rotated",
+   "arrow-like"
+  ]
+ },
+ "official/lipis/stars#1": {
+  "name": "pink 4-point star",
+  "keywords": [
+   "star",
+   "four point",
+   "sparkle",
+   "pink",
+   "shape",
+   "diamond star"
+  ]
+ },
+ "official/lipis/stars#2": {
+  "name": "purple 5-point star",
+  "keywords": [
+   "star",
+   "five point",
+   "sparkle",
+   "purple",
+   "shape",
+   "classic star"
+  ]
+ },
+ "official/lipis/stars#3": {
+  "name": "purple 6-point star",
+  "keywords": [
+   "star",
+   "six point",
+   "sparkle",
+   "purple",
+   "shape",
+   "seal"
+  ]
+ },
+ "official/lipis/stars#4": {
+  "name": "blue 7-point star",
+  "keywords": [
+   "star",
+   "seven point",
+   "sparkle",
+   "blue",
+   "shape"
+  ]
+ },
+ "official/lipis/stars#5": {
+  "name": "blue 8-point star",
+  "keywords": [
+   "star",
+   "eight point",
+   "sparkle",
+   "blue",
+   "shape",
+   "compass star"
+  ]
+ },
+ "official/lipis/stars#6": {
+  "name": "teal 8-point star",
+  "keywords": [
+   "star",
+   "eight point",
+   "sparkle",
+   "teal",
+   "shape",
+   "compass star"
+  ]
+ },
+ "official/lipis/stars#7": {
+  "name": "green 9-point star",
+  "keywords": [
+   "star",
+   "nine point",
+   "sparkle",
+   "green",
+   "shape"
+  ]
+ },
+ "official/lipis/stars#8": {
+  "name": "green 10-point star",
+  "keywords": [
+   "star",
+   "ten point",
+   "sparkle",
+   "green",
+   "shape",
+   "burst"
+  ]
+ },
+ "official/lipis/stars#9": {
+  "name": "green burst star",
+  "keywords": [
+   "star",
+   "burst",
+   "spiky",
+   "green",
+   "sparkle",
+   "explosion",
+   "pointed shape"
+  ]
+ },
+ "official/lipis/stars#10": {
+  "name": "yellow sun burst",
+  "keywords": [
+   "star",
+   "sun",
+   "burst",
+   "spiky",
+   "yellow",
+   "sparkle",
+   "explosion"
+  ]
+ },
+ "official/lipis/stars#11": {
+  "name": "orange sun burst",
+  "keywords": [
+   "star",
+   "sun",
+   "burst",
+   "spiky",
+   "orange",
+   "sparkle",
+   "explosion"
+  ]
+ },
+ "official/morgemoensch/gadgets#0": {
+  "name": "smartphone icon",
+  "keywords": [
+   "phone",
+   "mobile",
+   "device",
+   "screen",
+   "smartphone",
+   "cellphone",
+   "gadget"
+  ]
+ },
+ "official/morgemoensch/gadgets#1": {
+  "name": "media player device",
+  "keywords": [
+   "ipod",
+   "mp3 player",
+   "screen",
+   "play button",
+   "device",
+   "gadget",
+   "music player"
+  ]
+ },
+ "official/morgemoensch/gadgets#3": {
+  "name": "tablet device",
+  "keywords": [
+   "tablet",
+   "ipad",
+   "screen",
+   "device",
+   "gadget",
+   "electronics"
+  ]
+ },
+ "official/morgemoensch/gadgets#4": {
+  "name": "laptop computer",
+  "keywords": [
+   "laptop",
+   "notebook",
+   "computer",
+   "screen",
+   "device",
+   "gadget"
+  ]
+ },
+ "official/g-script/android#0": {
+  "name": "radio button dial",
+  "keywords": [
+   "radio button",
+   "android",
+   "toggle",
+   "knob",
+   "control",
+   "slider",
+   "selector"
+  ]
+ },
+ "official/g-script/android#1": {
+  "name": "toggle switch bar",
+  "keywords": [
+   "switch",
+   "toggle",
+   "slider",
+   "android",
+   "control",
+   "ui element"
+  ]
+ },
+ "official/g-script/android#5": {
+  "name": "slider thumb vertical",
+  "keywords": [
+   "slider",
+   "handle",
+   "android",
+   "control",
+   "knob",
+   "ui element",
+   "seekbar"
+  ]
+ },
+ "official/g-script/charts#0": {
+  "name": "horizontal bar chart",
+  "keywords": [
+   "bar chart",
+   "graph",
+   "chart",
+   "statistics",
+   "data",
+   "analytics",
+   "sketch"
+  ]
+ },
+ "official/g-script/charts#1": {
+  "name": "vertical bar chart",
+  "keywords": [
+   "bar chart",
+   "column chart",
+   "graph",
+   "chart",
+   "statistics",
+   "data",
+   "analytics"
+  ]
+ },
+ "official/g-script/charts#2": {
+  "name": "line chart",
+  "keywords": [
+   "line chart",
+   "graph",
+   "trend line",
+   "chart",
+   "statistics",
+   "data",
+   "analytics"
+  ]
+ },
+ "official/g-script/charts#3": {
+  "name": "pie chart",
+  "keywords": [
+   "pie chart",
+   "chart",
+   "graph",
+   "statistics",
+   "data",
+   "analytics",
+   "circle chart"
+  ]
+ },
+ "official/g-script/forms#5": {
+  "name": "toggle switch on",
+  "keywords": [
+   "toggle",
+   "switch",
+   "form",
+   "checkbox",
+   "ui element",
+   "on off",
+   "control"
+  ]
+ },
+ "official/g-script/forms#10": {
+  "name": "checkbox filled",
+  "keywords": [
+   "checkbox",
+   "form",
+   "input",
+   "ui element",
+   "square",
+   "control",
+   "checked"
+  ]
+ },
+ "official/g-script/forms#12": {
+  "name": "media control buttons",
+  "keywords": [
+   "play button",
+   "rewind",
+   "fast forward",
+   "media controls",
+   "form",
+   "player",
+   "navigation"
+  ]
+ },
+ "official/g-script/medias#0": {
+  "name": "media control buttons",
+  "keywords": [
+   "play button",
+   "rewind",
+   "fast forward",
+   "media controls",
+   "player",
+   "navigation",
+   "video"
+  ]
+ },
+ "official/g-script/medias#1": {
+  "name": "image gallery carousel",
+  "keywords": [
+   "carousel",
+   "gallery",
+   "slideshow",
+   "image stack",
+   "media",
+   "cards",
+   "photos"
+  ]
+ },
+ "official/g-script/medias#2": {
+  "name": "volume slider control",
+  "keywords": [
+   "volume",
+   "slider",
+   "speaker",
+   "audio control",
+   "media",
+   "sound",
+   "knob"
+  ]
+ },
+ "official/g-script/medias#3": {
+  "name": "map location patch",
+  "keywords": [
+   "map",
+   "location",
+   "parcel",
+   "land plot",
+   "geo",
+   "highlighted area",
+   "streets"
+  ]
+ },
+ "official/g-script/medias#4": {
+  "name": "video player window",
+  "keywords": [
+   "video player",
+   "media player",
+   "clapperboard",
+   "play button",
+   "movie",
+   "screen",
+   "video"
+  ]
+ },
+ "official/g-script/medias#5": {
+  "name": "user avatar placeholder",
+  "keywords": [
+   "avatar",
+   "user",
+   "profile",
+   "person icon",
+   "smiley",
+   "media",
+   "placeholder"
+  ]
+ },
+ "official/dwelle/hearts#0": {
+  "name": "sketchy heart outline",
+  "keywords": [
+   "heart",
+   "love",
+   "outline",
+   "sketch",
+   "pink",
+   "hand-drawn",
+   "valentine"
+  ]
+ },
+ "official/dwelle/hearts#1": {
+  "name": "sketchy heart cluster",
+  "keywords": [
+   "hearts",
+   "love",
+   "sketch",
+   "hand-drawn",
+   "pink",
+   "valentine",
+   "group"
+  ]
+ },
+ "official/dwelle/hearts#2": {
+  "name": "red heart trio",
+  "keywords": [
+   "hearts",
+   "love",
+   "red",
+   "glossy",
+   "valentine",
+   "group",
+   "romance"
+  ]
+ },
+ "official/dwelle/hearts#3": {
+  "name": "glossy red heart",
+  "keywords": [
+   "heart",
+   "love",
+   "red",
+   "glossy",
+   "valentine",
+   "romance",
+   "shiny"
+  ]
+ },
+ "official/dwelle/hearts#4": {
+  "name": "shiny red heart",
+  "keywords": [
+   "heart",
+   "love",
+   "red",
+   "glossy",
+   "valentine",
+   "romance",
+   "shiny"
+  ]
+ },
+ "official/youritjang/software-architecture#0": {
+  "name": "purple hatched hexagon",
+  "keywords": [
+   "hexagon",
+   "polygon",
+   "hatched fill",
+   "purple",
+   "shape",
+   "sketch",
+   "geometric"
+  ]
+ },
+ "official/youritjang/software-architecture#1": {
+  "name": "database cylinder",
+  "keywords": [
+   "database",
+   "cylinder",
+   "storage",
+   "server",
+   "data",
+   "architecture",
+   "blue"
+  ]
+ },
+ "official/youritjang/software-architecture#2": {
+  "name": "layered diamond stack",
+  "keywords": [
+   "layers",
+   "stack",
+   "diamond",
+   "architecture",
+   "pink",
+   "levels",
+   "tiers"
+  ]
+ },
+ "official/youritjang/software-architecture#3": {
+  "name": "horizontal tube cylinder",
+  "keywords": [
+   "cylinder",
+   "tube",
+   "pipe",
+   "barrel",
+   "hatched",
+   "green",
+   "conduit"
+  ]
+ },
+ "official/youritjang/software-architecture#6": {
+  "name": "mobile phone icon",
+  "keywords": [
+   "phone",
+   "mobile",
+   "smartphone",
+   "device",
+   "screen",
+   "app",
+   "hardware"
+  ]
+ },
+ "official/excacomp/web-kit#0": {
+  "name": "status dot circles",
+  "keywords": [
+   "status",
+   "circle",
+   "dot",
+   "indicator",
+   "avatar",
+   "bullet",
+   "traffic light"
+  ]
+ },
+ "official/excacomp/web-kit#1": {
+  "name": "status dot squares",
+  "keywords": [
+   "status",
+   "square",
+   "dot",
+   "indicator",
+   "card",
+   "badge",
+   "corner"
+  ]
+ },
+ "official/drwnio/drwnio#0": {
+  "name": "bucket container shape",
+  "keywords": [
+   "bucket",
+   "container",
+   "handle",
+   "mailbox",
+   "storage",
+   "pot",
+   "trash can"
+  ]
+ },
+ "official/drwnio/drwnio#1": {
+  "name": "database cylinder",
+  "keywords": [
+   "database",
+   "cylinder",
+   "db",
+   "storage",
+   "data",
+   "hatched",
+   "tier"
+  ]
+ },
+ "official/drwnio/drwnio#4": {
+  "name": "kubernetes logo",
+  "keywords": [
+   "kubernetes",
+   "k8s",
+   "helm",
+   "wheel",
+   "orchestration",
+   "container",
+   "logo"
+  ]
+ },
+ "official/drwnio/drwnio#5": {
+  "name": "redis logo",
+  "keywords": [
+   "redis",
+   "database",
+   "cache",
+   "stack",
+   "star circle triangle",
+   "logo",
+   "red"
+  ]
+ },
+ "official/drwnio/drwnio#6": {
+  "name": "nginx logo",
+  "keywords": [
+   "nginx",
+   "web server",
+   "hexagon",
+   "green",
+   "logo",
+   "proxy"
+  ]
+ },
+ "official/drwnio/drwnio#7": {
+  "name": "abstract orange blob",
+  "keywords": [
+   "blob",
+   "amoeba",
+   "orange",
+   "abstract",
+   "paw",
+   "shape",
+   "irregular"
+  ]
+ },
+ "official/drwnio/drwnio#8": {
+  "name": "cpu chip icon",
+  "keywords": [
+   "cpu",
+   "chip",
+   "processor",
+   "microchip",
+   "hardware",
+   "pins",
+   "circuit"
+  ]
+ },
+ "official/drwnio/drwnio#9": {
+  "name": "padlock icon",
+  "keywords": [
+   "padlock",
+   "lock",
+   "security",
+   "unlocked",
+   "circle",
+   "privacy",
+   "shield"
+  ]
+ },
+ "official/drwnio/drwnio#10": {
+  "name": "fan-out distribution icon",
+  "keywords": [
+   "fan out",
+   "distribution",
+   "arrows",
+   "one to many",
+   "network",
+   "circle",
+   "broadcast"
+  ]
+ },
+ "official/drwnio/drwnio#11": {
+  "name": "code brackets icon",
+  "keywords": [
+   "code",
+   "brackets",
+   "developer",
+   "html",
+   "programming",
+   "tags",
+   "slash"
+  ]
+ },
+ "official/drwnio/drwnio#12": {
+  "name": "elephant head icon",
+  "keywords": [
+   "elephant",
+   "postgresql",
+   "postgres",
+   "mascot",
+   "animal",
+   "logo",
+   "slonik"
+  ]
+ },
+ "official/drwnio/drwnio#13": {
+  "name": "github logo",
+  "keywords": [
+   "github",
+   "octocat",
+   "git",
+   "logo",
+   "version control",
+   "circle",
+   "cat"
+  ]
+ },
+ "official/drwnio/drwnio#14": {
+  "name": "server rack icon",
+  "keywords": [
+   "server",
+   "rack",
+   "hardware",
+   "sliders",
+   "settings",
+   "bars",
+   "stack"
+  ]
+ },
+ "official/drwnio/drwnio#15": {
+  "name": "python logo",
+  "keywords": [
+   "python",
+   "programming language",
+   "snake",
+   "logo",
+   "blue yellow",
+   "code"
+  ]
+ },
+ "official/drwnio/drwnio#16": {
+  "name": "browser window frame",
+  "keywords": [
+   "browser",
+   "window",
+   "webpage",
+   "app frame",
+   "address bar",
+   "ui",
+   "chrome"
+  ]
+ },
+ "official/maeddes/technology-logos#3": {
+  "name": "git logo",
+  "keywords": [
+   "git",
+   "version control",
+   "branch",
+   "diamond",
+   "orange",
+   "logo",
+   "vcs"
+  ]
+ },
+ "official/maeddes/technology-logos#5": {
+  "name": "four-panel pinwheel",
+  "keywords": [
+   "pinwheel",
+   "tiles",
+   "squares",
+   "abstract",
+   "quadrant",
+   "blue",
+   "panels"
+  ]
+ },
+ "official/maeddes/technology-logos#7": {
+  "name": "triangle star cube emblem",
+  "keywords": [
+   "star",
+   "triangle",
+   "cube",
+   "emblem",
+   "abstract",
+   "badge",
+   "logo"
+  ]
+ },
+ "official/maeddes/technology-logos#8": {
+  "name": "mu symbol orbit",
+  "keywords": [
+   "mu",
+   "micro",
+   "symbol",
+   "dots",
+   "orbit",
+   "greek letter",
+   "particle"
+  ]
+ },
+ "official/maeddes/technology-logos#10": {
+  "name": "gear cog icon",
+  "keywords": [
+   "gear",
+   "cog",
+   "settings",
+   "wheel",
+   "mechanical",
+   "configuration",
+   "orange"
+  ]
+ },
+ "official/maeddes/technology-logos#12": {
+  "name": "connected nodes molecule",
+  "keywords": [
+   "molecule",
+   "nodes",
+   "network",
+   "connected",
+   "graph",
+   "atom",
+   "cluster"
+  ]
+ },
+ "official/maeddes/technology-logos#13": {
+  "name": "triangle arrow abstract",
+  "keywords": [
+   "triangle",
+   "arrow",
+   "abstract",
+   "chevron",
+   "orange blue",
+   "shape",
+   "geometric"
+  ]
+ },
+ "official/maeddes/technology-logos#14": {
+  "name": "rounded square segments",
+  "keywords": [
+   "rounded square",
+   "segments",
+   "frame",
+   "abstract",
+   "pink",
+   "capsule",
+   "gap"
+  ]
+ },
+ "official/maeddes/technology-logos#15": {
+  "name": "isometric block stack",
+  "keywords": [
+   "blocks",
+   "cubes",
+   "isometric",
+   "3d",
+   "stack",
+   "building blocks",
+   "logo"
+  ]
+ },
+ "official/maeddes/technology-logos#16": {
+  "name": "circle cluster blobs",
+  "keywords": [
+   "circles",
+   "cluster",
+   "bubbles",
+   "blob",
+   "blue green",
+   "molecule",
+   "network"
+  ]
+ },
+ "official/maeddes/technology-logos#17": {
+  "name": "Redis logo",
+  "keywords": [
+   "redis",
+   "database",
+   "logo",
+   "cache",
+   "technology",
+   "stack"
+  ]
+ },
+ "official/drwnio/storytelling#0": {
+  "name": "tired coder character",
+  "keywords": [
+   "exhausted",
+   "sleepy",
+   "developer",
+   "headset",
+   "laptop",
+   "character",
+   "storytelling",
+   "tired"
+  ]
+ },
+ "official/drwnio/storytelling#1": {
+  "name": "happy coder character",
+  "keywords": [
+   "happy",
+   "idea",
+   "developer",
+   "headset",
+   "laptop",
+   "character",
+   "storytelling",
+   "lightbulb"
+  ]
+ },
+ "official/drwnio/storytelling#2": {
+  "name": "angry coder character",
+  "keywords": [
+   "angry",
+   "frustrated",
+   "developer",
+   "headset",
+   "laptop",
+   "character",
+   "storytelling",
+   "annoyed"
+  ]
+ },
+ "official/drwnio/storytelling#3": {
+  "name": "singing coder character",
+  "keywords": [
+   "happy",
+   "music",
+   "singing",
+   "developer",
+   "headset",
+   "laptop",
+   "character",
+   "storytelling"
+  ]
+ },
+ "official/drwnio/storytelling#4": {
+  "name": "buggy code character",
+  "keywords": [
+   "error",
+   "bug",
+   "confused",
+   "developer",
+   "headset",
+   "laptop",
+   "character",
+   "storytelling"
+  ]
+ },
+ "official/drwnio/storytelling#5": {
+  "name": "crying coder character",
+  "keywords": [
+   "crying",
+   "sad",
+   "tears",
+   "developer",
+   "headset",
+   "laptop",
+   "character",
+   "storytelling"
+  ]
+ },
+ "official/drwnio/storytelling#6": {
+  "name": "burnt out coder character",
+  "keywords": [
+   "burnout",
+   "fire",
+   "angry",
+   "developer",
+   "headset",
+   "laptop",
+   "character",
+   "storytelling"
+  ]
+ },
+ "official/drwnio/storytelling#7": {
+  "name": "coder in love character",
+  "keywords": [
+   "love",
+   "heart eyes",
+   "developer",
+   "headset",
+   "laptop",
+   "character",
+   "storytelling"
+  ]
+ },
+ "official/drwnio/storytelling#8": {
+  "name": "furious coder character",
+  "keywords": [
+   "fire",
+   "rage",
+   "angry",
+   "developer",
+   "headset",
+   "laptop",
+   "character",
+   "storytelling"
+  ]
+ },
+ "official/drwnio/storytelling#9": {
+  "name": "dizzy coder character",
+  "keywords": [
+   "dizzy",
+   "confused",
+   "spiral eyes",
+   "developer",
+   "headset",
+   "laptop",
+   "character",
+   "storytelling"
+  ]
+ },
+ "official/drwnio/storytelling#10": {
+  "name": "sleeping coder character",
+  "keywords": [
+   "sleeping",
+   "tired",
+   "zzz",
+   "developer",
+   "headset",
+   "laptop",
+   "character",
+   "storytelling"
+  ]
+ },
+ "official/drwnio/storytelling#11": {
+  "name": "neutral coder character",
+  "keywords": [
+   "neutral",
+   "focused",
+   "developer",
+   "headset",
+   "laptop",
+   "character",
+   "storytelling"
+  ]
+ },
+ "official/drwnio/storytelling#12": {
+  "name": "thinking coder character",
+  "keywords": [
+   "thinking",
+   "idea",
+   "thought bubble",
+   "developer",
+   "headset",
+   "laptop",
+   "character",
+   "storytelling"
+  ]
+ },
+ "official/drwnio/storytelling#13": {
+  "name": "shocked coder character",
+  "keywords": [
+   "shocked",
+   "surprised",
+   "explosion",
+   "developer",
+   "headset",
+   "laptop",
+   "character",
+   "storytelling"
+  ]
+ },
+ "official/drwnio/storytelling#14": {
+  "name": "worried coder character",
+  "keywords": [
+   "worried",
+   "anxious",
+   "squiggle",
+   "developer",
+   "headset",
+   "laptop",
+   "character",
+   "storytelling"
+  ]
+ },
+ "official/drwnio/storytelling#15": {
+  "name": "annoyed coder character",
+  "keywords": [
+   "annoyed",
+   "grumpy",
+   "developer",
+   "headset",
+   "laptop",
+   "character",
+   "storytelling"
+  ]
+ },
+ "official/newbyca/cryptocurrencies#1": {
+  "name": "Ethereum logo",
+  "keywords": [
+   "ethereum",
+   "eth",
+   "crypto",
+   "blockchain",
+   "cryptocurrency",
+   "logo"
+  ]
+ },
+ "official/newbyca/cryptocurrencies#3": {
+  "name": "Polkadot logo",
+  "keywords": [
+   "polkadot",
+   "dot",
+   "crypto",
+   "blockchain",
+   "cryptocurrency",
+   "logo"
+  ]
+ },
+ "official/newbyca/cryptocurrencies#4": {
+  "name": "XRP logo",
+  "keywords": [
+   "xrp",
+   "ripple",
+   "crypto",
+   "blockchain",
+   "cryptocurrency",
+   "logo"
+  ]
+ },
+ "official/newbyca/cryptocurrencies#5": {
+  "name": "Cardano logo",
+  "keywords": [
+   "cardano",
+   "ada",
+   "crypto",
+   "blockchain",
+   "cryptocurrency",
+   "logo"
+  ]
+ },
+ "official/newbyca/cryptocurrencies#6": {
+  "name": "Chainlink logo",
+  "keywords": [
+   "chainlink",
+   "link",
+   "crypto",
+   "blockchain",
+   "cryptocurrency",
+   "logo",
+   "hexagon"
+  ]
+ },
+ "official/newbyca/cryptocurrencies#9": {
+  "name": "Binance logo",
+  "keywords": [
+   "binance",
+   "bnb",
+   "crypto",
+   "blockchain",
+   "cryptocurrency",
+   "logo",
+   "exchange"
+  ]
+ },
+ "official/newbyca/cryptocurrencies#10": {
+  "name": "IOTA logo",
+  "keywords": [
+   "iota",
+   "crypto",
+   "blockchain",
+   "cryptocurrency",
+   "logo",
+   "tangle"
+  ]
+ },
+ "official/jakubpawlina/graphs#0": {
+  "name": "binary tree graph",
+  "keywords": [
+   "binary tree",
+   "hierarchy",
+   "nodes",
+   "graph",
+   "network diagram",
+   "dashed edges",
+   "tree structure"
+  ]
+ },
+ "official/jakubpawlina/graphs#1": {
+  "name": "hub network graph",
+  "keywords": [
+   "network graph",
+   "nodes",
+   "hexagon cluster",
+   "clusters",
+   "dashed edges",
+   "connected graph"
+  ]
+ },
+ "official/jakubpawlina/graphs#2": {
+  "name": "complete graph pentagon",
+  "keywords": [
+   "complete graph",
+   "pentagon",
+   "nodes",
+   "graph theory",
+   "five nodes",
+   "crossed edges"
+  ]
+ },
+ "official/jakubpawlina/graphs#3": {
+  "name": "pentagon node graph",
+  "keywords": [
+   "graph",
+   "nodes",
+   "polygon",
+   "five nodes",
+   "network diagram",
+   "graph theory"
+  ]
+ },
+ "official/jakubpawlina/graphs#4": {
+  "name": "diamond node graph",
+  "keywords": [
+   "graph",
+   "nodes",
+   "diamond",
+   "four nodes",
+   "network diagram",
+   "graph theory"
+  ]
+ },
+ "official/jakubpawlina/graphs#5": {
+  "name": "star node graph",
+  "keywords": [
+   "star graph",
+   "hub",
+   "spokes",
+   "nodes",
+   "network diagram",
+   "graph theory",
+   "central node"
+  ]
+ },
+ "official/jakubpawlina/graphs#6": {
+  "name": "complete graph K4",
+  "keywords": [
+   "graph",
+   "network",
+   "nodes",
+   "complete graph",
+   "4 nodes",
+   "diagonals",
+   "math",
+   "topology"
+  ]
+ },
+ "official/jakubpawlina/graphs#7": {
+  "name": "4-node curved graph",
+  "keywords": [
+   "graph",
+   "network",
+   "nodes",
+   "curved edges",
+   "topology",
+   "math",
+   "connections",
+   "circles"
+  ]
+ },
+ "official/jakubpawlina/graphs#8": {
+  "name": "complete graph K9",
+  "keywords": [
+   "graph",
+   "network",
+   "nodes",
+   "complete graph",
+   "dense graph",
+   "math",
+   "topology",
+   "many connections"
+  ]
+ },
+ "official/jakubpawlina/graphs#9": {
+  "name": "7-node network graph",
+  "keywords": [
+   "graph",
+   "network",
+   "nodes",
+   "dashed edges",
+   "topology",
+   "math",
+   "connections",
+   "circles"
+  ]
+ },
+ "official/jakubpawlina/graphs#10": {
+  "name": "binary tree diagram",
+  "keywords": [
+   "tree",
+   "binary tree",
+   "hierarchy",
+   "nodes",
+   "graph",
+   "data structure",
+   "dashed lines",
+   "branches"
+  ]
+ },
+ "official/jakubpawlina/graphs#11": {
+  "name": "4-node chain graph",
+  "keywords": [
+   "graph",
+   "network",
+   "nodes",
+   "chain",
+   "zigzag edges",
+   "topology",
+   "math",
+   "connections"
+  ]
+ },
+ "official/slobodan/aws-serverless#0": {
+  "name": "lambda function icon",
+  "keywords": [
+   "lambda",
+   "aws lambda",
+   "serverless",
+   "function",
+   "compute",
+   "icon",
+   "event-driven"
+  ]
+ },
+ "official/slobodan/aws-serverless#1": {
+  "name": "step function icon",
+  "keywords": [
+   "step function",
+   "aws",
+   "workflow",
+   "orchestration",
+   "sync",
+   "icon",
+   "state machine"
+  ]
+ },
+ "official/slobodan/aws-serverless#2": {
+  "name": "app sync icon",
+  "keywords": [
+   "appsync",
+   "aws",
+   "api",
+   "graphql",
+   "door",
+   "icon",
+   "serverless"
+  ]
+ },
+ "official/slobodan/aws-serverless#3": {
+  "name": "event mesh icon",
+  "keywords": [
+   "eventbridge",
+   "event bus",
+   "aws",
+   "serverless",
+   "nodes",
+   "icon",
+   "messaging"
+  ]
+ },
+ "official/slobodan/aws-serverless#4": {
+  "name": "database with lightning icon",
+  "keywords": [
+   "dynamodb",
+   "database",
+   "aws",
+   "fast",
+   "lightning",
+   "icon",
+   "serverless",
+   "storage"
+  ]
+ },
+ "official/slobodan/aws-serverless#5": {
+  "name": "verified id card icon",
+  "keywords": [
+   "identity",
+   "verified",
+   "user card",
+   "aws",
+   "cognito",
+   "icon",
+   "authentication",
+   "checkmark"
+  ]
+ },
+ "official/slobodan/aws-serverless#6": {
+  "name": "bucket icon",
+  "keywords": [
+   "s3 bucket",
+   "storage",
+   "aws",
+   "bucket",
+   "icon",
+   "serverless",
+   "object storage"
+  ]
+ },
+ "official/slobodan/aws-serverless#7": {
+  "name": "data stream icon",
+  "keywords": [
+   "kinesis",
+   "stream",
+   "data flow",
+   "aws",
+   "arrows",
+   "icon",
+   "serverless",
+   "pipeline"
+  ]
+ },
+ "official/slobodan/aws-serverless#8": {
+  "name": "config settings icon",
+  "keywords": [
+   "configuration",
+   "settings",
+   "gear",
+   "aws",
+   "funnel",
+   "icon",
+   "serverless",
+   "options"
+  ]
+ },
+ "official/slobodan/aws-serverless#9": {
+  "name": "queue icon",
+  "keywords": [
+   "sqs",
+   "queue",
+   "message queue",
+   "aws",
+   "icon",
+   "serverless",
+   "hourglass"
+  ]
+ },
+ "official/slobodan/aws-serverless#10": {
+  "name": "notification service icon",
+  "keywords": [
+   "sns",
+   "notification",
+   "email",
+   "aws",
+   "icon",
+   "serverless",
+   "messaging",
+   "fanout"
+  ]
+ },
+ "official/slobodan/aws-serverless#11": {
+  "name": "orchestration hub icon",
+  "keywords": [
+   "orchestration",
+   "hub",
+   "nodes",
+   "aws",
+   "icon",
+   "serverless",
+   "workflow",
+   "connections"
+  ]
+ },
+ "official/slobodan/aws-serverless#12": {
+  "name": "cloud search icon",
+  "keywords": [
+   "cloud search",
+   "monitoring",
+   "aws",
+   "magnifier",
+   "icon",
+   "serverless",
+   "observability"
+  ]
+ },
+ "official/slobodan/aws-serverless#13": {
+  "name": "flowchart icon",
+  "keywords": [
+   "flowchart",
+   "workflow",
+   "logic",
+   "aws",
+   "icon",
+   "serverless",
+   "decision tree",
+   "process"
+  ]
+ },
+ "official/slobodan/aws-serverless#14": {
+  "name": "triangle logo icon",
+  "keywords": [
+   "amplify",
+   "logo",
+   "triangle",
+   "aws",
+   "icon",
+   "serverless",
+   "brand mark"
+  ]
+ },
+ "official/ocapraro/bubbles#0": {
+  "name": "speech bubble left",
+  "keywords": [
+   "speech bubble",
+   "chat",
+   "comment",
+   "dialogue",
+   "callout",
+   "oval",
+   "talk balloon",
+   "annotation"
+  ]
+ },
+ "official/ocapraro/bubbles#1": {
+  "name": "speech bubble right",
+  "keywords": [
+   "speech bubble",
+   "chat",
+   "comment",
+   "dialogue",
+   "callout",
+   "oval",
+   "talk balloon",
+   "annotation"
+  ]
+ },
+ "official/ocapraro/bubbles#2": {
+  "name": "thought cloud left tail",
+  "keywords": [
+   "thought bubble",
+   "cloud",
+   "think",
+   "idea",
+   "callout",
+   "dream",
+   "annotation",
+   "comment"
+  ]
+ },
+ "official/ocapraro/bubbles#3": {
+  "name": "thought cloud right tail",
+  "keywords": [
+   "thought bubble",
+   "cloud",
+   "think",
+   "idea",
+   "callout",
+   "dream",
+   "annotation",
+   "comment"
+  ]
+ },
+ "official/jhoughes/veeam#1": {
+  "name": "striped backup panel",
+  "keywords": [
+   "veeam",
+   "backup",
+   "panel",
+   "stripes",
+   "server",
+   "icon",
+   "data protection",
+   "tape"
+  ]
+ },
+ "official/jhoughes/veeam#2": {
+  "name": "server rack tower",
+  "keywords": [
+   "veeam",
+   "server",
+   "tower",
+   "rack",
+   "hardware",
+   "icon",
+   "infrastructure",
+   "backup"
+  ]
+ },
+ "official/jhoughes/veeam#3": {
+  "name": "document with data field",
+  "keywords": [
+   "veeam",
+   "document",
+   "file",
+   "report",
+   "icon",
+   "record",
+   "data field",
+   "paper"
+  ]
+ },
+ "official/jhoughes/veeam#4": {
+  "name": "hatched cylinder",
+  "keywords": [
+   "veeam",
+   "cylinder",
+   "database",
+   "storage",
+   "icon",
+   "tank",
+   "container",
+   "hatch pattern"
+  ]
+ },
+ "official/jhoughes/veeam#5": {
+  "name": "orange blob shape",
+  "keywords": [
+   "veeam",
+   "blob",
+   "abstract shape",
+   "yellow",
+   "polygon",
+   "icon",
+   "irregular shape",
+   "region"
+  ]
+ },
+ "official/jhoughes/veeam#11": {
+  "name": "Veeam logo",
+  "keywords": [
+   "veeam",
+   "logo",
+   "brand",
+   "backup",
+   "text logo"
+  ]
+ },
+ "official/rkjc/schematic-symbols#1": {
+  "name": "battery symbol",
+  "keywords": [
+   "battery",
+   "cell",
+   "electronics",
+   "power source",
+   "schematic",
+   "circuit",
+   "plus minus"
+  ]
+ },
+ "official/rkjc/schematic-symbols#2": {
+  "name": "ground symbol",
+  "keywords": [
+   "ground",
+   "earth",
+   "chassis ground",
+   "electronics",
+   "schematic",
+   "circuit"
+  ]
+ },
+ "official/rkjc/schematic-symbols#3": {
+  "name": "resistor symbol",
+  "keywords": [
+   "resistor",
+   "zigzag",
+   "electronics",
+   "schematic",
+   "circuit",
+   "component"
+  ]
+ },
+ "official/rkjc/schematic-symbols#4": {
+  "name": "inductor coil",
+  "keywords": [
+   "inductor",
+   "coil",
+   "winding",
+   "electronics",
+   "schematic",
+   "circuit"
+  ]
+ },
+ "official/rkjc/schematic-symbols#5": {
+  "name": "transformer symbol",
+  "keywords": [
+   "transformer",
+   "electronics",
+   "schematic",
+   "circuit",
+   "windings",
+   "power"
+  ]
+ },
+ "official/rkjc/schematic-symbols#6": {
+  "name": "switch closed",
+  "keywords": [
+   "switch",
+   "closed switch",
+   "contact",
+   "electronics",
+   "schematic",
+   "circuit"
+  ]
+ },
+ "official/rkjc/schematic-symbols#7": {
+  "name": "double throw switch",
+  "keywords": [
+   "switch",
+   "spdt",
+   "double throw",
+   "contact",
+   "electronics",
+   "schematic",
+   "circuit"
+  ]
+ },
+ "official/rkjc/schematic-symbols#8": {
+  "name": "pushbutton switch open",
+  "keywords": [
+   "pushbutton",
+   "switch",
+   "normally open",
+   "button",
+   "electronics",
+   "schematic",
+   "circuit"
+  ]
+ },
+ "official/rkjc/schematic-symbols#9": {
+  "name": "momentary contact switch",
+  "keywords": [
+   "switch",
+   "momentary",
+   "contacts",
+   "electronics",
+   "schematic",
+   "circuit",
+   "no nc"
+  ]
+ },
+ "official/rkjc/schematic-symbols#10": {
+  "name": "connection dot",
+  "keywords": [
+   "dot",
+   "node",
+   "connection point",
+   "junction",
+   "electronics",
+   "schematic",
+   "circuit"
+  ]
+ },
+ "official/rkjc/schematic-symbols#11": {
+  "name": "curved connector arc",
+  "keywords": [
+   "arc",
+   "curve",
+   "wire jump",
+   "no connection",
+   "electronics",
+   "schematic",
+   "circuit"
+  ]
+ },
+ "official/rkjc/schematic-symbols#12": {
+  "name": "capacitor symbol",
+  "keywords": [
+   "capacitor",
+   "electronics",
+   "schematic",
+   "circuit",
+   "component"
+  ]
+ },
+ "official/rkjc/schematic-symbols#13": {
+  "name": "polarized capacitor symbol",
+  "keywords": [
+   "capacitor",
+   "polarized",
+   "electrolytic",
+   "electronics",
+   "schematic",
+   "circuit"
+  ]
+ },
+ "official/rkjc/schematic-symbols#14": {
+  "name": "diode symbol",
+  "keywords": [
+   "diode",
+   "rectifier",
+   "electronics",
+   "schematic",
+   "circuit",
+   "component"
+  ]
+ },
+ "official/rkjc/schematic-symbols#15": {
+  "name": "led symbol",
+  "keywords": [
+   "led",
+   "light emitting diode",
+   "electronics",
+   "schematic",
+   "circuit",
+   "component"
+  ]
+ },
+ "official/rkjc/schematic-symbols#16": {
+  "name": "npn transistor",
+  "keywords": [
+   "transistor",
+   "npn",
+   "bjt",
+   "electronics",
+   "schematic",
+   "circuit",
+   "component"
+  ]
+ },
+ "official/rkjc/schematic-symbols#17": {
+  "name": "pnp transistor",
+  "keywords": [
+   "transistor",
+   "pnp",
+   "bjt",
+   "electronics",
+   "schematic",
+   "circuit",
+   "component"
+  ]
+ },
+ "official/rkjc/schematic-symbols#18": {
+  "name": "n-channel mosfet",
+  "keywords": [
+   "mosfet",
+   "transistor",
+   "fet",
+   "electronics",
+   "schematic",
+   "circuit",
+   "component"
+  ]
+ },
+ "official/rkjc/schematic-symbols#19": {
+  "name": "p-channel mosfet",
+  "keywords": [
+   "mosfet",
+   "transistor",
+   "fet",
+   "electronics",
+   "schematic",
+   "circuit",
+   "component"
+  ]
+ },
+ "official/rkjc/schematic-symbols#20": {
+  "name": "electric motor symbol",
+  "keywords": [
+   "motor",
+   "dc motor",
+   "electronics",
+   "schematic",
+   "circuit",
+   "component"
+  ]
+ },
+ "official/rkjc/schematic-symbols#21": {
+  "name": "three phase motor",
+  "keywords": [
+   "motor",
+   "three phase",
+   "windings",
+   "electronics",
+   "schematic",
+   "circuit"
+  ]
+ },
+ "official/rkjc/schematic-symbols#22": {
+  "name": "single phase motor",
+  "keywords": [
+   "motor",
+   "single phase",
+   "windings",
+   "electronics",
+   "schematic",
+   "circuit"
+  ]
+ },
+ "official/rkjc/schematic-symbols#23": {
+  "name": "microphone symbol",
+  "keywords": [
+   "microphone",
+   "audio",
+   "mic",
+   "electronics",
+   "schematic",
+   "circuit"
+  ]
+ },
+ "official/cloud/cloud#0": {
+  "name": "kubernetes logo",
+  "keywords": [
+   "kubernetes",
+   "k8s",
+   "helm wheel",
+   "cloud",
+   "container",
+   "orchestration",
+   "logo"
+  ]
+ },
+ "official/cloud/cloud#1": {
+  "name": "cloud service logo",
+  "keywords": [
+   "cloud",
+   "logo",
+   "service",
+   "hexagon",
+   "arrows",
+   "provider"
+  ]
+ },
+ "official/cloud/cloud#2": {
+  "name": "key icon",
+  "keywords": [
+   "key",
+   "security",
+   "access",
+   "password",
+   "credential",
+   "lock",
+   "cloud"
+  ]
+ },
+ "official/cloud/cloud#5": {
+  "name": "azure logo",
+  "keywords": [
+   "azure",
+   "microsoft",
+   "cloud",
+   "logo",
+   "triangle"
+  ]
+ },
+ "official/cloud/cloud#7": {
+  "name": "laptop icon",
+  "keywords": [
+   "laptop",
+   "computer",
+   "device",
+   "notebook",
+   "screen",
+   "cloud"
+  ]
+ },
+ "official/cloud/cloud#8": {
+  "name": "cpu chip icon",
+  "keywords": [
+   "cpu",
+   "chip",
+   "processor",
+   "microchip",
+   "hardware",
+   "cloud"
+  ]
+ },
+ "official/cloud/cloud#12": {
+  "name": "security lock network",
+  "keywords": [
+   "lock",
+   "padlock",
+   "security",
+   "network",
+   "nodes",
+   "connection",
+   "circle",
+   "encryption"
+  ]
+ },
+ "official/cloud/cloud#15": {
+  "name": "diagonal arrow note",
+  "keywords": [
+   "arrow",
+   "note",
+   "sticky",
+   "diagonal",
+   "pointer",
+   "speech",
+   "callout"
+  ]
+ },
+ "official/cloud/cloud#16": {
+  "name": "monitoring search icon",
+  "keywords": [
+   "monitor",
+   "pulse",
+   "heartbeat",
+   "magnifier",
+   "search",
+   "analytics",
+   "diagnostics",
+   "screen"
+  ]
+ },
+ "official/cloud/cloud#18": {
+  "name": "server rack stack",
+  "keywords": [
+   "server",
+   "rack",
+   "data center",
+   "hardware",
+   "storage",
+   "infrastructure",
+   "computer"
+  ]
+ },
+ "official/anumithaapollo12/emojis#0": {
+  "name": "smiley face",
+  "keywords": [
+   "emoji",
+   "smile",
+   "happy",
+   "face",
+   "yellow"
+  ]
+ },
+ "official/anumithaapollo12/emojis#1": {
+  "name": "surprised face",
+  "keywords": [
+   "emoji",
+   "surprised",
+   "shocked",
+   "open eyes",
+   "face"
+  ]
+ },
+ "official/anumithaapollo12/emojis#2": {
+  "name": "neutral face",
+  "keywords": [
+   "emoji",
+   "neutral",
+   "straight face",
+   "calm",
+   "expressionless"
+  ]
+ },
+ "official/anumithaapollo12/emojis#3": {
+  "name": "blank eyes face",
+  "keywords": [
+   "emoji",
+   "blank",
+   "dazed",
+   "confused",
+   "face"
+  ]
+ },
+ "official/anumithaapollo12/emojis#4": {
+  "name": "laughing face",
+  "keywords": [
+   "emoji",
+   "laughing",
+   "squint eyes",
+   "happy",
+   "grin"
+  ]
+ },
+ "official/anumithaapollo12/emojis#5": {
+  "name": "sleepy face",
+  "keywords": [
+   "emoji",
+   "sleepy",
+   "tired",
+   "closed eyes",
+   "flat mouth"
+  ]
+ },
+ "official/anumithaapollo12/emojis#6": {
+  "name": "worried face",
+  "keywords": [
+   "emoji",
+   "worried",
+   "concerned",
+   "frown",
+   "anxious"
+  ]
+ },
+ "official/anumithaapollo12/emojis#7": {
+  "name": "heart eyes face",
+  "keywords": [
+   "emoji",
+   "love",
+   "heart eyes",
+   "smitten",
+   "adoring"
+  ]
+ },
+ "official/anumithaapollo12/emojis#8": {
+  "name": "winking face",
+  "keywords": [
+   "emoji",
+   "wink",
+   "playful",
+   "smile",
+   "flirty"
+  ]
+ },
+ "official/anumithaapollo12/emojis#10": {
+  "name": "happy squint face",
+  "keywords": [
+   "emoji",
+   "happy",
+   "content",
+   "smile",
+   "closed eyes"
+  ]
+ },
+ "official/anumithaapollo12/emojis#11": {
+  "name": "angry face",
+  "keywords": [
+   "emoji",
+   "angry",
+   "mad",
+   "frown",
+   "furious"
+  ]
+ },
+ "official/anumithaapollo12/emojis#12": {
+  "name": "sad face",
+  "keywords": [
+   "emoji",
+   "sad",
+   "unhappy",
+   "frown",
+   "down"
+  ]
+ },
+ "official/anumithaapollo12/emojis#13": {
+  "name": "disappointed face",
+  "keywords": [
+   "emoji",
+   "disappointed",
+   "sad",
+   "downcast",
+   "unhappy"
+  ]
+ },
+ "official/anumithaapollo12/emojis#14": {
+  "name": "top hat face",
+  "keywords": [
+   "emoji",
+   "hat",
+   "gentleman",
+   "smile",
+   "fancy"
+  ]
+ },
+ "official/anumithaapollo12/emojis#15": {
+  "name": "blushing face",
+  "keywords": [
+   "emoji",
+   "blush",
+   "shy",
+   "embarrassed",
+   "hearts"
+  ]
+ },
+ "official/anumithaapollo12/emojis#16": {
+  "name": "star struck face",
+  "keywords": [
+   "emoji",
+   "star eyes",
+   "excited",
+   "amazed",
+   "starstruck"
+  ]
+ },
+ "official/anumithaapollo12/emojis#17": {
+  "name": "dead face",
+  "keywords": [
+   "emoji",
+   "dead",
+   "dizzy",
+   "x eyes",
+   "knocked out"
+  ]
+ },
+ "official/anumithaapollo12/emojis#18": {
+  "name": "cool sunglasses face",
+  "keywords": [
+   "emoji",
+   "sunglasses",
+   "cool",
+   "confident",
+   "smug"
+  ]
+ },
+ "official/anumithaapollo12/emojis#20": {
+  "name": "grinning happy face",
+  "keywords": [
+   "emoji",
+   "grin",
+   "happy",
+   "smile",
+   "cheerful"
+  ]
+ },
+ "official/anumithaapollo12/emojis#21": {
+  "name": "pause icon face",
+  "keywords": [
+   "emoji",
+   "pause",
+   "icon",
+   "circle",
+   "media"
+  ]
+ },
+ "official/anumithaapollo12/emojis#24": {
+  "name": "smiling face",
+  "keywords": [
+   "emoji",
+   "smile",
+   "happy",
+   "face",
+   "content"
+  ]
+ },
+ "official/anumithaapollo12/emojis#25": {
+  "name": "surprised open eyes face",
+  "keywords": [
+   "emoji",
+   "surprised",
+   "shocked",
+   "open eyes",
+   "face"
+  ]
+ },
+ "official/anumithaapollo12/emojis#26": {
+  "name": "straight face outline",
+  "keywords": [
+   "emoji",
+   "neutral",
+   "outline",
+   "expressionless",
+   "calm"
+  ]
+ },
+ "official/anumithaapollo12/emojis#27": {
+  "name": "blank stare face outline",
+  "keywords": [
+   "emoji",
+   "blank",
+   "dazed",
+   "outline",
+   "confused"
+  ]
+ },
+ "official/anumithaapollo12/emojis#28": {
+  "name": "laughing face outline",
+  "keywords": [
+   "emoji",
+   "laughing",
+   "grin",
+   "outline",
+   "squint eyes"
+  ]
+ },
+ "official/anumithaapollo12/emojis#29": {
+  "name": "sleepy face outline",
+  "keywords": [
+   "emoji",
+   "sleepy",
+   "tired",
+   "outline",
+   "flat mouth"
+  ]
+ },
+ "official/anumithaapollo12/emojis#30": {
+  "name": "worried face emoji",
+  "keywords": [
+   "emoji",
+   "worried",
+   "sad",
+   "face",
+   "concerned",
+   "frown"
+  ]
+ },
+ "official/anumithaapollo12/emojis#33": {
+  "name": "heart eyes emoji",
+  "keywords": [
+   "emoji",
+   "love",
+   "heart eyes",
+   "face",
+   "in love",
+   "smiley"
+  ]
+ },
+ "official/anumithaapollo12/emojis#34": {
+  "name": "winking smile emoji",
+  "keywords": [
+   "emoji",
+   "wink",
+   "smile",
+   "face",
+   "happy",
+   "smiley"
+  ]
+ },
+ "official/anumithaapollo12/emojis#36": {
+  "name": "happy face emoji",
+  "keywords": [
+   "emoji",
+   "happy",
+   "smile",
+   "face",
+   "smiley",
+   "grin"
+  ]
+ },
+ "official/anumithaapollo12/emojis#37": {
+  "name": "angry face emoji",
+  "keywords": [
+   "emoji",
+   "angry",
+   "mad",
+   "face",
+   "upset",
+   "smiley"
+  ]
+ },
+ "official/anumithaapollo12/emojis#38": {
+  "name": "sad face emoji",
+  "keywords": [
+   "emoji",
+   "sad",
+   "unhappy",
+   "face",
+   "frown",
+   "smiley"
+  ]
+ },
+ "official/anumithaapollo12/emojis#39": {
+  "name": "tired face emoji",
+  "keywords": [
+   "emoji",
+   "tired",
+   "sleepy",
+   "face",
+   "exhausted",
+   "smiley"
+  ]
+ },
+ "official/anumithaapollo12/emojis#40": {
+  "name": "top hat face emoji",
+  "keywords": [
+   "emoji",
+   "hat",
+   "gentleman",
+   "face",
+   "smile",
+   "top hat"
+  ]
+ },
+ "official/anumithaapollo12/emojis#41": {
+  "name": "star eyes emoji",
+  "keywords": [
+   "emoji",
+   "star eyes",
+   "excited",
+   "face",
+   "amazed",
+   "smiley"
+  ]
+ },
+ "official/anumithaapollo12/emojis#42": {
+  "name": "loved face emoji",
+  "keywords": [
+   "emoji",
+   "hearts",
+   "loved",
+   "adored",
+   "face",
+   "smiley"
+  ]
+ },
+ "official/anumithaapollo12/emojis#43": {
+  "name": "dizzy face emoji",
+  "keywords": [
+   "emoji",
+   "dizzy",
+   "dead",
+   "x eyes",
+   "face",
+   "knocked out"
+  ]
+ },
+ "official/anumithaapollo12/emojis#44": {
+  "name": "cool sunglasses emoji",
+  "keywords": [
+   "emoji",
+   "sunglasses",
+   "cool",
+   "face",
+   "smiley",
+   "shades"
+  ]
+ },
+ "official/anumithaapollo12/emojis#46": {
+  "name": "glasses smile emoji",
+  "keywords": [
+   "emoji",
+   "glasses",
+   "nerd",
+   "smile",
+   "face",
+   "smiley"
+  ]
+ },
+ "official/anumithaapollo12/emojis#47": {
+  "name": "beaker icon",
+  "keywords": [
+   "beaker",
+   "lab",
+   "flask",
+   "science",
+   "test tube",
+   "chemistry"
+  ]
+ },
+ "official/mikhailredis/redis-grafana#2": {
+  "name": "orange starburst spiral",
+  "keywords": [
+   "spiral",
+   "starburst",
+   "sketch",
+   "swirl",
+   "orange",
+   "abstract"
+  ]
+ },
+ "official/mikhailredis/redis-grafana#5": {
+  "name": "red squares diamonds",
+  "keywords": [
+   "squares",
+   "diamonds",
+   "sketch",
+   "red",
+   "abstract",
+   "shapes"
+  ]
+ },
+ "official/mikhailredis/redis-grafana#6": {
+  "name": "circle with lines",
+  "keywords": [
+   "circle",
+   "lines",
+   "sketch",
+   "red",
+   "abstract",
+   "signal"
+  ]
+ },
+ "official/mikhailredis/redis-grafana#7": {
+  "name": "concentric circles orbit",
+  "keywords": [
+   "circles",
+   "orbit",
+   "concentric",
+   "rings",
+   "sketch",
+   "red"
+  ]
+ },
+ "official/mikhailredis/redis-grafana#9": {
+  "name": "grid of dots",
+  "keywords": [
+   "dots",
+   "grid",
+   "brackets",
+   "sketch",
+   "red",
+   "array"
+  ]
+ },
+ "official/mikhailredis/redis-grafana#10": {
+  "name": "line chart arrow",
+  "keywords": [
+   "chart",
+   "graph",
+   "trend",
+   "arrow",
+   "sketch",
+   "red",
+   "axis"
+  ]
+ },
+ "official/mikhailredis/redis-grafana#11": {
+  "name": "sun ring icon",
+  "keywords": [
+   "sun",
+   "ring",
+   "rays",
+   "sketch",
+   "red",
+   "circle"
+  ]
+ },
+ "official/husainkhambaty/aws-simple-icons#0": {
+  "name": "database cylinder icon",
+  "keywords": [
+   "database",
+   "cylinder",
+   "storage",
+   "aws",
+   "circle icon"
+  ]
+ },
+ "official/husainkhambaty/aws-simple-icons#1": {
+  "name": "stacked layers icon",
+  "keywords": [
+   "layers",
+   "stack",
+   "snapshot",
+   "aws",
+   "circle icon"
+  ]
+ },
+ "official/husainkhambaty/aws-simple-icons#2": {
+  "name": "rounded square icon",
+  "keywords": [
+   "square",
+   "rounded",
+   "generic",
+   "aws",
+   "circle icon"
+  ]
+ },
+ "official/husainkhambaty/aws-simple-icons#3": {
+  "name": "bucket icon",
+  "keywords": [
+   "bucket",
+   "s3",
+   "storage",
+   "aws",
+   "circle icon"
+  ]
+ },
+ "official/husainkhambaty/aws-simple-icons#4": {
+  "name": "lambda icon",
+  "keywords": [
+   "lambda",
+   "serverless",
+   "function",
+   "aws",
+   "circle icon"
+  ]
+ },
+ "official/husainkhambaty/aws-simple-icons#5": {
+  "name": "media player icon",
+  "keywords": [
+   "media",
+   "player",
+   "playback",
+   "queue",
+   "aws",
+   "yellow icon"
+  ]
+ },
+ "official/husainkhambaty/aws-simple-icons#6": {
+  "name": "blue database cylinder",
+  "keywords": [
+   "database",
+   "cylinder",
+   "storage",
+   "aws",
+   "blue icon",
+   "rds"
+  ]
+ },
+ "official/husainkhambaty/aws-simple-icons#7": {
+  "name": "orange stacked layers",
+  "keywords": [
+   "layers",
+   "stack",
+   "snapshot",
+   "aws",
+   "orange icon"
+  ]
+ },
+ "official/husainkhambaty/aws-simple-icons#8": {
+  "name": "orange rounded square",
+  "keywords": [
+   "square",
+   "rounded",
+   "generic",
+   "aws",
+   "orange icon"
+  ]
+ },
+ "official/husainkhambaty/aws-simple-icons#9": {
+  "name": "AWS bucket icon",
+  "keywords": [
+   "aws",
+   "s3",
+   "bucket",
+   "storage",
+   "icon",
+   "simple icons"
+  ]
+ },
+ "official/husainkhambaty/aws-simple-icons#10": {
+  "name": "AWS lambda icon",
+  "keywords": [
+   "aws",
+   "lambda",
+   "serverless",
+   "function",
+   "icon",
+   "compute"
+  ]
+ },
+ "official/ei-au/computers#0": {
+  "name": "server rack",
+  "keywords": [
+   "server",
+   "rack",
+   "disk drives",
+   "computer",
+   "hardware",
+   "data center"
+  ]
+ },
+ "official/ei-au/computers#1": {
+  "name": "desktop computer",
+  "keywords": [
+   "computer",
+   "monitor",
+   "keyboard",
+   "desktop",
+   "pc",
+   "workstation"
+  ]
+ },
+ "official/ei-au/computers#2": {
+  "name": "laptop computer",
+  "keywords": [
+   "laptop",
+   "notebook",
+   "computer",
+   "keyboard",
+   "screen"
+  ]
+ },
+ "official/ei-au/computers#3": {
+  "name": "computer tower",
+  "keywords": [
+   "pc tower",
+   "cpu",
+   "desktop tower",
+   "computer case",
+   "hardware"
+  ]
+ },
+ "official/madhusuthanan-b/front-end-tech-and-tools#1": {
+  "name": "npm logo",
+  "keywords": [
+   "npm",
+   "node package manager",
+   "logo",
+   "javascript",
+   "front end",
+   "tool"
+  ]
+ },
+ "official/Arqtangeles/architecture#0": {
+  "name": "single door plan",
+  "keywords": [
+   "door",
+   "floor plan",
+   "architecture",
+   "single door",
+   "symbol"
+  ]
+ },
+ "official/Arqtangeles/architecture#1": {
+  "name": "narrow door plan",
+  "keywords": [
+   "door",
+   "floor plan",
+   "architecture",
+   "narrow door",
+   "symbol"
+  ]
+ },
+ "official/Arqtangeles/architecture#2": {
+  "name": "small door plan",
+  "keywords": [
+   "door",
+   "floor plan",
+   "architecture",
+   "small door",
+   "symbol"
+  ]
+ },
+ "official/Arqtangeles/architecture#3": {
+  "name": "cabinet plan symbol",
+  "keywords": [
+   "cabinet",
+   "floor plan",
+   "architecture",
+   "furniture",
+   "symbol"
+  ]
+ },
+ "official/Arqtangeles/architecture#4": {
+  "name": "window plan symbol",
+  "keywords": [
+   "window",
+   "floor plan",
+   "architecture",
+   "diagonal glass",
+   "symbol"
+  ]
+ },
+ "official/Arqtangeles/architecture#5": {
+  "name": "corner window plan",
+  "keywords": [
+   "window",
+   "floor plan",
+   "architecture",
+   "corner",
+   "glass",
+   "symbol"
+  ]
+ },
+ "official/Arqtangeles/architecture#6": {
+  "name": "wide window plan",
+  "keywords": [
+   "window",
+   "floor plan",
+   "architecture",
+   "wide",
+   "glass",
+   "symbol"
+  ]
+ },
+ "official/Arqtangeles/architecture#7": {
+  "name": "two-panel table plan",
+  "keywords": [
+   "table",
+   "floor plan",
+   "architecture",
+   "desk",
+   "seating",
+   "two chairs"
+  ]
+ },
+ "official/Arqtangeles/architecture#8": {
+  "name": "four-seat table plan",
+  "keywords": [
+   "table",
+   "floor plan",
+   "architecture",
+   "desk",
+   "seating",
+   "four chairs"
+  ]
+ },
+ "official/Arqtangeles/architecture#9": {
+  "name": "six-seat table plan",
+  "keywords": [
+   "table",
+   "floor plan",
+   "architecture",
+   "dining table",
+   "seating",
+   "six chairs"
+  ]
+ },
+ "official/Arqtangeles/architecture#10": {
+  "name": "round table four seats",
+  "keywords": [
+   "round table",
+   "floor plan",
+   "architecture",
+   "seating",
+   "four chairs",
+   "dining"
+  ]
+ },
+ "official/Arqtangeles/architecture#11": {
+  "name": "round table six seats",
+  "keywords": [
+   "round table",
+   "floor plan",
+   "architecture",
+   "seating",
+   "six chairs",
+   "dining"
+  ]
+ },
+ "official/Arqtangeles/architecture#12": {
+  "name": "round table eight seats",
+  "keywords": [
+   "round table",
+   "floor plan",
+   "architecture",
+   "seating",
+   "eight chairs",
+   "dining"
+  ]
+ },
+ "official/Arqtangeles/architecture#13": {
+  "name": "square table four seats",
+  "keywords": [
+   "square table",
+   "floor plan",
+   "architecture",
+   "seating",
+   "four chairs",
+   "dining"
+  ]
+ },
+ "official/Arqtangeles/architecture#14": {
+  "name": "square table six seats",
+  "keywords": [
+   "square table",
+   "floor plan",
+   "architecture",
+   "seating",
+   "six chairs",
+   "dining"
+  ]
+ },
+ "official/Arqtangeles/architecture#15": {
+  "name": "circle plan symbol",
+  "keywords": [
+   "circle",
+   "floor plan",
+   "architecture",
+   "round shape",
+   "symbol"
+  ]
+ },
+ "official/Arqtangeles/architecture#16": {
+  "name": "rectangle plan symbol",
+  "keywords": [
+   "rectangle",
+   "floor plan",
+   "architecture",
+   "box",
+   "symbol",
+   "panel"
+  ]
+ },
+ "official/Arqtangeles/architecture#17": {
+  "name": "bed with nightstands",
+  "keywords": [
+   "bed",
+   "floor plan",
+   "architecture",
+   "bedroom",
+   "furniture",
+   "nightstand",
+   "letter k"
+  ]
+ },
+ "official/Arqtangeles/architecture#18": {
+  "name": "bed with pillow circle",
+  "keywords": [
+   "bed",
+   "floor plan",
+   "architecture",
+   "bedroom",
+   "furniture",
+   "nightstand",
+   "pillow"
+  ]
+ },
+ "official/Arqtangeles/architecture#19": {
+  "name": "refrigerator plan symbol",
+  "keywords": [
+   "refrigerator",
+   "fridge",
+   "floor plan",
+   "architecture",
+   "kitchen",
+   "appliance"
+  ]
+ },
+ "official/Arqtangeles/architecture#20": {
+  "name": "stove burners plan",
+  "keywords": [
+   "stove",
+   "cooktop",
+   "floor plan",
+   "architecture",
+   "kitchen",
+   "burners",
+   "appliance"
+  ]
+ },
+ "official/Arqtangeles/architecture#21": {
+  "name": "stove with oven plan",
+  "keywords": [
+   "stove",
+   "oven",
+   "floor plan",
+   "architecture",
+   "kitchen",
+   "burners",
+   "appliance"
+  ]
+ },
+ "official/Arqtangeles/architecture#22": {
+  "name": "letter N symbol",
+  "keywords": [
+   "letter n",
+   "north arrow",
+   "floor plan",
+   "architecture",
+   "compass",
+   "symbol"
+  ]
+ },
+ "official/Arqtangeles/architecture#23": {
+  "name": "double kitchen sink",
+  "keywords": [
+   "sink",
+   "kitchen",
+   "double basin",
+   "floor plan",
+   "faucet",
+   "plumbing",
+   "top view"
+  ]
+ },
+ "official/Arqtangeles/architecture#24": {
+  "name": "oval sink",
+  "keywords": [
+   "sink",
+   "basin",
+   "bathroom",
+   "floor plan",
+   "oval",
+   "vanity",
+   "plumbing"
+  ]
+ },
+ "official/Arqtangeles/architecture#25": {
+  "name": "sink with faucet",
+  "keywords": [
+   "sink",
+   "basin",
+   "faucet",
+   "bathroom",
+   "floor plan",
+   "vanity",
+   "plumbing"
+  ]
+ },
+ "official/Arqtangeles/architecture#26": {
+  "name": "toilet symbol",
+  "keywords": [
+   "toilet",
+   "wc",
+   "bathroom",
+   "floor plan",
+   "restroom",
+   "lavatory",
+   "plumbing"
+  ]
+ },
+ "official/Arqtangeles/architecture#27": {
+  "name": "bathtub top view",
+  "keywords": [
+   "bathtub",
+   "bath",
+   "tub",
+   "bathroom",
+   "floor plan",
+   "rectangular",
+   "plumbing"
+  ]
+ },
+ "official/Arqtangeles/architecture#28": {
+  "name": "corner bathtub",
+  "keywords": [
+   "bathtub",
+   "tub",
+   "corner",
+   "bathroom",
+   "floor plan",
+   "rounded square",
+   "plumbing"
+  ]
+ },
+ "official/Arqtangeles/architecture#29": {
+  "name": "stove with knobs",
+  "keywords": [
+   "stove",
+   "cooktop",
+   "range",
+   "kitchen",
+   "floor plan",
+   "appliance",
+   "knobs",
+   "burner"
+  ]
+ },
+ "official/Arqtangeles/architecture#30": {
+  "name": "washing machine symbol",
+  "keywords": [
+   "washer",
+   "appliance",
+   "laundry",
+   "floor plan",
+   "utility",
+   "machine",
+   "knobs"
+  ]
+ },
+ "official/Arqtangeles/architecture#31": {
+  "name": "urinal symbol",
+  "keywords": [
+   "urinal",
+   "bathroom",
+   "restroom",
+   "floor plan",
+   "plumbing",
+   "wall mounted"
+  ]
+ },
+ "official/Arqtangeles/architecture#32": {
+  "name": "car top view",
+  "keywords": [
+   "car",
+   "vehicle",
+   "parking",
+   "floor plan",
+   "automobile",
+   "top view",
+   "garage"
+  ]
+ },
+ "official/Arqtangeles/architecture#33": {
+  "name": "bush top view",
+  "keywords": [
+   "bush",
+   "shrub",
+   "plant",
+   "landscaping",
+   "floor plan",
+   "scribble",
+   "topiary",
+   "foliage"
+  ]
+ },
+ "official/Arqtangeles/architecture#34": {
+  "name": "tree top view",
+  "keywords": [
+   "tree",
+   "plant",
+   "landscaping",
+   "floor plan",
+   "canopy",
+   "circle",
+   "foliage",
+   "garden"
+  ]
+ },
+ "official/Arqtangeles/architecture#35": {
+  "name": "shrub scribble",
+  "keywords": [
+   "shrub",
+   "bush",
+   "plant",
+   "landscaping",
+   "floor plan",
+   "scribble",
+   "hedge",
+   "foliage"
+  ]
+ },
+ "official/Arqtangeles/architecture#36": {
+  "name": "north arrow compass",
+  "keywords": [
+   "compass",
+   "north arrow",
+   "orientation",
+   "floor plan",
+   "circle",
+   "navigation",
+   "site plan"
+  ]
+ },
+ "official/Arqtangeles/architecture#38": {
+  "name": "door swing",
+  "keywords": [
+   "door",
+   "swing",
+   "arc",
+   "floor plan",
+   "entrance",
+   "quarter circle",
+   "architecture"
+  ]
+ },
+ "official/Arqtangeles/architecture#39": {
+  "name": "wall segment bar",
+  "keywords": [
+   "wall",
+   "beam",
+   "linear",
+   "floor plan",
+   "rectangle",
+   "architecture",
+   "structural"
+  ]
+ },
+ "official/Arqtangeles/architecture#40": {
+  "name": "overlapping wall bars",
+  "keywords": [
+   "wall",
+   "sliding door",
+   "overlap",
+   "floor plan",
+   "rectangle",
+   "architecture"
+  ]
+ },
+ "official/Arqtangeles/architecture#41": {
+  "name": "roof valley symbol",
+  "keywords": [
+   "roof",
+   "valley",
+   "ridge",
+   "v shape",
+   "floor plan",
+   "architecture",
+   "diagonal"
+  ]
+ },
+ "official/nikordaris/team-topologies#0": {
+  "name": "orange team octagon",
+  "keywords": [
+   "team topologies",
+   "team shape",
+   "octagon",
+   "orange",
+   "stream-aligned",
+   "team block",
+   "diagram"
+  ]
+ },
+ "official/nikordaris/team-topologies#1": {
+  "name": "yellow team block",
+  "keywords": [
+   "team topologies",
+   "team shape",
+   "rounded rectangle",
+   "yellow",
+   "enabling team",
+   "team block",
+   "diagram"
+  ]
+ },
+ "official/nikordaris/team-topologies#2": {
+  "name": "blue team block",
+  "keywords": [
+   "team topologies",
+   "team shape",
+   "rectangle",
+   "blue",
+   "platform team",
+   "team block",
+   "diagram"
+  ]
+ },
+ "official/nikordaris/team-topologies#3": {
+  "name": "purple team block",
+  "keywords": [
+   "team topologies",
+   "team shape",
+   "rounded rectangle",
+   "purple",
+   "complicated subsystem",
+   "team block",
+   "diagram"
+  ]
+ },
+ "official/nikordaris/team-topologies#4": {
+  "name": "dashed parallelogram",
+  "keywords": [
+   "parallelogram",
+   "dashed",
+   "outline",
+   "team topologies",
+   "boundary",
+   "shape",
+   "diagram"
+  ]
+ },
+ "official/nikordaris/team-topologies#5": {
+  "name": "dashed triangle",
+  "keywords": [
+   "triangle",
+   "dashed",
+   "outline",
+   "team topologies",
+   "boundary",
+   "shape",
+   "diagram"
+  ]
+ },
+ "official/nikordaris/team-topologies#6": {
+  "name": "dashed arrow",
+  "keywords": [
+   "arrow",
+   "dashed",
+   "facilitating",
+   "team topologies",
+   "interaction",
+   "collaboration",
+   "pointer"
+  ]
+ },
+ "official/nikordaris/team-topologies#7": {
+  "name": "collaboration interaction icon",
+  "keywords": [
+   "team topologies",
+   "interaction mode",
+   "collaboration",
+   "brackets",
+   "hooks",
+   "icon",
+   "connection"
+  ]
+ },
+ "official/l8y/music-instruments#0": {
+  "name": "beamed eighth notes",
+  "keywords": [
+   "music notes",
+   "eighth notes",
+   "beamed",
+   "sheet music",
+   "melody",
+   "staff",
+   "rhythm"
+  ]
+ },
+ "official/l8y/music-instruments#3": {
+  "name": "bongo drums",
+  "keywords": [
+   "bongo",
+   "drums",
+   "percussion",
+   "instrument",
+   "top view",
+   "conga",
+   "music"
+  ]
+ },
+ "official/l8y/music-instruments#4": {
+  "name": "wooden flute",
+  "keywords": [
+   "flute",
+   "recorder",
+   "woodwind",
+   "instrument",
+   "music",
+   "pipe",
+   "finger holes"
+  ]
+ },
+ "official/l8y/music-instruments#6": {
+  "name": "music notes group",
+  "keywords": [
+   "music notes",
+   "eighth note",
+   "quarter note",
+   "melody",
+   "sheet music",
+   "rhythm",
+   "notation"
+  ]
+ },
+ "official/l8y/music-instruments#7": {
+  "name": "drum kit",
+  "keywords": [
+   "drum kit",
+   "drums",
+   "percussion",
+   "music",
+   "instrument",
+   "band",
+   "cymbals"
+  ]
+ },
+ "official/l8y/music-instruments#8": {
+  "name": "drum kit alt",
+  "keywords": [
+   "drum kit",
+   "drums",
+   "percussion",
+   "music",
+   "instrument",
+   "band",
+   "cymbals"
+  ]
+ },
+ "official/braweria/customer-journey-map#2": {
+  "name": "journey step arrow",
+  "keywords": [
+   "arrow",
+   "chevron",
+   "dashed",
+   "step",
+   "process",
+   "journey map",
+   "flow"
+  ]
+ },
+ "official/braweria/customer-journey-map#3": {
+  "name": "journey step arrow reverse",
+  "keywords": [
+   "arrow",
+   "chevron",
+   "dashed",
+   "step",
+   "process",
+   "journey map",
+   "flow"
+  ]
+ },
+ "official/braweria/customer-journey-map#4": {
+  "name": "speech callout box",
+  "keywords": [
+   "speech bubble",
+   "callout",
+   "quote",
+   "comment",
+   "journey map",
+   "rectangle",
+   "pointer"
+  ]
+ },
+ "official/braweria/customer-journey-map#5": {
+  "name": "rectangle outline",
+  "keywords": [
+   "rectangle",
+   "box",
+   "outline",
+   "frame",
+   "container",
+   "journey map"
+  ]
+ },
+ "official/braweria/customer-journey-map#8": {
+  "name": "lined lane with divider",
+  "keywords": [
+   "lined paper",
+   "swimlane",
+   "journey map",
+   "row",
+   "dotted lines",
+   "template",
+   "chart"
+  ]
+ },
+ "official/braweria/customer-journey-map#9": {
+  "name": "lined lane",
+  "keywords": [
+   "lined paper",
+   "swimlane",
+   "journey map",
+   "row",
+   "dotted lines",
+   "template",
+   "chart"
+  ]
+ },
+ "official/braweria/customer-journey-map#10": {
+  "name": "journey map template",
+  "keywords": [
+   "journey map",
+   "template",
+   "grid",
+   "swimlane",
+   "chart",
+   "framework",
+   "diagram"
+  ]
+ },
+ "official/ferminrp/post-it#0": {
+  "name": "gray sticky note",
+  "keywords": [
+   "sticky note",
+   "post-it",
+   "gray",
+   "note card",
+   "kanban",
+   "memo"
+  ]
+ },
+ "official/ferminrp/post-it#1": {
+  "name": "dark gray sticky note",
+  "keywords": [
+   "sticky note",
+   "post-it",
+   "gray",
+   "note card",
+   "kanban",
+   "memo"
+  ]
+ },
+ "official/ferminrp/post-it#2": {
+  "name": "red sticky note",
+  "keywords": [
+   "sticky note",
+   "post-it",
+   "red",
+   "note card",
+   "kanban",
+   "memo"
+  ]
+ },
+ "official/ferminrp/post-it#3": {
+  "name": "pink sticky note",
+  "keywords": [
+   "sticky note",
+   "post-it",
+   "pink",
+   "magenta",
+   "note card",
+   "kanban",
+   "memo"
+  ]
+ },
+ "official/ferminrp/post-it#4": {
+  "name": "purple sticky note",
+  "keywords": [
+   "sticky note",
+   "post-it",
+   "purple",
+   "note card",
+   "kanban",
+   "memo"
+  ]
+ },
+ "official/ferminrp/post-it#5": {
+  "name": "violet sticky note",
+  "keywords": [
+   "sticky note",
+   "post-it",
+   "violet",
+   "indigo",
+   "note card",
+   "kanban",
+   "memo"
+  ]
+ },
+ "official/ferminrp/post-it#6": {
+  "name": "blue sticky note",
+  "keywords": [
+   "sticky note",
+   "post-it",
+   "blue",
+   "note card",
+   "kanban",
+   "memo"
+  ]
+ },
+ "official/ferminrp/post-it#7": {
+  "name": "dark blue sticky note",
+  "keywords": [
+   "sticky note",
+   "post-it",
+   "blue",
+   "note card",
+   "kanban",
+   "memo"
+  ]
+ },
+ "official/ferminrp/post-it#8": {
+  "name": "teal sticky note",
+  "keywords": [
+   "sticky note",
+   "post-it",
+   "teal",
+   "green",
+   "note card",
+   "kanban",
+   "memo"
+  ]
+ },
+ "official/ferminrp/post-it#9": {
+  "name": "green sticky note",
+  "keywords": [
+   "sticky note",
+   "post-it",
+   "green",
+   "note card",
+   "kanban",
+   "memo"
+  ]
+ },
+ "official/ferminrp/post-it#10": {
+  "name": "lime sticky note",
+  "keywords": [
+   "sticky note",
+   "post-it",
+   "lime",
+   "green",
+   "note card",
+   "kanban",
+   "memo"
+  ]
+ },
+ "official/ferminrp/post-it#11": {
+  "name": "yellow sticky note",
+  "keywords": [
+   "sticky note",
+   "post-it",
+   "yellow",
+   "amber",
+   "note card",
+   "kanban",
+   "memo"
+  ]
+ },
+ "official/ferminrp/post-it#12": {
+  "name": "orange sticky note",
+  "keywords": [
+   "sticky note",
+   "post-it",
+   "orange",
+   "note card",
+   "kanban",
+   "memo"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#0": {
+  "name": "right triangle",
+  "keywords": [
+   "triangle",
+   "right angle",
+   "shape",
+   "geometry",
+   "polygon"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#1": {
+  "name": "equilateral triangle",
+  "keywords": [
+   "triangle",
+   "shape",
+   "geometry",
+   "polygon"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#2": {
+  "name": "rounded square",
+  "keywords": [
+   "rounded square",
+   "square",
+   "rounded rectangle",
+   "shape",
+   "geometry",
+   "box"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#3": {
+  "name": "pentagon",
+  "keywords": [
+   "pentagon",
+   "shape",
+   "geometry",
+   "polygon",
+   "five sides"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#4": {
+  "name": "hexagon",
+  "keywords": [
+   "hexagon",
+   "shape",
+   "geometry",
+   "polygon",
+   "six sides"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#5": {
+  "name": "heptagon",
+  "keywords": [
+   "heptagon",
+   "shape",
+   "geometry",
+   "polygon",
+   "seven sides"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#6": {
+  "name": "octagon",
+  "keywords": [
+   "octagon",
+   "shape",
+   "geometry",
+   "polygon",
+   "eight sides",
+   "stop sign"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#7": {
+  "name": "nonagon",
+  "keywords": [
+   "nonagon",
+   "shape",
+   "geometry",
+   "polygon",
+   "nine sides"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#8": {
+  "name": "trapezoid shape",
+  "keywords": [
+   "trapezoid",
+   "quadrilateral",
+   "geometry",
+   "basic shape",
+   "gray shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#9": {
+  "name": "parallelogram shape",
+  "keywords": [
+   "parallelogram",
+   "slanted rectangle",
+   "quadrilateral",
+   "geometry",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#10": {
+  "name": "pentagon shield",
+  "keywords": [
+   "pentagon",
+   "shield shape",
+   "house shape",
+   "geometry",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#11": {
+  "name": "bookmark ribbon",
+  "keywords": [
+   "bookmark",
+   "ribbon",
+   "banner",
+   "tag",
+   "flag shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#12": {
+  "name": "teardrop shape",
+  "keywords": [
+   "teardrop",
+   "droplet",
+   "water drop",
+   "raindrop",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#13": {
+  "name": "six point burst",
+  "keywords": [
+   "burst",
+   "asterisk",
+   "sparkle",
+   "star burst",
+   "explosion",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#14": {
+  "name": "five point star",
+  "keywords": [
+   "star",
+   "five pointed star",
+   "rating",
+   "favorite",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#15": {
+  "name": "seven point star",
+  "keywords": [
+   "star",
+   "seven pointed star",
+   "burst",
+   "sparkle",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#16": {
+  "name": "heart shape",
+  "keywords": [
+   "heart",
+   "love",
+   "like",
+   "favorite",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#17": {
+  "name": "plus cross",
+  "keywords": [
+   "plus",
+   "cross",
+   "add",
+   "medical cross",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#18": {
+  "name": "up arrow",
+  "keywords": [
+   "arrow",
+   "up arrow",
+   "pointer",
+   "direction",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#19": {
+  "name": "vertical double arrow",
+  "keywords": [
+   "arrow",
+   "up down arrow",
+   "double arrow",
+   "vertical arrow",
+   "direction",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#20": {
+  "name": "diamond shield shape",
+  "keywords": [
+   "diamond",
+   "shield",
+   "banner",
+   "pentagon",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#21": {
+  "name": "lightning bolt",
+  "keywords": [
+   "lightning",
+   "bolt",
+   "flash",
+   "energy",
+   "power",
+   "electric",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#22": {
+  "name": "crescent moon",
+  "keywords": [
+   "moon",
+   "crescent",
+   "night",
+   "lunar",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#23": {
+  "name": "crown shape",
+  "keywords": [
+   "crown",
+   "peak",
+   "mountain",
+   "castle top",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#24": {
+  "name": "circle shape",
+  "keywords": [
+   "circle",
+   "ellipse",
+   "round",
+   "dot",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#25": {
+  "name": "pac-man pie",
+  "keywords": [
+   "pie chart",
+   "pac-man",
+   "circle wedge",
+   "sector",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#26": {
+  "name": "quarter pie cutout",
+  "keywords": [
+   "pie chart",
+   "circle wedge",
+   "sector",
+   "quarter circle cutout",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#27": {
+  "name": "circle wedge cutout",
+  "keywords": [
+   "pie chart",
+   "circle sector",
+   "wedge",
+   "quarter cutout",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#28": {
+  "name": "half circle",
+  "keywords": [
+   "semicircle",
+   "half circle",
+   "dome shape",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#29": {
+  "name": "curved triangle",
+  "keywords": [
+   "curved triangle",
+   "leaf shape",
+   "rounded triangle",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#30": {
+  "name": "quarter circle corner",
+  "keywords": [
+   "quarter circle",
+   "rounded corner",
+   "pie slice",
+   "basic shape"
+  ]
+ },
+ "official/pgilfernandez/basic-shapes#31": {
+  "name": "triangle pointer",
+  "keywords": [
+   "triangle",
+   "play button",
+   "arrow triangle",
+   "pointer",
+   "basic shape"
+  ]
+ },
+ "official/pret/chess-set#1": {
+  "name": "chess rook",
+  "keywords": [
+   "chess",
+   "rook",
+   "castle piece",
+   "black chess piece"
+  ]
+ },
+ "official/pret/chess-set#2": {
+  "name": "chess knight",
+  "keywords": [
+   "chess",
+   "knight",
+   "horse piece",
+   "black chess piece"
+  ]
+ },
+ "official/pret/chess-set#3": {
+  "name": "chess bishop",
+  "keywords": [
+   "chess",
+   "bishop",
+   "black chess piece"
+  ]
+ },
+ "official/pret/chess-set#4": {
+  "name": "chess queen",
+  "keywords": [
+   "chess",
+   "queen",
+   "black chess piece"
+  ]
+ },
+ "official/pret/chess-set#5": {
+  "name": "chess king",
+  "keywords": [
+   "chess",
+   "king",
+   "black chess piece"
+  ]
+ },
+ "official/pret/chess-set#6": {
+  "name": "chess pawn",
+  "keywords": [
+   "chess",
+   "pawn",
+   "black chess piece"
+  ]
+ },
+ "official/pret/chess-set#7": {
+  "name": "chess rook",
+  "keywords": [
+   "chess",
+   "rook",
+   "castle",
+   "tower",
+   "piece",
+   "board game",
+   "strategy"
+  ]
+ },
+ "official/pret/chess-set#8": {
+  "name": "chess knight",
+  "keywords": [
+   "chess",
+   "knight",
+   "horse",
+   "piece",
+   "board game",
+   "strategy"
+  ]
+ },
+ "official/pret/chess-set#9": {
+  "name": "chess bishop",
+  "keywords": [
+   "chess",
+   "bishop",
+   "piece",
+   "board game",
+   "strategy"
+  ]
+ },
+ "official/pret/chess-set#10": {
+  "name": "chess queen",
+  "keywords": [
+   "chess",
+   "queen",
+   "piece",
+   "board game",
+   "strategy"
+  ]
+ },
+ "official/pret/chess-set#11": {
+  "name": "chess king",
+  "keywords": [
+   "chess",
+   "king",
+   "cross",
+   "piece",
+   "board game",
+   "strategy"
+  ]
+ },
+ "official/pret/chess-set#12": {
+  "name": "chess pawn",
+  "keywords": [
+   "chess",
+   "pawn",
+   "piece",
+   "board game",
+   "strategy"
+  ]
+ },
+ "official/Vasudevatirupathinaidu/random-figure-drawings#0": {
+  "name": "blue bunny alien",
+  "keywords": [
+   "character",
+   "creature",
+   "alien",
+   "bunny",
+   "cute",
+   "sketch",
+   "figure",
+   "mascot"
+  ]
+ },
+ "official/Vasudevatirupathinaidu/random-figure-drawings#1": {
+  "name": "red bunny alien",
+  "keywords": [
+   "character",
+   "creature",
+   "alien",
+   "bunny",
+   "cute",
+   "sketch",
+   "figure",
+   "mascot"
+  ]
+ },
+ "official/Vasudevatirupathinaidu/random-figure-drawings#2": {
+  "name": "pink cat creature",
+  "keywords": [
+   "character",
+   "creature",
+   "cat",
+   "kitten",
+   "cute",
+   "sketch",
+   "figure",
+   "mascot"
+  ]
+ },
+ "official/Vasudevatirupathinaidu/random-figure-drawings#3": {
+  "name": "blue jellyfish",
+  "keywords": [
+   "jellyfish",
+   "creature",
+   "sea animal",
+   "ocean",
+   "sketch",
+   "tentacles"
+  ]
+ },
+ "official/Vasudevatirupathinaidu/random-figure-drawings#4": {
+  "name": "orange jellyfish",
+  "keywords": [
+   "jellyfish",
+   "creature",
+   "sea animal",
+   "ocean",
+   "sketch",
+   "tentacles"
+  ]
+ },
+ "official/Vasudevatirupathinaidu/random-figure-drawings#5": {
+  "name": "teal jellyfish",
+  "keywords": [
+   "jellyfish",
+   "creature",
+   "sea animal",
+   "ocean",
+   "sketch",
+   "tentacles"
+  ]
+ },
+ "official/Vasudevatirupathinaidu/random-figure-drawings#6": {
+  "name": "purple bug stick figure",
+  "keywords": [
+   "character",
+   "stick figure",
+   "bug",
+   "alien",
+   "eyes",
+   "sketch",
+   "figure"
+  ]
+ },
+ "official/Vasudevatirupathinaidu/random-figure-drawings#7": {
+  "name": "orange bug stick figure",
+  "keywords": [
+   "character",
+   "stick figure",
+   "bug",
+   "alien",
+   "eyes",
+   "sketch",
+   "figure"
+  ]
+ },
+ "official/Vasudevatirupathinaidu/random-figure-drawings#8": {
+  "name": "pink bug stick figure",
+  "keywords": [
+   "character",
+   "stick figure",
+   "bug",
+   "alien",
+   "eyes",
+   "sketch",
+   "figure"
+  ]
+ },
+ "official/Vasudevatirupathinaidu/random-figure-drawings#9": {
+  "name": "purple glasses figure",
+  "keywords": [
+   "face",
+   "glasses",
+   "eyes",
+   "sketch figure",
+   "person",
+   "character",
+   "doodle"
+  ]
+ },
+ "official/Vasudevatirupathinaidu/random-figure-drawings#10": {
+  "name": "teal glasses figure",
+  "keywords": [
+   "face",
+   "glasses",
+   "eyes",
+   "sketch figure",
+   "person",
+   "character",
+   "doodle"
+  ]
+ },
+ "official/Vasudevatirupathinaidu/random-figure-drawings#11": {
+  "name": "orange glasses figure",
+  "keywords": [
+   "face",
+   "glasses",
+   "eyes",
+   "sketch figure",
+   "person",
+   "character",
+   "doodle"
+  ]
+ },
+ "official/Vasudevatirupathinaidu/random-figure-drawings#12": {
+  "name": "red glasses figure",
+  "keywords": [
+   "face",
+   "glasses",
+   "eyes",
+   "sketch figure",
+   "person",
+   "character",
+   "doodle"
+  ]
+ },
+ "official/Vasudevatirupathinaidu/random-figure-drawings#13": {
+  "name": "green glasses figure",
+  "keywords": [
+   "face",
+   "glasses",
+   "eyes",
+   "sketch figure",
+   "person",
+   "character",
+   "doodle"
+  ]
+ },
+ "official/Vasudevatirupathinaidu/random-figure-drawings#14": {
+  "name": "pink glasses figure",
+  "keywords": [
+   "face",
+   "glasses",
+   "eyes",
+   "sketch figure",
+   "person",
+   "character",
+   "doodle"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#0": {
+  "name": "class box divided",
+  "keywords": [
+   "uml",
+   "class",
+   "entity",
+   "table",
+   "box",
+   "diagram",
+   "er diagram",
+   "attributes"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#1": {
+  "name": "rounded class box divided",
+  "keywords": [
+   "uml",
+   "class",
+   "entity",
+   "table",
+   "rounded rectangle",
+   "diagram",
+   "er diagram"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#2": {
+  "name": "rounded blank box",
+  "keywords": [
+   "uml",
+   "entity",
+   "box",
+   "rounded rectangle",
+   "diagram",
+   "er diagram",
+   "container"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#3": {
+  "name": "blank class box",
+  "keywords": [
+   "uml",
+   "entity",
+   "box",
+   "rectangle",
+   "diagram",
+   "er diagram",
+   "container"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#4": {
+  "name": "triangle arrow connector",
+  "keywords": [
+   "uml",
+   "arrow",
+   "connector",
+   "line",
+   "inheritance",
+   "relationship",
+   "diagram"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#5": {
+  "name": "diamond arrow connector",
+  "keywords": [
+   "uml",
+   "arrow",
+   "connector",
+   "line",
+   "aggregation",
+   "relationship",
+   "diagram"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#6": {
+  "name": "filled diamond connector",
+  "keywords": [
+   "uml",
+   "arrow",
+   "connector",
+   "line",
+   "composition",
+   "relationship",
+   "diagram"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#7": {
+  "name": "open arrow connector",
+  "keywords": [
+   "uml",
+   "arrow",
+   "connector",
+   "line",
+   "association",
+   "relationship",
+   "diagram"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#8": {
+  "name": "plus sign",
+  "keywords": [
+   "plus",
+   "cross",
+   "add",
+   "icon",
+   "symbol",
+   "public marker"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#9": {
+  "name": "many-to-many relation",
+  "keywords": [
+   "er diagram",
+   "crows foot",
+   "many to many",
+   "relationship line",
+   "uml connector",
+   "cardinality"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#10": {
+  "name": "zero-or-many relation",
+  "keywords": [
+   "er diagram",
+   "crows foot",
+   "zero or many",
+   "relationship line",
+   "circle notation",
+   "cardinality"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#11": {
+  "name": "one-to-one relation",
+  "keywords": [
+   "er diagram",
+   "one to one",
+   "relationship line",
+   "tick mark",
+   "cardinality",
+   "uml connector"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#12": {
+  "name": "zero-or-one relation",
+  "keywords": [
+   "er diagram",
+   "zero or one",
+   "relationship line",
+   "circle notation",
+   "cardinality",
+   "optional relation"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#16": {
+  "name": "attribute oval",
+  "keywords": [
+   "ellipse",
+   "er diagram attribute",
+   "oval shape",
+   "entity attribute",
+   "uml oval"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#17": {
+  "name": "uml actor",
+  "keywords": [
+   "stick figure",
+   "actor icon",
+   "use case actor",
+   "person symbol",
+   "uml diagram",
+   "user"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#18": {
+  "name": "dependency arrow",
+  "keywords": [
+   "association arrow",
+   "dashed pointer",
+   "uml arrow",
+   "connector",
+   "dot origin arrow"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#19": {
+  "name": "lifeline with activation bar",
+  "keywords": [
+   "sequence diagram",
+   "lifeline",
+   "activation bar",
+   "object header",
+   "uml lifeline"
+  ]
+ },
+ "official/BjoernKW/UML-ER-library#20": {
+  "name": "rounded lifeline bar",
+  "keywords": [
+   "sequence diagram",
+   "lifeline",
+   "activation bar",
+   "rounded header",
+   "uml lifeline"
+  ]
+ },
+ "official/IvanReznikov/yellow-box#0": {
+  "name": "open cardboard box",
+  "keywords": [
+   "box icon",
+   "package",
+   "open box",
+   "shipping box",
+   "yellow box",
+   "storage"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#1": {
+  "name": "sync arrows icon",
+  "keywords": [
+   "refresh icon",
+   "circular arrows",
+   "replication",
+   "sync",
+   "backup loop",
+   "teal badge"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#2": {
+  "name": "server rack with folder",
+  "keywords": [
+   "server icon",
+   "storage rack",
+   "folder badge",
+   "repository",
+   "veeam",
+   "backup"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#3": {
+  "name": "teal info card",
+  "keywords": [
+   "service card",
+   "panel icon",
+   "circle and lines",
+   "list item",
+   "ui card",
+   "veeam"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#5": {
+  "name": "data mapping card",
+  "keywords": [
+   "job card",
+   "data flow",
+   "mapping icon",
+   "arrows diagram",
+   "veeam",
+   "backup job"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#9": {
+  "name": "cloud icon badge",
+  "keywords": [
+   "cloud",
+   "orange badge",
+   "cloud storage",
+   "backup cloud",
+   "veeam",
+   "sync cloud"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#10": {
+  "name": "cloud repository card",
+  "keywords": [
+   "cloud folder",
+   "repository card",
+   "backup cloud",
+   "storage icon",
+   "veeam",
+   "orange badge"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#13": {
+  "name": "server with windows",
+  "keywords": [
+   "server icon",
+   "window panes",
+   "storage rack",
+   "teal panel",
+   "veeam",
+   "infrastructure"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#15": {
+  "name": "stacked info cards",
+  "keywords": [
+   "card list",
+   "repeated cards",
+   "teal panels",
+   "list group",
+   "veeam",
+   "ui cards"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#16": {
+  "name": "document lines icon",
+  "keywords": [
+   "document icon",
+   "text lines",
+   "teal card",
+   "file",
+   "report",
+   "veeam"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#17": {
+  "name": "document group",
+  "keywords": [
+   "documents",
+   "file stack",
+   "teal icons",
+   "reports",
+   "multiple files",
+   "veeam"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#18": {
+  "name": "stacked layer bars",
+  "keywords": [
+   "layers icon",
+   "server rack",
+   "storage stack",
+   "teal bars",
+   "abstract shape",
+   "veeam"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#19": {
+  "name": "mixed layer stack",
+  "keywords": [
+   "layers icon",
+   "server rack",
+   "outline and solid bars",
+   "storage stack",
+   "teal bars",
+   "veeam"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#20": {
+  "name": "mixed layer stack alt",
+  "keywords": [
+   "layers icon",
+   "server rack",
+   "outline and solid bars",
+   "storage stack",
+   "teal bars",
+   "veeam"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#23": {
+  "name": "server with job badge",
+  "keywords": [
+   "server icon",
+   "storage rack",
+   "job diagram badge",
+   "orange badge",
+   "veeam",
+   "backup task"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#26": {
+  "name": "server with cloud badge",
+  "keywords": [
+   "server icon",
+   "storage rack",
+   "cloud badge",
+   "orange badge",
+   "veeam",
+   "cloud backup"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#27": {
+  "name": "tape storage icon",
+  "keywords": [
+   "tape backup",
+   "reel icon",
+   "teal panel",
+   "tape drive",
+   "veeam",
+   "storage media"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#28": {
+  "name": "tape icon export badge",
+  "keywords": [
+   "tape backup",
+   "reel icon",
+   "eject badge",
+   "orange badge",
+   "veeam",
+   "export tape"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#29": {
+  "name": "tape icon target badge",
+  "keywords": [
+   "tape backup",
+   "reel icon",
+   "target badge",
+   "orange badge",
+   "veeam",
+   "recovery point"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#30": {
+  "name": "tape icon checkmark badge",
+  "keywords": [
+   "tape backup",
+   "reel icon",
+   "checkmark badge",
+   "success badge",
+   "veeam",
+   "verified"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#31": {
+  "name": "tape icon lock badge",
+  "keywords": [
+   "tape backup",
+   "reel icon",
+   "lock badge",
+   "encryption",
+   "orange badge",
+   "veeam"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#32": {
+  "name": "tape backup folder",
+  "keywords": [
+   "folder",
+   "backup",
+   "tape",
+   "cassette",
+   "archive",
+   "storage",
+   "veeam",
+   "data"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#33": {
+  "name": "storage disk",
+  "keywords": [
+   "disk",
+   "cd",
+   "storage",
+   "drive",
+   "disc",
+   "veeam",
+   "media"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#34": {
+  "name": "disk usage chart",
+  "keywords": [
+   "disk",
+   "storage",
+   "pie chart",
+   "usage",
+   "capacity",
+   "drive",
+   "analytics"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#37": {
+  "name": "recycle bin",
+  "keywords": [
+   "trash",
+   "bin",
+   "recycle",
+   "delete",
+   "waste",
+   "shapes",
+   "discard"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#38": {
+  "name": "server rack",
+  "keywords": [
+   "rack",
+   "server",
+   "slots",
+   "hardware",
+   "datacenter",
+   "veeam",
+   "infrastructure"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#39": {
+  "name": "server rack stack",
+  "keywords": [
+   "rack",
+   "server",
+   "stacked",
+   "cluster",
+   "datacenter",
+   "hardware",
+   "infrastructure"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#40": {
+  "name": "server rack basket",
+  "keywords": [
+   "rack",
+   "server",
+   "basket",
+   "bucket",
+   "hardware",
+   "datacenter",
+   "storage"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#41": {
+  "name": "server cabinet",
+  "keywords": [
+   "cabinet",
+   "server",
+   "doors",
+   "rack",
+   "hardware",
+   "datacenter",
+   "storage"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#57": {
+  "name": "data swap arrows",
+  "keywords": [
+   "arrows",
+   "swap",
+   "transfer",
+   "migration",
+   "exchange",
+   "boxes",
+   "sync"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#58": {
+  "name": "cluster nodes circle",
+  "keywords": [
+   "cluster",
+   "nodes",
+   "circles",
+   "molecule",
+   "network",
+   "group",
+   "veeam"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#61": {
+  "name": "triangle network nodes",
+  "keywords": [
+   "network",
+   "nodes",
+   "triangle",
+   "connection",
+   "cluster",
+   "topology",
+   "dots"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#62": {
+  "name": "growth bar chart",
+  "keywords": [
+   "chart",
+   "bar graph",
+   "growth",
+   "analytics",
+   "trend",
+   "statistics",
+   "data"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#63": {
+  "name": "data import arrow",
+  "keywords": [
+   "import",
+   "arrow",
+   "transfer",
+   "data",
+   "box",
+   "download",
+   "migration"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#64": {
+  "name": "network topology diagram",
+  "keywords": [
+   "network",
+   "topology",
+   "nodes",
+   "diagram",
+   "connection",
+   "boxes",
+   "infrastructure"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#65": {
+  "name": "security shield bug",
+  "keywords": [
+   "shield",
+   "bug",
+   "security",
+   "malware",
+   "virus",
+   "protection",
+   "threat"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#66": {
+  "name": "shield paw print",
+  "keywords": [
+   "shield",
+   "paw",
+   "claw",
+   "protection",
+   "security",
+   "animal",
+   "print"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#67": {
+  "name": "stacked lines panel",
+  "keywords": [
+   "lines",
+   "stack",
+   "list",
+   "bars",
+   "panel",
+   "rows",
+   "veeam"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#73": {
+  "name": "cloud download hexagon",
+  "keywords": [
+   "cloud",
+   "download",
+   "hexagon",
+   "gear",
+   "sync",
+   "azure",
+   "transfer"
+  ]
+ },
+ "official/jdelacruz/veeam_unofficial#75": {
+  "name": "azure logo",
+  "keywords": [
+   "azure",
+   "microsoft",
+   "cloud",
+   "triangle",
+   "logo",
+   "brand"
+  ]
+ },
+ "official/markopolo123/dev_ops#0": {
+  "name": "refresh cycle arrows",
+  "keywords": [
+   "refresh",
+   "sync",
+   "cycle",
+   "arrows",
+   "loop",
+   "devops",
+   "circular"
+  ]
+ },
+ "official/markopolo123/dev_ops#1": {
+  "name": "kubernetes logo",
+  "keywords": [
+   "kubernetes",
+   "k8s",
+   "helm",
+   "wheel",
+   "container",
+   "orchestration",
+   "devops"
+  ]
+ },
+ "official/markopolo123/dev_ops#2": {
+  "name": "docker logo",
+  "keywords": [
+   "docker",
+   "whale",
+   "container",
+   "devops",
+   "logo",
+   "containers"
+  ]
+ },
+ "official/markopolo123/dev_ops#3": {
+  "name": "docker whale icon",
+  "keywords": [
+   "docker",
+   "whale",
+   "tail",
+   "container",
+   "devops",
+   "logo",
+   "swarm"
+  ]
+ },
+ "official/markopolo123/dev_ops#4": {
+  "name": "ci cd pipeline",
+  "keywords": [
+   "pipeline",
+   "workflow",
+   "checklist",
+   "checkmark",
+   "ci/cd",
+   "devops",
+   "steps"
+  ]
+ },
+ "official/markopolo123/dev_ops#5": {
+  "name": "xamarin logo",
+  "keywords": [
+   "xamarin",
+   "microsoft",
+   "logo",
+   "mobile",
+   "devops",
+   "brand",
+   "x"
+  ]
+ },
+ "official/markopolo123/dev_ops#6": {
+  "name": "vs code logo",
+  "keywords": [
+   "vscode",
+   "visual studio code",
+   "editor",
+   "logo",
+   "microsoft",
+   "ide",
+   "devops"
+  ]
+ },
+ "official/markopolo123/dev_ops#7": {
+  "name": "microsoft teams logo",
+  "keywords": [
+   "teams",
+   "microsoft",
+   "logo",
+   "chat",
+   "collaboration",
+   "devops",
+   "brand"
+  ]
+ },
+ "official/markopolo123/dev_ops#8": {
+  "name": "safety dog mascot",
+  "keywords": [
+   "dog",
+   "mascot",
+   "safety vest",
+   "headphones",
+   "character",
+   "devops",
+   "animal"
+  ]
+ },
+ "official/markopolo123/dev_ops#9": {
+  "name": "zookeeper logo",
+  "keywords": [
+   "zookeeper",
+   "apache",
+   "logo",
+   "temple",
+   "pyramid",
+   "devops",
+   "brand"
+  ]
+ },
+ "official/markopolo123/dev_ops#10": {
+  "name": "gitlab logo",
+  "keywords": [
+   "gitlab",
+   "fox",
+   "logo",
+   "devops",
+   "brand",
+   "git"
+  ]
+ },
+ "official/markopolo123/dev_ops#11": {
+  "name": "bar chart icon",
+  "keywords": [
+   "bars",
+   "chart",
+   "graph",
+   "metrics",
+   "histogram",
+   "equalizer",
+   "devops",
+   "yellow"
+  ]
+ },
+ "official/markopolo123/dev_ops#12": {
+  "name": "connector block shape",
+  "keywords": [
+   "connector",
+   "block",
+   "socket",
+   "notch",
+   "hardware",
+   "red",
+   "outlet",
+   "port"
+  ]
+ },
+ "official/markopolo123/dev_ops#13": {
+  "name": "Java coffee cup logo",
+  "keywords": [
+   "java",
+   "coffee",
+   "mug",
+   "cup",
+   "tag",
+   "label",
+   "programming language",
+   "devops"
+  ]
+ },
+ "official/markopolo123/dev_ops#14": {
+  "name": "flower pinwheel icon",
+  "keywords": [
+   "flower",
+   "pinwheel",
+   "petals",
+   "colorful",
+   "abstract",
+   "cloud",
+   "logo",
+   "circle"
+  ]
+ },
+ "official/markopolo123/dev_ops#15": {
+  "name": "Terraform T logo",
+  "keywords": [
+   "terraform",
+   "infrastructure",
+   "iac",
+   "hashicorp",
+   "purple",
+   "t-shape",
+   "provisioning",
+   "devops"
+  ]
+ },
+ "official/markopolo123/dev_ops#16": {
+  "name": "Git logo",
+  "keywords": [
+   "git",
+   "version control",
+   "vcs",
+   "branch",
+   "diamond",
+   "orange",
+   "source control",
+   "devops"
+  ]
+ },
+ "official/markopolo123/dev_ops#17": {
+  "name": "triskelion hook icon",
+  "keywords": [
+   "triskelion",
+   "pinwheel",
+   "hooks",
+   "abstract",
+   "three-fold",
+   "rotation",
+   "pink",
+   "gray"
+  ]
+ },
+ "official/markopolo123/dev_ops#18": {
+  "name": "Ubuntu logo",
+  "keywords": [
+   "ubuntu",
+   "linux",
+   "circle of friends",
+   "os",
+   "orange",
+   "ring",
+   "distro",
+   "devops"
+  ]
+ },
+ "official/markopolo123/dev_ops#19": {
+  "name": "mountain peak icon",
+  "keywords": [
+   "mountain",
+   "alpine",
+   "triangle",
+   "peak",
+   "linux",
+   "docker",
+   "teal",
+   "navy"
+  ]
+ },
+ "official/markopolo123/dev_ops#20": {
+  "name": "ribbon banner shapes",
+  "keywords": [
+   "ribbon",
+   "banner",
+   "parallelogram",
+   "chevron",
+   "arrow",
+   "tag",
+   "ticket",
+   "red"
+  ]
+ },
+ "official/markopolo123/dev_ops#21": {
+  "name": "Python logo",
+  "keywords": [
+   "python",
+   "programming language",
+   "snake",
+   "logo",
+   "blue",
+   "yellow",
+   "code",
+   "devops"
+  ]
+ },
+ "official/markopolo123/dev_ops#22": {
+  "name": "fan blade shapes",
+  "keywords": [
+   "fan",
+   "blades",
+   "quarter circle",
+   "loading",
+   "spinner",
+   "blue",
+   "abstract",
+   "petals"
+  ]
+ },
+ "official/markopolo123/dev_ops#23": {
+  "name": "H monogram icon",
+  "keywords": [
+   "h shape",
+   "monogram",
+   "wheel",
+   "helm",
+   "black",
+   "logo",
+   "abstract",
+   "letter"
+  ]
+ },
+ "official/markopolo123/dev_ops#24": {
+  "name": "cube with arrow icon",
+  "keywords": [
+   "cube",
+   "arrow",
+   "n-shape",
+   "teal",
+   "box",
+   "3d",
+   "logo",
+   "devops"
+  ]
+ },
+ "official/markopolo123/dev_ops#25": {
+  "name": "CircleCI logo",
+  "keywords": [
+   "circleci",
+   "ci/cd",
+   "pipeline",
+   "c-shape",
+   "pink",
+   "circle",
+   "automation",
+   "devops"
+  ]
+ },
+ "official/markopolo123/dev_ops#26": {
+  "name": "inverted triangle grid icon",
+  "keywords": [
+   "triangle",
+   "grid",
+   "squares",
+   "downward",
+   "black",
+   "abstract",
+   "pattern",
+   "logo"
+  ]
+ },
+ "official/markopolo123/dev_ops#27": {
+  "name": "folded ribbon shape",
+  "keywords": [
+   "ribbon",
+   "fold",
+   "origami",
+   "pipeline",
+   "blue",
+   "paper",
+   "layers",
+   "abstract"
+  ]
+ },
+ "official/markopolo123/dev_ops#28": {
+  "name": "open book icon",
+  "keywords": [
+   "book",
+   "pages",
+   "folded",
+   "document",
+   "cyan",
+   "notebook",
+   "docs",
+   "card"
+  ]
+ },
+ "official/corlaez/hexagonal-architecture#5": {
+  "name": "bidirectional arrow",
+  "keywords": [
+   "arrow",
+   "double-headed",
+   "connector",
+   "line",
+   "black",
+   "direction",
+   "pointer",
+   "hexagonal"
+  ]
+ },
+ "official/corlaez/hexagonal-architecture#11": {
+  "name": "terminal window icon",
+  "keywords": [
+   "terminal",
+   "browser window",
+   "console",
+   "prompt",
+   "cli",
+   "dots",
+   "window",
+   "ui"
+  ]
+ },
+ "official/corlaez/hexagonal-architecture#15": {
+  "name": "hexagon single port",
+  "keywords": [
+   "hexagon",
+   "port",
+   "adapter",
+   "square",
+   "architecture",
+   "outline",
+   "node",
+   "hexagonal"
+  ]
+ },
+ "official/corlaez/hexagonal-architecture#16": {
+  "name": "hexagon dual ports",
+  "keywords": [
+   "hexagon",
+   "port",
+   "adapter",
+   "circle",
+   "square",
+   "architecture",
+   "node",
+   "hexagonal"
+  ]
+ },
+ "official/corlaez/hexagonal-architecture#17": {
+  "name": "hexagon with adapters",
+  "keywords": [
+   "hexagon",
+   "port",
+   "adapter",
+   "architecture",
+   "crosshatch",
+   "connectors",
+   "diagram",
+   "hexagonal"
+  ]
+ },
+ "official/thebrahmnicboy/Logic-Gates#0": {
+  "name": "buffer gate",
+  "keywords": [
+   "logic gate",
+   "buffer",
+   "triangle",
+   "digital",
+   "circuit",
+   "electronics",
+   "signal",
+   "boolean"
+  ]
+ },
+ "official/thebrahmnicboy/Logic-Gates#1": {
+  "name": "NOT gate",
+  "keywords": [
+   "logic gate",
+   "inverter",
+   "not gate",
+   "bubble",
+   "triangle",
+   "digital",
+   "circuit",
+   "electronics"
+  ]
+ },
+ "official/thebrahmnicboy/Logic-Gates#2": {
+  "name": "AND gate",
+  "keywords": [
+   "logic gate",
+   "and gate",
+   "digital",
+   "circuit",
+   "electronics",
+   "boolean",
+   "d-shape",
+   "signal"
+  ]
+ },
+ "official/thebrahmnicboy/Logic-Gates#3": {
+  "name": "NAND gate",
+  "keywords": [
+   "logic gate",
+   "nand gate",
+   "bubble",
+   "digital",
+   "circuit",
+   "electronics",
+   "boolean",
+   "signal"
+  ]
+ },
+ "official/thebrahmnicboy/Logic-Gates#4": {
+  "name": "OR gate",
+  "keywords": [
+   "logic gate",
+   "or gate",
+   "digital",
+   "circuit",
+   "electronics",
+   "boolean",
+   "curved",
+   "signal"
+  ]
+ },
+ "official/thebrahmnicboy/Logic-Gates#5": {
+  "name": "NOR gate",
+  "keywords": [
+   "logic gate",
+   "nor gate",
+   "bubble",
+   "digital",
+   "circuit",
+   "electronics",
+   "boolean",
+   "signal"
+  ]
+ },
+ "official/thebrahmnicboy/Logic-Gates#6": {
+  "name": "XOR gate",
+  "keywords": [
+   "logic gate",
+   "xor gate",
+   "digital",
+   "circuit",
+   "electronics",
+   "boolean",
+   "exclusive or",
+   "signal"
+  ]
+ },
+ "official/thebrahmnicboy/Logic-Gates#7": {
+  "name": "XNOR gate",
+  "keywords": [
+   "xnor",
+   "logic gate",
+   "not equivalence",
+   "boolean",
+   "digital logic",
+   "circuit symbol"
+  ]
+ },
+ "official/thebrahmnicboy/Logic-Gates#8": {
+  "name": "XOR gate",
+  "keywords": [
+   "xor",
+   "logic gate",
+   "exclusive or",
+   "boolean",
+   "digital logic",
+   "circuit symbol"
+  ]
+ },
+ "official/thebrahmnicboy/Logic-Gates#9": {
+  "name": "XNOR gate",
+  "keywords": [
+   "xnor",
+   "logic gate",
+   "not equivalence",
+   "boolean",
+   "digital logic",
+   "circuit symbol"
+  ]
+ },
+ "official/rohanp/system-design#0": {
+  "name": "square node",
+  "keywords": [
+   "square",
+   "box",
+   "rectangle",
+   "node",
+   "placeholder",
+   "block"
+  ]
+ },
+ "official/rohanp/system-design#5": {
+  "name": "cylinder database",
+  "keywords": [
+   "database",
+   "cylinder",
+   "storage",
+   "data",
+   "server",
+   "db icon"
+  ]
+ },
+ "official/swissarmysam/maps#0": {
+  "name": "city map with roundabout",
+  "keywords": [
+   "map",
+   "roundabout",
+   "street",
+   "location pin",
+   "navigation",
+   "town",
+   "city blocks"
+  ]
+ },
+ "official/swissarmysam/maps#1": {
+  "name": "city map with pin",
+  "keywords": [
+   "map",
+   "roundabout",
+   "street",
+   "location pin",
+   "navigation",
+   "town",
+   "city blocks"
+  ]
+ },
+ "official/swissarmysam/maps#2": {
+  "name": "map pin red",
+  "keywords": [
+   "location pin",
+   "map marker",
+   "gps",
+   "navigation",
+   "place",
+   "red pin"
+  ]
+ },
+ "official/swissarmysam/maps#3": {
+  "name": "map pin gray",
+  "keywords": [
+   "location pin",
+   "map marker",
+   "gps",
+   "navigation",
+   "place",
+   "gray pin"
+  ]
+ },
+ "official/oehrlis/db-eng#17": {
+  "name": "lock security icon",
+  "keywords": [
+   "lock",
+   "padlock",
+   "security",
+   "encryption",
+   "privacy",
+   "protected",
+   "blue circle"
+  ]
+ },
+ "official/oehrlis/db-eng#19": {
+  "name": "person at laptop smiling red",
+  "keywords": [
+   "character",
+   "person",
+   "laptop",
+   "user",
+   "developer",
+   "stick figure",
+   "working"
+  ]
+ },
+ "official/oehrlis/db-eng#20": {
+  "name": "person at laptop smiling blue",
+  "keywords": [
+   "character",
+   "person",
+   "laptop",
+   "user",
+   "developer",
+   "stick figure",
+   "working"
+  ]
+ },
+ "official/oehrlis/db-eng#21": {
+  "name": "person at laptop green",
+  "keywords": [
+   "character",
+   "person",
+   "laptop",
+   "user",
+   "developer",
+   "stick figure",
+   "working"
+  ]
+ },
+ "official/oehrlis/db-eng#35": {
+  "name": "blue arrow right",
+  "keywords": [
+   "arrow",
+   "direction",
+   "flow",
+   "pointer",
+   "right arrow",
+   "connector"
+  ]
+ },
+ "official/clementbosc/gcp-icons#0": {
+  "name": "gcp cloud logo",
+  "keywords": [
+   "gcp",
+   "google cloud",
+   "cloud platform",
+   "logo",
+   "cloud icon",
+   "branding"
+  ]
+ },
+ "official/clementbosc/gcp-icons#1": {
+  "name": "stepped block shape",
+  "keywords": [
+   "abstract shape",
+   "stairs",
+   "blocks",
+   "geometric",
+   "staircase",
+   "layered squares"
+  ]
+ },
+ "official/clementbosc/gcp-icons#2": {
+  "name": "server rack icons",
+  "keywords": [
+   "server",
+   "rack",
+   "hardware",
+   "compute",
+   "infrastructure",
+   "gcp",
+   "stacked servers"
+  ]
+ },
+ "official/clementbosc/gcp-icons#3": {
+  "name": "file folder documents",
+  "keywords": [
+   "folder",
+   "files",
+   "documents",
+   "storage",
+   "archive",
+   "stack of papers"
+  ]
+ },
+ "official/clementbosc/gcp-icons#4": {
+  "name": "bank with shield",
+  "keywords": [
+   "bank",
+   "security",
+   "shield",
+   "finance",
+   "identity",
+   "trust",
+   "protected institution"
+  ]
+ },
+ "official/clementbosc/gcp-icons#6": {
+  "name": "password asterisks brackets",
+  "keywords": [
+   "password",
+   "secret",
+   "key value",
+   "credentials",
+   "masked input",
+   "security",
+   "brackets"
+  ]
+ },
+ "official/clementbosc/gcp-icons#17": {
+  "name": "network switch node",
+  "keywords": [
+   "hub",
+   "connector",
+   "network",
+   "switch",
+   "node",
+   "circuit",
+   "gcp"
+  ]
+ },
+ "official/clementbosc/gcp-icons#18": {
+  "name": "crossing arrows",
+  "keywords": [
+   "swap",
+   "exchange",
+   "cross",
+   "arrows",
+   "shuffle",
+   "interconnect"
+  ]
+ },
+ "official/clementbosc/gcp-icons#19": {
+  "name": "expand arrows diamond",
+  "keywords": [
+   "expand",
+   "scale out",
+   "arrows",
+   "diamond",
+   "distribute",
+   "autoscale"
+  ]
+ },
+ "official/clementbosc/gcp-icons#20": {
+  "name": "consolidate arrows diamond",
+  "keywords": [
+   "consolidate",
+   "merge",
+   "arrows",
+   "diamond",
+   "aggregate",
+   "converge"
+  ]
+ },
+ "official/clementbosc/gcp-icons#21": {
+  "name": "load balancer",
+  "keywords": [
+   "load balancer",
+   "distribute",
+   "traffic",
+   "network",
+   "gcp",
+   "connector"
+  ]
+ },
+ "official/clementbosc/gcp-icons#22": {
+  "name": "fan out arrow",
+  "keywords": [
+   "fan out",
+   "branch",
+   "arrow",
+   "distribute",
+   "pipeline",
+   "curve"
+  ]
+ },
+ "official/clementbosc/gcp-icons#23": {
+  "name": "traffic split arrows",
+  "keywords": [
+   "split",
+   "route",
+   "arrows",
+   "traffic",
+   "diverge",
+   "up down"
+  ]
+ },
+ "official/clementbosc/gcp-icons#24": {
+  "name": "server rack stack",
+  "keywords": [
+   "server",
+   "rack",
+   "database",
+   "stack",
+   "storage",
+   "cluster"
+  ]
+ },
+ "official/clementbosc/gcp-icons#25": {
+  "name": "security shield",
+  "keywords": [
+   "shield",
+   "security",
+   "protection",
+   "trust",
+   "encryption",
+   "safety"
+  ]
+ },
+ "official/clementbosc/gcp-icons#26": {
+  "name": "directions arrows center",
+  "keywords": [
+   "directions",
+   "arrows",
+   "compass",
+   "diamond",
+   "center",
+   "navigation"
+  ]
+ },
+ "official/clementbosc/gcp-icons#27": {
+  "name": "network topology nodes",
+  "keywords": [
+   "network",
+   "nodes",
+   "graph",
+   "connection",
+   "topology",
+   "link"
+  ]
+ },
+ "official/clementbosc/gcp-icons#28": {
+  "name": "list rows",
+  "keywords": [
+   "list",
+   "rows",
+   "bars",
+   "text lines",
+   "menu",
+   "table"
+  ]
+ },
+ "official/clementbosc/gcp-icons#29": {
+  "name": "connected square nodes",
+  "keywords": [
+   "square",
+   "nodes",
+   "loop",
+   "cycle",
+   "connector",
+   "diagram"
+  ]
+ },
+ "official/clementbosc/gcp-icons#30": {
+  "name": "org chart tree",
+  "keywords": [
+   "hierarchy",
+   "org chart",
+   "tree",
+   "structure",
+   "nodes",
+   "branches"
+  ]
+ },
+ "official/clementbosc/gcp-icons#31": {
+  "name": "toggle switch",
+  "keywords": [
+   "switch",
+   "toggle",
+   "gateway",
+   "connector",
+   "on off",
+   "network"
+  ]
+ },
+ "official/clementbosc/gcp-icons#32": {
+  "name": "circuit connector",
+  "keywords": [
+   "circuit",
+   "chip",
+   "connector",
+   "microchip",
+   "processor",
+   "hardware"
+  ]
+ },
+ "official/clementbosc/gcp-icons#33": {
+  "name": "cloud iot hub",
+  "keywords": [
+   "cloud",
+   "iot",
+   "connector",
+   "network",
+   "endpoints",
+   "hub"
+  ]
+ },
+ "official/clementbosc/gcp-icons#34": {
+  "name": "chevron arrows stack",
+  "keywords": [
+   "chevron",
+   "arrows",
+   "triangle",
+   "upload",
+   "peak",
+   "levels"
+  ]
+ },
+ "official/clementbosc/gcp-icons#35": {
+  "name": "puzzle connector shape",
+  "keywords": [
+   "puzzle",
+   "connector",
+   "abstract",
+   "shape",
+   "interlock",
+   "block"
+  ]
+ },
+ "official/clementbosc/gcp-icons#36": {
+  "name": "vertical bars group",
+  "keywords": [
+   "bars",
+   "columns",
+   "vertical",
+   "group",
+   "pipe",
+   "instances"
+  ]
+ },
+ "official/clementbosc/gcp-icons#37": {
+  "name": "pipeline chain link",
+  "keywords": [
+   "pipeline",
+   "chain",
+   "link",
+   "connector",
+   "flow",
+   "path"
+  ]
+ },
+ "official/clementbosc/gcp-icons#38": {
+  "name": "clock history",
+  "keywords": [
+   "clock",
+   "history",
+   "time",
+   "schedule",
+   "magnifier",
+   "monitoring"
+  ]
+ },
+ "official/clementbosc/gcp-icons#39": {
+  "name": "branch flow nodes",
+  "keywords": [
+   "branch",
+   "nodes",
+   "flow",
+   "circuit",
+   "connection",
+   "path"
+  ]
+ },
+ "official/clementbosc/gcp-icons#40": {
+  "name": "layered stack arrow",
+  "keywords": [
+   "stack",
+   "layers",
+   "arrow",
+   "deploy",
+   "storage",
+   "levels"
+  ]
+ },
+ "official/clementbosc/gcp-icons#41": {
+  "name": "three way connector",
+  "keywords": [
+   "connector",
+   "branch",
+   "wrench",
+   "network",
+   "distribute",
+   "node"
+  ]
+ },
+ "official/clementbosc/gcp-icons#42": {
+  "name": "processor chip bolt",
+  "keywords": [
+   "chip",
+   "processor",
+   "cpu",
+   "power",
+   "bolt",
+   "hardware"
+  ]
+ },
+ "official/clementbosc/gcp-icons#43": {
+  "name": "layered diamond stack",
+  "keywords": [
+   "stack",
+   "layers",
+   "diamond",
+   "storage",
+   "levels",
+   "database"
+  ]
+ },
+ "official/clementbosc/gcp-icons#44": {
+  "name": "chevron layers arrow",
+  "keywords": [
+   "chevron",
+   "layers",
+   "levels",
+   "arrow",
+   "stack",
+   "priority"
+  ]
+ },
+ "official/clementbosc/gcp-icons#45": {
+  "name": "hexagon layered stack",
+  "keywords": [
+   "hexagon",
+   "stack",
+   "layers",
+   "container",
+   "cube",
+   "gcp"
+  ]
+ },
+ "official/clementbosc/gcp-icons#46": {
+  "name": "pill button list",
+  "keywords": [
+   "list",
+   "pills",
+   "buttons",
+   "rows",
+   "menu",
+   "options"
+  ]
+ },
+ "official/clementbosc/gcp-icons#47": {
+  "name": "chain link circle",
+  "keywords": [
+   "chain",
+   "link",
+   "circle",
+   "connection",
+   "node",
+   "network",
+   "loop"
+  ]
+ },
+ "official/clementbosc/gcp-icons#48": {
+  "name": "pill capsule stack",
+  "keywords": [
+   "pill",
+   "capsule",
+   "stack",
+   "rounded",
+   "cylinder",
+   "three shapes"
+  ]
+ },
+ "official/clementbosc/gcp-icons#49": {
+  "name": "network node circle",
+  "keywords": [
+   "network",
+   "node",
+   "graph",
+   "circle",
+   "connection",
+   "hub"
+  ]
+ },
+ "official/clementbosc/gcp-icons#50": {
+  "name": "hexagon cluster",
+  "keywords": [
+   "hexagon",
+   "cluster",
+   "pentagon",
+   "group",
+   "cells",
+   "molecule"
+  ]
+ },
+ "official/clementbosc/gcp-icons#51": {
+  "name": "radial arrow ring",
+  "keywords": [
+   "arrows",
+   "radial",
+   "ring",
+   "loop",
+   "dots",
+   "circle",
+   "sync"
+  ]
+ },
+ "official/clementbosc/gcp-icons#52": {
+  "name": "connector pins bracket",
+  "keywords": [
+   "connector",
+   "pins",
+   "bracket",
+   "circuit",
+   "sockets",
+   "plug"
+  ]
+ },
+ "official/clementbosc/gcp-icons#53": {
+  "name": "step bracket shape",
+  "keywords": [
+   "bracket",
+   "step",
+   "corner",
+   "frame",
+   "abstract",
+   "puzzle"
+  ]
+ },
+ "official/clementbosc/gcp-icons#54": {
+  "name": "triangle node loop",
+  "keywords": [
+   "triangle",
+   "nodes",
+   "loop",
+   "circles",
+   "connection",
+   "network"
+  ]
+ },
+ "official/clementbosc/gcp-icons#55": {
+  "name": "hub and spoke nodes",
+  "keywords": [
+   "hub",
+   "spoke",
+   "nodes",
+   "dots",
+   "network",
+   "cluster",
+   "center"
+  ]
+ },
+ "official/clementbosc/gcp-icons#56": {
+  "name": "hexagon cross nodes",
+  "keywords": [
+   "hexagon",
+   "cross",
+   "x shape",
+   "nodes",
+   "dots",
+   "frame"
+  ]
+ },
+ "official/clementbosc/gcp-icons#57": {
+  "name": "analytics magnifier",
+  "keywords": [
+   "magnifying glass",
+   "search",
+   "analytics",
+   "chart",
+   "bars",
+   "insights"
+  ]
+ },
+ "official/clementbosc/gcp-icons#58": {
+  "name": "diamond cluster",
+  "keywords": [
+   "diamond",
+   "cluster",
+   "squares",
+   "rotated",
+   "grid",
+   "four shapes"
+  ]
+ },
+ "official/clementbosc/gcp-icons#59": {
+  "name": "hexagon ribbon box",
+  "keywords": [
+   "hexagon",
+   "ribbon",
+   "box",
+   "package",
+   "fold",
+   "cube"
+  ]
+ },
+ "official/clementbosc/gcp-icons#60": {
+  "name": "cube bracket stack",
+  "keywords": [
+   "cube",
+   "bracket",
+   "stack",
+   "boxes",
+   "frame",
+   "container"
+  ]
+ },
+ "official/clementbosc/gcp-icons#61": {
+  "name": "cube hexagon box",
+  "keywords": [
+   "cube",
+   "hexagon",
+   "box",
+   "package",
+   "3d",
+   "container"
+  ]
+ },
+ "official/clementbosc/gcp-icons#62": {
+  "name": "double arrow chevron",
+  "keywords": [
+   "arrow",
+   "chevron",
+   "double",
+   "next",
+   "forward",
+   "play"
+  ]
+ },
+ "official/clementbosc/gcp-icons#63": {
+  "name": "facing chevrons dots",
+  "keywords": [
+   "chevron",
+   "arrows",
+   "facing",
+   "dots",
+   "compress",
+   "pinch"
+  ]
+ },
+ "official/clementbosc/gcp-icons#64": {
+  "name": "layered squares arrow",
+  "keywords": [
+   "squares",
+   "layers",
+   "puzzle",
+   "arrow",
+   "step",
+   "stack"
+  ]
+ },
+ "official/clementbosc/gcp-icons#65": {
+  "name": "pinwheel arrow shape",
+  "keywords": [
+   "pinwheel",
+   "arrow",
+   "chevron",
+   "abstract",
+   "sync",
+   "flow"
+  ]
+ },
+ "official/clementbosc/gcp-icons#66": {
+  "name": "diamond flag ribbon",
+  "keywords": [
+   "diamond",
+   "flag",
+   "ribbon",
+   "banner",
+   "outline",
+   "abstract"
+  ]
+ },
+ "official/clementbosc/gcp-icons#67": {
+  "name": "cpu lightning chip",
+  "keywords": [
+   "cpu",
+   "chip",
+   "processor",
+   "lightning",
+   "bolt",
+   "power",
+   "circuit"
+  ]
+ },
+ "official/clementbosc/gcp-icons#68": {
+  "name": "radial arrow center",
+  "keywords": [
+   "radial",
+   "arrows",
+   "circle",
+   "center dot",
+   "loop",
+   "sync"
+  ]
+ },
+ "official/clementbosc/gcp-icons#69": {
+  "name": "cpu diamond chip",
+  "keywords": [
+   "cpu",
+   "chip",
+   "processor",
+   "diamond",
+   "circuit",
+   "microchip"
+  ]
+ },
+ "official/clementbosc/gcp-icons#70": {
+  "name": "loop arrow lines",
+  "keywords": [
+   "loop",
+   "arrow",
+   "lines",
+   "bars",
+   "flow",
+   "process"
+  ]
+ },
+ "official/clementbosc/gcp-icons#71": {
+  "name": "clover cross node",
+  "keywords": [
+   "clover",
+   "cross",
+   "node",
+   "dot",
+   "loop",
+   "abstract"
+  ]
+ },
+ "official/clementbosc/gcp-icons#72": {
+  "name": "chevron bracket box",
+  "keywords": [
+   "chevron",
+   "arrows",
+   "bracket",
+   "box",
+   "cube",
+   "frame"
+  ]
+ },
+ "official/clementbosc/gcp-icons#73": {
+  "name": "chat box diamond",
+  "keywords": [
+   "chat",
+   "bubble",
+   "box",
+   "diamond",
+   "message",
+   "speech"
+  ]
+ },
+ "official/clementbosc/gcp-icons#74": {
+  "name": "brain maze hexagon",
+  "keywords": [
+   "brain",
+   "maze",
+   "hexagon",
+   "puzzle",
+   "abstract",
+   "logic"
+  ]
+ },
+ "official/clementbosc/gcp-icons#75": {
+  "name": "maze triangle shape",
+  "keywords": [
+   "maze",
+   "triangle",
+   "puzzle",
+   "abstract",
+   "path",
+   "circuit"
+  ]
+ },
+ "official/clementbosc/gcp-icons#76": {
+  "name": "pinwheel arrow pair",
+  "keywords": [
+   "pinwheel",
+   "arrow",
+   "chevron",
+   "pair",
+   "abstract",
+   "sync"
+  ]
+ },
+ "official/clementbosc/gcp-icons#77": {
+  "name": "document with brackets",
+  "keywords": [
+   "document",
+   "brackets",
+   "list",
+   "file",
+   "expand",
+   "gcp",
+   "cloud",
+   "icon"
+  ]
+ },
+ "official/clementbosc/gcp-icons#78": {
+  "name": "translate icon",
+  "keywords": [
+   "translate",
+   "language",
+   "text",
+   "letter a",
+   "gcp",
+   "cloud",
+   "localization",
+   "icon"
+  ]
+ },
+ "official/clementbosc/gcp-icons#79": {
+  "name": "waveform signal lines",
+  "keywords": [
+   "waveform",
+   "signal",
+   "audio",
+   "pulse",
+   "lines",
+   "gcp",
+   "cloud",
+   "icon"
+  ]
+ },
+ "official/clementbosc/gcp-icons#80": {
+  "name": "diamond with dot",
+  "keywords": [
+   "diamond",
+   "dot",
+   "rhombus",
+   "marker",
+   "gcp",
+   "cloud",
+   "icon",
+   "node"
+  ]
+ },
+ "official/clementbosc/gcp-icons#81": {
+  "name": "bar chart pillars",
+  "keywords": [
+   "bar chart",
+   "columns",
+   "bars",
+   "graph",
+   "data",
+   "gcp",
+   "cloud",
+   "icon"
+  ]
+ },
+ "official/clementbosc/gcp-icons#82": {
+  "name": "dot chart with pointer",
+  "keywords": [
+   "chart",
+   "dots",
+   "cursor",
+   "pointer",
+   "analytics",
+   "gcp",
+   "cloud",
+   "icon"
+  ]
+ },
+ "clainchoupi/assets/importAsLib/logosAsLib#0": {
+  "name": "crossed leaf shapes",
+  "keywords": [
+   "leaf",
+   "petal",
+   "bowtie",
+   "crossed shapes",
+   "abstract",
+   "hatch",
+   "purple",
+   "yellow"
+  ]
+ },
+ "clainchoupi/assets/importAsLib/logosAsLib#1": {
+  "name": "green s-curve diamond",
+  "keywords": [
+   "s shape",
+   "diamond",
+   "swirl",
+   "letter s",
+   "abstract",
+   "hatch",
+   "green",
+   "logo"
+  ]
+ },
+ "clainchoupi/assets/importAsLib/logosAsLib#2": {
+  "name": "gear with lightning bolt",
+  "keywords": [
+   "gear",
+   "lightning",
+   "power",
+   "settings",
+   "energy",
+   "cog",
+   "hatch",
+   "yellow"
+  ]
+ },
+ "clainchoupi/assets/importAsLib/logosAsLib#3": {
+  "name": "orange peaked badge",
+  "keywords": [
+   "badge",
+   "peaks",
+   "m shape",
+   "abstract",
+   "hatch",
+   "orange",
+   "mountain",
+   "emblem"
+  ]
+ },
+ "clainchoupi/assets/importAsLib/logosAsLib#4": {
+  "name": "curved petal outline",
+  "keywords": [
+   "petal",
+   "curve",
+   "cat ear",
+   "abstract",
+   "hatch",
+   "red",
+   "orange",
+   "swirl"
+  ]
+ },
+ "clainchoupi/assets/importAsLib/logosAsLib#5": {
+  "name": "teal loop with circles",
+  "keywords": [
+   "loop",
+   "swoosh",
+   "circles",
+   "abstract",
+   "hatch",
+   "teal",
+   "wave",
+   "curve"
+  ]
+ },
+ "clainchoupi/assets/importAsLib/logosAsLib#6": {
+  "name": "docker whale logo",
+  "keywords": [
+   "docker",
+   "whale",
+   "containers",
+   "logo",
+   "devops",
+   "hatch",
+   "blue",
+   "ship"
+  ]
+ },
+ "clainchoupi/assets/importAsLib/logosAsLib#7": {
+  "name": "twitter bird logo",
+  "keywords": [
+   "twitter",
+   "bird",
+   "social",
+   "logo",
+   "hatch",
+   "blue",
+   "x",
+   "tweet"
+  ]
+ },
+ "clainchoupi/assets/importAsLib/logosAsLib#8": {
+  "name": "triangle mountain logo",
+  "keywords": [
+   "triangle",
+   "mountain",
+   "peak",
+   "abstract logo",
+   "hatch",
+   "orange",
+   "emblem",
+   "arrow"
+  ]
+ },
+ "clainchoupi/assets/importAsLib/logosAsLib#9": {
+  "name": "chevron shapes cross",
+  "keywords": [
+   "chevron",
+   "arrow shapes",
+   "diamond",
+   "abstract",
+   "hatch",
+   "purple",
+   "yellow",
+   "cross"
+  ]
+ },
+ "clainchoupi/assets/importAsLib/logosAsLib#10": {
+  "name": "vue logo chevron",
+  "keywords": [
+   "vue",
+   "v shape",
+   "chevron",
+   "javascript",
+   "framework",
+   "logo",
+   "green",
+   "gray"
+  ]
+ },
+ "clainchoupi/assets/importAsLib/logosAsLib#11": {
+  "name": "speech bubble cluster",
+  "keywords": [
+   "speech bubbles",
+   "chat",
+   "pills",
+   "sticky notes",
+   "colorful",
+   "rounded rectangles",
+   "comments",
+   "group"
+  ]
+ },
+ "clainchoupi/assets/importAsLib/logosAsLib#12": {
+  "name": "cloud shape",
+  "keywords": [
+   "cloud",
+   "weather",
+   "sky",
+   "icon",
+   "blue",
+   "outline",
+   "storage",
+   "hosting"
+  ]
+ },
+ "clainchoupi/assets/importAsLib/logosAsLib#13": {
+  "name": "angular logo shield",
+  "keywords": [
+   "angular",
+   "shield",
+   "letter a",
+   "javascript",
+   "framework",
+   "logo",
+   "red",
+   "typescript"
+  ]
+ },
+ "clainchoupi/assets/importAsLib/logosAsLib#14": {
+  "name": "react atom logo",
+  "keywords": [
+   "react",
+   "atom",
+   "orbit",
+   "javascript",
+   "framework",
+   "logo",
+   "electron",
+   "blue"
+  ]
+ },
+ "clainchoupi/assets/importAsLib/logosAsLib#15": {
+  "name": "linkedin logo",
+  "keywords": [
+   "linkedin",
+   "social",
+   "professional",
+   "logo",
+   "in",
+   "square",
+   "blue",
+   "network"
+  ]
+ },
+ "jordanbrauer/jorb#7": {
+  "name": "green checkmark circle",
+  "keywords": [
+   "checkmark",
+   "success",
+   "approve",
+   "done",
+   "confirm",
+   "icon",
+   "green",
+   "circle"
+  ]
+ },
+ "jordanbrauer/jorb#8": {
+  "name": "red x circle",
+  "keywords": [
+   "error",
+   "cancel",
+   "close",
+   "reject",
+   "fail",
+   "icon",
+   "red",
+   "circle"
+  ]
+ },
+ "jordanbrauer/jorb#78": {
+  "name": "toggle switch off",
+  "keywords": [
+   "toggle",
+   "switch",
+   "off",
+   "on",
+   "checkbox",
+   "ui control",
+   "white",
+   "green"
+  ]
+ },
+ "jordanbrauer/jorb#79": {
+  "name": "toggle switch neutral",
+  "keywords": [
+   "toggle",
+   "switch",
+   "gray",
+   "ui control",
+   "checkbox",
+   "on off",
+   "circle",
+   "pill"
+  ]
+ },
+ "jordanbrauer/jorb#80": {
+  "name": "toggle switch teal",
+  "keywords": [
+   "toggle",
+   "switch",
+   "teal",
+   "ui control",
+   "checkbox",
+   "on off",
+   "circle",
+   "pill"
+  ]
+ },
+ "jordanbrauer/jorb#81": {
+  "name": "toggle switch outline",
+  "keywords": [
+   "toggle",
+   "switch",
+   "outline",
+   "ui control",
+   "checkbox",
+   "on off",
+   "circle",
+   "pill"
+  ]
+ },
+ "tonac-qa/packages/excalidraw/tests/fixtures/fixture_library#0": {
+  "name": "hatched rectangle frame",
+  "keywords": [
+   "rectangle",
+   "hatched",
+   "fill sample",
+   "placeholder",
+   "frame",
+   "red",
+   "swatch",
+   "texture"
+  ]
+ }
+}

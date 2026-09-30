@@ -1,0 +1,88 @@
+{
+ "row": {
+  "id": "endurable-twister",
+  "working_directory": "/work/project",
+  "backend_type": "windsurf",
+  "model": "swe-2-medium",
+  "agent_mode": "bypass",
+  "created_at": 1790620602,
+  "last_activity_at": 1790620615,
+  "title": "Read alpha and beta, create gamma.txt",
+  "main_chain_id": 34,
+  "shell_last_seen_index": 0,
+  "cogs_json": "<redacted: private context>",
+  "workspace_dirs": "[]",
+  "hidden": 0,
+  "metadata": "{\"total_credit_cost\":0,\"total_acu_cost\":0.0}"
+ },
+ "schema_versions": [
+  [
+   1,
+   "initial_schema"
+  ],
+  [
+   2,
+   "add_thinking_column"
+  ],
+  [
+   3,
+   "add_prompt_history"
+  ],
+  [
+   4,
+   "add_metadata_column"
+  ],
+  [
+   5,
+   "message_forest"
+  ],
+  [
+   6,
+   "add_node_metadata"
+  ],
+  [
+   7,
+   "add_shell_context"
+  ],
+  [
+   8,
+   "add_session_cogs"
+  ],
+  [
+   9,
+   "add_rendered_commits"
+  ],
+  [
+   10,
+   "add_workspace_dirs"
+  ],
+  [
+   11,
+   "add_prompt_history_is_shell"
+  ],
+  [
+   12,
+   "add_app_state"
+  ],
+  [
+   13,
+   "rename_permission_mode_to_agent_mode"
+  ],
+  [
+   14,
+   "tool_call_state"
+  ],
+  [
+   15,
+   "add_hidden_column"
+  ],
+  [
+   16,
+   "add_session_json_metadata"
+  ],
+  [
+   17,
+   "subagent_heads"
+  ]
+ ]
+}

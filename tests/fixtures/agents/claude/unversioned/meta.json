@@ -1,0 +1,12 @@
+{
+  "kind": "claude",
+  "cli_version": null,
+  "log_format": null,
+  "recorded": "2026-09-27",
+  "files": {
+    "log.jsonl": "interactive + headless session log (~/.claude/projects/<dir>/<id>.jsonl)",
+    "stream.jsonl": "claude -p --output-format stream-json --verbose"
+  },
+  "note": "Sanitized before CLI versions were recorded: the per-line `version` field was stripped. Kept to read older sessions; new recordings go in a <version>/ folder.",
+  "expected_unknown": []
+}

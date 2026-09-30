@@ -1,0 +1,29 @@
+{
+  "kind": "grok",
+  "cli_version": "1.0.41",
+  "log_format": "1",
+  "recorded": "2026-09-28",
+  "model": "grok-4.7-build-fast",
+  "command": [
+    "grok",
+    "-p",
+    "Use spawn_subagent exactly once (a general sub-agent, not read-only) and have it create the file hello.txt containing the single word hi in the current directory; wait for its result. Then run the shell command `ls` once yourself. Reply with one word: done.",
+    "-m",
+    "grok-4.7-build-fast",
+    "--output-format",
+    "streaming-json",
+    "--always-approve"
+  ],
+  "prompt": "Use spawn_subagent exactly once (a general sub-agent, not read-only) and have it create the file hello.txt containing the single word hi in the current directory; wait for its result. Then run the shell command `ls` once yourself. Reply with one word: done.",
+  "cwd": "/work/project",
+  "native_id": "01a0e788-92dc-7ea0-9a59-d0a4e2e2d948",
+  "expected": {
+    "files": [
+      "hello.txt"
+    ],
+    "commands": 1,
+    "subagents": 1
+  },
+  "expected_unknown": [],
+  "note": "Recorded by scripts/record_agent_fixture.py; paths sanitized (/work/project, /home/user), signatures dropped. The native sessions were deleted after copying."
+}

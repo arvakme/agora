@@ -1,0 +1,8 @@
+/* The comment list floats over the canvas (CommentsDrawer.tsx, the shell of app/floatShell.ts): out of the layout, so opening it
+   never changes the canvas's size; rounded, with a shadow; dragged by its head; sized by eight handles; folded to a rail tab (styles.css `.rail-tab`).
+   These rules replace the flush column of styles.css `.drawer`. */
+.canvas-view .drawer { position: absolute; flex: none; max-width: none; z-index: 7; display: flex; flex-direction: column; min-height: 0; overflow: visible; border: 0; border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--frame), 0 12px 32px rgb(0 0 0 / 0.16); color: var(--fg); }
+.canvas-view .drawer-head { cursor: grab; touch-action: none; user-select: none; border-radius: var(--r-lg) var(--r-lg) 0 0; outline: 0; }
+.canvas-view .drawer-head:active { cursor: grabbing; }
+.canvas-view .drawer-head button { cursor: pointer; }
+.canvas-view .drawer-list { flex: 1; min-height: 0; border-radius: 0 0 var(--r-lg) var(--r-lg); }

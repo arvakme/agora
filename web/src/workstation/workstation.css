@@ -1,0 +1,183 @@
+/* 工位视图 (docs/workstation.md; design-system.md v0.2), drawn in lines like the rest of the app: white
+ * paper, a 1px ink line round a floating card (--frame) or a control (--box) instead of a shadow, small
+ * radii, and thin hatching (--ws-hatch) for "in progress" and "waiting". Purple only for the selected,
+ * for someone writing and for the traced way; the warm caution colour only for "needs you" (waiting,
+ * conflict); icons are ink until they are selected or active. No glow, no gradient; loops stop with
+ * reduced motion. Reads only tokens.css's semantic names. */
+:root {
+  --ws-hatch: repeating-linear-gradient(135deg, color-mix(in srgb, var(--hatch) 55%, transparent) 0 1px, transparent 1px 5px);
+  --ws-hatch-warm: repeating-linear-gradient(135deg, color-mix(in srgb, var(--caution) 32%, transparent) 0 1px, transparent 1px 5px);
+}
+.ws-layer { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
+.ws-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.ws-rings rect { fill: none; stroke-width: 1.5; transition: stroke 300ms var(--ease-out), opacity 300ms var(--ease-out); animation: ws-ring-in 300ms var(--ease-out) both; }
+.ws-rings rect[data-exit] { opacity: 0; }
+@keyframes ws-ring-in { from { opacity: 0; } }
+.ws-rings rect[data-tone="write"] { stroke: var(--accent); stroke-width: 1.6; }
+.ws-rings rect[data-tone="wait"] { stroke: var(--caution); stroke-width: 1.6; }
+.ws-rings rect[data-tone="read"] { stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 4 4; }
+.ws-rings rect[data-tone="busy"] { stroke: var(--fg-muted); stroke-width: 1.2; }
+.ws-rings rect[data-tone="conflict"] { stroke: var(--caution); stroke-width: 2; }
+.ws-rings rect[data-tone="hover"] { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.ws-rings rect[data-tone="sel"] { stroke: var(--accent); stroke-width: 2; }
+.ws-worker[data-idle] > g { opacity: 0.62; }
+.ws-tether { fill: none; stroke: var(--fg-faint); stroke-width: 1.2; stroke-dasharray: 2 4; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.ws-worker { pointer-events: auto; cursor: pointer; outline: none; }
+.ws-worker > g { transition: opacity 200ms var(--ease-out); }
+.ws-worker:focus-visible .ws-hit { stroke: var(--accent); stroke-width: 1; }
+
+/* 追踪 (docs/workstation.md §11): everyone but the traced agent and its sub-agents dims to 30% and
+ * takes no clicks, with their bubbles, rings, tethers and glances */
+.ws-worker[data-dim="1"] { pointer-events: none; }
+/* the head looking out of a door's hole (./hatch.ts): clickable (follows its owner), dimmed by a trace like a figure */
+.ws-peek { pointer-events: auto; cursor: pointer; outline: none; }
+.ws-peek[data-dim="1"] { pointer-events: none; opacity: 0.3; }
+.ws-peek:focus-visible .ws-hit { stroke: var(--accent); stroke-width: 1; }
+.ws-worker[data-dim="1"] > g { opacity: 0.3; }
+.ws-rings rect[data-dim], .ws-tether[data-dim] { opacity: 0.3; }
+/* the way it went: a thin purple line along the bridges and ladders it walked; a sub-agent's errand a thin dashed one */
+.ws-trace { transition: opacity 200ms var(--ease-out); }
+.ws-trace[data-exit] { opacity: 0; }
+.ws-trace-way { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; opacity: 0.9; }
+.ws-trace-sub { fill: none; stroke: var(--fg-muted); stroke-width: 1.2; stroke-dasharray: 3 4; stroke-linecap: round; vector-effect: non-scaling-stroke; opacity: 0.85; }
+/* a stop's number at its node's top-left corner: filled once reached, hollow and faint for what comes
+ * later in a replay; the sub-diagram it went into there beside it */
+.ws-stop, .ws-errand { position: absolute; left: 0; top: 0; z-index: 2; pointer-events: none; will-change: transform; animation: ws-ring-in 200ms var(--ease-out) backwards; transition: opacity 200ms var(--ease-out); }
+.ws-stop { margin: -8px 0 0 -8px; }
+/* 按轮追踪: the number is a button; hovering it lists this stop's tool calls (a row hovered in the trajectory lights it) */
+.ws-stop i { pointer-events: auto; cursor: pointer; }
+.ws-stop[data-hot] i { background: var(--accent); color: var(--bg); box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--accent); }
+.ws-stop-calls { position: absolute; left: 0; top: 20px; z-index: 3; display: none; min-width: 190px; max-width: 320px; padding: 6px 8px; border-radius: var(--r-sm); background: var(--surface); box-shadow: var(--frame); color: var(--fg); font-size: 11px; line-height: 1.5; pointer-events: none; }
+.ws-stop:hover .ws-stop-calls, .ws-stop:focus-within .ws-stop-calls { display: block; }
+.ws-stop-calls b { display: block; margin-bottom: 3px; font-weight: 600; }
+.ws-stop-calls .ws-stop-entry { display: block; margin-bottom: 3px; color: var(--fg-muted); }
+.ws-stop-calls ol { margin: 0; padding: 0 0 0 16px; }
+.ws-stop-calls li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 10.5px; }
+.ws-stop-calls li[data-kind="spawn"], .ws-stop-calls li[data-kind="back"] { font-family: inherit; color: var(--accent); }
+.ws-stop-calls li[data-hot] { background: var(--accent-fill); color: var(--accent-fg); }
+.ws-stop-calls li.more, .ws-stop-calls .none { color: var(--fg-muted); font-family: inherit; }
+.ws-stop i { display: grid; place-items: center; box-sizing: border-box; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-ink); color: var(--fg); font: 600 10.5px/1 var(--font-sans); font-style: normal; font-variant-numeric: tabular-nums; transition: background 200ms var(--ease-out), color 200ms var(--ease-out); }
+.ws-stop[data-done] i { background: var(--line-ink); box-shadow: 0 0 0 1.5px var(--surface); color: var(--bg); }
+.ws-stop:not([data-done]) > * { opacity: 0.55; }
+/* outside its node, on the nearest empty side (./stopPill.ts sets left and top), opaque (only the number of a stop not reached yet is faint); a long list of sub-diagrams is cut to one line with … (the full words are in its hover title) */
+.ws-stop em { position: absolute; padding: 0 6px; border-radius: var(--r-xs); background: var(--surface); box-shadow: var(--frame); color: var(--fg); font-size: 10.5px; font-style: normal; line-height: 16px; white-space: nowrap; max-width: min(240px, calc(100vw - 40px)); overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; opacity: 1 !important; }
+.ws-errand { margin: -8px 0 0 -8px; opacity: 0.9; }
+.ws-stop[data-exit], .ws-errand[data-exit] { opacity: 0; }
+
+/* bubbles, chips and the tray are HTML in screen space; the frame loop sets their transform */
+.ws-bub-pos, .ws-pchip, .ws-tray { position: absolute; left: 0; top: 0; will-change: transform; }
+.ws-bub-pos { pointer-events: none; }
+/* enter: fade + a 4px rise (180 ms); leave: fade (120 ms); new words cross-fade in */
+.ws-bub { animation: ws-bub-in 180ms var(--ease-out) both; }
+.ws-bub-pos[data-folded] { visibility: hidden !important; }
+.ws-bub[data-exit] { animation: ws-bub-out 120ms ease-in both; pointer-events: none !important; }
+.ws-bub-in { display: inline-flex; align-items: center; gap: inherit; animation: ws-fade 160ms var(--ease-out) both; }
+@keyframes ws-bub-in { from { opacity: 0; transform: translateY(4px); } }
+@keyframes ws-bub-out { to { opacity: 0; transform: translateY(2px); } }
+@keyframes ws-fade { from { opacity: 0.25; } }
+.ws-bub { position: relative; pointer-events: auto; display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 3px 10px 3px 4px; border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--frame); color: var(--fg); font-size: var(--text-sm); white-space: nowrap; cursor: pointer; user-select: none; --icon: var(--fg); }
+.ws-bub .q { max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+/* at most --bub-max wide (= bubbles.ts BUBBLE_MAX_W; the selected one adds its buttons beside the words): the long parts (path, command,
+ * place, the words a step says, the question) share what is left and end in …; hovering shows the words in full */
+.ws-bub { --bub-max: 260px; }
+.ws-bub-in { max-width: calc(var(--bub-max) - 14px); min-width: 0; }
+.ws-bub[data-sub] .ws-bub-in { max-width: calc(var(--bub-max) - 11px); }
+.ws-bub-in > .f, .ws-bub-in > .q, .ws-bub-in > .portal, .ws-bub-in > span:not([class]), .ws-bub-in > .el { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-bub-in > .f, .ws-bub-in > .q, .ws-bub-in > .portal, .ws-bub-in > span:not([class]) { min-width: 0; }
+/* what gives way first: the timer / the words a step adds, then a path or a question, then the place, the sub-diagram last */
+.ws-bub-in > .el { flex-shrink: 8; }
+.ws-bub-in > .f, .ws-bub-in > .q { flex-shrink: 3; }
+/* the title (the agent's name and its session's name) is the longest and the least needed: it gives way first; the warning after the timer. The state word, the icon and the avatar never do — and neither do the buttons of the selected bubble, which sit beside the words, off them */
+.ws-bub-in > .who { flex: 0 6 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 6; }
+.ws-bub-in > .warn { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 4; }
+.ws-bub-in > .v { flex-shrink: 0; }
+.ws-bub-in > .agent-avatar { flex-shrink: 0; }
+.ws-bub-in > svg { flex-shrink: 0; }
+.ws-bub-in > span:not([class]) { flex-shrink: 2; }
+.ws-bub-in > .portal { flex-shrink: 1; }
+.ws-bub:not([data-sel]):hover .ws-bub-in { max-width: none; }
+.ws-bub-pos:hover { z-index: 3; }
+.ws-bub .v { font-weight: var(--weight-strong); }
+.ws-bub .f { font-family: var(--font-mono); font-size: 11.5px; }
+.ws-bub .el { display: inline-block; min-width: 3.4em; color: var(--fg-subtle); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.ws-bub .who { font-weight: var(--weight-strong); margin-right: -2px; }
+.ws-bub .par { color: var(--fg-subtle); font-size: var(--text-xs); margin-right: 2px; }
+.ws-bub .portal { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border-radius: var(--r-xs); box-shadow: var(--box); color: var(--fg-muted); font-size: var(--text-xs); }
+.ws-bub .warn { color: var(--caution); font-size: var(--text-xs); }
+.ws-bub .reply { height: 20px; padding: 0 8px; border-radius: var(--r-xs); background: var(--surface); box-shadow: inset 0 0 0 1px var(--caution); color: var(--fg); font-size: var(--text-xs); line-height: 20px; }
+.ws-bub[data-k="write"] { box-shadow: 0 0 0 1px var(--accent); --icon: var(--accent); }
+.ws-bub[data-k="wait"], .ws-bub[data-k="conflict"] { background: var(--ws-hatch-warm), var(--surface); box-shadow: 0 0 0 1px var(--caution); --icon: var(--caution); }
+.ws-bub[data-k="idle"] { color: var(--fg-muted); box-shadow: 0 0 0 1px var(--fg-faint); --icon: var(--fg-muted); }
+.ws-bub[data-sel] { box-shadow: 0 0 0 2px var(--accent); --icon: var(--accent); }
+.ws-bub[data-sub] { min-height: 24px; padding: 2px 8px 2px 3px; gap: 5px; font-size: var(--text-xs); }
+.ws-bub[data-sub] .f { font-size: 10.5px; }
+.ws-bub[data-dim] { opacity: 0.3; pointer-events: none; }
+/* collapsed to a chip at its figure (no room for the whole bubble near it): the verb only */
+.ws-bub-chip { display: inline-flex; align-items: center; gap: 3px; font-size: var(--text-xs); }
+.ws-bub:not([data-chip]) .ws-bub-chip { position: absolute; left: 0; top: 0; visibility: hidden; pointer-events: none; }
+.ws-bub[data-chip] { min-height: 22px; height: 22px; padding: 0 7px; gap: 0; border-radius: var(--r-pill); }
+.ws-bub[data-chip] .ws-bub-in, .ws-bub[data-chip] .ws-acts { position: absolute; left: 0; top: 0; visibility: hidden; pointer-events: none; }
+/* the tail points at the figure's head (--tail-x from the bubble's left edge); a lifted bubble has a thin stem */
+.ws-bub[data-tail]::before { content: ""; position: absolute; width: 8px; height: 8px; background: var(--surface); transform: rotate(45deg); }
+.ws-bub[data-tail="d"]::before { bottom: -4px; left: calc(var(--tail-x, 18px) - 4px); box-shadow: 1px 1px 0 0 var(--line-ink); }
+.ws-bub[data-tail="l"]::before { left: -4px; top: calc(50% - 4px); box-shadow: -1px 1px 0 0 var(--line-ink); }
+.ws-bub[data-tail="r"]::before { right: -4px; top: calc(50% - 4px); box-shadow: 1px -1px 0 0 var(--line-ink); }
+.ws-bub[data-tail="d"]::after { content: ""; position: absolute; top: calc(100% + 4px); left: calc(var(--tail-x, 18px) - 0.5px); width: 1px; height: var(--stem, 0px); background: var(--line-ink); }
+.ws-bub[data-k="write"][data-tail="d"]::before { box-shadow: 1px 1px 0 0 var(--accent); }
+.ws-bub[data-k="write"][data-tail="l"]::before { box-shadow: -1px 1px 0 0 var(--accent); }
+.ws-bub[data-k="write"][data-tail="r"]::before { box-shadow: 1px -1px 0 0 var(--accent); }
+.ws-bub[data-k="wait"][data-tail="d"]::before, .ws-bub[data-k="conflict"][data-tail="d"]::before { box-shadow: 1px 1px 0 0 var(--caution); }
+.ws-bub[data-k="wait"][data-tail="l"]::before, .ws-bub[data-k="conflict"][data-tail="l"]::before { box-shadow: -1px 1px 0 0 var(--caution); }
+.ws-bub[data-k="wait"][data-tail="r"]::before, .ws-bub[data-k="conflict"][data-tail="r"]::before { box-shadow: 1px -1px 0 0 var(--caution); }
+.ws-acts { display: none; gap: 2px; margin-left: 6px; flex-shrink: 0; }
+.ws-bub:hover .ws-acts, .ws-acts[data-open] { display: inline-flex; }
+.ws-acts button { height: 20px; padding: 0 7px; border-radius: var(--r-xs); box-shadow: var(--box); color: var(--fg); font-size: var(--text-xs); line-height: 20px; }
+.ws-acts button:hover { background: var(--raised-on-surface); }
+.ws-acts button[data-on] { background: var(--accent-wash); box-shadow: inset 0 0 0 1px var(--accent-ring); color: var(--accent-ink); }
+.rc { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--r-xs); background: var(--surface); box-shadow: var(--box); color: var(--fg-muted); font-size: 11px; font-weight: var(--weight-medium); white-space: nowrap; }
+.rc[data-r="running"], .rc[data-r="acknowledged"] { background: var(--ws-hatch), var(--surface); color: var(--fg); }
+.rc[data-r="claimed"], .rc[data-r="returned"] { color: var(--fg); }
+.rc[data-r="accepted"] { box-shadow: inset 0 0 0 1px var(--positive); color: var(--positive); }
+.rc[data-r="exited"], .rc[data-r="failed"], .rc[data-r="blocked"] { box-shadow: inset 0 0 0 1px var(--negative); color: var(--negative); }
+/* 声明完成 is never green (it is not 验收); 验收通过 is; 状态不明 is dashed */
+.rc[data-r="unknown"], .rc[data-r="idle_no_reply"] { background: none; box-shadow: none; outline: 1px dashed var(--fg-muted); outline-offset: -1px; color: var(--fg-subtle); }
+.rc[data-r="waiting"] { background: var(--ws-hatch-warm), var(--surface); box-shadow: inset 0 0 0 1px var(--caution); color: var(--caution); }
+.kbadge { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: var(--r-xs); background: var(--surface); box-shadow: var(--box); color: var(--fg-muted); font-size: 11px; font-weight: var(--weight-strong); }
+
+.ws-pchip { pointer-events: auto; display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px 0 3px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--frame); color: var(--fg); font-size: var(--text-xs); white-space: nowrap; --icon: var(--fg); }
+.ws-pchip b { font-weight: var(--weight-strong); }
+.ws-pchip .f { font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); }
+.ws-pchip em { font-style: normal; color: var(--fg-muted); }
+.ws-pchip[data-k="write"] { box-shadow: 0 0 0 1px var(--accent); --icon: var(--accent); }
+.ws-pchip[data-k="wait"] { background: var(--ws-hatch-warm), var(--surface); box-shadow: 0 0 0 1px var(--caution); color: var(--caution); --icon: var(--caution); }
+.ws-pchip[data-k="idle"] { opacity: 0.7; }
+
+.ws-tray { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; border-radius: var(--r-sm); border: 1px dashed var(--line-strong); background: var(--bg); color: var(--fg-subtle); font-size: var(--text-xs); }
+.ws-tray b { color: var(--fg-muted); font-weight: var(--weight-strong); }
+
+.ws-banner { pointer-events: auto; position: absolute; z-index: 7; top: 60px; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 4px 0 12px; border-radius: var(--r-md); background: var(--surface); box-shadow: 0 0 0 1px var(--accent); font-size: var(--text-sm); white-space: nowrap; --icon: var(--accent); }
+.ws-banner b { color: var(--accent-ink); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
+/* replay: a purple inset on the canvas while the diagram shows the past */
+.canvas-layers:has(.ws-banner)::after { content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none; box-shadow: inset 0 0 0 1px var(--accent); }
+
+.run-av-wrap { position: relative; display: inline-flex; flex: none; }
+.run-pbadge { position: absolute; right: -4px; top: -3px; display: grid; place-items: center; width: 10px; height: 10px; border-radius: 50%; background: var(--avatar-tile); box-shadow: 0 0 0 1.5px var(--bg); overflow: hidden; }
+.run-pbadge .agent-avatar { --av: 10px !important; width: 10px; height: 10px; box-shadow: none; }
+.run-letter { color: var(--fg-muted); font-size: calc(var(--av) * 0.5); font-weight: var(--weight-strong); line-height: 1; }
+
+/* the hover menu takes the end of the row (the name shortens; it never covers the name, which is the click target) */
+/* the first line: the name (ends in … when long, never squeezed by the mark) and one state mark; the actions come on hover or focus */
+
+/* Reduced motion: no movement, but still cross-fades instead of hard cuts. */
+@media (prefers-reduced-motion: reduce) {
+  .ws-bub, .ws-bub-in, .ws-bub[data-exit] { animation: ws-fade 150ms linear both !important; animation-duration: 150ms !important; }
+  .ws-rings rect { transition-duration: 150ms !important; transition-property: opacity, stroke !important; }
+}
+
+/* stacking: the 图外 tray under the figures standing on it, bubbles above both */
+.ws-tray { z-index: 0; }
+.ws-svg { z-index: 1; }
+.ws-bub-pos, .ws-pchip { z-index: 2; }
+
+/* Excalidraw's own 「滚动回到内容」 (bottom centre, when nothing is in view) sits above our 浏览 / 评论 bar, not under it */
+.canvas-view .excalidraw .scroll-back-to-content { bottom: 84px; }

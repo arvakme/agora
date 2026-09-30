@@ -1,0 +1,96 @@
+{
+  "format": 1,
+  "id": "0d5f6a1e-7b3c-4c1f-9a52-3e8d2b6c4f10",
+  "state": "done",
+  "delivery": {
+    "request": {
+      "request_id": "0d5f6a1e-7b3c-4c1f-9a52-3e8d2b6c4f10",
+      "origin": {
+        "room_id": "6f0b1e52-3a7c-4d1e-9b8a-2c5d7e9f0a13",
+        "request_seq": 1,
+        "requested_by": "6f0b1e52-3a7c-4d1e-9b8a-2c5d7e9f0a13"
+      },
+      "session": {
+        "deployment": "/work/p",
+        "participant_id": "6f0b1e52-3a7c-4d1e-9b8a-2c5d7e9f0a13",
+        "computer_id": "6f0b1e52-3a7c-4d1e-9b8a-2c5d7e9f0a13",
+        "adapter": "codex",
+        "tmux_target": "agora-s-b",
+        "native_locator": "s-b"
+      },
+      "body": "[Agora 派发 0d5f6a1e] 来自 Claude Code 会话 s-a：先读任务文件 /work/p/.agora/dispatch/x/task.md。",
+      "side_effecting": true
+    },
+    "turn_state": "completed",
+    "withdrawn": false,
+    "bound": {
+      "session": "s-b",
+      "turn": "u1"
+    },
+    "applied_events": [
+      "a1111111-0000-4000-8000-000000000001",
+      "a1111111-0000-4000-8000-000000000002"
+    ],
+    "deferred_events": [],
+    "result": {
+      "request_id": "0d5f6a1e-7b3c-4c1f-9a52-3e8d2b6c4f10",
+      "turn": {
+        "session": "s-b",
+        "turn": "u1"
+      },
+      "outcome": "completed",
+      "summary": "已加一行",
+      "usage": null
+    },
+    "awaiting_permission": false,
+    "note": ""
+  },
+  "task": {
+    "summary": "在 notes.md 末尾加一行",
+    "scope": [
+      "notes.md"
+    ],
+    "file": "task.md",
+    "inline": false
+  },
+  "source": {
+    "kind": "session",
+    "sessionId": "s-a"
+  },
+  "target": {
+    "sessionId": "s-b",
+    "agent": "codex",
+    "new": true
+  },
+  "permission": {
+    "mode": "user-config",
+    "detail": "codex exec / codex: the user's own Codex configuration"
+  },
+  "expects_reply": true,
+  "reply": {
+    "status": "done",
+    "at": 1790000030000,
+    "summary": "已在 notes.md 末尾加了一行",
+    "file": "reply.md"
+  },
+  "stopped": null,
+  "error": null,
+  "created_at": 1790000000000,
+  "updated_at": 1790000000000,
+  "notified": "done",
+  "notice": null,
+  "history": [
+    {
+      "at": 1790000000000,
+      "state": "dispatched"
+    },
+    {
+      "at": 1790000010000,
+      "state": "running"
+    },
+    {
+      "at": 1790000030000,
+      "state": "done"
+    }
+  ]
+}

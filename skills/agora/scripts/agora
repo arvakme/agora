@@ -1,0 +1,5 @@
+#!/bin/sh
+# The Agora CLI for agents whose PATH does not have it: resolve this skill's real location
+# (it is usually a symlink into the Agora checkout) and run that checkout's bin/agora.
+here="$(cd "$(dirname "$0")" && pwd -P)"
+exec "$here/../../../bin/agora" "$@"
