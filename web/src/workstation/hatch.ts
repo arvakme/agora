@@ -17,6 +17,19 @@ export const HATCH_OUT_MS = 300;
 /** Looking out, the head's centre is this high above the floor line (figure units); hidden, it is this far under it. */
 export const PEEK_UP = 11;
 export const PEEK_DOWN = RIG.head + 2;
+/** The word beside a resting head (./figureNode.ts `PeekNode`): its left edge from the head's centre, its font size and a width that holds 「在子图 · 空闲」 (figure units). */
+export const PEEK_NOTE = { x: RIG.head + 5, size: 7.5, w: 58 };
+
+/**
+ * Where the head looking out of a hole is, as a box in the canvas's world units: `dock` is the hole (the first worker's spot on the node's top edge), `k` the figures' world px per
+ * unit. The head's room (its hit box: ±9 wide, from the top of the head to the floor line), and, for an idle agent, the word beside it. Other floaters (./stopPill.ts) keep off it.
+ */
+export function peekBox(dock: { x: number; y: number }, k: number, note: boolean): { x: number; y: number; w: number; h: number } {
+  const top = PEEK_UP + RIG.head + 2;
+  const right = note ? PEEK_NOTE.x + PEEK_NOTE.w : 9;
+  return { x: dock.x - 9 * k, y: dock.y - top * k, w: (9 + right) * k, h: (top + LADDER_HALF) * k };
+}
+
 /** The rails of a ladder on the parent canvas stand this far above the floor (figure units): the upper end that shows. */
 export const HATCH_POST = 34;
 /** Rungs are about this far apart, as on any ladder (./rig.ts). */

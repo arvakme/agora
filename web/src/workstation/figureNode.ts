@@ -12,7 +12,7 @@
 import codex128 from "../app/agents/codex-128.png";
 import grok128 from "../app/agents/grok-128.png";
 import { focus } from "./focus";
-import { PEEK_DOWN, PEEK_UP } from "./hatch";
+import { PEEK_DOWN, PEEK_NOTE, PEEK_UP } from "./hatch";
 import { headMark } from "./headMark";
 import { RIG, Spring, type Bone, type Joints, type Pt } from "./rig";
 
@@ -375,7 +375,7 @@ export class PeekNode {
     el("circle", { r: RIG.head, fill: PAPER, ...outline(HEAD_LINE) }, this.inner);
     mark(agent, RIG.head * 0.9, this.inner);
     // resting in the sub-diagram: a small word beside the head says so (the full words are in the title); a halo of paper keeps it readable over a line
-    this.note = el("text", { x: RIG.head + 5, y: -PEEK_UP + 3, "font-size": 7.5, fill: "var(--fg-muted)", stroke: "var(--surface)", "stroke-width": 2.4, "paint-order": "stroke", "stroke-linejoin": "round", "pointer-events": "none", display: "none" }, this.g);
+    this.note = el("text", { x: PEEK_NOTE.x, y: -PEEK_UP + 3, "font-size": PEEK_NOTE.size, fill: "var(--fg-muted)", stroke: "var(--surface)", "stroke-width": 2.4, "paint-order": "stroke", "stroke-linejoin": "round", "pointer-events": "none", display: "none" }, this.g);
     this.note.textContent = "在子图 · 空闲";
     this.g.addEventListener("pointerdown", (e) => e.stopPropagation());
     this.g.addEventListener("click", (e) => (e.stopPropagation(), onFollow(id)));

@@ -50,3 +50,56 @@ describe("pillSpot", () => {
     expect(s.box.y).toBeGreaterThanOrEqual(0);
   });
 });
+
+// ── FX8: the note must not cover the head looking out of the node's hole, nor its「在子图 · 空闲」word ──
+import { PEEK_NOTE, peekBox } from "./hatch";
+import { entryCapsuleBox } from "./stopPill";
+import { RIG } from "./rig";
+
+describe("FX8 · a node with someone in its sub-diagram: the note keeps clear of the head, its word, the entrance capsule", () => {
+  const n = { x: 400, y: 300, w: 240, h: 90 };
+  const dock = { x: n.x + 24, y: n.y }; // where the first worker stands: 24 in from the left, on the top edge (docks.ts)
+  const k = 1.2;
+  it("peekBox: over the top edge at the dock — the head, and the word beside it when the agent is idle", () => {
+    const head = peekBox(dock, k, false);
+    const word = peekBox(dock, k, true);
+    expect(head.y).toBeLessThan(dock.y - RIG.head * k);
+    expect(head.x).toBeLessThan(dock.x);
+    expect(word.w).toBeGreaterThan(head.w + PEEK_NOTE.w * k * 0.9);
+    expect(word.x).toBe(head.x);
+  });
+  it("the screenshot's case: the top side is where the head is — the note does not go there, it goes beside the right edge", () => {
+    const peek = peekBox(dock, k, true);
+    const s = pillSpot({ node: n, text, zoom: 1, obstacles: [n, peek], taken: [], view })!;
+    expect(s).not.toBeNull();
+    expect(overlap(s.box, peek)).toBe(false);
+    expect(overlap(s.box, n)).toBe(false);
+  });
+  it("the head's box with its word, padded 4px: never touched, at every zoom", () => {
+    for (const z of [0.5, 0.8, 1, 1.4]) {
+      const peek = peekBox(dock, Math.max(1, Math.min(1.6, z * 1.2)) / z, true);
+      const s = pillSpot({ node: n, text, zoom: z, obstacles: [n, peek], taken: [], view });
+      if (s) expect(overlap(s.box, { x: peek.x - 4 / z, y: peek.y - 4 / z, w: peek.w + 8 / z, h: peek.h + 8 / z }), `zoom ${z}`).toBe(false);
+    }
+  });
+  it("all five floaters at one node — note, head+word, entrance capsule, talk box, bubble — never on one another; the note gives way (null) before it covers any", () => {
+    const peek = peekBox(dock, k, true);
+    const capsule = entryCapsuleBox(n, 1);
+    const talk = { x: n.x + n.w + 10, y: n.y - 20, w: 200, h: 70 };
+    const bubble = { x: n.x + 30, y: n.y - 150, w: 240, h: 34 };
+    const all = [peek, capsule, talk, bubble];
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) expect(overlap(all[i], all[j]), `${i} x ${j}`).toBe(false);
+    const s = pillSpot({ node: n, text, zoom: 1, obstacles: [n, ...all], taken: [], view });
+    if (s) for (const o of all) expect(overlap(s.box, o)).toBe(false);
+    // boxed in on the right and below as well: no note, and the others are where they were
+    const boxed = pillSpot({ node: n, text, zoom: 1, obstacles: [n, ...all, { x: n.x + n.w, y: n.y + n.h - 10, w: 300, h: 60 }, { x: n.x, y: n.y + n.h + 10, w: 300, h: 60 }], taken: [], view });
+    expect(boxed).toBeNull();
+  });
+  it("entryCapsuleBox: at the node's bottom-left, straddling its bottom edge, in world units for the zoom", () => {
+    const c = entryCapsuleBox(n, 0.5);
+    expect(c.x).toBeGreaterThanOrEqual(n.x);
+    expect(c.y).toBeLessThan(n.y + n.h);
+    expect(c.y + c.h).toBeGreaterThan(n.y + n.h);
+    expect(c.w).toBeCloseTo(entryCapsuleBox(n, 1).w * 2);
+  });
+});
