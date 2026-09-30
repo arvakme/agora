@@ -46,6 +46,7 @@ import { undoTurn } from "./runTurn";
 import { sessions, useSessions, type Turn } from "./store";
 import { agentChoice, canvases, draftText, highlight, openSessions, ui } from "./ui";
 import { JumpPill, useJumpToBottom } from "./JumpPill";
+import { prefs, usePrefs } from "../app/prefs";
 import "./session.css";
 
 const fmt = (ms: number) => (ms < 10000 ? `${(ms / 1000).toFixed(1)}s` : ms < 60000 ? `${Math.round(ms / 1000)}s` : `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`);
@@ -393,6 +394,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   };
   const plan = planSend({ running: !!status?.running, terminalAlive: !!status?.terminal.alive, ...steerOf(binding.agent, status) });
   const [termMenu, setTermMenu] = useState(false);
+  const { floatSession } = usePrefs();
   const [apps, setApps] = useState<TerminalApps | null>(null);
   useEffect(() => {
     if (termMenu) void agents.terminalApps().then(setApps).catch(() => setApps(null));
@@ -519,6 +521,12 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
                     关闭终端
                   </button>
                 )}
+                <hr />
+                <button role="menuitemcheckbox" aria-checked={floatSession} onClick={() => prefs.set({ floatSession: !floatSession })} title="会话面板浮在画布上，不占右侧一栏；窗口窄于 1100 px 时仍停靠。只影响这个浏览器">
+                  <span className="menu-check" />
+                  悬浮
+                  <span className="sw" aria-hidden />
+                </button>
               </motion.div>
             )}
           </AnimatePresence>
