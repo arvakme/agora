@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import { floatFocus } from "../app/floatShell";
 import { frame } from "./frame";
-import { FLOATS } from "./replayDom";
+import { shellRects } from "./replayDom";
 import type { Box } from "../canvas/clearance";
 
 const NONE: Box[] = [];
@@ -25,7 +25,7 @@ export function floatBoxesIn(layer: { left: number; top: number; width: number; 
 export function useFloatBoxes(layer: RefObject<HTMLElement | null>): Box[] {
   const [boxes, setBoxes] = useState<Box[]>(NONE);
   const last = useRef("[]");
-  const any = useSyncExternalStore(floatFocus.subscribe, () => floatFocus.reach("session") !== undefined || floatFocus.reach("comments") !== undefined);
+  const any = useSyncExternalStore(floatFocus.subscribe, floatFocus.present);
   useEffect(() => {
     const set = (out: Box[]) => {
       const k = JSON.stringify(out);
@@ -36,7 +36,7 @@ export function useFloatBoxes(layer: RefObject<HTMLElement | null>): Box[] {
     if (!any) return void set(NONE);
     return frame.add(() => {
       const el = layer.current;
-      if (el) set(floatBoxesIn(el.getBoundingClientRect(), [...document.querySelectorAll<HTMLElement>(FLOATS)].map((s) => s.getBoundingClientRect())));
+      if (el) set(floatBoxesIn(el.getBoundingClientRect(), shellRects()));
     });
   }, [any, layer]);
   return boxes;
