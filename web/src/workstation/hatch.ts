@@ -60,21 +60,28 @@ export function peekerOf(cands: readonly { id: string; since: number }[], o: { t
   return best?.id ?? null;
 }
 
-/** How visible the ladder and hole at `place` are because of this run: fully while it is down there (below the floor) and while it climbs, faded in a little before it
- * gets on and out a little after it is off. With reduced motion only the resting hole shows (nothing is climbed). */
+/** How visible the hole at `place` is because of this run: fully while it is down there resting (below the floor) — the hole and its head are what say so, not a ladder standing on the head. */
+export function holeVisAt(st: RunState, place: string, side: Side): number {
+  return side === "below" && st.at === place && st.portalPhase === "behind" && st.portalSide === "below" && st.fade > 0 ? 1 : 0;
+}
+
+/** How visible the ladder at `place` is because of this run: only while it is on it or about to be — faded in a little before it gets on (down, or up out of the hole), out a little
+ * after it is off. Never while it merely rests in the sub-diagram (a ladder pole standing out of a head reads as a ladder stuck in it); with reduced motion, nothing is climbed: never. */
 export function hatchVisAt(st: RunState, place: string, side: Side, t: number, reduced = false): number {
-  if (side === "below" && st.at === place && st.portalPhase === "behind" && st.portalSide === "below" && st.fade > 0) return 1;
   if (reduced) return 0;
   let v = 0;
   for (const d of st.doors) {
     if (d.at !== place || d.side !== side) continue;
-    // going in: the walk to the ladder is known, so it is there when the climber arrives; coming out on the floor's own canvas it was there already
-    const up = d.into ? (t - (d.t - HATCH_IN_MS)) / HATCH_IN_MS : side === "below" ? 1 : (t - d.t) / HATCH_IN_MS;
+    // known ahead: the walk to the ladder going in; the moment it decides to come out, coming out
+    const up = (t - (d.t - HATCH_IN_MS)) / HATCH_IN_MS;
     const down = 1 - (t - (d.t + DOOR_MS)) / HATCH_OUT_MS;
     v = Math.max(v, Math.min(1, Math.max(0, Math.min(up, down))));
   }
   return v;
 }
+
+/** `hatchVisAt` with a look ahead: `ahead` is the run's state HATCH_IN_MS later (a door it is about to take is in it before it is in `st`), so the ladder fades in before the climb. */
+export const hatchVisSoon = (st: RunState, ahead: RunState, place: string, side: Side, t: number, reduced = false): number => Math.max(hatchVisAt(st, place, side, t, reduced), hatchVisAt(ahead, place, side, t, reduced));
 
 /** How a figure is drawn while it is on a door's ladder: the trip (./rig.ts `planDoor` for `dir`, `leaving`) and how far into it, in ms. Null when it is not on one, or with
  * reduced motion, which has no ladder (the door only fades: `fade` in the state). */

@@ -50,12 +50,13 @@ import { hideEmptyLayer, isWorking } from "./liveCamera";
 import { frame } from "./frame";
 import { gestureFor } from "./gestures";
 import { buildGeometry, type Geometry } from "./geometry";
-import { cutLine, doorClimb, hatchesAt, hatchVisAt, ladderShape, LADDER_HALF, peekRise, type Hatch, type Peek } from "./hatch";
+import { cutLine, doorClimb, hatchesAt, hatchVisSoon, holeVisAt, HATCH_IN_MS, ladderShape, LADDER_HALF, peekRise, type Hatch, type Peek } from "./hatch";
 import { canvasWhere, conflictAt, doorTiming, OUTSIDE, outsideProject, stateAt, writeConflicts, type Ctx, type RunState, type Side, type WriteConflict } from "./place";
 import { Glide, makeSprings, planDoor, RIG, solve, SUB_SCALE, type Pt, type Springs, type Trip } from "./rig";
 import type { Leg } from "./route";
 import { ReplayBar, TraceBar } from "./ReplayBar";
-import { stopEntryText } from "./traceText";
+import { stopEntryNote, stopEntryText } from "./traceText";
+import { pillSpot } from "./stopPill";
 import { ReplayMarks } from "./ReplayMarks";
 import { shortAgentName } from "./stripRules";
 import { liveFollow, useLiveFollow } from "./replayLive";
@@ -290,11 +291,15 @@ function TripShape({ trip: p, sel }: { trip: Trip; sel: boolean }) {
 function HatchShape({ side }: { side: Side }) {
   const l = ladderShape(side === "below" ? 1 : -1);
   const w = LADDER_HALF;
+  // the hole (a dark slot in the node's top edge) stays while someone is down there; the ladder's rails and rungs only while it is climbed (./hatch.ts `hatchVisAt`)
   return (
     <g fill="none" stroke="var(--fg-muted)" strokeLinecap="round">
-      <path d={`M${-w} ${px(l.top)}V0M${w} ${px(l.top)}V0`} strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
-      <path d={l.rungs.map((y) => `M${-w} ${px(y)}H${w}`).join("")} strokeWidth={1} vectorEffect="non-scaling-stroke" />
-      {side === "below" ? <rect x={-w - 3} y={-1.2} width={2 * w + 6} height={2.4} rx={1.2} fill="var(--fig-ink)" stroke="none" /> : <path d={`M${-w - 4} ${px(l.top)}H${w + 4}`} strokeWidth={1.2} vectorEffect="non-scaling-stroke" />}
+      <g className="ws-hatch-ladder" opacity={0}>
+        <path d={`M${-w} ${px(l.top)}V0M${w} ${px(l.top)}V0`} strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
+        <path d={l.rungs.map((y) => `M${-w} ${px(y)}H${w}`).join("")} strokeWidth={1} vectorEffect="non-scaling-stroke" />
+        {side === "below" ? null : <path d={`M${-w - 4} ${px(l.top)}H${w + 4}`} strokeWidth={1.2} vectorEffect="non-scaling-stroke" />}
+      </g>
+      {side === "below" && <rect className="ws-hatch-hole" x={-w - 3} y={-1.2} width={2 * w + 6} height={2.4} rx={1.2} fill="var(--fig-ink)" stroke="none" />}
     </g>
   );
 }
@@ -482,7 +487,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   /** The drawn trips' groups (bridges and ladders), faded per frame (with the opacity last set). */
   const tripEls = useRef(new Map<string, { el: SVGGElement; a: string }>());
   /** The ladders and holes at doors (./hatch.ts): each group's opacity and transform as last set. And the heads looking out of the holes, by place. */
-  const hatchEls = useRef(new Map<string, { el: SVGGElement; a: string; tf: string }>());
+  const hatchEls = useRef(new Map<string, { el: SVGGElement; a: string; tf: string; ladder?: SVGGElement | null; la?: string }>());
   const peekLayer = useRef<SVGGElement>(null);
   const peekNodes = useRef(new Map<string, { id: string; node: PeekNode }>());
   /** 追踪: each way's line (how far along it was last drawn), and the marks in screen space — a stop's
@@ -807,24 +812,32 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         const e = hatchEls.current.get(`${h.place}|${h.side}`);
         if (!e) continue;
         let vis = 0;
+        let hole = 0;
         let all = true;
         for (const id of h.ids) {
           const run = s.byId.get(id)?.run;
           if (!run) continue;
-          vis = Math.max(vis, hatchVisAt(stateAt(run, t, c), h.place, h.side, t, still));
+          const st0 = stateAt(run, t, c);
+          vis = Math.max(vis, hatchVisSoon(st0, stateAt(run, t + HATCH_IN_MS, c), h.place, h.side, t, still));
+          hole = Math.max(hole, holeVisAt(st0, h.place, h.side));
           all &&= dimmed(id);
         }
         const d0 = g.dock(h.place);
         const tf = `translate(${px(d0.x)} ${px(d0.y)}) scale(${px(k)})`;
         if (tf !== e.tf) e.el.setAttribute("transform", (e.tf = tf));
-        const a = (vis * (all ? DIM : 1)).toFixed(3);
+        const a = (Math.max(vis, hole) * (all ? DIM : 1)).toFixed(3);
         if (a !== e.a) e.el.setAttribute("opacity", (e.a = a));
+        // the ladder itself within the group: only while it is climbed
+        const la = vis.toFixed(3);
+        const lad = e.ladder ?? (e.ladder = e.el.querySelector<SVGGElement>(".ws-hatch-ladder"));
+        if (lad && la !== e.la) lad.setAttribute("opacity", (e.la = la));
       }
       for (const [place, x] of peekNodes.current) {
         const f = s.byId.get(x.id);
         if (!f) continue;
         const d0 = g.dock(place);
-        x.node.place(d0.x, d0.y, k * (f.depth > 0 ? SUB_SCALE : 1), peekRise(stateAt(f.run, t, c), still), still, dimmed(x.id), focus.get().selected === x.id);
+        const ps = stateAt(f.run, t, c);
+        x.node.place(d0.x, d0.y, k * (f.depth > 0 ? SUB_SCALE : 1), peekRise(ps, still), still, dimmed(x.id), focus.get().selected === x.id, ps.pose === "idle");
       }
       for (const tt of s.tethers) {
         const p = tethers.current.get(tt.child);
@@ -1115,6 +1128,10 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const peekMap = useMemo(() => new Map(snap.peeks.map((p) => [p.place, p.id])), [snap.peeks]);
   const trv = traceShown?.tr ?? null;
   const visits = new Map<string, number>();
+  // the notes beside the numbers go outside their nodes, clear of other nodes, labels and each other (./stopPill.ts); none free: the number alone, its words in the hover text
+  const pillsTaken: Box[] = [];
+  const zoomNow = view.appState.zoom.value;
+  const viewBox = { x: -view.appState.scrollX, y: -view.appState.scrollY, w: view.appState.width / zoomNow, h: view.appState.height / zoomNow };
   const stopMarks = (trv?.stops ?? []).flatMap((s, i) => {
     const b = geom.boxOf(s.place);
     const k = visits.get(s.place) ?? 0;
@@ -1124,7 +1141,10 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
     const here = trv!.stops.filter((x) => x.place === s.place && x.portal);
     const seen = here.filter((x) => x.done).length ? here.filter((x) => x.done) : here;
     const entry = k === 0 ? [...new Set(seen.flatMap((x) => x.portal!.labels))] : [];
-    return [{ key: `s${i}|${s.t0}`, n: i + 1, i, s, x: b.x, y: b.y, dy: k * 20, entry }];
+    const text = entry.length ? stopEntryText(i + 1, entry) : "";
+    const spot = text && s.done ? pillSpot({ node: b, text, zoom: zoomNow, obstacles: geom.obstacles, taken: pillsTaken, view: viewBox, figureAtTop: [...snap.states.values()].some((st) => st.at === s.place && st.present) }) : null;
+    if (spot) pillsTaken.push(spot.box);
+    return [{ key: `s${i}|${s.t0}`, n: i + 1, i, s, x: b.x, y: b.y, dy: k * 20, entry, pill: spot ? { dx: spot.dx, dy: spot.dy - k * 20 } : null }];
   });
   // 按轮追踪: the stop whose calls include the trajectory row under the pointer lights up
   const hot = trv && fo.itemHover ? stopForItem(trv, fo.itemHover) : null;
@@ -1264,11 +1284,16 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
           >
             {m.n}
           </i>
-          {m.entry.length > 0 && <em title={stopEntryText(m.n, m.entry)}>{stopEntryText(m.n, m.entry)}</em>}
+          {m.pill && (
+            <em style={{ left: m.pill.dx, top: m.pill.dy }} title={stopEntryNote(m.n, m.entry)} aria-label={stopEntryNote(m.n, m.entry)}>
+              {stopEntryText(m.n, m.entry)}
+            </em>
+          )}
           <div className="ws-stop-calls" role="tooltip">
             <b>
               第 {m.n} 站 · {placeName(m.s.place)} · {hhmmss(m.s.at)}
             </b>
+            {m.entry.length > 0 && <span className="ws-stop-entry">{stopEntryNote(m.n, m.entry)}</span>}
             {m.s.calls.length ? (
               <ol>
                 {m.s.calls.slice(0, 12).map((c, j) => (

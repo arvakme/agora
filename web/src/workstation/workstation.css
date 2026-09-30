@@ -50,6 +50,7 @@
 .ws-stop-calls { position: absolute; left: 0; top: 20px; z-index: 3; display: none; min-width: 190px; max-width: 320px; padding: 6px 8px; border-radius: var(--r-sm); background: var(--surface); box-shadow: var(--frame); color: var(--fg); font-size: 11px; line-height: 1.5; pointer-events: none; }
 .ws-stop:hover .ws-stop-calls, .ws-stop:focus-within .ws-stop-calls { display: block; }
 .ws-stop-calls b { display: block; margin-bottom: 3px; font-weight: 600; }
+.ws-stop-calls .ws-stop-entry { display: block; margin-bottom: 3px; color: var(--fg-muted); }
 .ws-stop-calls ol { margin: 0; padding: 0 0 0 16px; }
 .ws-stop-calls li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 10.5px; }
 .ws-stop-calls li[data-kind="spawn"], .ws-stop-calls li[data-kind="back"] { font-family: inherit; color: var(--accent); }
@@ -58,8 +59,8 @@
 .ws-stop i { display: grid; place-items: center; box-sizing: border-box; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-ink); color: var(--fg); font: 600 10.5px/1 var(--font-sans); font-style: normal; font-variant-numeric: tabular-nums; transition: background 200ms var(--ease-out), color 200ms var(--ease-out); }
 .ws-stop[data-done] i { background: var(--line-ink); box-shadow: 0 0 0 1.5px var(--surface); color: var(--bg); }
 .ws-stop:not([data-done]) > * { opacity: 0.55; }
-/* just inside the node, under its top edge (where figures stand); a long list of sub-diagrams is cut to one line with … (the full words are in its hover title) */
-.ws-stop em { position: absolute; left: 18px; top: 22px; padding: 0 6px; border-radius: var(--r-xs); background: var(--surface); box-shadow: var(--frame); color: var(--fg); font-size: 10.5px; font-style: normal; line-height: 16px; white-space: nowrap; max-width: min(240px, calc(100vw - 40px)); overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
+/* outside its node, on the nearest empty side (./stopPill.ts sets left and top), opaque (only the number of a stop not reached yet is faint); a long list of sub-diagrams is cut to one line with … (the full words are in its hover title) */
+.ws-stop em { position: absolute; padding: 0 6px; border-radius: var(--r-xs); background: var(--surface); box-shadow: var(--frame); color: var(--fg); font-size: 10.5px; font-style: normal; line-height: 16px; white-space: nowrap; max-width: min(240px, calc(100vw - 40px)); overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; opacity: 1 !important; }
 .ws-errand { margin: -8px 0 0 -8px; opacity: 0.9; }
 .ws-stop[data-exit], .ws-errand[data-exit] { opacity: 0; }
 

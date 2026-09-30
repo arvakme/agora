@@ -4,7 +4,7 @@
 // all a pure function of the runs and t.
 import { describe, expect, it } from "vitest";
 import { DOOR_MS } from "./place.ts";
-import { doorClimb, HATCH_OUT_MS, hatchesAt, hatchVisAt, PEEK_MS, peekerOf, peekRise, SINK_MS } from "./hatch.ts";
+import { doorClimb, HATCH_IN_MS, HATCH_OUT_MS, hatchesAt, hatchVisAt, hatchVisSoon, holeVisAt, PEEK_MS, peekerOf, peekRise, SINK_MS } from "./hatch.ts";
 import { enterAfter, stateAt, type Ctx } from "./place.ts";
 import type { RunSeg, WorkRun } from "./runs/types.ts";
 
@@ -61,12 +61,29 @@ describe("when the hatch is there and when the head shows", () => {
     expect(view(c, runs, inAt - 100).peeks).toEqual([]); // not down there yet
   });
 
-  it("all the way down it stays as long as it is in there: the hole, the ladder's upper end, its head", () => {
+  it("all the way down it stays as long as it is in there: the hole and its head — and no ladder standing on the head while it only rests (FX7)", () => {
     for (const t of [behind + 1, behind + 5 * S, 25 * S]) {
       expect(view(c, runs, t).hatches).toEqual([{ place: "api", side: "below", ids: ["a"] }]);
       expect(view(c, runs, t).peeks).toEqual([{ place: "api", id: "a" }]);
-      expect(hatchVisAt(stateAt(A, t, c), "api", "below", t)).toBe(1);
+      expect(holeVisAt(stateAt(A, t, c), "api", "below")).toBe(1);
     }
+    for (const t of [behind + HATCH_OUT_MS + 100, behind + 5 * S, 25 * S]) expect(hatchVisAt(stateAt(A, t, c), "api", "below", t)).toBe(0);
+  });
+
+  it("the ladder is there when it is on it: as it goes down, and a moment before it starts up (not for the whole rest in between)", () => {
+    const r = run("c", [seg("read", 0, 2, "server/db/m.py"), seg("write", 5, 10, "server/users.py"), seg("read", 20, 30, "server/db/x.py")]);
+    const cc = main([r]);
+    const st = (t: number) => stateAt(r, t, cc);
+    const outAt = st(20 * S + 1).doors.find((d) => !d.into)!.t;
+    expect(hatchVisAt(st(15 * S), "api", "below", 15 * S)).toBe(0); // resting in there
+    expect(hatchVisAt(st(outAt - HATCH_IN_MS - 50), "api", "below", outAt - HATCH_IN_MS - 50)).toBe(0);
+    const soon = (t: number) => hatchVisSoon(st(t), st(t + HATCH_IN_MS), "api", "below", t);
+    expect(soon(15 * S)).toBe(0);
+    expect(soon(outAt - HATCH_IN_MS - 50)).toBe(0);
+    expect(soon(outAt - HATCH_IN_MS / 2)).toBeGreaterThan(0.3);
+    expect(hatchVisAt(st(outAt + DOOR_MS / 2), "api", "below", outAt + DOOR_MS / 2)).toBe(1);
+    const inAt = st(15 * S).doorsIn[0];
+    expect(hatchVisAt(st(inAt + DOOR_MS / 2), "api", "below", inAt + DOOR_MS / 2)).toBe(1);
   });
 
   it("the head rises once it is all the way down (from hidden to showing over PEEK_MS), and ducks as it comes out", () => {
@@ -107,7 +124,8 @@ describe("when the hatch is there and when the head shows", () => {
     const inAt = st(40 * S).doorsIn[0];
     expect(peekRise(st(inAt + DOOR_MS + 1), true)).toBe(1);
     expect(peekRise(st(2 * S), true)).toBe(0);
-    expect(hatchVisAt(st(inAt + DOOR_MS + 1), "api", "below", inAt + DOOR_MS + 1, true)).toBe(1);
+    expect(holeVisAt(st(inAt + DOOR_MS + 1), "api", "below")).toBe(1);
+    expect(hatchVisAt(st(inAt + DOOR_MS + 1), "api", "below", inAt + DOOR_MS + 1, true)).toBe(0); // no ladder at all: nothing is climbed
     expect(hatchVisAt(st(inAt + DOOR_MS / 2), "api", "below", inAt + DOOR_MS / 2, true)).toBe(0);
   });
 
