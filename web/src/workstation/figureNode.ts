@@ -360,6 +360,7 @@ export class FigureNode {
 export class PeekNode {
   readonly g: SVGGElement;
   private inner: SVGGElement;
+  private note: SVGElement;
   private last: Record<string, string> = {};
   constructor(readonly id: string, agent: string, title: string, onFollow: (id: string) => void) {
     this.g = el("g", { class: "ws-peek", "data-peek": id, role: "button", tabindex: 0, "aria-label": title });
@@ -373,6 +374,9 @@ export class PeekNode {
     el("path", { d: capsule(0, RIG.head - 1, 0, RIG.head + 14, R.torso), fill: PAPER, ...outline() }, this.inner);
     el("circle", { r: RIG.head, fill: PAPER, ...outline(HEAD_LINE) }, this.inner);
     mark(agent, RIG.head * 0.9, this.inner);
+    // resting in the sub-diagram: a small word beside the head says so (the full words are in the title); a halo of paper keeps it readable over a line
+    this.note = el("text", { x: RIG.head + 5, y: -PEEK_UP + 3, "font-size": 7.5, fill: "var(--fg-muted)", stroke: "var(--surface)", "stroke-width": 2.4, "paint-order": "stroke", "stroke-linejoin": "round", "pointer-events": "none", display: "none" }, this.g);
+    this.note.textContent = "在子图 · 空闲";
     this.g.addEventListener("pointerdown", (e) => e.stopPropagation());
     this.g.addEventListener("click", (e) => (e.stopPropagation(), onFollow(id)));
     this.g.addEventListener("keydown", (e) => e.key === "Enter" && onFollow(id));
@@ -383,12 +387,13 @@ export class PeekNode {
     node.setAttribute(attr, v);
   }
   /** At the hole (x, y), for figures at k world px per unit: the head `rise` of the way out of it (0 hidden … 1 looking out), or just there or not with `still`; dimmed by a trace, selected like a figure. */
-  place(x: number, y: number, k: number, rise: number, still: boolean, dim: boolean, selected: boolean) {
+  place(x: number, y: number, k: number, rise: number, still: boolean, dim: boolean, selected: boolean, idle = false) {
     const shown = rise > 0.001;
     this.set(this.g, "d", "display", shown ? "inline" : "none");
     this.set(this.g, "g", "transform", `translate(${f2(x)} ${f2(y)}) scale(${f2(k)})`);
     this.set(this.g, "sel", "style", selected ? SELECTED : "");
     this.set(this.g, "dim", "data-dim", dim ? "1" : "0");
+    this.set(this.note, "n", "display", idle && rise > 0.9 ? "inline" : "none");
     this.set(this.inner, "i", "transform", `translate(0 ${f2(still ? -PEEK_UP : PEEK_DOWN + (-PEEK_UP - PEEK_DOWN) * rise)})`);
   }
 }
