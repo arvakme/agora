@@ -113,6 +113,23 @@ async def test_a_growing_native_log_counts_as_activity(tmp_path, monkeypatch):
     assert "error" not in evs[-1], evs[-1]
 
 
+async def test_a_new_session_whose_id_comes_from_the_cli_is_followed_by_its_log_too(tmp_path, monkeypatch):
+    """A turn that starts without an id (``thread.started`` names it a moment later) is still the turn whose native log is growing."""
+    log = tmp_path / "native.jsonl"
+    asked: list[str | None] = []
+
+    def locate(kind, native_id, root=None, home=None, hint=None):
+        asked.append(native_id)
+        return LogLookup("found", log, [log]) if native_id == "th-t" else LogLookup("missing")
+
+    monkeypatch.setattr(agents, "locate_log", locate)
+    b = CodexBackend([sys.executable, FAKE], env=script(*[s for _ in range(7) for s in ({"sleep": 0.18}, {"append": str(log)})], {"done": 1}), idle_s=0.5)
+    async with asyncio.timeout(FAIL_FAST):
+        evs = [e async for e in b.run(request(tmp_path))]  # no session to start with
+    assert "error" not in evs[-1], evs[-1]
+    assert evs[-1]["session"] == "th-t" and "th-t" in asked
+
+
 async def test_a_log_that_stopped_growing_does_not_keep_a_quiet_turn_alive(tmp_path, monkeypatch):
     log = tmp_path / "native.jsonl"
     log.write_bytes(b"x")

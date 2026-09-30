@@ -379,7 +379,7 @@ class ResidentBackend(agents._CliBackend):
         healthy = False
         try:
             try:
-                async with clock.guard(agents.log_probe(self.name, proc.thread or req.options.session, req.cwd)):
+                async with clock.guard(agents.log_probe(self.name, lambda: mapper.session or req.options.session, req.cwd)):
                     async for ev in self.turn(proc, req, mapper, st):
                         clock.observe(ev)
                         yield ev

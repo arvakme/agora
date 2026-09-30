@@ -16,6 +16,7 @@ is, so "继续" resumes it."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import time
 from collections.abc import AsyncIterator, Callable
@@ -61,6 +62,7 @@ class TurnClock:
         self._tools: set[str] = set()
         self._held_since: float | None = None
         self._held_total = 0.0
+        self._nearer = asyncio.Event()  # set when a deadline the watcher sleeps towards may have moved nearer
         self.reason: str | None = None  # "idle" | "max": why ``guard`` stopped the turn
         self.limit_s = 0.0  # the limit that was exceeded
 
@@ -76,6 +78,7 @@ class TurnClock:
             self._tools.add(str(ev.get("id")))
         elif kind == "tool_result":
             self._tools.discard(str(ev.get("id")))
+            self._nearer.set()  # the ×4 limit is over: the quiet spell that was allowed may now be long past
 
     def hold(self, on: bool) -> None:
         """The CLI waits for the person: the time is neither quiet nor the turn's."""
@@ -85,6 +88,7 @@ class TurnClock:
             self._held_total += self._now() - self._held_since
             self._held_since = None
             self.touch()
+            self._nearer.set()  # the watcher slept the wait's own length: the limits run again
 
     # ——— what it says ———
     def _idle_limit(self) -> float:
@@ -127,13 +131,16 @@ class TurnClock:
         if probe is not None:
             await asyncio.to_thread(probe)  # the log as the turn begins: only growth after this is activity
         while True:
-            await asyncio.sleep(self.wake_in())
+            self._nearer.clear()
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._nearer.wait(), self.wake_in())
             why = self.expired()
             if why == "idle" and probe is not None:
                 age = await asyncio.to_thread(probe)
                 if age is not None:  # the log grew, ``age`` ago: that is the last activity
                     self._last = max(self._last, self._now() - age)
                     continue
+                why = self.expired()  # the probe took time: the verdict is the clock's now, not the one from before it
             if why:
                 self.reason = why
                 self.limit_s = self.max_s if why == "max" else self._idle_limit()
