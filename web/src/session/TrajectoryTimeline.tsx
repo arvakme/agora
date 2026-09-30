@@ -7,7 +7,7 @@ import { useDragGuard } from "../app/dragGuard";
 import { IconChevron } from "../app/icons";
 import { CLASS_NAME, HEIGHT, LANES, LANE_H, hitTest, hoverText, laneTop, layoutTimeline, lookOfClass, stepCursor, targetsInOrder, type Cls, type Target } from "./timelineLayout";
 import { paintTimeline, readPalette, type Palette } from "./timelinePaint";
-import { HANDLE_HIT, caption, domainOf, dragEdge, edgeX, keepTurns, panSel, partAt, posAtX, range, selectBetween, stepEdge, turnsOf, type Edge, type Part, type Sel } from "./timelineSelection";
+import { HANDLE_HIT, caption, domainOf, dragEdge, edgeX, keepTurns, panSel, partAt, posAtX, range, recordAtX, selectFrom, stepEdge, turnsOf, type Edge, type Part, type Sel } from "./timelineSelection";
 import type { TimelineModel } from "./trajectoryModel";
 
 /** How long the pointer (or the keyboard cursor) rests on a block before its details show. */
@@ -37,7 +37,7 @@ export function TrajectoryTimeline({ model, sel, onSel, onPick, onPickTurn, sele
   const canvas = useRef<HTMLCanvasElement>(null);
   const palette = useRef<Palette | null>(null);
   // what a press on the strip is doing: picking out a new stretch, moving an edge, or carrying the whole stretch
-  const drag = useRef<{ mode: "new" | Edge | "pan"; x0: number; moved: boolean; start: Sel | null; startPos: number } | null>(null);
+  const drag = useRef<{ mode: "new" | Edge | "pan"; x0: number; moved: boolean; start: Sel | null; anchor: number } | null>(null);
   const [width, setWidth] = useState(0);
   const [ver, setVer] = useState(0); // a theme change: the palette is read again
   const [live, setLive] = useState<Sel | null>(null);
@@ -109,7 +109,7 @@ export function TrajectoryTimeline({ model, sel, onSel, onPick, onPickTurn, sele
     const where = partAt(lay, dom, shown, x);
     const mode = where === "left" || where === "right" ? where : where === "body" ? "pan" : "new";
     guard(e, { cursor: mode === "new" ? undefined : mode === "pan" ? "grabbing" : "ew-resize", onEnd: (why) => why !== "up" && ((drag.current = null), setLive(null)) });
-    drag.current = { mode, x0: e.clientX, moved: false, start: shown, startPos: posAtX(lay, dom, x) };
+    drag.current = { mode, x0: e.clientX, moved: false, start: shown, anchor: recordAtX(lay, dom, x) };
     hover(null);
   };
   const move = (e: RPointerEvent) => {
@@ -124,8 +124,8 @@ export function TrajectoryTimeline({ model, sel, onSel, onPick, onPickTurn, sele
     if (Math.abs(e.clientX - d.x0) >= 3) d.moved = true;
     if (!d.moved) return;
     const p = posAtX(lay, dom, x);
-    if (d.mode === "new") setLive(selectBetween(dom, d.startPos, p));
-    else if (d.mode === "pan") setLive(panSel(dom, d.start!, p - d.startPos));
+    if (d.mode === "new") setLive(selectFrom(dom, d.anchor, p));
+    else if (d.mode === "pan") setLive(panSel(dom, d.start!, d.anchor, p));
     else setLive(dragEdge(dom, d.start!, d.mode, p));
   };
   const up = (e: RPointerEvent) => {

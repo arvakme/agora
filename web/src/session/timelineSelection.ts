@@ -11,9 +11,9 @@ import { valueAt, xOf, type Layout } from "./timelineLayout";
 import type { Span, TimelineModel } from "./trajectoryModel";
 
 export type Sel = { from: number; to: number; tail: boolean };
-/** The model's records twice: `spans` by position on the axis (what the pointer meets) and `ordered` by record (what a selection is made of);
- *  `rank` is where a record sits in `ordered`, and `firstOf` / `lastOf` where a turn starts and ends there. */
-export type Domain = { spans: readonly Span[]; ordered: readonly Span[]; rank: ReadonlyMap<number, number>; turns: readonly number[]; firstOf: ReadonlyMap<number, number>; lastOf: ReadonlyMap<number, number> };
+/** The model's records twice: `spans` by position on the axis (what the pointer meets; `pos` is where a record sits there) and `ordered` by record
+ *  (what a selection is made of); `rank` is where a record sits in `ordered`, and `firstOf` / `lastOf` where a turn starts and ends there. */
+export type Domain = { spans: readonly Span[]; pos: ReadonlyMap<number, number>; ordered: readonly Span[]; rank: ReadonlyMap<number, number>; turns: readonly number[]; firstOf: ReadonlyMap<number, number>; lastOf: ReadonlyMap<number, number> };
 export type Edge = "left" | "right";
 export type Part = Edge | "body" | "out";
 
@@ -23,6 +23,7 @@ export const HANDLE_HIT = 12;
 export function domainOf(model: TimelineModel): Domain {
   const ordered = [...model.spans].sort((a, b) => a.index - b.index);
   const rank = new Map<number, number>();
+  const pos = new Map(model.spans.map((s, p) => [s.index, p]));
   const firstOf = new Map<number, number>();
   const lastOf = new Map<number, number>();
   const turns: number[] = [];
@@ -31,7 +32,7 @@ export function domainOf(model: TimelineModel): Domain {
     if (!firstOf.has(s.turn)) (firstOf.set(s.turn, r), turns.push(s.turn));
     lastOf.set(s.turn, r);
   });
-  return { spans: model.spans, ordered, rank, turns, firstOf, lastOf };
+  return { spans: model.spans, pos, ordered, rank, turns, firstOf, lastOf };
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -64,6 +65,10 @@ export function selectBetween(d: Domain, a: number, b: number): Sel {
     hi = Math.max(hi, r);
   }
   return between(d, lo, hi);
+}
+/** A selection dragged out from the record the pointer went down on (kept as a record: the axis may re-order while dragging) to axis position p. */
+export function selectFrom(d: Domain, anchor: number, p: number): Sel {
+  return selectBetween(d, d.pos.get(anchor) ?? p, p);
 }
 export function count(d: Domain, sel: Sel): number {
   const [r0, r1] = range(d, sel);
@@ -102,6 +107,10 @@ export function posAtX(lay: Layout, d: Domain, x: number): number {
   }
   return lo;
 }
+/** The record at overview x: what a drag is anchored to (a position on the axis would move under it when a result re-orders the axis). */
+export function recordAtX(lay: Layout, d: Domain, x: number): number {
+  return d.spans[posAtX(lay, d, x)].index;
+}
 /** Overview x of the selection's two edges: where its first record starts on this axis and where its last one ends. */
 export function edgeX(lay: Layout, d: Domain, sel: Sel): [number, number] {
   const [r0, r1] = range(d, sel);
@@ -133,10 +142,13 @@ export function dragEdge(d: Domain, sel: Sel, edge: Edge, p: number): Sel {
   const r = rankAt(d, p);
   return edge === "left" ? between(d, Math.min(r, r1), r1) : between(d, r0, Math.max(r, r0));
 }
-/** The whole selection moved by `delta` records, stopping at the ends. */
-export function panSel(d: Domain, sel: Sel, delta: number): Sel {
+/** The whole selection moved as far as the pointer has gone since it went down on record `anchor`: to axis position p, which is as many records
+ *  on as that record is, in record order. Stops at the ends. */
+export function panSel(d: Domain, sel: Sel, anchor: number, p: number): Sel {
+  const from = d.rank.get(anchor);
+  if (from === undefined) return sel;
   const [r0, r1] = range(d, sel);
-  const by = clamp(delta, -r0, newest(d) - r1);
+  const by = clamp(rankAt(d, p) - from, -r0, newest(d) - r1);
   return by === 0 ? sel : between(d, r0 + by, r1 + by);
 }
 /** An edge moved one record, or one turn (the left edge to a turn start, the right edge to a turn end). */

@@ -2,7 +2,7 @@
 // edge, panning, clamping, keyboard steps, the same selection in either projection, and a selection
 // whose right edge rides along with new records.
 import { describe, expect, it } from "vitest";
-import { HANDLE_HIT, caption, contains, count, domainOf, dragEdge, edgeX, keepTurns, panSel, partAt, posAtX, range, selectBetween, stepEdge, turnsOf } from "./timelineSelection.ts";
+import { HANDLE_HIT, caption, contains, count, domainOf, dragEdge, edgeX, keepTurns, panSel, partAt, posAtX, range, recordAtX, selectBetween, selectFrom, stepEdge, turnsOf } from "./timelineSelection.ts";
 import { layoutTimeline, xOf } from "./timelineLayout.ts";
 import { convo, modelOf } from "./timelineFixture.ts";
 import type { Item } from "./agents.ts";
@@ -95,20 +95,22 @@ describe("dragging an edge", () => {
 
 describe("moving the whole selection", () => {
   const s = selectBetween(dom, 20, 50);
+  /** the pointer went down on the selection's first record (position 20) and is now `delta` records on */
+  const pan = (sel: ReturnType<typeof selectBetween>, delta: number) => panSel(dom, sel, at(20), 20 + delta);
   it("by a whole number of records, width unchanged", () => {
-    expect(range(dom, panSel(dom, s, 7))).toEqual([27, 57]);
-    expect(range(dom, panSel(dom, s, -7))).toEqual([13, 43]);
+    expect(range(dom, pan(s, 7))).toEqual([27, 57]);
+    expect(range(dom, pan(s, -7))).toEqual([13, 43]);
   });
   it("stops at the ends instead of squeezing", () => {
-    expect(range(dom, panSel(dom, s, -500))).toEqual([0, 30]);
-    expect(range(dom, panSel(dom, s, 5000))).toEqual([N - 31, N - 1]);
-    expect(panSel(dom, s, 5000).tail).toBe(true);
-    expect(panSel(dom, s, 5).tail).toBe(false);
+    expect(range(dom, pan(s, -500))).toEqual([0, 30]);
+    expect(range(dom, pan(s, 5000))).toEqual([N - 31, N - 1]);
+    expect(pan(s, 5000).tail).toBe(true);
+    expect(pan(s, 5).tail).toBe(false);
   });
   it("a pinned selection panned left comes off the end; panned right it stays", () => {
     const pinned = selectBetween(dom, N - 20, N - 1);
-    expect(panSel(dom, pinned, -3).tail).toBe(false);
-    expect(panSel(dom, pinned, 3)).toEqual(pinned);
+    expect(pan(pinned, -3).tail).toBe(false);
+    expect(pan(pinned, 3)).toEqual(pinned);
   });
 });
 
@@ -209,5 +211,43 @@ describe("tools that start in the same millisecond", () => {
     const done = domainOf(modelOf(parallel(true), "duration"));
     expect(members(done, sel)).toEqual(before);
     expect(before).toEqual([1, 2, 3]);
+  });
+});
+
+describe("the pointer's way to a selection, when the axis orders concurrent records differently from the log", () => {
+  // #2 #3 #4 start together at t=2000 and end 2800 / 2500 / 2200; "实际时长" lays them out #4 #3 #2 (shortest first); #5 starts at 3000
+  const tool = (id: string, at: number, endAt: number, n: string) => ({ id, kind: "tool" as const, at, endAt, msg: "m", tool: { name: "Read", input: n, output: "ok" } });
+  const items: Item[] = [
+    { id: "u", kind: "user", at: 1000, text: "read files" },
+    tool("a", 2000, 2800, "a"), tool("b", 2000, 2500, "b"), tool("c", 2000, 2200, "c"), tool("d", 3000, 3100, "d"),
+    { id: "r", kind: "assistant", at: 4000, text: "done" },
+  ];
+  const model = modelOf(items, "duration");
+  const d = domainOf(model);
+  const lay = layoutTimeline(model, 600);
+  const x = (index: number) => xOf(lay, (d.spans[d.pos.get(index)!].start + d.spans[d.pos.get(index)!].end) / 2);
+  const only2 = { from: 2, to: 2, tail: false };
+
+  it("the axis really orders them apart from the log", () => {
+    expect(d.spans.map((s) => s.index)).toEqual([1, 4, 3, 2, 5, 6]);
+  });
+  it("dragging the body of a selection from record #2 onto #5 moves it to #5, however many places the axis puts between them", () => {
+    const [x0] = edgeX(lay, d, only2);
+    const anchor = recordAtX(lay, d, x0 + 1);
+    expect(anchor).toBe(2);
+    const moved = panSel(d, only2, anchor, posAtX(lay, d, x(5)));
+    expect(moved).toEqual({ from: 5, to: 5, tail: false });
+  });
+  it("dragging out a new selection from #2 to #5 covers the records between them in the log, #2 to #5", () => {
+    const sel = selectFrom(d, recordAtX(lay, d, x(2)), posAtX(lay, d, x(5)));
+    expect([sel.from, sel.to]).toEqual([2, 5]);
+  });
+  it("the anchor is a record: a result that re-orders the axis mid-drag does not move the drag's start", () => {
+    const before = recordAtX(lay, d, x(2));
+    const settled = modelOf(items.map((it) => (it.id === "a" ? { ...it, endAt: 2100 } : it)), "duration"); // #2 turns out to be the shortest: the axis re-orders
+    const d2 = domainOf(settled);
+    expect(d2.spans.map((s) => s.index)).not.toEqual(d.spans.map((s) => s.index));
+    const at5 = posAtX(layoutTimeline(settled, 600), d2, xOf(layoutTimeline(settled, 600), d2.spans[d2.pos.get(5)!].start + 1));
+    expect(panSel(d2, only2, before, at5)).toEqual({ from: 5, to: 5, tail: false });
   });
 });
