@@ -12,7 +12,7 @@ import { chooserView, type CatalogState } from "./chooserModel";
 import { ConflictNotice } from "../multi/ConflictNotice";
 import { AnimatePresence, motion } from "motion/react";
 import { startTransition, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { IconChevron, IconCode, IconCommentSolid, IconCopy, IconLayers, IconLock, IconMore, IconPath } from "../app/icons";
+import { IconChevron, IconCommentSolid, IconCopy, IconLayers, IconLock, IconMore, IconPath, IconTerminal } from "../app/icons";
 import { panelView, replayTime, useReplay, useTick, type PanelView } from "../workstation/clock";
 import { usePlay } from "../workstation/replayMode";
 import { useRuns } from "../workstation/runs/store";
@@ -22,8 +22,11 @@ import { CardMessage } from "./AgoraCard";
 import { cardTurnLabel, messageCard, quietReply } from "./agentMessage";
 import { captureSelection } from "./selection";
 import { SelectionAttachment } from "./SelectionAttachment";
-import { ProcessFold, TrajectoryView } from "./TrajectoryView";
+import { TrajectoryView } from "./TrajectoryView";
+import { LiveBar, ProcessBlock, ProcessChoice } from "./ProcessCard";
+import { activityModel } from "./activityCard";
 import { TraceTurn } from "./TraceTurn";
+import { CONTINUE_WORD, stoppedForTime } from "./turnStop";
 import { buildTurns, fmtCost, fmtDuration, fmtTokens, sumUsage, type TrajTurn } from "./trajectoryModel";
 import { SPRING } from "../comments/motion";
 import { Composer } from "./Composer";
@@ -398,8 +401,10 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   const [termMenu, setTermMenu] = useState(false);
   const [apps, setApps] = useState<TerminalApps | null>(null);
   useEffect(() => {
-    if (termMenu) void agents.terminalApps().then(setApps).catch(() => setApps(null));
-  }, [termMenu]);
+    void agents.terminalApps().then(setApps).catch(() => setApps(null));
+  }, []);
+  const termName = apps?.name ?? "终端"; // which terminal「在终端打开」uses on this machine (AGORA_TERMINAL, else Ghostty > Kitty > Terminal)
+  const termIcon = apps?.chosen === "kitty" ? <TerminalAppIcon /> : <IconTerminal size={16} />;
   const openTerminal = async () => {
     setTermNote(null);
     setTermMenu(false);
@@ -446,9 +451,14 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
         : inflight
           ? "已发送，等待开始…"
           : status?.error
-            ? `上一轮出错：${status.error}`
+            ? stoppedForTime(status.error)
+              ? status.error
+              : `上一轮出错：${status.error}`
             : null;
 
+  // the bar above the composer reads the same model as the turn's card (./activityCard.ts)
+  const liveTurn = turns.at(-1)?.running ? turns.at(-1)! : null;
+  const liveText = liveTurn ? activityModel(liveTurn, { waiting: !!status?.waiting }).now : status?.busy ? `${nameOf(binding.agent)} 正在回复${status.terminal.alive ? "（终端）" : ""}` : "已发送，等待开始…";
   const totalMs = turns.some((t) => t.durationMs != null) ? turns.reduce((n, t) => n + (t.durationMs ?? 0), 0) : null;
   return (
     <div className="sp" data-agent={binding.agent}>
@@ -474,10 +484,10 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           className="icon-btn sm"
           disabled={(!status?.terminal.alive && !!status?.running) || stuck}
           onClick={() => void openTerminal()}
-          title={status?.terminal.alive ? "再开一个 Kitty 窗口连到同一个终端" : status?.running ? "这一轮结束后再打开" : "在 Kitty 中打开，直接在里面做 coding"}
+          title={status?.terminal.alive ? `再开一个 ${termName} 窗口连到同一个终端` : status?.running ? "这一轮结束后再打开" : `用 ${termName} 打开，直接在里面做 coding`}
           aria-label="在终端打开"
         >
-          <TerminalAppIcon />
+          {termIcon}
         </button>
         <div className="sp-term">
           <button className="icon-btn sm" aria-haspopup="dialog" aria-expanded={termMenu} aria-label="用量与更多" title="用量、会话 id、在哪个终端打开" onClick={() => setTermMenu((v) => !v)}>
@@ -503,13 +513,12 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
                 <button
                   role="menuitem"
                   disabled={!status?.terminal.alive && !!status?.running}
-                  title={apps && !apps.kitty ? "没装 Kitty：会改用 macOS 终端" : "在 Kitty 窗口里打开这个会话的终端"}
+                  title={apps && !apps.chosen ? "没找到 Ghostty、Kitty 或 macOS 终端：用「复制打开命令」" : `在 ${termName} 窗口里打开这个会话的终端`}
                   onClick={() => void openTerminal()}
                 >
                   <span className="menu-check" />
-                  <TerminalAppIcon />
-                  在 Kitty 中打开
-                  {apps && !apps.kitty && <em className="menu-note">用终端</em>}
+                  {termIcon}
+                  {apps && !apps.chosen ? "在终端打开" : `用 ${termName} 打开`}
                 </button>
                 <button role="menuitem" disabled={!status?.terminal.alive && !!status?.running} onClick={() => void copyOpen()} title="在任意终端里新开窗口粘贴运行">
                   <span className="menu-check" />
@@ -525,6 +534,8 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
                 <hr />
                 <p className="menu-title">会话面板</p>
                 <FloatChoice />
+                <p className="menu-title">过程</p>
+                <ProcessChoice sessionId={sessionId} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -559,8 +570,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
               </ol>
             </div>
           )}
-          <Conversation sessionId={sessionId} canvasId={session.canvasId} turns={turns} changes={changes} canvasTitles={canvasTitles} flash={flash} onTrajectory={(n) => (setView((v) => panelView(v, "trajectory")), setFocusTurn({ n, key: Date.now() }))} />
-          {working && <LiveLine sessionId={sessionId} />}
+          <Conversation sessionId={sessionId} canvasId={session.canvasId} waiting={!!status?.waiting} turns={turns} changes={changes} canvasTitles={canvasTitles} flash={flash} onTrajectory={(n) => (setView((v) => panelView(v, "trajectory")), setFocusTurn({ n, key: Date.now() }))} />
         </div>
         <JumpPill show={jump.show} unread={jump.unread} running={working} onJump={jump.jump} />
         </div>
@@ -570,6 +580,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           <i className="dot" data-tone={status?.held ? "held" : status?.error && !working ? "error" : "ok"} />
           <span>{line}</span>
           {status?.running && <button className="btn sm ghost" onClick={() => void agents.interrupt(sessionId)}>停止</button>}
+          {!working && !stuck && stoppedForTime(status?.error) && <button className="btn sm ghost" onClick={() => void send(CONTINUE_WORD, [])}>{CONTINUE_WORD}</button>}
         </div>
       )}
       {native && !native.blocking && (
@@ -597,6 +608,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
       ) : (
         <>
         <RequestCards sessionId={sessionId} />
+        {working && <LiveBar text={liveText} since={liveTurn ? liveTurn.startedAt : null} waiting={!!status?.waiting} onStop={status?.running ? () => void agents.interrupt(sessionId) : undefined} />}
         <InputRight sessionId={sessionId} />
         <Composer
           key={binding.nativeId ?? "new"}
@@ -721,7 +733,7 @@ const rememberStale = (sid: string) => {
 };
 
 /** 对话 view: per turn — header with usage, the person's message, the process folded into one line, canvas changes, the answer. */
-function Conversation({ sessionId, canvasId, turns, changes, canvasTitles, flash, onTrajectory }: { sessionId: string; canvasId: string; turns: TrajTurn[]; changes: Turn[]; canvasTitles: Record<string, string>; flash: string | null; onTrajectory: (n: number) => void }) {
+function Conversation({ sessionId, canvasId, waiting, turns, changes, canvasTitles, flash, onTrajectory }: { sessionId: string; canvasId: string; waiting: boolean; turns: TrajTurn[]; changes: Turn[]; canvasTitles: Record<string, string>; flash: string | null; onTrajectory: (n: number) => void }) {
   // Canvas changes belong to the turn they happened in (by time); ones before any turn stand alone.
   const byTurn = new Map<number, Turn[]>();
   const loose: Turn[] = [];
@@ -754,10 +766,10 @@ function Conversation({ sessionId, canvasId, turns, changes, canvasTitles, flash
             </div>
           )}
           {t.user?.selection && <SelectionAttachment sel={t.user.selection} canvasId={canvasId} />}
-          <ProcessFold sessionId={sessionId} turn={t} />
+          <ProcessBlock sessionId={sessionId} turn={t} waiting={waiting} />
           {(byTurn.get(t.n) ?? []).map(card)}
           {t.reply?.text && <Markdown className={msg && quietReply(t) ? "ds-say quiet" : "ds-say"} text={t.reply.text} />}
-          {t.error && !t.running && (t.error === "interrupted" ? <p className="sp-notice">这一轮已停止</p> : <p className="ds-say" data-error>这一轮出错：{t.error}</p>)}
+          {t.error && !t.running && (t.error === "interrupted" ? <p className="sp-notice">这一轮已停止</p> : <p className="ds-say" data-error>{stoppedForTime(t.error) ? t.error : `这一轮出错：${t.error}`}</p>)}
           {(t.notices ?? []).map((n) => <p key={n.id} className="sp-notice" data-tone={n.tone}>{n.text}</p>)}
         </article>
         );
@@ -850,23 +862,5 @@ function TurnCard({ t, canvasTitle, flash }: { t: Turn; canvasTitle?: string; fl
       </AnimatePresence>
       {t.reply?.undoError && !open && <p className="sp-warn">{t.reply.undoError}</p>}
     </article>
-  );
-}
-
-/** While the agent works: one line saying what it does right now (from the 工位视图's run), and where. */
-function LiveLine({ sessionId }: { sessionId: string }) {
-  const runs = useRuns();
-  const now = useTick(500);
-  const run = runs.byId.get(sessionId);
-  const g = run?.segs.find((s) => s.start <= now && now < s.end) ?? run?.segs.at(-1);
-  if (!g) return null;
-  const wait = g.kind === "wait";
-  const what = wait ? "在等你回复" : g.kind === "write" ? `正在写 ${g.path ?? ""}` : g.kind === "read" ? `正在读 ${g.path ?? ""}` : g.kind === "exec" ? `正在跑 ${g.cmd ?? ""}` : g.kind === "delegate" ? `正在${g.label}` : "正在想";
-  return (
-    <div className="sp-live" data-k={g.kind}>
-      {g.kind === "write" ? <IconCode size={14} /> : <i className="dot" data-tone={wait ? "held" : "ok"} />}
-      <span className="sp-live-text">{what}</span>
-      <span className="sp-live-el">{fmtDuration(Math.max(0, now - g.start))}</span>
-    </div>
   );
 }
