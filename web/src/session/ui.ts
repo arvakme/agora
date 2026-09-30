@@ -57,16 +57,35 @@ export const agentChoice = {
   },
 };
 
-type Highlight = { canvasId: string; ids: string[] } | null;
-let hl: Highlight = null;
+/** `key`: which step pinned it (`toggle` lets go on the same key). */
+export type Highlight = { canvasId: string; ids: string[]; key?: string } | null;
+let hover: Highlight = null;
+let pinned: Highlight = null;
 const ls = new Set<() => void>();
+const emit = () => ls.forEach((l) => l());
+/**
+ * Two ways to outline elements on a canvas: hovering a step lends the outline while the pointer is on it (`set`); 标出改动
+ * holds it until clicked again (`toggle`) and wins over hovering another step, so moving the mouse never loses it.
+ */
 export const highlight = {
   set(h: Highlight) {
-    hl = h;
-    ls.forEach((l) => l());
+    hover = h;
+    emit();
   },
-  get: () => hl,
+  toggle(h: NonNullable<Highlight>) {
+    pinned = pinned?.key !== undefined && pinned.key === h.key ? null : h;
+    emit();
+  },
+  unpin(key?: string) {
+    if (!pinned || (key !== undefined && pinned.key !== key)) return;
+    pinned = null;
+    emit();
+  },
+  /** What the canvas draws. */
+  get: (): Highlight => pinned ?? hover,
+  pinned: (): Highlight => pinned,
   subscribe: (l: () => void) => (ls.add(l), () => void ls.delete(l)),
 };
 export const useHighlight = () => useSyncExternalStore(highlight.subscribe, highlight.get);
+export const usePinnedHighlight = () => useSyncExternalStore(highlight.subscribe, highlight.pinned);
 

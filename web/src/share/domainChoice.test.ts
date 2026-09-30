@@ -1,6 +1,6 @@
 // What the share window shows for the domain (share/domainChoice.ts): the account's zones, the last pick, the environment's, or a temporary link.
 import { describe, expect, it } from "vitest";
-import { createPlan, defaultTarget, domainView, type DomainInfo } from "./domainChoice.ts";
+import { createPlan, defaultTarget, domainRow, domainView, type DomainInfo } from "./domainChoice.ts";
 
 const info = (o: Partial<DomainInfo>): DomainInfo => ({ domains: [], chosen: null, fixed: false, error: null, ...o });
 
@@ -50,5 +50,24 @@ describe("what 创建链接 sends", () => {
     expect(defaultTarget(domainView(info({}), null))).toBe("quick");
     expect(defaultTarget(domainView(info({ domains: ["a.test", "b.test"] }), null))).toBe("domain");
     expect(defaultTarget(domainView(null, null))).toBe("domain");
+  });
+});
+
+describe("domainRow (the 域名 line of the share window)", () => {
+  const pick = domainView(info({ domains: ["a.test", "b.test", "c.test"], chosen: "b.test" }), null);
+  it("says which domain is used and what the link will look like, in one short sentence", () => {
+    expect(domainRow(pick)).toMatchObject({ current: "b.test", preview: "链接会是 xxx.b.test" });
+    expect(domainRow(domainView(info({ domains: ["only.test"] }), null))).toMatchObject({ current: "only.test", preview: "链接会是 xxx.only.test" });
+    expect(domainRow(domainView(info({ domains: ["x.test"], fixed: true }), null))).toMatchObject({ current: "x.test", preview: "链接会是 xxx.x.test" });
+  });
+  it("offers 换一个 only when there is another domain to change to", () => {
+    expect(domainRow(pick).change).toEqual({ label: "换一个", options: ["a.test", "b.test", "c.test"] });
+    expect(domainRow(domainView(info({ domains: ["only.test"] }), null)).change).toBeNull();
+    expect(domainRow(domainView(info({ domains: ["x.test"], fixed: true }), null)).change).toBeNull();
+  });
+  it("has no domain to show while loading, on an error, or with none", () => {
+    for (const v of [domainView(null, null), domainView(info({ error: "x" }), null), domainView(info({}), null)]) {
+      expect(domainRow(v)).toEqual({ current: null, preview: null, change: null });
+    }
   });
 });

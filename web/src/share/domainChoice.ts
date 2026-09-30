@@ -32,3 +32,19 @@ export function createPlan(view: DomainView, target: ShareTarget): { ok: true; b
 
 /** Start on the temporary link when the domain side cannot work right now. */
 export const defaultTarget = (view: DomainView): ShareTarget => (view.kind === "error" || view.kind === "none" ? "quick" : "domain");
+
+export type DomainRowView = {
+  /** The domain the link will be under; null while there is none to show (reading, failed, empty account). */
+  current: string | null;
+  /** One short sentence on what the link will look like. */
+  preview: string | null;
+  /** 换一个: only when the account has another domain to change to. */
+  change: { label: string; options: string[] } | null;
+};
+
+/** What the 域名 line shows: the domain in use, the link it makes, and a way to change it. */
+export function domainRow(view: DomainView): DomainRowView {
+  if (view.kind === "fixed" || view.kind === "single") return { current: view.domain, preview: `链接会是 xxx.${view.domain}`, change: null };
+  if (view.kind === "pick") return { current: view.selected, preview: `链接会是 xxx.${view.selected}`, change: { label: "换一个", options: view.options } };
+  return { current: null, preview: null, change: null };
+}
