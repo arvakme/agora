@@ -2,6 +2,7 @@
 // handles and moves by its title bar, a bottom bar (and its pill) for the session, the rail tab a folded shell leaves at the window's right edge, which shell is open, and when a
 // small window docks the panel. Pure: the components measure the pane and ask here. The card's place is the distance from the pane's top-right corner, so a window that changes
 // size keeps it at the same corner; its size is what the person pulled (never what the content wants) and is clamped to the window when it is drawn, not when it is kept.
+import { PILL_GAP } from "../canvas/dockPlace";
 import type { Node } from "../workspace/layout";
 
 export type Place = { right: number; top: number };
@@ -164,7 +165,6 @@ export const CHROME_H = 48;
 export const BAR_LEFT = 232;
 export const BAR_RIGHT = 88;
 const BAR_COMPOSER_H = 42;
-export const PILL_W = 176;
 export const DEFAULT_BAR: Bar = { width: BAR_W_DEFAULT, height: null, expanded: false, folded: false };
 
 const barWidth = (bar: Bar, pane: Size) => {
@@ -177,14 +177,16 @@ const barHeight = (bar: Bar, pane: Size, bottom: number) => {
 };
 
 /**
- * The bar's rectangle: centred over the 「浏览 / 评论」 bar (`dock`, in the pane's frame) and just above it; pulled up, the bottom stays and the top goes up. With the comment list's
+ * The bar's rectangle: centred on `center` (the canvas body's middle, in the pane's frame; default the middle of the 「浏览 / 评论」 bar, `dock`) and just above that bar; pulled up, the bottom stays and the top goes up. With the comment list's
  * card up (`avoid`) and sharing some of its height, the bar keeps clear of it: it moves away from the card, and narrows (to 480 at most) only when there is no room to move.
  */
-export function barBox(bar: Bar, pane: Size, dock: Box, avoid?: Box): Box {
+export function barBox(bar: Bar, pane: Size, dock: Box, avoid?: Box, center = dock.x + dock.w / 2): Box {
   let w = barWidth(bar, pane);
+  const room = 2 * (Math.min(center, pane.w - center) - MARGIN); // the widest the bar can be and keep its middle on `center`
+  if (room >= BAR_W_MIN) w = Math.min(w, room);
   const bottom = dock.y - BAR_GAP;
   const h = bar.expanded ? barHeight(bar, pane, bottom) : BAR_H;
-  let x = clampTo(dock.x + dock.w / 2 - w / 2, MARGIN, pane.w - w - MARGIN);
+  let x = clampTo(center - w / 2, MARGIN, pane.w - w - MARGIN);
   const y = Math.max(MARGIN, bottom - h);
   if (avoid && y < avoid.y + avoid.h && y + h > avoid.y && x < avoid.x + avoid.w + MARGIN && x + w > avoid.x - MARGIN) {
     if (avoid.x + avoid.w / 2 >= x + w / 2) {
@@ -214,11 +216,9 @@ export function resizeBar(bar: Bar, edge: "e" | "w" | "n", dx: number, dy: numbe
   return { ...bar, width: barWidth({ ...bar, width: barWidth(bar, pane) + (edge === "e" ? 2 * dx : -2 * dx) }, pane) };
 }
 
-/** The folded bar: a pill right of the 「浏览 / 评论」 bar, as tall as it, ending before `limit` (the next control, e.g. 「整张图」); with no room for words it is the round avatar. */
-export function pillBox(dock: Box, limit: number): Box {
-  const x = dock.x + dock.w + 8;
-  const room = limit - 8 - x;
-  return { x, y: dock.y, w: room >= 96 ? Math.min(PILL_W, room) : dock.h, h: dock.h };
+/** The folded bar: a pill right of the 「浏览 / 评论」 bar, as tall as it, `w` wide (canvas/dockPlace.ts groupPlace: the group of the two is what stays centred). */
+export function pillBox(dock: Box, w: number): Box {
+  return { x: dock.x + dock.w + PILL_GAP, y: dock.y, w, h: dock.h };
 }
 
 const KEY_BAR = "agora.float.bar";
