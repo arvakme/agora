@@ -50,13 +50,13 @@ import { hideEmptyLayer, isWorking } from "./liveCamera";
 import { frame } from "./frame";
 import { gestureFor } from "./gestures";
 import { buildGeometry, type Geometry } from "./geometry";
-import { cutLine, doorClimb, hatchesAt, hatchVisSoon, holeVisAt, HATCH_IN_MS, ladderShape, LADDER_HALF, peekRise, type Hatch, type Peek } from "./hatch";
+import { cutLine, doorClimb, hatchesAt, hatchVisSoon, holeVisAt, HATCH_IN_MS, ladderShape, peekBox, LADDER_HALF, peekRise, type Hatch, type Peek } from "./hatch";
 import { canvasWhere, conflictAt, doorTiming, OUTSIDE, outsideProject, stateAt, writeConflicts, type Ctx, type RunState, type Side, type WriteConflict } from "./place";
 import { Glide, makeSprings, planDoor, RIG, solve, SUB_SCALE, type Pt, type Springs, type Trip } from "./rig";
 import type { Leg } from "./route";
 import { ReplayBar, TraceBar } from "./ReplayBar";
 import { stopEntryNote, stopEntryText } from "./traceText";
-import { pillSpot } from "./stopPill";
+import { entryCapsuleBox, pillSpot } from "./stopPill";
 import { ReplayMarks } from "./ReplayMarks";
 import { shortAgentName } from "./stripRules";
 import { liveFollow, useLiveFollow } from "./replayLive";
@@ -1132,6 +1132,21 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const pillsTaken: Box[] = [];
   const zoomNow = view.appState.zoom.value;
   const viewBox = { x: -view.appState.scrollX, y: -view.appState.scrollY, w: view.appState.width / zoomNow, h: view.appState.height / zoomNow };
+  // what else floats there, and wins a place over a note (someone in a sub-diagram: the head looking out of the hole with its word and the entrance capsule; then the talk box; then the bubbles)
+  const fsc = Math.max(1, Math.min(1.6, zoomNow * 1.2));
+  const floaters: Box[] = [];
+  for (const p of snap.peeks) {
+    const nb = geom.boxOf(p.place);
+    if (!nb) continue;
+    const f = snap.byId.get(p.id);
+    floaters.push(peekBox(geom.dock(p.place), (fsc / zoomNow) * (f && f.depth > 0 ? SUB_SCALE : 1), snap.states.get(p.id)?.pose === "idle"), entryCapsuleBox(nb, zoomNow));
+  }
+  const layerBox = rootEl.current?.getBoundingClientRect();
+  if (layerBox)
+    for (const el of rootEl.current!.querySelectorAll<HTMLElement>(".ws-talk, .ws-bub-pos:not([data-folded]) > .ws-bub:not([data-exit])")) {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && el.closest<HTMLElement>(".ws-bub-pos")?.style.opacity !== "0") floaters.push({ x: (r.left - layerBox.left) / zoomNow - view.appState.scrollX, y: (r.top - layerBox.top) / zoomNow - view.appState.scrollY, w: r.width / zoomNow, h: r.height / zoomNow });
+    }
   const stopMarks = (trv?.stops ?? []).flatMap((s, i) => {
     const b = geom.boxOf(s.place);
     const k = visits.get(s.place) ?? 0;
@@ -1142,7 +1157,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
     const seen = here.filter((x) => x.done).length ? here.filter((x) => x.done) : here;
     const entry = k === 0 ? [...new Set(seen.flatMap((x) => x.portal!.labels))] : [];
     const text = entry.length ? stopEntryText(i + 1, entry) : "";
-    const spot = text && s.done ? pillSpot({ node: b, text, zoom: zoomNow, obstacles: geom.obstacles, taken: pillsTaken, view: viewBox, figureAtTop: [...snap.states.values()].some((st) => st.at === s.place && st.present) }) : null;
+    const spot = text && s.done ? pillSpot({ node: b, text, zoom: zoomNow, obstacles: [...geom.obstacles, ...floaters], taken: pillsTaken, view: viewBox, figureAtTop: [...snap.states.values()].some((st) => st.at === s.place && st.present) }) : null;
     if (spot) pillsTaken.push(spot.box);
     return [{ key: `s${i}|${s.t0}`, n: i + 1, i, s, x: b.x, y: b.y, dy: k * 20, entry, pill: spot ? { dx: spot.dx, dy: spot.dy - k * 20 } : null }];
   });

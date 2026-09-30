@@ -35,3 +35,8 @@ export function pillSpot(o: { node: Box; text: string; zoom: number; obstacles: 
   }
   return null;
 }
+
+/** The mark of who is in a node's sub-diagram (./EntryMarks.tsx): at the node's bottom-left corner straddling its bottom edge, three avatars at most — in world units for `zoom`. */
+export function entryCapsuleBox(node: Box, zoom: number): Box {
+  return { x: node.x + 8 / zoom, y: node.y + node.h - 12 / zoom, w: 78 / zoom, h: 24 / zoom };
+}
