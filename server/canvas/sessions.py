@@ -1586,15 +1586,9 @@ def _preview(inp: dict[str, Any]) -> dict[str, Any]:
 
 def _stop_process(pid: Any, argv: Any) -> None:
     """End a leftover CLI turn and its whole tree — only when the pid still runs the command that was recorded (pids are reused)."""
-    import subprocess
-
     if not isinstance(pid, int) or pid <= 1 or not isinstance(argv, list):
         return
-    try:
-        cmd = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, timeout=5).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return
-    if cmd != " ".join(argv):
+    if proctree.command(pid) != " ".join(argv):
         return
     proctree.stop(pid)
 

@@ -29,6 +29,19 @@ SHARE_S = 0.5  # running turns share one snapshot this long (well under the 1 s 
 _cache: tuple[float, dict[int, tuple[int, int, str]]] | None = None
 _cache_lock = threading.Lock()
 
+# ``-ww``: without it Linux procps cuts every column at ``$COLUMNS`` (80 under pytest and in most services) when the output is a pipe
+_PS_ENV = {"LC_ALL": "C"}
+
+
+def parse_snapshot(out: str) -> dict[int, tuple[int, int, str]]:
+    """The rows of ``ps -A -o pid=,ppid=,pgid=,stat=,lstart=`` (macOS and Linux print them alike), zombies left out."""
+    procs: dict[int, tuple[int, int, str]] = {}
+    for line in out.splitlines():
+        parts = line.split(None, 4)
+        if len(parts) == 5 and parts[0].isdigit() and parts[1].isdigit() and parts[2].isdigit() and not parts[3].startswith("Z"):
+            procs[int(parts[0])] = (int(parts[1]), int(parts[2]), parts[4].strip())
+    return procs
+
 
 def snapshot(max_age: float = 0.0) -> dict[int, tuple[int, int, str]]:
     """Every live process (zombies are already gone as far as stopping goes): pid → (ppid, pgid, start time as ``ps`` prints it).
@@ -39,16 +52,21 @@ def snapshot(max_age: float = 0.0) -> dict[int, tuple[int, int, str]]:
         if max_age > 0 and _cache is not None and time.monotonic() - _cache[0] < max_age:
             return dict(_cache[1])
         try:
-            out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,pgid=,stat=,lstart="], capture_output=True, text=True, timeout=10).stdout
+            out = subprocess.run(["ps", "-ww", "-A", "-o", "pid=,ppid=,pgid=,stat=,lstart="], capture_output=True, text=True, timeout=10, env={**os.environ, **_PS_ENV}).stdout
         except (OSError, subprocess.SubprocessError):
             return {}
-        procs: dict[int, tuple[int, int, str]] = {}
-        for line in out.splitlines():
-            parts = line.split(None, 4)
-            if len(parts) == 5 and parts[0].isdigit() and parts[1].isdigit() and parts[2].isdigit() and not parts[3].startswith("Z"):
-                procs[int(parts[0])] = (int(parts[1]), int(parts[2]), parts[4].strip())
+        procs = parse_snapshot(out)
         _cache = (time.monotonic(), procs)
         return dict(procs)
+
+
+def command(pid: int) -> str | None:
+    """The whole command line ``pid`` runs now (``None`` when there is no such process or ``ps`` cannot say)."""
+    try:
+        out = subprocess.run(["ps", "-ww", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, timeout=5, env={**os.environ, **_PS_ENV}).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out or None
 
 
 def descendants(root: int, snap: Mapping[int, tuple[int, int, str]] | None = None) -> dict[int, str]:

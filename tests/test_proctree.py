@@ -215,3 +215,49 @@ def test_stop_leaves_a_root_pid_alone_when_its_start_time_says_it_is_someone_els
     finally:
         if other.poll() is None:
             other.kill()
+
+
+# ——— what `ps` prints, on both platforms (PX1: Linux procps cut the command at $COLUMNS and the leftover turn was never ended) ———
+PS_MACOS = """\
+    1     0     1 Ss   Mon Sep 29  9:05:11 2026
+  412     1   412 S    Tue Sep 30 14:55:14 2026
+  413   412   412 Z+   Tue Sep 30 14:55:15 2026
+"""
+PS_LINUX = """\
+      1       0       1 Ss   Wed Sep 30 14:54:45 2026
+     76       1       1 S    Wed Sep 30 14:54:55 2026
+     77      76      77 Ss   Wed Sep 30 14:54:55 2026
+     79      76       1 Z    Wed Sep 30 14:54:56 2026
+"""
+
+
+def test_parsing_ps_output_reads_linux_and_macos_lines_alike_and_drops_zombies():
+    mac = proctree.parse_snapshot(PS_MACOS)
+    assert mac == {1: (0, 1, "Mon Sep 29  9:05:11 2026"), 412: (1, 412, "Tue Sep 30 14:55:14 2026")}  # 413 is a zombie: gone as far as stopping goes
+    linux = proctree.parse_snapshot(PS_LINUX)
+    assert linux == {1: (0, 1, "Wed Sep 30 14:54:45 2026"), 76: (1, 1, "Wed Sep 30 14:54:55 2026"), 77: (76, 77, "Wed Sep 30 14:54:55 2026")}
+    assert proctree.parse_snapshot("garbage\n  x y z w v\n\n") == {}  # lines that are not process rows are skipped
+
+
+def test_the_command_of_a_process_is_whole_even_when_the_terminal_is_narrow(monkeypatch):
+    """Linux procps cuts ``ps -o command=`` at $COLUMNS (80 under pytest) unless told ``-ww``: the identity check of a leftover turn
+    (``argv`` recorded == what the pid runs now) then failed for any long path and the process was left running."""
+    monkeypatch.setenv("COLUMNS", "80")
+    argv = [sys.executable, "-c", "import time; time.sleep(60)", "x" * 120]
+    p = subprocess.Popen(argv)
+    try:
+        for _ in range(100):
+            got = proctree.command(p.pid)
+            if got and "x" * 120 in got:
+                break
+            time.sleep(0.05)
+        assert got == " ".join(argv)
+    finally:
+        p.kill()
+        p.wait(5)
+
+
+def test_the_command_of_a_pid_nobody_runs_is_none():
+    p = subprocess.Popen([sys.executable, "-c", "pass"])
+    p.wait(5)
+    assert proctree.command(p.pid) is None
