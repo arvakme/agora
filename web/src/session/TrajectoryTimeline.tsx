@@ -233,9 +233,9 @@ type OverlayProps = { lay: NonNullable<ReturnType<typeof layoutTimeline>>; dom: 
  */
 function SelectionOverlay({ lay, dom, sel, live, edgeKeys }: OverlayProps) {
   const [x0, x1] = edgeX(lay, dom, sel);
-  const [p0, p1] = range(dom, sel);
+  const [r0, r1] = range(dom, sel);
   const [t0, t1] = turnsOf(dom, sel);
-  const edge = (e: Edge, x: number, p: number, turn: number) => {
+  const edge = (e: Edge, x: number, r: number, turn: number) => {
     const label = e === "left" ? "选区左边界" : "选区右边界";
     return (
       <span
@@ -245,10 +245,10 @@ function SelectionOverlay({ lay, dom, sel, live, edgeKeys }: OverlayProps) {
         tabIndex={live ? -1 : 0}
         aria-label={`${label}。${STEP_HELP}`}
         aria-orientation="horizontal"
-        aria-valuemin={dom.spans[0].index}
-        aria-valuemax={dom.spans[dom.spans.length - 1].index}
-        aria-valuenow={dom.spans[p].index}
-        aria-valuetext={`第 ${turn} 轮 #${dom.spans[p].index}`}
+        aria-valuemin={dom.ordered[0].index}
+        aria-valuemax={dom.ordered[dom.ordered.length - 1].index}
+        aria-valuenow={dom.ordered[r].index}
+        aria-valuetext={`第 ${turn} 轮 #${dom.ordered[r].index}`}
         aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Escape"
         style={{ left: x - HANDLE_HIT / 2, width: HANDLE_HIT }}
         onKeyDown={edgeKeys(e)}
@@ -263,8 +263,8 @@ function SelectionOverlay({ lay, dom, sel, live, edgeKeys }: OverlayProps) {
       <span className="ds-tl-cap" data-side={x1 < 130 ? "left" : "right"} style={x1 < 130 ? { left: x0 } : { right: lay.width - x1 }} aria-live={live ? undefined : "polite"}>
         {caption(dom, sel)}
       </span>
-      {edge("left", x0, p0, t0)}
-      {edge("right", x1, p1, t1)}
+      {edge("left", x0, r0, t0)}
+      {edge("right", x1, r1, t1)}
     </>
   );
 }
