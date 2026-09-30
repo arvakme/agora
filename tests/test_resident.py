@@ -35,7 +35,7 @@ async def pool(tmp_path):
 def make(kind, pool, tmp_path, mode="hold", **env):
     log = tmp_path / f"{kind}.log"
     cls, fake = (CodexResidentBackend, CODEX) if kind == "codex" else (PiResidentBackend, PI)
-    b = cls(cmd=[sys.executable, str(fake)], env={"FAKE_LOG": str(log), "FAKE_MODE": mode, **{k: str(v) for k, v in env.items()}}, timeout_s=20)
+    b = cls(cmd=[sys.executable, str(fake)], env={"FAKE_LOG": str(log), "FAKE_MODE": mode, **{k: str(v) for k, v in env.items()}})
     b.attach_pool(pool)
     return b, log
 
@@ -365,7 +365,7 @@ async def test_pi_without_rpc_falls_back_and_says_why(pool, tmp_path):
 
 
 async def test_a_missing_binary_falls_back_with_the_reason(pool, tmp_path):
-    b = CodexResidentBackend(cmd=[str(tmp_path / "no-such-codex")], timeout_s=5)
+    b = CodexResidentBackend(cmd=[str(tmp_path / "no-such-codex")])
     b.attach_pool(pool)
     evs = await run(b, req("codex", tmp_path))
     assert evs[0]["ok"] is False and evs[0]["why"]
@@ -383,7 +383,7 @@ async def test_a_retry_after_the_failure_time_tries_the_resident_way_again(pool,
 
 
 async def test_no_pool_or_a_switch_means_the_old_way_without_a_note(tmp_path, monkeypatch):
-    b = CodexResidentBackend(cmd=[sys.executable, str(CODEX)], env={"FAKE_MODE": "quick"}, timeout_s=10)
+    b = CodexResidentBackend(cmd=[sys.executable, str(CODEX)], env={"FAKE_MODE": "quick"})
     evs = await run(b, req("codex", tmp_path))  # no pool attached (planning, `agora` CLI)
     assert evs[0]["t"] == "start" and evs[-1]["raw"] == "一次性跑法的回答"
     pool = ResidentPool(tmp_path / "r")

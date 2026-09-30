@@ -143,7 +143,6 @@ def test_a_remembered_pid_that_now_belongs_to_another_process_is_not_killed(fake
 async def test_the_backends_stop_path_ends_the_tree_of_a_cancelled_turn(fake):
     script, out, made = fake
     b = agents.CodexBackend([sys.executable, str(script), str(out)])
-    b.timeout_s = 60
     req = RunRequest(schema=None, system=None, prompt="p", options=ExecOptions(backend="codex", model=""), cwd=str(out.parent))
 
     async def consume():
