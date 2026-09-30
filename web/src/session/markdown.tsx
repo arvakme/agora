@@ -3,7 +3,7 @@
 // italic / strike / links — straight into React elements. Nothing is ever parsed as HTML:
 // tags in the text stay text (React escapes them), and links only keep http(s) and mailto
 // targets, so a reply cannot run script or load anything by itself.
-import { Fragment, type ReactNode } from "react";
+import { Fragment, memo, type ReactNode } from "react";
 
 export type Block =
   | { t: "p"; text: string }
@@ -228,6 +228,7 @@ function renderBlocks(blocks: Block[], key: string): ReactNode[] {
   });
 }
 
-export function Markdown({ text, className }: { text: string; className?: string }) {
+/** Memoized on the text: a streaming reply re-renders only the message that grew, not every message on each clock tick. Unclosed syntax (a bold, a fence, a list) renders as far as it goes. */
+export const Markdown = memo(function Markdown({ text, className }: { text: string; className?: string }) {
   return <div className={className ? `md ${className}` : "md"}>{renderBlocks(parseBlocks(text), "b")}</div>;
-}
+});

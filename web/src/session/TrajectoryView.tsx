@@ -26,6 +26,7 @@ import { clock as replayClock } from "../workstation/clock";
 import { jumpTo } from "../workstation/replayStart";
 import { plays } from "../workstation/replayMode";
 import { AgentAvatar } from "./AgentAvatar";
+import { Markdown } from "./markdown";
 import {
   ACTIVITY_NOW,
   toolActivity,
@@ -204,7 +205,7 @@ export function ProcessFold({ sessionId, turn, children }: { sessionId: string; 
           {process.map((s) =>
             s.records.map((r) =>
               r.kind === "message" ? (
-                <p key={r.id} className="ds-process-say">{r.item.text}</p>
+                <Markdown key={r.id} className="ds-process-say" text={r.item.text ?? ""} />
               ) : (
                 <ToolRow key={r.id} sessionId={sessionId} item={r.item} open={!!tools[r.id]} onToggle={() => setTools({ ...tools, [r.id]: !tools[r.id] })} />
               ),

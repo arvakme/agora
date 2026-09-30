@@ -4,6 +4,7 @@
 import { useLayoutEffect, useRef, useState, useSyncExternalStore, type MouseEvent } from "react";
 import { IconChevron } from "../app/icons";
 import { useTick } from "../workstation/clock";
+import { Markdown } from "./markdown";
 import { ProcessFold, ToolRow } from "./TrajectoryView";
 import { fmtDuration, type TrajTurn } from "./trajectoryModel";
 import { activityModel, keepOpen, processMode, wasKeptOpen, type ProcessMode } from "./activityCard";
@@ -57,7 +58,7 @@ function ActivityCard({ sessionId, turn, waiting }: { sessionId: string; turn: T
   return (
     <div className="ds-act" data-open={open} data-wait={m.waiting || undefined}>
       {says.map((r) => (
-        <p key={r.id} className="ds-process-say">{r.item.text}</p>
+        <Markdown key={r.id} className="ds-process-say" text={r.item.text ?? ""} />
       ))}
       {failed.length > 0 && (
         <div className="ds-act-failed" role="group" aria-label="失败的动作">
@@ -79,7 +80,7 @@ function ActivityCard({ sessionId, turn, waiting }: { sessionId: string; turn: T
             <div className="ds-act-list" ref={list}>
               {records.map((r, i) =>
                 r.kind === "message" ? (
-                  <p key={r.id} className="ds-process-say">{r.item.text}</p>
+                  <Markdown key={r.id} className="ds-process-say" text={r.item.text ?? ""} />
                 ) : (
                   <div key={r.id} className="ds-act-item" data-latest={i === records.length - 1 || undefined}>
                     <ToolRow sessionId={sessionId} item={r.item} open={!!tools[r.id]} onToggle={() => toggleTool(r.id)} />

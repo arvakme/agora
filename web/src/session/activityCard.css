@@ -1,6 +1,7 @@
 /* 进行中的一轮 as one card, and the bar above the composer (session/ProcessCard.tsx). */
 .ds-act { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
-.ds-act > .ds-process-say { margin: 0; }
+/* the agent's words above the card read like its reply (ds-say), not like the muted list inside */
+.ds-act > .ds-process-say { margin: 0; color: var(--fg); line-height: var(--leading-read); }
 .ds-act-card { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; padding: var(--space-3) var(--space-5) var(--space-4); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--box); }
 .ds-act[data-wait] .ds-act-card { box-shadow: inset 0 0 0 1px var(--caution-dot); }
 .ds-act-head { display: flex; align-items: center; gap: var(--space-3); min-height: 26px; min-width: 0; margin: 0 calc(-1 * var(--space-3)); padding: 0 var(--space-3); border-radius: var(--r-sm); text-align: left; font-size: var(--text-md); }
