@@ -394,6 +394,8 @@ ACC1 发现真实 Claude 用 CLI 画图时整张图一次性冒出、小人整�
 - **顶部被占的高度**（`replayDom.ts` 的 `TOP`/`occupiedFrom`）：工具栏、回放条、面包屑之外，「跟着」小胶囊（`.ws-follow-status`，挂在工具栏下面）也算，取景和镜头目标都把它扣掉（以前没算，图的上沿会压在它下面）。图比窗格高时，取景以小人为中心，图的上半在窗外是自然的，这里只保证小人和它的空间不被遮住。
 - **悬停步骤的描边**（`canvas/highlightBoxes.ts`）：悬停会话里一步「改了画布」时，只给这一步改的**节点**画描边，不再给每一根箭头和每个标签画（一步画整张图时它们叠成一团紫）；只改了箭头的一步仍描箭头。这和工位视图的「有人在写」环无关（环只在小人当前所在的节点）。
 - **气泡躲说话框**：「对 Claude Code 说…」框现在和工具栏一样进气泡的 `avoid`（`Overlay.tsx` 量 `.ws-talk` 的位置），气泡不再叠在它上面（框自己早就躲气泡）。
+- **说话框始终完整在窗格里**（FX9）：框宽 232，窗格更窄时框跟着变窄（`talk.ts` 的 `talkWidth`，最窄 120），再放进窗格内（`placeTalk`）；框里的提示字（「对 Claude Code · 画出这个项目的架构…（回车发送）」）按框宽在**字边界**截断加 …（`fitEllipsis`；输入框有焦点时浏览器不给 placeholder 加省略号，会把最后一个字切掉半个，所以自己截），悬停（`title`）看全文。
+- **所有拖动共用一个 `dragGuard`**（`app/dragGuard.ts`，组件里用 `useDragGuard()`）：按下拖动柄时，页面 `user-select: none` 并清掉已有选区、拒绝 `selectstart`/`dragstart`、指针归拖动柄（pointer capture，下面的画布收不到）、按下时 `preventDefault`、页面光标换成这次拖动的（`col-resize`/`grabbing`）；松手、取消、丢指针、窗口失焦、Esc、组件卸载任何一种都原样恢复，同时几个拖动按计数，最后一个结束才恢复。用了它的拖动：窗格分隔条（`Workspace.tsx` 的 `onSashDown`）、标签拖动重排、评论面板标题条、轨迹时间轴的范围。别的地方要拖（比如悬浮会话面板）：`const guard = useDragGuard(); onPointerDown={(e) => guard(e, { cursor: "grabbing", onEnd: (why) => … })}`，`why` 是 `up|cancel|lost|blur|escape|manual`，非 `up` 时把拖动放弃。
 - **改图积压**（`runs/touch.ts` `mergeTouches`）：落后超过 `BACKLOG_MS` 时，新的一次改图**取代**同一张画布上还排着没开始的旧站（只显示最后一个位置），队列不再随每次更新增长；10 秒内对同一节点更新 100 次，最后一站在最后一次更新后约 8 秒内结束（以前落后 132 秒，`isWorking` 一直为真）。
 - **派给已有会话的改图**（`runs/store.ts` `withTouches`）：`tree.children` 里 `dispatchSession` 指向已绑定会话的子 run，递归并入那个会话的改图，祖先的 `lastAt` 跟着更新，再做顶层去重。
 - **被删掉的子图节点不是地点**（`geometry.ts`）：进门的路要目标画布**和**目标节点都还在；`doorTo` 只看还在的被改节点，`locate` 和 `levelsOf` 一个规则；节点已被删掉时小人留在原地。

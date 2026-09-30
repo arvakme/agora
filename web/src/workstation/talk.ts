@@ -69,6 +69,29 @@ export function talkTarget(o: { name: string; hasSession: boolean; rootName: str
   return { direct: false, placeholder: `对 ${o.rootName} 说（关于 ${o.name}）…${tail}`, prefix: `${pageLead({ source: "小人", title: `关于你派的 ${o.name}` })}关于你派的 ${o.name}：`, note: `${o.name} 是 ${o.rootName} 派的，话会发给 ${o.rootName}` };
 }
 
+/** The box's width in a pane: its own (`natural`), or the area's when the area is narrower — never under 120 (the input needs something to be typed into). */
+export const talkWidth = (area: TBox, natural = 232): number => Math.max(120, Math.min(natural, area.w));
+
+/**
+ * `text` cut with an ellipsis so that it fits `px` of one line at `font` px (CJK characters a full em wide, the rest about 0.56 em). An input that has the focus does not
+ * ellipsize its placeholder (it cuts the last character in half), so the words are cut here, at a character. Unchanged when they fit.
+ */
+export function fitEllipsis(text: string, px: number, font = 13): string {
+  const em = (ch: string) => ((ch.codePointAt(0) ?? 0) >= 0x2e80 ? 1 : 0.56) * font * 1.04;
+  let w = 0;
+  for (const ch of text) w += em(ch);
+  if (w <= px) return text;
+  const chars = [...text];
+  let used = em("…");
+  const keep: string[] = [];
+  for (const ch of chars) {
+    if (used + em(ch) > px) break;
+    used += em(ch);
+    keep.push(ch);
+  }
+  return keep.join("").trimEnd() + "…";
+}
+
 export type Side = "below" | "above" | "right" | "left";
 const overlap = (a: TBox, b: TBox) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
 

@@ -14,6 +14,7 @@
 //   GroupHeader      ← TrajectoryGroupHeader.tsx ("消息" / "第 N 步" + description)
 //   RecordRow        ← TrajectoryCell.tsx (#index, kind tag, one-line text, time) and the
 //                      record inspector (input / output / timing / usage)
+import { useDragGuard } from "../app/dragGuard";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
 import { IconChevron, IconCopy, IconSearch } from "../app/icons";
 import { agents, type AgentKind, type Item } from "./agents";
@@ -495,6 +496,7 @@ function Timeline({ model, mode, range, onRange, onPick }: { model: NonNullable<
   const track = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x0: number; moved: boolean } | null>(null);
   const [live, setLive] = useState<[number, number] | null>(null);
+  const guard = useDragGuard();
   const span = model.end - model.start || 1;
   const frac = (v: number) => (v - model.start) / span;
   const valueAt = (clientX: number) => {
@@ -503,7 +505,7 @@ function Timeline({ model, mode, range, onRange, onPick }: { model: NonNullable<
   };
   const down = (e: RPointerEvent) => {
     if (e.button !== 0) return;
-    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    guard(e, { onEnd: (why) => why !== "up" && ((drag.current = null), setLive(null)) });
     drag.current = { x0: e.clientX, moved: false };
   };
   const move = (e: RPointerEvent) => {

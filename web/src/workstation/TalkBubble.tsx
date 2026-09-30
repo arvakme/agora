@@ -18,7 +18,7 @@ import { frame } from "./frame";
 import { occupiedOf } from "./replayDom";
 import { useRuns } from "./runs/store";
 import type { FlatRun } from "./runs/types";
-import { deliveryNote, placeTalk, sendState, talkDismissed, talkHost, talkSent, talkTarget, type SendState, type Side, type TBox } from "./talk";
+import { deliveryNote, placeTalk, sendState, talkDismissed, talkWidth, talkHost, talkSent, talkTarget, fitEllipsis, type SendState, type Side, type TBox } from "./talk";
 import "./TalkBubble.css";
 
 /**
@@ -60,6 +60,9 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
   const sent = useSyncExternalStore(talkSent.subscribe, () => talkSent.get(f.run.id));
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  /** The box's width in the pane (./talk.ts `talkWidth`): the words in it are cut to it, at a character. */
+  const boxW = useRef(232);
+  const [, setBoxW] = useState(232);
   const id = f.run.id;
   // Under the figure's feet (bubbles sit above the heads); when that would cover a node or a label, above the
   // bubble or beside it (./talk.ts `placeTalk`; the drawing and every shown bubble are what it keeps off), inside what the toolbar and the strip leave free — in the
@@ -92,7 +95,13 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
       // the other figures too (their bodies, as drawn): the box never sits over a head — the selected figure's own is left out, the sides are chosen round it
       const figures = layer ? boxesIn(layer.getBoundingClientRect(), [...layer.querySelectorAll<HTMLElement>(".ws-worker .ws-hit")].filter((h) => h.closest<HTMLElement>(".ws-worker")?.dataset.run !== f.run.id).map((h) => h.getBoundingClientRect())) : [];
       const obs = [...drawing, ...bubbles, ...figures];
-      const r = placeTalk({ feet, size: { w: el.offsetWidth, h: el.offsetHeight }, area: { x: 8, y: top, w: Math.max(0, v.width - 16), h: Math.max(0, v.height - top - bottom) }, obstacles: obs, prev: side.current });
+      // whole inside the pane: narrower than a narrow pane, then placed inside it (the words in it end in … — TalkBubble.css — and say all on hover)
+      const area = { x: 8, y: top, w: Math.max(0, v.width - 16), h: Math.max(0, v.height - top - bottom) };
+      const bw = talkWidth(area);
+      const ws = `${bw}px`;
+      if (boxW.current !== bw) setBoxW((boxW.current = bw));
+      if (el.style.width !== ws) el.style.width = ws;
+      const r = placeTalk({ feet, size: { w: el.offsetWidth, h: el.offsetHeight }, area, obstacles: obs, prev: side.current });
       side.current = r.side;
       el.dataset.side = r.side;
       el.style.transform = `translate3d(${r.x.toFixed(1)}px, ${r.y.toFixed(1)}px, 0)`;
@@ -154,7 +163,8 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
       <input
         ref={input}
         value={text}
-        placeholder={target.placeholder}
+        placeholder={fitEllipsis(target.placeholder, boxW.current - 28)}
+        title={target.placeholder}
         aria-label={`对 ${f.run.name} 说`}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
