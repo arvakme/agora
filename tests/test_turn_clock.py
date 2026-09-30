@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
+import time
+
 import pytest
 
 from server.canvas.turn_clock import TurnClock, span
@@ -126,3 +130,62 @@ def test_the_messages_say_what_happened_and_how_to_go_on():
     assert c.message() == "这一轮 30 分钟没有任何输出，已中止；原生会话还在，发「继续」就能接着"
     c.reason, c.limit_s = "max", 6 * 3600
     assert c.message() == "这一轮已经跑了 6 小时，到了上限，已中止；原生会话还在，发「继续」就能接着"
+
+
+# ——— the watcher, on the real clock with short limits ———
+async def _guarded(clock: TurnClock, probe=None, *, after: float, during=None) -> float | None:
+    """Hold ``guard`` open for ``after`` seconds of a turn that does nothing; the seconds it lasted, or None if it was stopped."""
+    t0 = time.monotonic()
+    try:
+        async with clock.guard(probe):
+            if during is not None:
+                asyncio.get_running_loop().call_later(0.05, during)
+            await asyncio.sleep(after)
+    except TimeoutError:
+        return time.monotonic() - t0
+    return None
+
+
+@pytest.mark.parametrize("what", ["output", "hold"])
+async def test_what_happens_while_the_log_is_being_read_is_not_a_stale_verdict(what):
+    """The clock runs out, the native log is asked (slowly), and meanwhile the CLI prints or asks the person: the turn lives."""
+    clock = TurnClock(idle_s=0.1, max_s=0)
+    loop = asyncio.get_running_loop()
+    asked, release = asyncio.Event(), threading.Event()
+    calls = 0
+
+    def probe():
+        nonlocal calls
+        calls += 1
+        if calls > 1:  # the first call only takes the baseline
+            loop.call_soon_threadsafe(asked.set)
+            release.wait(2)
+        return None
+
+    async def act():
+        await asked.wait()
+        clock.touch() if what == "output" else clock.hold(True)
+        release.set()
+
+    task = asyncio.create_task(act())
+    try:
+        stopped = await _guarded(clock, probe, after=0.17)
+    finally:
+        release.set()
+        await task
+    assert stopped is None, "the turn was stopped on a verdict the clock no longer held"
+
+
+async def test_a_tool_that_ends_brings_the_shorter_deadline_forward():
+    """While a call is open the watcher sleeps ``4 × idle``; the call ends, the limit is ``idle`` again: it must not sleep on."""
+    clock = TurnClock(idle_s=0.25, max_s=0)
+    clock.observe({"t": "tool_use", "id": "c1"})
+    stopped = await _guarded(clock, after=3, during=lambda: clock.observe({"t": "tool_result", "id": "c1"}))
+    assert stopped is not None and stopped < 0.7, stopped  # 0.05 s + 0.25 s; asleep until the old deadline it would be 1.0 s
+
+
+async def test_the_end_of_a_wait_for_the_person_brings_the_deadline_forward():
+    clock = TurnClock(idle_s=0.25, max_s=0.4)
+    clock.hold(True)
+    stopped = await _guarded(clock, after=3, during=lambda: clock.hold(False))
+    assert stopped is not None and stopped < 0.7, stopped  # the fuse, 0.4 s of the turn's own time, is not slept through

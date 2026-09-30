@@ -31,7 +31,7 @@ import os
 import signal
 import subprocess
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 
@@ -201,23 +201,26 @@ def check_native(kind: str, native_id: str | None, started: bool, root: Path | s
     return lookup
 
 
-def log_probe(kind: str, native_id: str | None, root: Path | str | None):
+def log_probe(kind: str, native_id: Callable[[], str | None], root: Path | str | None):
     """How long ago the session's native log last grew, or None if it has not since this was last called (the first call only
     takes the baseline). A CLI that says little on stdout while it works (Pi, Codex headless) still writes its log: that is a
-    turn that is going on."""
-    seen: list[tuple[int, int] | None] = []
+    turn that is going on. ``native_id`` is asked at every call: a session the CLI names only once the turn runs (Codex's
+    ``thread.started``) is followed from then on, and its log, which this turn made, was empty at the baseline."""
+    last: list[Any] = []  # [id, (size, mtime) | None] as of the previous look
 
     def grew() -> float | None:
-        path = locate_log(kind, native_id, root).path if native_id else None
+        nid = native_id()
+        path = locate_log(kind, nid, root).path if nid else None
         try:
             st = path.stat() if path is not None else None
         except OSError:
             st = None
         now = (st.st_size, st.st_mtime_ns) if st is not None else None
-        first = not seen
-        before = None if first else seen[0]
-        seen[:] = [now]
-        if first or st is None or now == before:
+        prev, last[:] = list(last), [nid, now]
+        if not prev or prev[0] not in (None, nid):
+            return None  # the baseline: the first look, or another session than the one seen
+        before = prev[1] if prev[0] == nid else None  # an id that arrived since: the log is this turn's own, nothing of it was there
+        if st is None or now == before:
             return None
         return max(0.0, time.time() - st.st_mtime)
 
@@ -345,7 +348,7 @@ class _CliBackend:
                 proc.stdin.close()
 
         try:
-            async with clock.guard(log_probe(self.name, o.session, req.cwd)):
+            async with clock.guard(log_probe(self.name, lambda: mapper.session, req.cwd)):
                 if data is not None:
                     assert proc.stdin is not None
                     try:
