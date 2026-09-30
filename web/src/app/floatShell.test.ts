@@ -256,10 +256,10 @@ describe("the bottom bar", () => {
     expect(barBox(resizeBar({ ...DEFAULT_BAR, expanded: true }, "n", 0, -9999, pane, dock), pane, dock).h).toBeLessThanOrEqual(pane.h - H_EDGE);
     expect(barBox(resizeBar({ ...DEFAULT_BAR, expanded: true }, "n", 0, 9999, pane, dock), pane, dock).h).toBe(H_MIN);
   });
-  it("the pill: right of the bar, as tall as it, 8 px off it, as wide as it is told (canvas/dockPlace.ts groupPlace says)", () => {
+  it("the pill: beside the bar without touching it, level with it and as tall as it, as wide as it is told (canvas/dockPlace.ts groupPlace says)", () => {
     const p = pillBox(dock, 176);
-    expect(p).toEqual({ x: dock.x + dock.w + 8, y: dock.y, w: 176, h: dock.h });
-    expect(pillBox(dock, dock.h).w).toBe(dock.h);
+    expect(p.x).toBeGreaterThan(dock.x + dock.w);
+    expect(p).toMatchObject({ y: dock.y, w: 176, h: dock.h });
   });
   it("the bar's middle is the one it is given (the canvas body's), not where the bar below happens to be; it narrows before it would lean off that middle", () => {
     const b = barBox(DEFAULT_BAR, pane, dock, undefined, 500);

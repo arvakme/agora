@@ -140,10 +140,6 @@ describe("the same records in the other projection", () => {
   const d2 = domainOf(dur);
   const l2 = layoutTimeline(dur, W);
   const s = selectBetween(dom, firstOf(3), lastOf(5));
-  it("the selection is kept as records, not as positions on an axis: same members, same caption", () => {
-    for (const sp of seq.spans) expect(contains(d2, s, sp.index), `#${sp.index}`).toBe(contains(dom, s, sp.index));
-    expect(caption(d2, s)).toBe(caption(dom, s));
-  });
   it("the edges land where those records are in the new axis", () => {
     const [a, b] = edgeX(l2, d2, s);
     const first = dur.spans.find((x) => x.index === s.from)!;

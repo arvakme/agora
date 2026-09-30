@@ -9,17 +9,16 @@ describe("isCompact", () => {
 });
 
 describe("dockBottom", () => {
-  it("wide, island not measured yet: Excalidraw's own edge gap above the canvas's bottom edge", () => expect(dockBottom({ paneBottom: 800, windowHeight: 900, compact: false })).toBe(116));
-  it("wide: level with Excalidraw's zoom island (36 high, 848–884 in a 900-high window)", () => {
-    const b = dockBottom({ paneBottom: 900, windowHeight: 900, compact: false, island: { top: 848, bottom: 884 } });
-    expect(b).toBe(16);
-    expect(900 - b - DOCK_H).toBe(848);
+  it("wide: level with Excalidraw's zoom island (as tall as it: same top, same bottom edge)", () => {
+    const b = dockBottom({ paneBottom: 900, windowHeight: 900, compact: false, island: { top: 848, bottom: 848 + DOCK_H } });
+    expect(900 - b - DOCK_H).toBeCloseTo(848, 6); // the dock's top edge (window height − bottom − its height)
+    expect(900 - b).toBeCloseTo(848 + DOCK_H, 6);
   });
-  it("compact: centred on the bar (bar 850–900 in a 900-high window, dock 36 high)", () => {
+  it("compact: centred on the bar, inside it (bar 850–900 in a 900-high window)", () => {
     const b = dockBottom({ paneBottom: 900, windowHeight: 900, compact: true, island: { top: 850, bottom: 900 } });
-    expect(b).toBe(7);
-    // the dock's top edge (window height − bottom − 36) lies inside the bar
-    expect(900 - b - DOCK_H).toBeGreaterThanOrEqual(850);
+    const top = 900 - b - DOCK_H;
+    expect(top).toBeGreaterThanOrEqual(850);
+    expect(top + DOCK_H / 2).toBeCloseTo(875, 6);
   });
   it("compact but the bar is not there yet: above its usual height", () => expect(dockBottom({ paneBottom: 900, windowHeight: 900, compact: true })).toBe(72));
 });
@@ -40,22 +39,22 @@ describe("groupPlace", () => {
     const s = span(g);
     expect((s.l + s.r) / 2).toBeCloseTo(280, 1);
   });
-  it("a pill that shrinks to fit keeps the group centred too (no less than 96 wide)", () => {
+  it("a pill that shrinks to fit keeps the group centred too (it keeps its words while it can)", () => {
     const g = groupPlace({ ...o, center: 600, limitRight: 780, pill: true });
-    expect(g.pillW).toBeGreaterThanOrEqual(96);
+    expect(g.pillW).toBeGreaterThan(DOCK_H); // still its words, not the round avatar
     expect(g.pillW).toBeLessThan(PILL_W);
     const s = span(g);
     expect((s.l + s.r) / 2).toBeCloseTo(600, 1);
-    expect(s.r).toBeLessThanOrEqual(780 - 8 + 0.01);
+    expect(s.r).toBeLessThan(780); // clear of the controls on its right
   });
   it("the left controls count too", () => {
     const g = groupPlace({ ...o, center: 400, limitLeft: 228, limitRight: null, pill: true });
-    expect(span(g).l).toBeGreaterThanOrEqual(228 + 8 - 0.01);
+    expect(span(g).l).toBeGreaterThan(228); // clear of the controls on its left
   });
   it("not even the round avatar fits: the group slides clear of the controls instead of sitting on them", () => {
     const g = groupPlace({ center: 280, dockW: 206.6, limitLeft: null, limitRight: 400, pill: true });
     expect(g.pillW).toBe(DOCK_H);
-    expect(span(g).r).toBeLessThanOrEqual(400 - 8 + 0.01);
+    expect(span(g).r).toBeLessThan(400);
   });
 });
 

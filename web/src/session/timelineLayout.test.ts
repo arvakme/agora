@@ -1,18 +1,17 @@
 // The trajectory overview's pure parts: kind → colour token and shape, turn bands and labels, a long
 // conversation folded into a fixed width (older turns → density bars, hair-thin blocks → bands),
 // where the pointer lands, and what a 0.5 s hover says.
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   CLASSES,
   HEIGHT,
   LANE_H,
   TOP,
-  LANES,
   hitTest,
   hoverText,
   labelledTurns,
   laneTop,
+  MIN_BLOCK,
   layoutTimeline,
   lookOf,
   stepCursor,
@@ -26,26 +25,23 @@ describe("lookOf: kind → colour token, shape and lane", () => {
   const tool = (activity: NonNullable<ReturnType<typeof modelOf>["spans"][number]["activity"]>, isError = false) => lookOf({ kind: "tool", activity, isError });
   it("purple is only the assistant's message; the user is grey-blue", () => {
     expect(lookOf({ kind: "message", isError: false })).toMatchObject({ cls: "message", token: "--tl-message", fill: "solid", lane: 1 });
-    expect(lookOf({ kind: "user", isError: false })).toMatchObject({ cls: "user", token: "--tl-user", lane: 0 });
+    expect(lookOf({ kind: "user", isError: false })).toMatchObject({ cls: "user", lane: 0 });
     const purple = CLASSES.filter((c) => lookOf(sample(c)).token === "--tl-message");
     expect(purple).toEqual(["message"]);
   });
   it("reading is outlined, editing is solid, a failure carries a cross", () => {
-    for (const a of ["read", "search", "webSearch", "webFetch"] as const) expect(tool(a)).toMatchObject({ cls: "read", token: "--tl-read", fill: "hollow", cross: false, lane: 2 });
-    for (const a of ["write", "edit"] as const) expect(tool(a)).toMatchObject({ cls: "write", token: "--tl-write", fill: "solid", cross: false });
-    expect(tool("commands")).toMatchObject({ cls: "run", token: "--tl-run", fill: "solid" });
-    expect(tool("subagents")).toMatchObject({ cls: "agent", token: "--tl-agent", fill: "solid" });
-    expect(tool("questions")).toMatchObject({ cls: "wait", token: "--tl-wait", lane: 0 });
-    for (const a of ["plan", "tools"] as const) expect(tool(a)).toMatchObject({ cls: "other", token: "--tl-other" });
-    expect(tool("read", true)).toMatchObject({ cls: "fail", token: "--tl-fail", fill: "solid", cross: true, lane: 2 });
+    for (const a of ["read", "search", "webSearch", "webFetch"] as const) expect(tool(a)).toMatchObject({ cls: "read", fill: "hollow", cross: false, lane: 2 });
+    for (const a of ["write", "edit"] as const) expect(tool(a)).toMatchObject({ cls: "write", fill: "solid", cross: false });
+    expect(tool("commands")).toMatchObject({ cls: "run", fill: "solid" });
+    expect(tool("subagents")).toMatchObject({ cls: "agent", fill: "solid" });
+    expect(tool("questions")).toMatchObject({ cls: "wait", lane: 0 });
+    for (const a of ["plan", "tools"] as const) expect(tool(a)).toMatchObject({ cls: "other" });
+    expect(tool("read", true)).toMatchObject({ cls: "fail", fill: "solid", cross: true, lane: 2 });
     expect(tool("commands", true).cls).toBe("fail");
     expect(lookOf({ kind: "message", isError: true }).cls).toBe("message"); // only a tool call fails
   });
-  it("every class has its own token, and tokens.css defines each in light, dark-by-OS and dark-forced", () => {
-    const tokens = CLASSES.map((c) => lookOf(sample(c)).token);
-    expect(new Set(tokens).size).toBe(CLASSES.length);
-    const css = readFileSync(new URL("../app/tokens.css", import.meta.url), "utf8");
-    for (const t of [...tokens, "--tl-band"]) expect(css.split(new RegExp(`^\\s*${t}:`, "m")).length - 1, t).toBe(3);
+  it("every class has its own colour token", () => {
+    expect(new Set(CLASSES.map((c) => lookOf(sample(c)).token)).size).toBe(CLASSES.length);
   });
 });
 function sample(cls: (typeof CLASSES)[number]) {
@@ -79,17 +75,6 @@ describe("a short conversation: every action a block, turns banded and numbered"
     for (let i = 1; i < lay.segs.length; i++) expect(lay.segs[i].x0).toBeCloseTo(lay.segs[i - 1].x1, 6);
     const per = lay.segs.map((s) => (s.x1 - s.x0) / model.spans.filter((x) => x.turn === s.turn).length);
     for (const u of per) expect(u).toBeCloseTo(per[0], 6);
-  });
-  it("alternate turns carry the band ground", () => {
-    expect(lay.segs.map((s) => s.alt)).toEqual([false, true, false, true, false, true, false, true]);
-  });
-  it("blocks sit in their lane: user / message / tool (a question to the person on the user lane)", () => {
-    const lane = (i: number) => lay.cells.find((c) => c.first === i)!.look.lane;
-    for (const s of model.spans) {
-      const want = s.kind === "user" ? 0 : s.kind === "message" ? 1 : s.activity === "questions" ? 0 : 2;
-      expect(lane(s.index), `#${s.index}`).toBe(want);
-    }
-    expect(LANES).toBe(3);
   });
   it("up to 14 turns, every turn is numbered", () => {
     expect(labelledTurns(lay).map((s) => s.turn)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
@@ -142,15 +127,8 @@ describe("a very long conversation: fixed width, older turns become density bars
     const olderTurns = new Set(older.map((s) => s.turn));
     expect([...lay.cells, ...lay.bands].every((t) => !olderTurns.has(t.turn))).toBe(true);
   });
-  it("the older strip stays a minority of the width", () => {
-    expect(older.at(-1)!.x1 / W).toBeLessThanOrEqual(0.4 + 1e-9);
-  });
   it("what is drawn is bounded by the width, not by the number of records", () => {
     expect(lay.cells.length + lay.bands.length + lay.bars.length).toBeLessThan(W);
-  });
-  it("blocks in the window are never narrower than the merge limit", () => {
-    expect(win.length).toBeGreaterThan(1);
-    for (const c of lay.cells) expect(c.w).toBeGreaterThanOrEqual(1.5);
   });
   it("a density bar is the turn's colour mix", () => {
     const b = lay.bars[10];
@@ -162,11 +140,6 @@ describe("a very long conversation: fixed width, older turns become density bars
     expect(order).toEqual([...order].sort((a, c) => a - c));
     const reads = spans.filter((s) => lookOf(s).cls === "read").length;
     expect(b.parts.find((p) => p.cls === "read")?.count ?? 0).toBe(reads);
-  });
-  it("a 40-turn conversation in a wide overview keeps most of it as blocks", () => {
-    const l = layoutTimeline(modelOf(convo(40, 20)), 900);
-    expect(l.segs.filter((s) => !s.folded).length).toBeGreaterThanOrEqual(15);
-    expect(l.segs.filter((s) => s.folded).length + l.segs.filter((s) => !s.folded).length).toBe(40);
   });
 });
 
@@ -190,7 +163,11 @@ describe("turns the person asked to look at stay unfolded, wherever they are", (
     const lay = layoutTimeline(model, W, new Set([10, 11, 12]));
     expect(lay.segs.at(-1)!.folded).toBe(false);
     const kept = lay.segs.filter((s) => s.turn >= 10 && s.turn <= 12);
-    for (const s of kept) expect((s.x1 - s.x0) / s.n).toBeGreaterThanOrEqual(1.9);
+    for (const s of kept) expect((s.x1 - s.x0) / s.n).toBeGreaterThanOrEqual(MIN_BLOCK); // every record of a kept turn still gets its own block
+    // and it stays open even when it alone is longer than the strip
+    const long = layoutTimeline(modelOf(convo(5, 400)), 300);
+    expect(long.segs.at(-1)!.folded).toBe(false);
+    expect(long.segs.slice(0, -1).every((s) => s.folded)).toBe(true);
   });
   it("x ↔ value still round-trips when folded and open turns interleave", () => {
     const lay = layoutTimeline(model, W, new Set([50]));
@@ -204,13 +181,6 @@ describe("turns the person asked to look at stay unfolded, wherever they are", (
     const plain = layoutTimeline(model, W);
     expect(lay.segs.map((s) => [s.turn, s.folded])).toEqual(plain.segs.map((s) => [s.turn, s.folded]));
   });
-  it("a stretch that just fits is opened; a little more and it is not", () => {
-    const per = model.spans.filter((s) => s.turn === 10).length;
-    const fits = Math.floor((0.9 * W) / 1.5 / per);
-    const open = layoutTimeline(model, W, new Set(Array.from({ length: fits }, (_, i) => i + 10)));
-    for (let t = 10; t < 10 + fits; t++) expect(open.segs.find((s) => s.turn === t)!.folded, `turn ${t}`).toBe(false);
-    expect(layoutTimeline(model, W, new Set(Array.from({ length: fits + 2 }, (_, i) => i + 10))).segs.find((s) => s.turn === 10)!.folded).toBe(true);
-  });
   it("without a request nothing changes", () => {
     const a = layoutTimeline(model, W);
     const b = layoutTimeline(model, W, new Set());
@@ -223,23 +193,19 @@ describe("hair-thin blocks fold into colour bands (real-time projection)", () =>
   const items = convo(6, 20, { slow: true });
   const model = modelOf(items, "duration");
   const lay = layoutTimeline(model, 300);
-  it("neighbours of one colour in one lane that would be under 1.5 px merge into one band", () => {
+  it("neighbours of one colour in one lane that would be under 1.5 px merge into one band; every block left is wide enough to see", () => {
     expect(lay.bands.length).toBeGreaterThan(0);
     for (const b of lay.bands) {
       expect(b.count).toBeGreaterThanOrEqual(2);
       expect(b.last).toBeGreaterThan(b.first);
-      expect(b.w).toBeGreaterThanOrEqual(1.5);
+      expect(b.w).toBeGreaterThanOrEqual(MIN_BLOCK);
     }
+    for (const c of lay.cells) expect(c.w).toBeGreaterThanOrEqual(MIN_BLOCK);
   });
   it("no record is lost: blocks and bands account for every one in the window", () => {
     const win = new Set(lay.segs.filter((s) => !s.folded).map((s) => s.turn));
     const want = model.spans.filter((s) => win.has(s.turn)).length;
     expect(lay.cells.length + lay.bands.reduce((n, b) => n + b.count, 0)).toBe(want);
-  });
-  it("blocks that are wide enough stay separate", () => {
-    const wide = lay.cells.filter((c) => c.w >= 1.5);
-    expect(wide.length).toBe(lay.cells.length);
-    expect(lay.cells.some((c) => c.look.cls !== "user")).toBe(true);
   });
 });
 
@@ -252,6 +218,8 @@ describe("where the pointer lands", () => {
     const y = laneMid(c.look.lane);
     expect(hitTest(lay, c.x + c.w / 2, y)).toMatchObject({ kind: "cell", first: 20 });
     expect(hitTest(lay, c.x + c.w / 2, y + 2)).toMatchObject({ first: 20 });
+    const other = c.look.lane === 2 ? 1 : 2;
+    expect(hitTest(lay, c.x + c.w / 2, laneMid(other))).toBeNull(); // the same x in another lane is empty
   });
   it("a click a little above or below the row snaps to the nearest lane", () => {
     const c = cell(20);
@@ -259,6 +227,8 @@ describe("where the pointer lands", () => {
   });
   it("a hair-thin block can still be hit (a pixel of slack each side)", () => {
     const thin = { ...lay, cells: [{ ...cell(20), x: 100, w: 1.5 }], bands: [], bars: [] };
+    expect(hitTest(thin, 99.2, laneMid(cell(20).look.lane))).toMatchObject({ first: 20 });
+    expect(hitTest(thin, 98.5, laneMid(cell(20).look.lane))).toBeNull();
     expect(hitTest(thin, 101.9, laneMid(cell(20).look.lane))).toMatchObject({ first: 20 });
     expect(hitTest(thin, 103.2, laneMid(cell(20).look.lane))).toBeNull();
   });

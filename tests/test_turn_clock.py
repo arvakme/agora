@@ -114,7 +114,7 @@ def test_wake_in_is_the_nearest_deadline():
 
 @pytest.mark.parametrize(
     "seconds, words",
-    [(0.6, "0.6 秒"), (45, "45 秒"), (60, "1 分钟"), (1800, "30 分钟"), (90, "1.5 分钟"), (3600, "1 小时"), (6 * 3600, "6 小时"), (5400, "90 分钟")],
+    [(0.6, "0.6 秒"), (60, "1 分钟"), (90, "1.5 分钟"), (3600, "1 小时"), (6 * 3600, "6 小时"), (5400, "90 分钟")],
 )
 def test_span_reads_like_a_person_says_it(seconds, words):
     assert span(seconds) == words

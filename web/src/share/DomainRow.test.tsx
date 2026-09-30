@@ -1,4 +1,5 @@
-// The 域名 line of the share window: the label, the domain in use and 换一个 on one row, and one short sentence under it.
+// The 域名 line of the share window as the person meets it: the domain in use, a select to change it, and in the states with no domain one sentence instead.
+// What each state says: domainChoice.test.ts.
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { DomainRow } from "./DomainRow";
@@ -10,32 +11,26 @@ const html = (i: DomainInfo | null, picked: string | null = null) => renderToSta
 describe("DomainRow", () => {
   const several = info({ domains: ["quietharbor.de", "example.org"], chosen: "quietharbor.de" });
 
-  it("puts 域名, the domain in use and 换一个 in one row, the preview under it", () => {
+  it("shows the domain in use, a select named after it, every domain in it (the one in use marked) and the preview", () => {
     const out = html(several);
-    expect(out).toMatch(/^<div class="share-field share-domain"><span>域名<\/span>/);
-    expect(out).toContain('<code class="share-domain-now" title="quietharbor.de">quietharbor.de</code>');
-    expect(out).toMatch(/<select[^>]*aria-label="换一个域名（现在是 quietharbor.de）"/);
+    expect(out).toContain("域名");
+    expect(out).toMatch(/<code[^>]*>quietharbor\.de<\/code>/);
+    expect(out).toMatch(/<select[^>]*aria-label="[^"]*quietharbor\.de[^"]*"/);
     expect(out).toContain(">换一个</option>");
-    expect(out).toContain("链接会是 xxx.quietharbor.de");
-  });
-
-  it("lists every domain, the one in use marked", () => {
-    const out = html(several);
     expect(out).toContain(">quietharbor.de（当前）</option>");
     expect(out).toContain(">example.org</option>");
+    expect(out).toContain("xxx.quietharbor.de");
   });
 
   it("a single domain has nothing to change", () => {
     const out = html(info({ domains: ["only.test"] }));
-    expect(out).toContain('<code class="share-domain-now" title="only.test">only.test</code>');
+    expect(out).toMatch(/<code[^>]*>only\.test<\/code>/);
     expect(out).not.toContain("<select");
-    expect(out).toContain("链接会是 xxx.only.test");
   });
 
-  it("while reading the account: the label and one waiting line, no empty select", () => {
+  it("while reading the account: one waiting line, no empty select", () => {
     const out = html(null);
-    expect(out).toContain("<span>域名</span>");
-    expect(out).toContain("正在读取你的 Cloudflare 域名…");
+    expect(out).toContain("正在读取");
     expect(out).not.toContain("<select");
   });
 
@@ -44,6 +39,6 @@ describe("DomainRow", () => {
   });
 
   it("an account without domains says so", () => {
-    expect(html(info({}))).toContain("这个 Cloudflare 账号里没有域名。可以先用临时链接。");
+    expect(html(info({}))).toContain("没有域名");
   });
 });
