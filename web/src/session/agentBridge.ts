@@ -15,7 +15,8 @@ import { cleanGlobs, resolveElement, writeCodePaths } from "../pointer/writeLink
 import { agents, setBridgeHandler } from "./agents";
 import { fetchLibraryItems, sceneIndex, settle } from "./runTurn";
 import { sessions, type Origin, type Turn } from "./store";
-import { ui } from "./ui";
+import { canvases, ui } from "./ui";
+import { installAdopt } from "./adoptBound";
 import { childOf, wouldCycle } from "../nested/graph";
 import { nav, nested } from "../nested/store";
 import { writeChildLink } from "../nested/writeChild";
@@ -219,6 +220,8 @@ export async function childFromAgent(req: { op: "create" | "link" | "unlink"; ca
 
 /** Route bridge requests from the server to the executors above. */
 export function installBridge() {
+  // sessions imported from outside (a binding with no session of the page's own) get one: session/adoptBound.ts
+  installAdopt(() => [...canvases.keys()][0] ?? [...nested.get().scenes.keys()].find((id) => !nested.get().index.has(id)) ?? null, (l) => nested.subscribe(l));
   setBridgeHandler(async (req) => {
     // the canvas is the call's for as long as it takes (an edit may wait a minute for an asset): the page does not close it meanwhile
     const release = typeof req.canvasId === "string" ? ui.holdCanvas(req.canvasId) : () => {};
