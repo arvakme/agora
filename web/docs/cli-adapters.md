@@ -332,7 +332,7 @@ Codex、Pi 原来每轮起一个进程（`codex exec --json`、`pi -p --mode jso
 **进程的一生**（`ResidentPool`）：
 - 会话第一轮起，之后的轮复用；进程的启动参数或环境（`AGORA_CANVAS` 等）变了、或要续的线程不是它持有的，先停掉再起新的（`thread/resume` 从原生日志接上，不重发）。
 - 空闲 `AGORA_RESIDENT_IDLE_S`（缺省 600 秒）回收；同时最多 `AGORA_RESIDENT_MAX`（缺省 8）个，多了让最久没用的空闲进程让位；忙的从不回收。
-- 一个会话一个进程、一把锁：一个会话卡死只影响它自己（这一轮有 30 分钟上限，超时停进程），不拖别的。
+- 一个会话一个进程、一把锁：一个会话卡死只影响它自己（这一轮 30 分钟没有任何输出才停进程，另有 6 小时保险丝，见 [agent-sessions.md](agent-sessions.md)），不拖别的。
 - 中断先软后硬：先发 `turn/interrupt` / `abort`，`INTERRUPT_GRACE_S` 后还没结束就 `task.cancel()`，后端停进程并用 `proctree` 连子孙进程一起停（这一轮的状态不明，进程不再复用）。
 - 进程中途死了：这一轮记错误（带 stderr 末尾和退出码），池里去掉它，下一轮起新的并续线程。
 - Agora 重启：进程的 stdin 随服务断开，CLI 自己退出；每个进程在 `.agora/run/residents/<pid>.json` 留标记，新服务启动时把死服务留下的（进程还在、命令对得上的）停掉；没有轮次在跑就什么都不提示，下一轮 `thread/resume` 接上，不重发。实测：SIGKILL 服务后四个进程都已退出、标记被清；重启后 Codex 和 Pi 都从原生日志续上，答得出上文。
