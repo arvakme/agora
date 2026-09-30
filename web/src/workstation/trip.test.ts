@@ -238,7 +238,7 @@ describe("planTrip / tripAt (剖面 trips)", () => {
     }
   });
 
-  it("draws what is walked: a bridge for each gap crossed, a ladder (rails and rungs about 5.5 figure units apart, evenly from floor to floor, rails reaching above the upper floor) for each climb; a scaffold's are temporary", () => {
+  it("draws what is walked: a bridge for each gap crossed, a ladder (rails and rungs at most 8.5 figure units apart, evenly from floor to floor, rails reaching above the upper floor) for each climb; a scaffold's are temporary", () => {
     const up = plan(proto, P("api", 354), P("mysql", 704)).p;
     expect(up.bridges).toEqual([
       { a: { x: 530, y: 230 }, b: { x: 610, y: 230 }, temp: false },
@@ -252,7 +252,8 @@ describe("planTrip / tripAt (剖面 trips)", () => {
       const rungs = [...plan(proto, P("api", 354), P("mysql", 704), k).p.ladders[0].rungs].sort((a, b) => b - a);
       const gaps = rungs.slice(1).map((y, i) => rungs[i] - y);
       for (const g of gaps) expect(g).toBeCloseTo(gaps[0], 6);
-      expect(Math.abs(gaps[0] - 5.5 * k)).toBeLessThan(5.5 * k * 0.1);
+      expect(gaps[0]).toBeLessThanOrEqual(8.5 * k + 1e-9);
+      expect(gaps[0]).toBeGreaterThan(7 * k); // as far apart as the reach allows, not a rung a step
       expect(rungs.some((y) => Math.abs(y - 120) < 1e-6)).toBe(true);
       expect(rungs.every((y) => y < 230)).toBe(true);
     }
