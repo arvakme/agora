@@ -81,25 +81,42 @@ p.ds-say { white-space: pre-wrap; }
 .ds-search { display: inline-flex; align-items: center; gap: var(--space-3); height: 26px; padding: 0 var(--space-4); border-radius: var(--r-sm); box-shadow: var(--box); }
 .ds-search input { width: 96px; border: 0; outline: 0; background: transparent; font: inherit; font-size: var(--text-sm); color: var(--fg); }
 .ds-search input::placeholder { color: var(--fg-subtle); }
-.ds-traj-focus { flex: none; display: flex; align-items: center; gap: var(--space-4); padding: var(--space-2) var(--space-5); border-bottom: 1px solid var(--line); background: var(--raised); color: var(--fg-muted); font-size: var(--text-sm); }
+.ds-traj-focus { flex: none; display: flex; align-items: center; gap: var(--space-4); min-height: 22px; padding: var(--space-1) var(--space-5); border-bottom: 1px solid var(--line); background: var(--raised); color: var(--fg-muted); font-size: var(--text-xs); }
+.ds-traj-focus .ds-text-btn { height: 20px; padding: 0 var(--space-3); font-size: var(--text-xs); }
 
-.ds-timeline { flex: none; display: grid; grid-template-columns: 40px minmax(0, 1fr); height: 52px; border-bottom: 1px solid var(--line); background: var(--code-surface); user-select: none; }
-.ds-empty-line { display: grid; place-items: center; grid-template-columns: 1fr; color: var(--fg-subtle); font-size: var(--text-sm); }
+/* overview strip: a canvas on a fixed-height ground (HEIGHT in timelineLayout.ts); colours come from --tl-* tokens (app/tokens.css) */
+.ds-timeline-wrap { flex: none; border-bottom: 1px solid var(--line); background: var(--code-surface); }
+.ds-timeline { position: relative; display: grid; grid-template-columns: 40px minmax(0, 1fr); user-select: none; }
+.ds-empty-line { display: grid; place-items: center; grid-template-columns: 1fr; height: 52px; border-bottom: 1px solid var(--line); background: var(--code-surface); color: var(--fg-subtle); font-size: var(--text-sm); }
 .ds-timeline-labels { position: relative; border-right: 1px solid var(--line); color: var(--fg-subtle); font-size: var(--text-xs); }
 .ds-timeline-labels span { position: absolute; right: 5px; line-height: 10px; }
-.ds-timeline-labels span:nth-child(1) { top: 6px; }
-.ds-timeline-labels span:nth-child(2) { top: 20px; }
-.ds-timeline-labels span:nth-child(3) { top: 34px; }
 .ds-timeline-track { position: relative; overflow: hidden; cursor: crosshair; touch-action: none; margin: 0 var(--space-4); }
-.ds-timeline-span { position: absolute; height: 10px; border-radius: 2px; background: var(--series-4); transition: left var(--dur-glide) var(--ease-layout), width var(--dur-glide) var(--ease-layout); }
-.ds-timeline-span[data-kind="user"] { background: var(--series-3); }
-.ds-timeline-span[data-kind="message"] { background: var(--series-2); }
-.ds-timeline-span[data-kind="tool"] { background: var(--series-1); }
-.ds-timeline-span[data-error="true"] { background: var(--negative); }
-.ds-timeline-span:hover { outline: 1px solid var(--fg); }
-.ds-timeline-turn { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--line-strong); pointer-events: none; }
-.ds-timeline-turn i { position: absolute; bottom: 1px; left: 2px; font-style: normal; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-subtle); font-variant-numeric: tabular-nums; }
-.ds-timeline-sel { position: absolute; top: 0; bottom: 0; background: var(--accent-wash); box-shadow: inset 1px 0 var(--accent), inset -1px 0 var(--accent); pointer-events: none; }
+.ds-timeline-track:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.ds-timeline-track canvas { display: block; }
+/* the picked stretch (TrajectoryTimeline.tsx SelectionOverlay): outside washed over (not greyed), a purple frame, a grip on each edge, a caption */
+.ds-timeline-track[data-part="left"], .ds-timeline-track[data-part="right"] { cursor: ew-resize; }
+.ds-timeline-track[data-part="body"] { cursor: grab; }
+.ds-tl-dim { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--code-surface) 68%, transparent); pointer-events: none; }
+.ds-tl-sel { position: absolute; top: 0; bottom: 0; border: 1.5px solid var(--accent); border-radius: 2px; pointer-events: none; }
+.ds-tl-sel[data-live] { border-style: dashed; }
+.ds-tl-cap { position: absolute; top: 0; z-index: 1; height: 14px; padding: 0 var(--space-3); border-radius: 0 0 var(--r-xs) var(--r-xs); background: var(--accent-fill); color: var(--accent-fg); font-size: 10px; line-height: 14px; white-space: nowrap; font-variant-numeric: tabular-nums; pointer-events: none; }
+.ds-tl-hint { position: absolute; top: 0; right: 4px; color: var(--fg-subtle); font-size: 10px; line-height: 14px; white-space: nowrap; pointer-events: none; }
+/* an edge: a 12 px strip to grab and focus; the pointer goes through to the strip, which does the dragging */
+.ds-tl-handle { position: absolute; top: 0; bottom: 0; z-index: 2; outline: none; pointer-events: none; }
+.ds-tl-handle::before { content: ""; position: absolute; top: 50%; left: 50%; width: 6px; height: 22px; transform: translate(-50%, -50%); border-radius: 3px; background: var(--accent-fill); box-shadow: 0 0 0 1.5px var(--code-surface); }
+.ds-tl-handle::after { content: ""; position: absolute; top: 50%; left: 50%; width: 2px; height: 10px; transform: translate(-50%, -50%); border-inline: 1px solid var(--accent-fg); box-sizing: border-box; opacity: 0.85; }
+.ds-tl-handle:focus-visible::before { box-shadow: 0 0 0 1.5px var(--code-surface), 0 0 0 3.5px var(--focus-ring); }
+/* the 0.5 s hover: under the strip, centred on the block (--x is its centre within the track) */
+.ds-timeline-tip { position: absolute; z-index: 5; top: calc(100% + 4px); left: calc(40px + var(--space-4) + var(--x)); transform: translateX(-50%); display: flex; flex-direction: column; gap: 2px; max-width: 260px; padding: var(--space-3) var(--space-4); border-radius: var(--r-sm); background: var(--surface); box-shadow: var(--box), 0 4px 14px var(--shadow-tint-strong); color: var(--fg); font-size: var(--text-xs); line-height: 1.45; pointer-events: none; }
+.ds-timeline-tip b { font-weight: var(--weight-strong); }
+.ds-timeline-tip span { color: var(--fg-muted); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.ds-tl-legend { display: flex; align-items: center; gap: var(--space-4); min-height: 22px; padding: 0 var(--space-4); border-top: 1px solid var(--line); color: var(--fg-muted); font-size: var(--text-xs); }
+.ds-tl-legend .ds-text-btn { flex: none; height: 20px; padding: 0 4px; gap: 2px; font-size: var(--text-xs); }
+.ds-tl-legend ul { display: flex; align-items: center; gap: var(--space-4); margin: 0; padding: 0; list-style: none; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
+.ds-tl-legend li { display: inline-flex; align-items: center; gap: 4px; }
+.ds-tl-legend i { position: relative; flex: none; width: 10px; height: 10px; border-radius: 2px; background: var(--c); }
+.ds-tl-legend i[data-fill="hollow"] { background: color-mix(in srgb, var(--c) 14%, transparent); box-shadow: inset 0 0 0 1.5px var(--c); }
+.ds-tl-legend i[data-cross]::after { content: "✕"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--code-surface); font-size: 8px; font-style: normal; line-height: 1; font-weight: 700; }
 
 .ds-ledger { flex: 1; min-height: 0; overflow: auto; }
 .ds-turn { border-bottom: 1px solid var(--line); }
