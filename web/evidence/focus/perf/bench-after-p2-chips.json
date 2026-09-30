@@ -1,0 +1,32 @@
+{
+  "label": "after-p2-chips",
+  "agents": 18,
+  "elements": 500,
+  "seconds": 5,
+  "results": {
+    "off/idle": {
+      "fps": 60.2,
+      "p50": 16.7,
+      "p95": 16.7,
+      "over20ms": 0,
+      "mainMsPerFrame": 1.61,
+      "mainMsPer60Hz": 4.9,
+      "tracedFrames": 910,
+      "wsMsPerFrame": 0.009
+    },
+    "off/pan": {
+      "fps": 60.4,
+      "p50": 16.7,
+      "p95": 16.7,
+      "over20ms": 0,
+      "mainMsPerFrame": 4.09,
+      "mainMsPer60Hz": 6.27,
+      "tracedFrames": 460,
+      "wsMsPerFrame": 0.019
+    }
+  },
+  "overlayMsPerFrame": {
+    "idle": null,
+    "pan": null
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "kind": "devin",
+  "cli_version": "3000.10.21",
+  "log_format": "17",
+  "recorded": "2026-09-29",
+  "model": "swe-2-medium",
+  "command": [
+    "devin",
+    "-p",
+    "--model",
+    "swe-2-medium",
+    "--permission-mode",
+    "dangerous",
+    "--respect-workspace-trust",
+    "false",
+    "--",
+    "<prompt>"
+  ],
+  "prompt": "Read the file alpha.txt with your file-reading tool. Then read beta.txt by running the shell command `cat beta.txt`. Then create the file gamma.txt containing the two words you read, separated by one space. Do not change any other file. Reply with one word: done.",
+  "cwd": "/work/project",
+  "native_id": "endurable-twister",
+  "expected": {
+    "files": [
+      "gamma.txt"
+    ],
+    "reads": [
+      "alpha.txt",
+      "beta.txt"
+    ],
+    "commands": 1,
+    "subagents": 0
+  },
+  "expected_unknown": [],
+  "note": "Recorded by scripts/record_agent_fixture.py; paths sanitized (/work/project, /home/user), signatures dropped. The native sessions were deleted after copying."
+}

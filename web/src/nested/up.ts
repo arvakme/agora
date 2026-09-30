@@ -1,0 +1,89 @@
+// Going back up from a child canvas (docs/nested-canvas.md §2): the parent it goes to, the
+// keyboard shortcut (⌘↑ on a Mac, Ctrl+↑ elsewhere) and the one-time "you are in a child canvas"
+// hint. Pure (type-only imports), so it runs under vitest in node.
+import type { El } from "../canvas/scene";
+import type { ParentRef } from "./graph";
+
+export const isMacPlatform = (platform = typeof navigator === "undefined" ? "" : navigator.platform) => /Mac|iPhone|iPad/i.test(platform);
+/** How the shortcut is written in tooltips and hints. */
+export const upKeyLabel = (mac = isMacPlatform()) => (mac ? "⌘↑" : "Ctrl+↑");
+
+type KeyLike = { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean };
+
+/** ⌘↑ (Mac) / Ctrl+↑ (elsewhere), nothing else held. */
+export const isUpKey = (e: KeyLike, mac = isMacPlatform()) =>
+  e.key === "ArrowUp" && !e.altKey && !e.shiftKey && (mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
+
+/** Excalidraw uses ⌘/Ctrl+arrow on one selected box, ellipse or diamond: it grows a flowchart from it. */
+export const flowchartTakesKey = (selected: readonly El[]) =>
+  selected.length === 1 && (selected[0].type === "rectangle" || selected[0].type === "ellipse" || selected[0].type === "diamond");
+
+/** The canvas one level up from `canvasId`, or null on a top-level canvas. */
+export const parentCanvas = (canvasId: string, index: ReadonlyMap<string, ParentRef>) => index.get(canvasId)?.canvasId ?? null;
+
+/**
+ * Where the up shortcut goes for a key press on `canvasId`, or null when it is not for us: not
+ * the shortcut, typing in a field, Excalidraw's flowchart owns it, or already at the top.
+ */
+export function upOnKey(e: KeyLike & { editable?: boolean }, canvasId: string | null, index: ReadonlyMap<string, ParentRef>, selected: readonly El[], mac = isMacPlatform()): string | null {
+  if (!canvasId || e.editable || !isUpKey(e, mac) || flowchartTakesKey(selected)) return null;
+  return parentCanvas(canvasId, index);
+}
+
+/** A key event's target is a text field (an input, a textarea, Excalidraw's text editor, a contenteditable). */
+export const isEditableTarget = (t: EventTarget | null) => {
+  const el = t as HTMLElement | null;
+  if (!el || typeof el.tagName !== "string") return false;
+  return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || !!el.isContentEditable;
+};
+
+/** The one-time hint on entering a child canvas: dismissed once per browser. */
+export const BACK_HINT_KEY = "agora.nested.backHint";
+type Store = Pick<Storage, "getItem" | "setItem">;
+const storage = (): Store | undefined => {
+  try {
+    return typeof localStorage === "undefined" ? undefined : localStorage;
+  } catch {
+    return undefined;
+  }
+};
+export function backHintSeen(s: Store | undefined = storage()): boolean {
+  try {
+    return s?.getItem(BACK_HINT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+/** Whether the hint shows: not yet seen, and not held back. */
+export const backHintVisible = (seen: boolean, quiet: boolean) => !seen && !quiet;
+/** Held back while a turn plays (its camera goes in and out of sub-diagrams by itself). Marks nothing as seen. */
+let quiet = false;
+const quietLs = new Set<() => void>();
+export const backHintQuiet = {
+  get: () => quiet,
+  set(v: boolean) {
+    if (v === quiet) return;
+    quiet = v;
+    quietLs.forEach((f) => f());
+  },
+  subscribe: (f: () => void) => (quietLs.add(f), () => void quietLs.delete(f)),
+};
+const seenLs = new Set<() => void>();
+/** Hear when the hint is dismissed (the button, or going up by any route). */
+export const onBackHintSeen = (f: () => void) => (seenLs.add(f), () => void seenLs.delete(f));
+export function markBackHintSeen(s: Store | undefined = storage()) {
+  seenLs.forEach((f) => f());
+  try {
+    s?.setItem(BACK_HINT_KEY, "1");
+  } catch {
+    /* private mode: the hint may show again next time */
+  }
+}
+
+/** 「可能过时」 shows as a dot by the sub-diagram's name in the breadcrumb (its words and 「让 AI 更新」 open on hover). */
+export const staleDot = (files: number) => files > 0;
+export const staleNote = (files: readonly string[]) => `可能过时：子图画好之后改过 ${files.length} 个文件`;
+
+/** The hint is once per browser: after it has been on screen this long it counts as seen (a refresh does not bring it back). */
+export const BACK_HINT_MS = 8000;
+export const backHintDue = (shownMs: number) => shownMs >= BACK_HINT_MS;

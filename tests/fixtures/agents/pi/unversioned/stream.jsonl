@@ -1,0 +1,12 @@
+{"type": "session", "version": 3, "id": "3848dfff-ed77-4b25-b572-39918ef0b06a", "timestamp": "2026-09-27T16:00:54.230Z", "cwd": "/work/project"}
+{"type": "agent_start"}
+{"type": "turn_start"}
+{"type": "message_end", "message": {"role": "user", "timestamp": 1790524854482, "content": [{"type": "text", "text": "Run the shell command 'echo hi' with bash and then say done."}]}}
+{"type": "message_end", "message": {"role": "assistant", "provider": "magpie", "model": "group/fable-5-1", "usage": {"input": 14034, "output": 68, "cacheRead": 0, "cacheWrite": 0, "reasoning": 0, "totalTokens": 14102, "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0}}, "stopReason": "toolUse", "timestamp": 1790524854490, "content": [{"type": "text", "text": "Running `echo hi` now."}, {"type": "toolCall", "id": "toolu_01RcwfE4kR99Wrwhgba3mkic", "name": "bash", "arguments": {"command": "echo hi"}}]}}
+{"type": "tool_execution_start", "toolCallId": "toolu_01RcwfE4kR99Wrwhgba3mkic", "toolName": "bash", "args": {"command": "echo hi"}}
+{"type": "tool_execution_end", "toolCallId": "toolu_01RcwfE4kR99Wrwhgba3mkic", "toolName": "bash", "result": {"content": [{"type": "text", "text": "hi\n"}]}, "isError": false}
+{"type": "message_end", "message": {"role": "toolResult", "timestamp": 1790524858485, "toolCallId": "toolu_01RcwfE4kR99Wrwhgba3mkic", "toolName": "bash", "isError": false, "content": [{"type": "text", "text": "hi\n"}]}}
+{"type": "turn_start"}
+{"type": "message_end", "message": {"role": "assistant", "provider": "magpie", "model": "group/fable-5-1", "usage": {"input": 132, "output": 3, "cacheRead": 14032, "cacheWrite": 0, "reasoning": 0, "totalTokens": 14167, "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0}}, "stopReason": "stop", "timestamp": 1790524858486, "content": [{"type": "text", "text": "done"}]}}
+{"type": "agent_end", "willRetry": false}
+{"type": "agent_settled"}

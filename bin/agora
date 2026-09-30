@@ -1,0 +1,5 @@
+#!/bin/sh
+# agora CLI from any directory: `path/to/agora/bin/agora up` inside a project.
+# Uses the repo's uv environment; the current directory stays the project.
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" exec uv run --quiet --project "$REPO" python -m agora_cli "$@"

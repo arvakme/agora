@@ -1,0 +1,45 @@
+/* Share guest page (GuestApp.tsx): the same shell as the owner's page, one canvas, no sessions.
+ * Design system v0.2 (app/tokens.css); controls come from app/styles.css. */
+.guest-top {
+  flex: none; height: var(--column-head); display: flex; align-items: center; gap: var(--space-4);
+  padding: 0 var(--space-5) 0 var(--space-6); background: var(--bg); border-bottom: 1px solid var(--line); min-width: 0;
+}
+.guest-title { font-size: var(--text-md); font-weight: var(--weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; margin-left: var(--space-3); }
+.guest-project { color: var(--fg-subtle); font-size: var(--text-sm); white-space: nowrap; }
+.guest-gap { flex: 1; }
+.guest-note { display: inline-flex; align-items: center; gap: var(--space-3); color: var(--fg-muted); font-size: var(--text-sm); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.guest-name { max-width: 180px; }
+.guest-name span { overflow: hidden; text-overflow: ellipsis; }
+.guest-canvas { position: relative; flex: 1; min-height: 0; }
+.guest-canvas .canvas-view { position: absolute; inset: 0; }
+
+.guest-scrim { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: var(--scrim); padding: var(--space-6); }
+.guest-dialog {
+  width: min(380px, 100%); padding: var(--space-7); border-radius: var(--r-xl); background: var(--surface); color: var(--fg);
+  box-shadow: var(--frame); display: grid; gap: var(--space-5);
+  --icon: var(--accent); /* the welcome's large dithered eye keeps the purple (the shell's icons are ink) */
+}
+.guest-dialog h2 { margin: 0; font-size: var(--text-lg); font-weight: var(--weight-strong); letter-spacing: var(--track-title); }
+.guest-dialog p { margin: 0; color: var(--fg-muted); line-height: var(--leading-read); }
+.guest-dialog label { display: grid; gap: var(--space-3); font-size: var(--text-sm); color: var(--fg-muted); }
+.guest-dialog input { height: var(--control-lg); padding: 0 var(--space-5); border: 0; border-radius: var(--r-sm); background: transparent; box-shadow: var(--box); color: var(--fg); font-size: var(--text-md); }
+.guest-dialog input::placeholder { color: var(--fg-subtle); }
+.guest-dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-4); }
+
+.guest-ended { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); color: var(--fg); padding: var(--space-6); }
+.guest-ended main { max-width: 360px; }
+.guest-ended h1 { margin: var(--space-6) 0 var(--space-4); font-size: var(--text-xl); font-weight: var(--weight-strong); letter-spacing: var(--track-title); }
+.guest-ended p { margin: 0; color: var(--fg-muted); line-height: var(--leading-read); }
+
+/* Excalidraw's compact layout (narrow windows) puts its own toolbar at the bottom: sit above it. */
+@media (max-width: 730px) {
+  .guest .dock { bottom: 76px; }
+}
+@media (max-width: 640px) {
+  .guest-project, .guest-note { display: none; }
+  .guest-top { padding: 0 var(--space-4); gap: var(--space-2); }
+}
+.guest-cmd { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-5); border-radius: var(--r-sm); box-shadow: var(--box); }
+.guest-cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--text-sm); color: var(--fg); }
+.guest-dialog a.btn { justify-content: center; text-decoration: none; }
+.guest-dialog .guest-warn { display: flex; align-items: flex-start; gap: var(--space-3); font-size: var(--text-sm); }

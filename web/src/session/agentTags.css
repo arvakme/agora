@@ -1,0 +1,19 @@
+/* The agent tags in the top bar (AgentTags.tsx). Small, in the bar's own line; the state is a dot and two words. */
+.agent-tags { flex: 100 1 0; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); overflow: visible; }
+.agent-tag { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px 0 4px; border: 1px solid var(--line); border-radius: 13px; background: var(--bg); color: var(--fg); font: inherit; font-size: var(--text-sm, 12px); cursor: pointer; max-width: 170px; }
+.agent-tag:hover { background: var(--bg-hover, var(--bg-sunken)); }
+.agent-tag .at-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.agent-tag .at-state { display: inline-flex; align-items: center; gap: 4px; color: var(--fg-muted); white-space: nowrap; }
+.agent-tag .at-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--line-strong); }
+.agent-tag[data-state="working"] .at-dot { background: var(--accent-fill); }
+.agent-tag[data-state="thinking"] .at-dot { background: var(--accent-fill); opacity: .5; }
+.agent-tag[data-state="waiting"] .at-dot { background: var(--caution); }
+.agent-tag[data-state="waiting"] .at-state { color: var(--caution); }
+.agent-tag[data-state="idle"] { color: var(--fg-muted); }
+.agent-tag[data-state="idle"] .at-state { gap: 0; }
+.agent-tag .at-kids { color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+.agent-tag.at-more-btn { padding: 0 9px; }
+.at-more { position: relative; }
+.at-menu { position: absolute; right: 0; top: 30px; z-index: 50; display: flex; flex-direction: column; gap: 4px; padding: 6px; min-width: 190px; }
+.at-menu .agent-tag { max-width: none; width: 100%; }
+@media (max-width: 720px) { .agent-tag .at-state { display: none; } }

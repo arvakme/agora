@@ -1,0 +1,3296 @@
+{
+ "sources": [
+  {
+   "id": "official",
+   "repo": "excalidraw/excalidraw-libraries",
+   "ref": "297a349eaff859e678f78d4dbc8e68df5fce42e5",
+   "license": "MIT",
+   "files": [
+    {
+     "path": "libraries/jumpingrivers/r.excalidrawlib",
+     "sha256": "22ad9ad00840fc4aaf157bab00102bd07e55f37073ef9d713fbedb1c3f36beda"
+    },
+    {
+     "path": "libraries/thijsdev/snowflake.excalidrawlib",
+     "sha256": "33d77439cd2674979cb2d06624eb7923b05fb34214a05adad9123fa23f2a2a36"
+    },
+    {
+     "path": "libraries/kaligule/robots.excalidrawlib",
+     "sha256": "5c14136103d1b813baed5280a5c8bddadf39210f6d5104fe945f007d04c117dc"
+    },
+    {
+     "path": "libraries/lipis/polygons.excalidrawlib",
+     "sha256": "0c00ca695f26ef23452fddbcf04864b5f17ebf7e471165e02520bdb21281dd25"
+    },
+    {
+     "path": "libraries/lipis/stars.excalidrawlib",
+     "sha256": "fc614ddac49ebd65a6e15e55fbe61207f99af36a9e4977899839ef41d89d05c2"
+    },
+    {
+     "path": "libraries/morgemoensch/gadgets.excalidrawlib",
+     "sha256": "b38609fd96400f8ae3ebf237f9794c12b20571e7de2bb490013670c086112913"
+    },
+    {
+     "path": "libraries/g-script/android.excalidrawlib",
+     "sha256": "45324c090fffba66cf8dc444522e5c5d4b4a04f2532c19ab9d214ad1d53e957b"
+    },
+    {
+     "path": "libraries/g-script/charts.excalidrawlib",
+     "sha256": "b40cc04b419d55d125fc1739588dd270d1111b86d6fca238064712e7b381fbcd"
+    },
+    {
+     "path": "libraries/g-script/forms.excalidrawlib",
+     "sha256": "b83a58ceb13e04aa771a26c42b17c867b860efba3f7bd24f2127f4770a5af445"
+    },
+    {
+     "path": "libraries/g-script/medias.excalidrawlib",
+     "sha256": "0721b80041b60efab0be1f5aac998260d309ede4b4eddff18522357e6e994ecd"
+    },
+    {
+     "path": "libraries/revolunet/raspberrypi3.excalidrawlib",
+     "sha256": "ca17cd7594192090b79b821097a89038bdc559f0f249b7328867cafd8eeedb62"
+    },
+    {
+     "path": "libraries/youritjang/stick-figures.excalidrawlib",
+     "sha256": "cde1668c4abac3a415a650c1c75626684397904c0592fc7a660934295391caae"
+    },
+    {
+     "path": "libraries/dbssticky/data-viz.excalidrawlib",
+     "sha256": "9918f5610092592970728a0f07aa3371712da51c7fd73ee7425975255a11c986"
+    },
+    {
+     "path": "libraries/dwelle/hearts.excalidrawlib",
+     "sha256": "b68b9702494118266cc2f0738f832a76fadb44b394c70c8c6be9cacf5e6f94ed"
+    },
+    {
+     "path": "libraries/franky47/apple-devices-frames.excalidrawlib",
+     "sha256": "1c3514c0d15018dc16f68a46b09cdcbd301794dfa88b38755f1b0c233cab39ad"
+    },
+    {
+     "path": "libraries/youritjang/software-architecture.excalidrawlib",
+     "sha256": "5dead109b7569066a5fd3c2bcfe5f045c156f27a391eed71e6dd640b4317ce65"
+    },
+    {
+     "path": "libraries/h7y/dropdowns.excalidrawlib",
+     "sha256": "dd71e10aed2c37e0e4f25fb94e6dc0a235594d917ad43457bcf62c3afb455ee0"
+    },
+    {
+     "path": "libraries/inwardmovement/information-architecture.excalidrawlib",
+     "sha256": "2ef9e19ae13331bffaf82590124efaaf7b8ccc0a865dcc10ff572b5f5ee0b6a6"
+    },
+    {
+     "path": "libraries/pclainchard/it-logos.excalidrawlib",
+     "sha256": "9030c537df65dbc9623d9c29943279b2ddf1c070db86aca97405ecfd3d41d9ec"
+    },
+    {
+     "path": "libraries/excacomp/mobile-kit.excalidrawlib",
+     "sha256": "c26148158f82a2eed95471357da97382dcc8faaebf3071a6490e0db4952b0840"
+    },
+    {
+     "path": "libraries/excacomp/web-kit.excalidrawlib",
+     "sha256": "d4065eae35c37f66ed71ce7788bc32c659ed777f153ae36accb058245498c50f"
+    },
+    {
+     "path": "libraries/drwnio/drwnio.excalidrawlib",
+     "sha256": "7748ef9f0b91d70a32cae141814f49c21e89cb30cc09e4184e308617f5294586"
+    },
+    {
+     "path": "libraries/maeddes/technology-logos.excalidrawlib",
+     "sha256": "5c27e1f720191cfe22e40d93ed2620e0321f62484889d40ce3c3f4c85e1789fe"
+    },
+    {
+     "path": "libraries/drwnio/storytelling.excalidrawlib",
+     "sha256": "4dac33a4b1aae87fa59136afd8f6aa5d84dc3bea42ec2873edd55e711f758816"
+    },
+    {
+     "path": "libraries/newbyca/cryptocurrencies.excalidrawlib",
+     "sha256": "4c0e46940521d200061009c4f036d186877d3f25f65557cfd12546a52c3e325b"
+    },
+    {
+     "path": "libraries/marcottebear/raspberrypi-zero.excalidrawlib",
+     "sha256": "116ef78510c7935cc257614f5a91e1f4b6952662191665bf3c9b39bfb30ea0a1"
+    },
+    {
+     "path": "libraries/shinkim/presentation-templates.excalidrawlib",
+     "sha256": "e2d6e678748d7a568afeaa03656af944c0ea5243e0ff72672463015a0df1f6db"
+    },
+    {
+     "path": "libraries/jakubpawlina/graphs.excalidrawlib",
+     "sha256": "56ea4559508773480f2bb965be8715b65e430e54560bf602eaed308dd9d9274f"
+    },
+    {
+     "path": "libraries/shinkim/desktop-resolutions.excalidrawlib",
+     "sha256": "fe1986be3646da296391ec55e0cc73f394a56274fc679b92c89be42492f9cc29"
+    },
+    {
+     "path": "libraries/spfr/lo-fi-wireframing-kit.excalidrawlib",
+     "sha256": "bf5c3f6db095885e6362ad5c9c3051d50ab1246599d19f9bc3c7542d94e91f91"
+    },
+    {
+     "path": "libraries/michelcaradec/cloud-design-patterns.excalidrawlib",
+     "sha256": "80c2e4929e8350b9dec28bf385a1241441f96a8db88b1d82460fbed61d92c5ac"
+    },
+    {
+     "path": "libraries/slobodan/aws-serverless.excalidrawlib",
+     "sha256": "0dd78bbcdd694b762ffb92bc87cd20051b4149f2de94d8caf1a19bfaefe6b4fd"
+    },
+    {
+     "path": "libraries/simalexan/wardley-maps-symbols.excalidrawlib",
+     "sha256": "c28e6b7defec44dde55997a8bc3d4b785b4a6cf12ab2c830100697d7ed209666"
+    },
+    {
+     "path": "libraries/ocapraro/bubbles.excalidrawlib",
+     "sha256": "8810b2ee759019daa601786e87a19b224fde77313ebcacf72c4c1f25962eff3e"
+    },
+    {
+     "path": "libraries/shellerbrand/canvases.excalidrawlib",
+     "sha256": "b91d7e7f1e3bd918c430be2c317185648dd2ce20947078e52e75baafaa18a8ed"
+    },
+    {
+     "path": "libraries/jhoughes/veeam.excalidrawlib",
+     "sha256": "c61791ed6b0e5dc4c30c98c3bc3f68c9866c2bce81e252fb7a8619b09a0d76fb"
+    },
+    {
+     "path": "libraries/farisology/data-science.excalidrawlib",
+     "sha256": "c9d7e3a883cfdcb91c44000d714ff20192487e096b12730020d6b6125a2af13e"
+    },
+    {
+     "path": "libraries/rkjc/arduino-boards.excalidrawlib",
+     "sha256": "d0014d88c6b13007dca98426b163ba0d5db0dc4f760a95bd8756a92ee3847a21"
+    },
+    {
+     "path": "libraries/rkjc/schematic-symbols.excalidrawlib",
+     "sha256": "ba3bf4411e1404bdaa8b664900d47c2781f575b9ef73d0cba9e0f0a2ee93b650"
+    },
+    {
+     "path": "libraries/cloud/cloud.excalidrawlib",
+     "sha256": "1e3aefc9cddde22c550d8beb0eddcbde8ed8491aebfa394095c32ddfd31d4205"
+    },
+    {
+     "path": "libraries/madhusuthanan-b/html-css-js-icons.excalidrawlib",
+     "sha256": "5b624ae32b6be5d6f239bcb523605762d1566ebddcfe22bfd40adc29256a5f9b"
+    },
+    {
+     "path": "libraries/anumithaapollo12/emojis.excalidrawlib",
+     "sha256": "c2790ddf77987ad3bafee2f943b687060b77f9371b038ac6c09af7995a1c66d9"
+    },
+    {
+     "path": "libraries/mikhailredis/redis-grafana.excalidrawlib",
+     "sha256": "70d587ebebcec53ed99676bce87895cf12f921e34a9c39ef8bd41d7afc9a7aa3"
+    },
+    {
+     "path": "libraries/husainkhambaty/aws-simple-icons.excalidrawlib",
+     "sha256": "2f6c3ae029dd3c7d41690515a1388f580fdab85124acf05450520d445abb4ac1"
+    },
+    {
+     "path": "libraries/ei-au/computers.excalidrawlib",
+     "sha256": "f140f9d50b78057b676cdfd348fdf68b3318d78b95c6c38556cb73bb1d4b95bf"
+    },
+    {
+     "path": "libraries/madhusuthanan-b/front-end-tech-and-tools.excalidrawlib",
+     "sha256": "ce1dc657a2235ed13eea2b43764eb676cb758bfdcf26dafd14f04ca4a467a564"
+    },
+    {
+     "path": "libraries/Arqtangeles/architecture.excalidrawlib",
+     "sha256": "388b15d89c92df39482a929421d0e7ad946ca8b1a89e541d078cc6135a34f55b"
+    },
+    {
+     "path": "libraries/nikordaris/team-topologies.excalidrawlib",
+     "sha256": "de164a325d0ed489e74761dffc60028c1590f7e9b9c050ba494e93e98fb05710"
+    },
+    {
+     "path": "libraries/youritjang/azure-cloud-services.excalidrawlib",
+     "sha256": "1b595ec710435310f531b0ddd71d4102726ec291bd26a0fb4e4b6435da037948"
+    },
+    {
+     "path": "libraries/l8y/music-instruments.excalidrawlib",
+     "sha256": "d5c1aa48b44edd5f9157929b6b519f79e63c96d847eca56fbcd2344d73ed3cbf"
+    },
+    {
+     "path": "libraries/braweria/customer-journey-map.excalidrawlib",
+     "sha256": "c651fd11a7a13fbed8f50ccc432efa2ab893624498f0cb02f2eb7a04ea8651c9"
+    },
+    {
+     "path": "libraries/ferminrp/post-it.excalidrawlib",
+     "sha256": "a1ded7f6b7cf1a9a038b7c8ceff06bb951bf13ba643cc0f83b2e735f6df856cc"
+    },
+    {
+     "path": "libraries/ferminrp/gantt.excalidrawlib",
+     "sha256": "8791a29d8be4b5b6ddea2eea255fe6961e7e40f0da4d7696970f1062a0acf75e"
+    },
+    {
+     "path": "libraries/novakkkarel/nsx-t-vmware.excalidrawlib",
+     "sha256": "58f5280d0ce09b3adddfa327118c0694d8cf93cd72de8c244e4f35065c7baccc"
+    },
+    {
+     "path": "libraries/pgilfernandez/basic-shapes.excalidrawlib",
+     "sha256": "2325c8a631211824cde105ddf3b153ab29be30876b8a5b6399e2565d08262dde"
+    },
+    {
+     "path": "libraries/pret/chess-set.excalidrawlib",
+     "sha256": "86d6712a6c0dc36c66c26d03b9e3814587dc10d536f303f1d2684aab3517231e"
+    },
+    {
+     "path": "libraries/Vasudevatirupathinaidu/random-figure-drawings.excalidrawlib",
+     "sha256": "ded61f2a56620f56cc97da94a1428dd13a1a40db2a9609047dd5b7e6ccd7a794"
+    },
+    {
+     "path": "libraries/danimaniarqsoft/scrum-board.excalidrawlib",
+     "sha256": "b6c99d9da2d3f07ef16b7b7dac1c44c49200826083e9be3a0c82075763283ca2"
+    },
+    {
+     "path": "libraries/dpalay/common-screen-resolutions.excalidrawlib",
+     "sha256": "b69419a160eddac5fa60953348623ac92d8b5d1b4f5f3631d229a2d54bdbfe57"
+    },
+    {
+     "path": "libraries/ferminrp/awesome-slides.excalidrawlib",
+     "sha256": "d30ec078ee3a5d2fe9617ead961e5ca01de54a9480f3628238f20e9490debb18"
+    },
+    {
+     "path": "libraries/ferminrp/awesome-icons.excalidrawlib",
+     "sha256": "02a2a249da93305990109af4665ce8f3b3d8a60fedd085ea1fce90b21cf6c8e1"
+    },
+    {
+     "path": "libraries/BjoernKW/UML-ER-library.excalidrawlib",
+     "sha256": "67da58e0f5807b6479f1c04bfb993790fa29a1a2312ebd8488c3f116e4c917ef"
+    },
+    {
+     "path": "libraries/aretecode/decision-flow-control.excalidrawlib",
+     "sha256": "3c03738d9a8e100975b7d3cc5f0b6a06b8fdaf57ac3ac2b25a172e855b3059d6"
+    },
+    {
+     "path": "libraries/aretecode/system-design-template.excalidrawlib",
+     "sha256": "b086710afd989f98eb6dff1cde1447a8da5c572f1f149e3371122af7c90e2330"
+    },
+    {
+     "path": "libraries/IvanReznikov/yellow-box.excalidrawlib",
+     "sha256": "0dbc647287e4568d6bf286bf9db45e31c2668cb33ca8ba2443a28fc7fec740bf"
+    },
+    {
+     "path": "libraries/jdelacruz/veeam_unofficial.excalidrawlib",
+     "sha256": "64c38506dc78ced6c143826a2627aac2fe0f0a1e2bcf6c9c6dda41f1847de42b"
+    },
+    {
+     "path": "libraries/markopolo123/dev_ops.excalidrawlib",
+     "sha256": "395927facdf7d2e10e6ff52c107bb4f4e94f6e00b698063cbed9e77aa51a1fbc"
+    },
+    {
+     "path": "libraries/corlaez/hexagonal-architecture.excalidrawlib",
+     "sha256": "d1b2c883f07560dfec8830e3d8a3cdd13f8c6d5f1bb190d48ea3f3ca4c392f85"
+    },
+    {
+     "path": "libraries/jasoncoelho/arduino-micro.excalidrawlib",
+     "sha256": "8c36db5f7b11cfc0fa71c439cb59cd215bb6e5654d4b903613ee09c6cb31d3d5"
+    },
+    {
+     "path": "libraries/thebrahmnicboy/Logic-Gates.excalidrawlib",
+     "sha256": "70c54e3c81a3116515780f8b0f6a7d5bf39ac400e3f513ac14616ca52fd6ea77"
+    },
+    {
+     "path": "libraries/gabi-as-cosmos/periodic-table.excalidrawlib",
+     "sha256": "da92332e089501c1493be4c49842dbc6933cad3b8feb26bd16524c78339ceab8"
+    },
+    {
+     "path": "libraries/rohanp/system-design.excalidrawlib",
+     "sha256": "4042532130ed87478388d28d4177177423c52ef7953c570822d60695a0b74bf7"
+    },
+    {
+     "path": "libraries/swissarmysam/maps.excalidrawlib",
+     "sha256": "b3efc9268de1578eccf0332193e342d40c891addd32d54215f5e277d33e01c9b"
+    },
+    {
+     "path": "libraries/marwinburesch/github-icons.excalidrawlib",
+     "sha256": "ef32a221b74c8747075c940227493cbcd0e2ef5d99737827aa1a5bfd45641189"
+    },
+    {
+     "path": "libraries/esteevens/logos.excalidrawlib",
+     "sha256": "624aedfd65f0dec209dd6a9286ffb99175decc429ae4923c9aa9e9e865ef4c20"
+    },
+    {
+     "path": "libraries/aleksandr-hovhannisyan/clocks.excalidrawlib",
+     "sha256": "394fd99a7f801751f02bcfe971c3d188a39a5bb05a621e8a0366a9617345d31f"
+    },
+    {
+     "path": "libraries/oehrlis/db-eng.excalidrawlib",
+     "sha256": "57219d639c039ef774447ceaf2cbc448f1d7b5bdb561e2edc779dd0e624eb6e1"
+    },
+    {
+     "path": "libraries/niknm/systemdesignicons.excalidrawlib",
+     "sha256": "bd3ba0167df3efdaa9fa1e054385e8fa2ee94dd35cda2f878302bd04a0f0b374"
+    },
+    {
+     "path": "libraries/claracavalcante/baby-characters.excalidrawlib",
+     "sha256": "dfe00022710f5c5750ca04bc0733a3d4145cde137cf3b22164390c728c6f7e98"
+    },
+    {
+     "path": "libraries/kinghavok/some-common-cloud-apps.excalidrawlib",
+     "sha256": "05d0fa98b8da3560edc930bde939e787aec40acbe061bc9cace6cbe44fd819c2"
+    },
+    {
+     "path": "libraries/narhari-motivaras/aws-architecture-icons.excalidrawlib",
+     "sha256": "809b328fc1b233e50d91234d6ad4f2a8945491384c56151ab2a84a9ad1ffcf47"
+    },
+    {
+     "path": "libraries/dwelle/network-topology-icons.excalidrawlib",
+     "sha256": "3775004a854b9b1bee92babe6b3783c8f7881556efa342eb336bd08afc227fb7"
+    },
+    {
+     "path": "libraries/arach/systems-design-components.excalidrawlib",
+     "sha256": "8422ec75992b83f56e6002d93642cfa679fcae7383d5e791bdd8c271f0dfaaf7"
+    },
+    {
+     "path": "libraries/sudotachy/medicine.excalidrawlib",
+     "sha256": "1e7a49ec982c4c6466126a3550d0d51dec67ca8729e9d4703fecbefb770f7b8b"
+    },
+    {
+     "path": "libraries/andreandreandradecosta/3d-shapes.excalidrawlib",
+     "sha256": "f5632dce9df334dbc2d23d8d7e39bb6f6df745e2f0aaa150e33533fbc9e5f0ad"
+    },
+    {
+     "path": "libraries/jjadup/mathematical-symbols.excalidrawlib",
+     "sha256": "37308beeacdae6d117b808e1154e495fb294a4f9278eb42cd28e2febf22514ee"
+    },
+    {
+     "path": "libraries/robin-muller/digital-signal-processing.excalidrawlib",
+     "sha256": "b827b2c9155a30782d5d8032d4aa5e26d9b2aa8ac633e9018d4b3d799ac64b49"
+    },
+    {
+     "path": "libraries/https-github-com-ytrkptl/math-teacher-library.excalidrawlib",
+     "sha256": "738232d016274332001d6376f7a2d09333b50ee739678e1d039706d48b27c986"
+    },
+    {
+     "path": "libraries/xxxdeveloper/icons.excalidrawlib",
+     "sha256": "578d04493eb2bedaf8e7e96f574ae8cce348e528ac6fb5f991bdc17bc8535a17"
+    },
+    {
+     "path": "libraries/clementbosc/gcp-icons.excalidrawlib",
+     "sha256": "6e19f89b718e7837be5af6e1b02de45908a4da49964c1a66d115e8eac56a5be2"
+    },
+    {
+     "path": "libraries/xxxdeveloper/system-icons.excalidrawlib",
+     "sha256": "9953df11049add6c1ff4ce612231778286019484c069e2b103d96683e2b1db33"
+    },
+    {
+     "path": "libraries/zanetworker/red-hat.excalidrawlib",
+     "sha256": "d201f8260e8a7c249dc7f117c1e620f08f55455cf3d7dfd80b0770b0a5509528"
+    },
+    {
+     "path": "libraries/selanas/it-logos.excalidrawlib",
+     "sha256": "6b7834abd11b4b4fd7d1e3490ff6bd1d11a74f0a11ec7499e39f3e67aa371553"
+    },
+    {
+     "path": "libraries/xxxdeveloper/wireframing-placeholders.excalidrawlib",
+     "sha256": "458012b11be6118c8c78197566b4c7b0e2b9e619a62ca070d12ff30fc1f59f0d"
+    },
+    {
+     "path": "libraries/eho9734/2022-gantt.excalidrawlib",
+     "sha256": "c8f37e54e59f9042cb6b681f921b27cb75cde6a9b507af64e541846a88f76c54"
+    },
+    {
+     "path": "libraries/samu_x86/network-elements.excalidrawlib",
+     "sha256": "281841505e2701957644385e04b481668b2c82a87e882dfb6645ce359a09d22f"
+    },
+    {
+     "path": "libraries/coexist/mq.excalidrawlib",
+     "sha256": "e712adee6ed56f532167ee5a7b88d2932820a1aaa122d9480a56beee65f56ebd"
+    },
+    {
+     "path": "libraries/risjain/electrical-engineering.excalidrawlib",
+     "sha256": "0325fbe72bce269eae5c0335608376789ab9c9c13022d9092c23e39f69fad466"
+    },
+    {
+     "path": "libraries/esteevens/retail-peripherals.excalidrawlib",
+     "sha256": "4b064a18390bea943ad71e96a77994a7e2b813b83d09bf3e9b2ae679f004e47d"
+    },
+    {
+     "path": "libraries/fibreninja/fibre-network.excalidrawlib",
+     "sha256": "305e6092ed629367e3d92be8e0808e76c0d932cf1e8b87a1cb3673f9d570735e"
+    },
+    {
+     "path": "libraries/sharathsanketh/biology.excalidrawlib",
+     "sha256": "8a940210412902f3425e49968d220b60f8f61d6ce96b6c4ade850a46f261cd1d"
+    },
+    {
+     "path": "libraries/excalidraw/valentine-s-day.excalidrawlib",
+     "sha256": "4c0d9d0304bad79833b9b8786ed93fadd3eea4e4b8f931b0f269c3a9db1dd8f8"
+    },
+    {
+     "path": "libraries/rochacbruno/computer-parts.excalidrawlib",
+     "sha256": "c05db146308461602b814ba00f785aa2aa5acb9dc29d84adf3620d06433382bc"
+    },
+    {
+     "path": "libraries/kvchitrapu/secure_shell.excalidrawlib",
+     "sha256": "98467943fdf428e6bc2de4269daa338593edfcef08afc3f13bc36eaeb7b69043"
+    },
+    {
+     "path": "libraries/kvchitrapu/data-sources.excalidrawlib",
+     "sha256": "feb47456ecf9f9d8d7b40910ecb01cf41d1d33383e674107ecac626cc890c2e4"
+    },
+    {
+     "path": "libraries/intradeus/algorithms-and-data-structures-arrays-matrices-trees.excalidrawlib",
+     "sha256": "3af6a2c6978b37322efc6b8649d45df30cfba6df5e0ff586889075666f92e6c4"
+    },
+    {
+     "path": "libraries/danielpza/barotrauma.excalidrawlib",
+     "sha256": "74f96dfb5653a8a4dfdd2f55e4bfc010f266134c6975eda605b5b37e3da389ec"
+    },
+    {
+     "path": "libraries/https-github-com-sly-dog/ds-visualizations.excalidrawlib",
+     "sha256": "28dfe726eeff181d6256e79953f4c8f63ed998ca74229456828225e9d26cda34"
+    },
+    {
+     "path": "libraries/jgodoy/racks-and-servers-components.excalidrawlib",
+     "sha256": "7a7bea894cec3c7f3ecb2c3b310831e27b90888993e6b1209241c8f220c3a4ae"
+    },
+    {
+     "path": "libraries/m47812/office-items.excalidrawlib",
+     "sha256": "b4b7362c878ae5d41b6976b0eae0deae209147e97d9cad6f19cf248f9c71e419"
+    },
+    {
+     "path": "libraries/pocomane/boardgame.excalidrawlib",
+     "sha256": "c2502fae7c8c9729e7cd693b0cd7fa1f2fe2927373cdc627c511f1a8c649fce9"
+    },
+    {
+     "path": "libraries/mppowell/circuit-components.excalidrawlib",
+     "sha256": "e051020dc500bb6f51eed5fba9bd818c92627aa173ec8adf0319b62aa157684e"
+    },
+    {
+     "path": "libraries/marwinburesch/html-input-elements.excalidrawlib",
+     "sha256": "aeb5f54f7886b3f2507849fc11c81d310bbece859fac8ffcaaa7706fee864970"
+    },
+    {
+     "path": "libraries/fraoustin/bpmn.excalidrawlib",
+     "sha256": "da7259b867465b6446f96fc71dafabad48c0312424b4db248642a4d08f4f3b66"
+    },
+    {
+     "path": "libraries/7demonsrising/azure-network.excalidrawlib",
+     "sha256": "354edf60294b55222fc2220690027df8eca57be1b8380dd2a73f0487a45493b9"
+    },
+    {
+     "path": "libraries/7demonsrising/azure-containers.excalidrawlib",
+     "sha256": "14b45aa98ff1e05a1cca8acd2d6fd105af44b64a4af43b8483d376ee1c7e4488"
+    },
+    {
+     "path": "libraries/7demonsrising/azure-storage.excalidrawlib",
+     "sha256": "19564877a8cee7af46db8c60bb1833cb6dc7a2de172af0bde6e938bfa3273f86"
+    },
+    {
+     "path": "libraries/7demonsrising/azure-compute.excalidrawlib",
+     "sha256": "77ecf0283b517e452b279773ccf4aa86455d1ebd5f396b226e26fe32fa67f357"
+    },
+    {
+     "path": "libraries/7demonsrising/azure-general.excalidrawlib",
+     "sha256": "067838f3e85cfc3316ec12c495e5e6875c1eab8dfbbde587b9e519c2112e766e"
+    },
+    {
+     "path": "libraries/david-prta/dart-and-flutter-icons.excalidrawlib",
+     "sha256": "e2aed6d8021bb53415070ac1d5d7a7ec37130f7b780dbd3ba7aef330bd4ed4bc"
+    },
+    {
+     "path": "libraries/yuelfei/deep-learning.excalidrawlib",
+     "sha256": "0724e8baa73b7499109bfa84758e8e61563acb245f361beab6f1cfbee9cbc5e7"
+    },
+    {
+     "path": "libraries/dwelle/despair.excalidrawlib",
+     "sha256": "62703c0f5622698b3a8e35b5951158f2275885735530160d4008e35656221412"
+    },
+    {
+     "path": "libraries/tvoozmagnificent/coordinates.excalidrawlib",
+     "sha256": "7d487391b4392f1574a318b6d49e14ee55f08b605ed87fa306fe6a7fb3246fea"
+    },
+    {
+     "path": "libraries/mguidoti/google-icons.excalidrawlib",
+     "sha256": "ff46e82f18c9857a23d6f65b21f141a377e19370ea2bdcbdccdc533e7660e72a"
+    },
+    {
+     "path": "libraries/mguidoti/original-google-architecture-icons.excalidrawlib",
+     "sha256": "3322be7e42351001e1e5815d23bc353b41d6d03ec5d8f8eda810d8478c51e2c2"
+    },
+    {
+     "path": "libraries/jgodoy/network-locations.excalidrawlib",
+     "sha256": "ae7f3bc84536ebbbb439cfd9b3d40a62dfda499ed7abbd1baab27d87f4efe3bf"
+    },
+    {
+     "path": "libraries/surya-teja-venteddu/make-your-calendar.excalidrawlib",
+     "sha256": "9c9399beb9fa92185cbef3cb0e9146b2341b20dd17f641f7392497a09e608081"
+    },
+    {
+     "path": "libraries/tuckdiaz/internet-service-providers.excalidrawlib",
+     "sha256": "4dc14a33b5c41d301c16091179c757708e8b845f45e4beae4143f6cc201de147"
+    },
+    {
+     "path": "libraries/sketchingdev/banners.excalidrawlib",
+     "sha256": "43e42b48c3f671e70e6d1dad5afc75784dede2cf0575edcaba280bf191e359ac"
+    },
+    {
+     "path": "libraries/dmitry-burnyshev/c4-architecture.excalidrawlib",
+     "sha256": "54f7841eb8b24dcfab0230761f4d5099c29eacacb48b83f8856a2d70aaf15679"
+    },
+    {
+     "path": "libraries/mguidoti/it-tools-logos.excalidrawlib",
+     "sha256": "f51211ea1fec6ad69c2a6ea3998dc65f83c067086be73cc7183f1b9197a832de"
+    },
+    {
+     "path": "libraries/anna-pastushko/architecture-diagram-components.excalidrawlib",
+     "sha256": "103a53d299b295e83bac30ee4f029826db451bf2a3067f864c79986f38fb6626"
+    },
+    {
+     "path": "libraries/adamkdean/comms-platform-icons.excalidrawlib",
+     "sha256": "7fa281e254d064e8a64309600827f37292e64f523b3f0957332ba4089f3a225e"
+    },
+    {
+     "path": "libraries/krustvalentin/printers.excalidrawlib",
+     "sha256": "4369fa339dd657242e318313b1fd2f590f36f606292e0f50910bbcfc0fed5226"
+    },
+    {
+     "path": "libraries/zesty-lemur/microsoft-apps.excalidrawlib",
+     "sha256": "9d293a2295a13dc49ba009d635ec4d3a7b8f858475bdba06e595a6128153c84d"
+    },
+    {
+     "path": "libraries/amelia/micro.excalidrawlib",
+     "sha256": "805b92298eb18bdaa9dc7f9e12faf08700b60efa3fc9cde8d8c90dc9a7ea4245"
+    },
+    {
+     "path": "libraries/schiriki123/playing-cards.excalidrawlib",
+     "sha256": "9ea3ab3ace40c43644fe11748224240ee4581fe4420669ab4dc96f17f061a546"
+    },
+    {
+     "path": "libraries/kwirke/some-handdrawn-signs.excalidrawlib",
+     "sha256": "83a787f8ef5a5e6af8b2e95ea705314c63dbd4dff4998c4a6382dde6e5ec9ee9"
+    },
+    {
+     "path": "libraries/https-github-com-papacrispy/uml-library-activity-diagram.excalidrawlib",
+     "sha256": "d445c1ceec31507e22fbdbf3cb139565e86eee85b23d6aa335765814b4e49e36"
+    },
+    {
+     "path": "libraries/egor-romanov/risk-based-test-strategy.excalidrawlib",
+     "sha256": "9aecfc15ee598b9ce2619ac88d26a51a2c88f46f58e7fa6d2ffbfeb288f95c02"
+    },
+    {
+     "path": "libraries/wmartzh/data-flow.excalidrawlib",
+     "sha256": "cedd53b1bfdfd202b1690ab4f825f4e52a006ae6a4e6b0c7672b8cf8b34bd16f"
+    },
+    {
+     "path": "libraries/jgodoy/organization-chart.excalidrawlib",
+     "sha256": "f8b2cd0fbf86418634bbc878900c3eb22b2219056dbc077cbcfc91ecffdce4e5"
+    },
+    {
+     "path": "libraries/gabrielamacakova/basic-ux-wireframing-elements.excalidrawlib",
+     "sha256": "5d7ea7f26203c23a1590678ddd7eb3fde86763781e905e716000321fb0098fa3"
+    },
+    {
+     "path": "libraries/dhaval_godwani/webpage-frames.excalidrawlib",
+     "sha256": "04c054be14b585b840eacd3b22298a998f6de509047df9893b9d77afeb3b6e8e"
+    },
+    {
+     "path": "libraries/thrsz/organic-chemistry-basics.excalidrawlib",
+     "sha256": "aa60c1ce0d0c93714a7e1b543d5242e3c580fdd83723f8e176962fb4b87c465f"
+    },
+    {
+     "path": "libraries/econ-graphs/macroeconomics.excalidrawlib",
+     "sha256": "54b11c3fc7288fa13c2209cabd142e233345b3d4655e952b4e3c9dd406bfd8b7"
+    },
+    {
+     "path": "libraries/dday987/common-home-network-basics.excalidrawlib",
+     "sha256": "2a7824d4cb57e25bdf4f9b0c700f9eee82af5db03bda52ba26ac16e85d8df8f8"
+    },
+    {
+     "path": "libraries/cespin/domain-driven-design.excalidrawlib",
+     "sha256": "130ecf2d595b738b6f720113c2379cea24f5db20c60716df85e590663b5b49b8"
+    },
+    {
+     "path": "libraries/jkattnis/traffic-signs.excalidrawlib",
+     "sha256": "24a102f89560d35a1ca9917240c579497facacd9b890df934cb9765fa77d8429"
+    },
+    {
+     "path": "libraries/jurgen-kattnis/picasso-s-line-drawings.excalidrawlib",
+     "sha256": "f1e8f8ede28a8db984aebdddbe048697259f0229fd98bc2397f21e877233983d"
+    },
+    {
+     "path": "libraries/ipedrazas/go-icons.excalidrawlib",
+     "sha256": "4e09b8adaffa1c69615c9049f975f43bfd643f13a563164b7175cee6b15aa633"
+    },
+    {
+     "path": "libraries/https-github-com-patrickcuba/snowflake-iconography.excalidrawlib",
+     "sha256": "fb176d23db77211ceef42caf75e75ceb5ca266b037d3acb24aeed9201431d516"
+    },
+    {
+     "path": "libraries/cengizhanparlak/code-essentials.excalidrawlib",
+     "sha256": "b2445661c8e6dd5149332a237bb1277b5c58ddcb272aea1bd3ec32dff49928d0"
+    },
+    {
+     "path": "libraries/patrickcuba/data-vault.excalidrawlib",
+     "sha256": "02263f2c04fb16f667b6289d8782987126d2922961db8130e297a0a283406f37"
+    },
+    {
+     "path": "libraries/ubigene/misc-azure-icons.excalidrawlib",
+     "sha256": "a4fa3277ac76df4e96ad75950f622fc0a52bc45945ccf2131ff4eb24a1608bc2"
+    },
+    {
+     "path": "libraries/weareborg/synths-and-fx.excalidrawlib",
+     "sha256": "dfdfb0a1c356b32c727ed95ca9e2b77a00f0cae8e28cba09bc140e7cd2fb352e"
+    },
+    {
+     "path": "libraries/gabrielamacakova/halloween-elements.excalidrawlib",
+     "sha256": "88aa8da0d614122c2bcd482f7b2c5e3f5f0773aee77bd6160cd3442aa699d318"
+    },
+    {
+     "path": "libraries/rockssk/microsoft-azure-cloud-icons.excalidrawlib",
+     "sha256": "33256eb86faa9f9df8240dbff1998b376918edb5324ce71c4ddccdeb1b03b9a0"
+    },
+    {
+     "path": "libraries/ella/science-chemistry-gcse.excalidrawlib",
+     "sha256": "8c7d507c371586e0bd34177d66828a8280bde7cbc0fdb8193afde747f8fd0908"
+    },
+    {
+     "path": "libraries/kabirsinghshekhawat/genealogy-essentials.excalidrawlib",
+     "sha256": "46291b954b90e27079abc3403032e35ebfa99d9f2804e4859a83b7c59ffcbdd6"
+    },
+    {
+     "path": "libraries/ibex-technology/web3-crypto-solution-design-v1.excalidrawlib",
+     "sha256": "ec51247b83d0c5040e168b2744460de678faa3c2af38da67ea37a42c48efa2f5"
+    },
+    {
+     "path": "libraries/stuc2010/enterprise-integration-patterns.excalidrawlib",
+     "sha256": "99a1dbead5e7031a5a28968094a316bf68e0ce7ef023fb7388102513840347ae"
+    },
+    {
+     "path": "libraries/pixelass/body-builder-kit-1.excalidrawlib",
+     "sha256": "35e041df45fa797d23fb2d046447ac0490efbe3bb0228766de6ec8ddbae2dc00"
+    },
+    {
+     "path": "libraries/pixelass/character-kit-1.excalidrawlib",
+     "sha256": "ff05cfcd946597f60ec50f955b504583336626ff4393ecfe6a46aedf861d0729"
+    },
+    {
+     "path": "libraries/pixelass/female-heads-diverse.excalidrawlib",
+     "sha256": "6d7428f1c83503128466379f060ac008fe68077f1664fa782597d654c6333f3c"
+    },
+    {
+     "path": "libraries/pixelass/head-builder-kit-1.excalidrawlib",
+     "sha256": "8fdd60067beb4a26ba0b4c7538c57ba4924ca9c785556dfed9a0ba075c28acf9"
+    },
+    {
+     "path": "libraries/pixelass/male-heads-diverse-1.excalidrawlib",
+     "sha256": "52103ccd8aafed184b488b24c2bfc14836fd0c9e117a328b637443fd6e9a5a83"
+    },
+    {
+     "path": "libraries/ad115/music-notation.excalidrawlib",
+     "sha256": "e5b30d34f9dc6b158800a3cb45930c42368fac1cd1b54f1e4e6c24968c453f3b"
+    },
+    {
+     "path": "libraries/gregory/golang-gophers.excalidrawlib",
+     "sha256": "bd7891ae1dc6e5cb3b2e39c90c62d1858eb17eeb39cdcc694fac3144cf386c07"
+    },
+    {
+     "path": "libraries/chuqbach/data-platform.excalidrawlib",
+     "sha256": "1e8db82c7a31960cd9575561eef49e8e62cdc910355fdd90ad4895e25187e306"
+    },
+    {
+     "path": "libraries/aarondiel/logic-gates.excalidrawlib",
+     "sha256": "64f65164ddbcbec973a5af059e390b7219cb8addcefed9e74b5ad5e3df4954d9"
+    },
+    {
+     "path": "libraries/pixelass/tools.excalidrawlib",
+     "sha256": "883c5ec81a31a3f6137c38ca23b41cd5835b6ea76979f034f117793bc3599ade"
+    },
+    {
+     "path": "libraries/artem-anufrij-live-de/artem-s-icons.excalidrawlib",
+     "sha256": "d1ab5a3b3ad807547e46311952b917b80bb2efbb874785aef08083dadf10e2e3"
+    },
+    {
+     "path": "libraries/tylerkron/event-storming.excalidrawlib",
+     "sha256": "996d941dd489ea1ce9325ba0be24a01460e00c75967ca1e4ac0e19daf2389876"
+    },
+    {
+     "path": "libraries/manuelernestog/universal-ui-kit.excalidrawlib",
+     "sha256": "7facea7114870f1174a5412295ed70ac0dfeb04f5780cd3f602f96c154ab3cea"
+    },
+    {
+     "path": "libraries/jgansaown/ultimate-frisbee.excalidrawlib",
+     "sha256": "ea4e0ce4a86f37d67831b947bbc938870399ef70fff5736713d81475f28ad0f6"
+    },
+    {
+     "path": "libraries/demondarakna/dnd-writing-icons-for-dm.excalidrawlib",
+     "sha256": "d5a591fa3a35af5a305d916efe45cc589ca28e734c264af78cb80b50b6a00620"
+    },
+    {
+     "path": "libraries/lowess/kubernetes-icons-set.excalidrawlib",
+     "sha256": "88804deb121aaac9fba7f8956682860c555e320d0399a219338771cf80137b6f"
+    },
+    {
+     "path": "libraries/mayankguptadotcom/wardley-mapping-canvas.excalidrawlib",
+     "sha256": "19f308424763ad1cfeba353ae306aba31150371dab272ae53320a888bd04fc24"
+    },
+    {
+     "path": "libraries/dhtoran/stick-people.excalidrawlib",
+     "sha256": "0deee25cb1410fc07fa123b33dd9317ce61fd09ce0bfb864688479cfb5c5d175"
+    },
+    {
+     "path": "libraries/kleinpetr/simple-sticky-notes.excalidrawlib",
+     "sha256": "8cbe612ab383db4c60ff9ae325ebf5cb7be1867361dcee301bc123b903f063d4"
+    },
+    {
+     "path": "libraries/molibden/types-and-values-in-javascript.excalidrawlib",
+     "sha256": "2dc13affab518e2b1a342dda0f4c59defa3e7ef7b4469348627b965cc9a07908"
+    },
+    {
+     "path": "libraries/dimitrios-fkliaras/clouds.excalidrawlib",
+     "sha256": "9fb06fb77bc4320160787a3785353151a7ad5344c19a27001ab8ff465e0f9680"
+    },
+    {
+     "path": "libraries/kbentekik/piping-and-instrumentation-diagram-p-id.excalidrawlib",
+     "sha256": "9c7c34e10bccca85bac701875113c0a1995be8d2f8496ba309c8bdad0781be19"
+    },
+    {
+     "path": "libraries/alexandertsukanov/elk-stack.excalidrawlib",
+     "sha256": "ea262913900a1cd095261ba72c22c60a0f092aea773d2f1a60e2bc41b4620d91"
+    },
+    {
+     "path": "libraries/odraghi/vmware-architecture-design.excalidrawlib",
+     "sha256": "82cf61b4bf3096c5877947602371845dd346f004199b403c9db4b6bbc642432a"
+    },
+    {
+     "path": "libraries/boemska-nik/kubernetes-icons.excalidrawlib",
+     "sha256": "2a8632978fd5e65fc48e338919b04d10b2ea5294ed1466431e06102d6954d465"
+    },
+    {
+     "path": "libraries/aimpizza/3d-coordinate-systems-graphs.excalidrawlib",
+     "sha256": "6dc0071c7e1f6933d360fffb8370333900c6b00ffc9cc7e49f9ed34fdaaf2684"
+    },
+    {
+     "path": "libraries/erlina/data-processing.excalidrawlib",
+     "sha256": "ad604a9c036141e0b527f1a4a89592c5877b6b94ec5c959e8889d338ff33264b"
+    },
+    {
+     "path": "libraries/gianpaima/stick-figures-collaboration.excalidrawlib",
+     "sha256": "f1c3c09e6b56d6856de096bf410a26526df0281ed3219bc6d8db5ff16f6da49e"
+    },
+    {
+     "path": "libraries/stojanovic/aws-serverless-icons-v2.excalidrawlib",
+     "sha256": "a14c4d6028c83ed086797085eeb4de71daeb811fec9c0795a0bdd64febc905eb"
+    },
+    {
+     "path": "libraries/alluvion/montessori-basic-grammar-symbols.excalidrawlib",
+     "sha256": "c60e10e4c64b795d294f6b82c4b3500ce1ffcb452457c7aa8a536754df605e44"
+    },
+    {
+     "path": "libraries/nemeki/ttrpg-clocks.excalidrawlib",
+     "sha256": "87f20095d840433e308b0d7e12346974f243bf239002cc08e7edc7e1cb0611cc"
+    },
+    {
+     "path": "libraries/pfound/football-icons.excalidrawlib",
+     "sha256": "ef76b5ae4c17b49d3ddf3323a8e559cee6ab1eb9b9c1f5fd3fff88cd9f03ff35"
+    },
+    {
+     "path": "libraries/wictorwilen/microsoft-365-icons.excalidrawlib",
+     "sha256": "f29cae89264d769aabb940412b4a0726ecb4398b30d21e26696878fcdb0f5f79"
+    },
+    {
+     "path": "libraries/webkul/ecommerce-mobile-ui.excalidrawlib",
+     "sha256": "0fb61c2aec6e138180ceeb7cb30010206a499a139ce6214cfe0f63e1b273edef"
+    },
+    {
+     "path": "libraries/damitr/astronomical-symbols.excalidrawlib",
+     "sha256": "8e5dd7845322b596b97019a3d95d2579fc2018d3dc8ad066feb86297ced05fab"
+    },
+    {
+     "path": "libraries/r4z4/elixir.excalidrawlib",
+     "sha256": "7ed45f6ead6170617977479d469331dbb8c2797adbcac1c4d03c7edb9a413d20"
+    },
+    {
+     "path": "libraries/mateuszbaransanok/it-icons.excalidrawlib",
+     "sha256": "67c69561e0e7ffd7d929f2e052f8a2b84bfbeabc703a9862ea81c5b99206322b"
+    },
+    {
+     "path": "libraries/monty/an-adjustable-arrow-shape-that-can-be-modified-in-a-number-of-ways-to-suit-different-use-cases.excalidrawlib",
+     "sha256": "95892848561980227c8da9cbca1ebc400cfb2de5075763ad0ab1021af2eaa10b"
+    },
+    {
+     "path": "libraries/gabrielamacakova/presentation-bundle.excalidrawlib",
+     "sha256": "780ac44d95a3bc24feba2214ad0c262fd06182d4b8576ece18bea7433ce751ff"
+    },
+    {
+     "path": "libraries/aocgame/domainstorytelling.excalidrawlib",
+     "sha256": "d940e5ec933f384c3d66be2c649598926747bb6e9eeb19b78aee303b9861e908"
+    },
+    {
+     "path": "libraries/pratheeshpm/basic-system-design.excalidrawlib",
+     "sha256": "f23434d8882314d5a953283fb9eaca37ebc512f9b910a725d50f2be19100e02f"
+    },
+    {
+     "path": "libraries/matthijssloep/fair-web-icons.excalidrawlib",
+     "sha256": "b95df1d00c1eb1a4e271e368f74ddd72b467d16764db648769b429f500719dcc"
+    },
+    {
+     "path": "libraries/booknerdonmars/bullet-journal-trackers.excalidrawlib",
+     "sha256": "33748591a54fac7c36e0bce7d4436e4b31f7296a50bc9d34ddfc218d22571d5f"
+    },
+    {
+     "path": "libraries/itsmestefanjay/camunda-platform-icons.excalidrawlib",
+     "sha256": "35079d94396a7bb0aefe7591cccaf272acbe21054e5452bbc21ab9a1e5fcf14a"
+    },
+    {
+     "path": "libraries/gabrielamacakova/christmas-essentials.excalidrawlib",
+     "sha256": "df3216f96c345f705cff188e27a56725ca585bedfca3578a634d47f09ba6c892"
+    },
+    {
+     "path": "libraries/moochin/simple-characters.excalidrawlib",
+     "sha256": "a81692d5d23877021deed8df973033b093a3fc74fa1071d634584c66ce4487e8"
+    },
+    {
+     "path": "libraries/finfin/flow-chart-symbols.excalidrawlib",
+     "sha256": "208a0194d61b314aa32f11009c1a9f98334308d4f06bfedc3770d82dae84d02e"
+    },
+    {
+     "path": "libraries/mrmaffen/dnd-ttrpg-battle-map-creature-tokens.excalidrawlib",
+     "sha256": "031161fd2046b1f137ae69bb59e67c2be0d347ae3d83d659e8860ef3ba4ed469"
+    },
+    {
+     "path": "libraries/martinberger-ch/oracle-cloud-infrastructure-icons.excalidrawlib",
+     "sha256": "c8a3ed0c3bcb09f49f0a7729f93b4474714b5d618f1a5bd388aed8c15072c7ee"
+    },
+    {
+     "path": "libraries/hartmut-co-uk/kafka-streams-topology-design.excalidrawlib",
+     "sha256": "2075155932aac773ade5e2faea064ffac9bc82b02e499fe4aaf90b55548db23c"
+    },
+    {
+     "path": "libraries/ewels/nextflow-seqera-nf-core.excalidrawlib",
+     "sha256": "a0700224696db2c87c6cc9e071e6e967552190a94717d3d8243b12eb9a409f28"
+    },
+    {
+     "path": "libraries/childishgirl/aws-architecture-icons.excalidrawlib",
+     "sha256": "8925477215064db0594e8f44c85da9de05958c18fbb4fd56d6d56988a4de2f29"
+    },
+    {
+     "path": "libraries/mwc360/microsoft-fabric-architecture-icons.excalidrawlib",
+     "sha256": "829f94533aa4ded181bcc984c60ea7f281a151e6032f9b92c81e0de93786510a"
+    },
+    {
+     "path": "libraries/https-github-com-jinmingyi1998/collective-operation.excalidrawlib",
+     "sha256": "b2ba666546d1b08e4c423e53f2edac8f027e1d31a04817478f59dc2237eef9d6"
+    },
+    {
+     "path": "libraries/fortijosh/fortinet.excalidrawlib",
+     "sha256": "cbd824d5941689f880ab7e384ea34923fc508e58b810305d8e0bda9d8f602d2b"
+    },
+    {
+     "path": "libraries/mattias-fjellstrom/hashicorp.excalidrawlib",
+     "sha256": "8b0a0aacf24a1009b71f79f6d56b1f68ec97a26b8733ba020735289a9b87e909"
+    },
+    {
+     "path": "libraries/devdaejungyoon/github-actions.excalidrawlib",
+     "sha256": "6047659928c212382a1088f468a44989acc9f3d6dafc68ad13f8fa9b7b79d27e"
+    },
+    {
+     "path": "libraries/adrigrana/japanese-pitch-accent-graphs-template-collection.excalidrawlib",
+     "sha256": "3087bcc76bf4ce832efe47a1484258b71107ba90de14f87ad4b919b0abacc922"
+    },
+    {
+     "path": "libraries/dmtwng/archimate-application-layer.excalidrawlib",
+     "sha256": "8dc9159e225f6675482c3371aaa94f3d90ff5b34d7c30a39b1871d5d4986979d"
+    },
+    {
+     "path": "libraries/toman/checkmarks.excalidrawlib",
+     "sha256": "fcb7c2934886fffe1e81f5a27bf9cd4895426b2d3e648ea83d2495f636cb087e"
+    },
+    {
+     "path": "libraries/kvmet/chickens.excalidrawlib",
+     "sha256": "55dc227099fd57868291885442282e9bbee0a6bc6e6e8aed1318026ca39bb953"
+    },
+    {
+     "path": "libraries/jordangeurtsen/uml-deployment-diagram.excalidrawlib",
+     "sha256": "725121d63bed94db7c9d981de879fbfcf377465f6d93cb65bdbf2afbdf08fb51"
+    },
+    {
+     "path": "libraries/jordangeurtsen/uml-component-diagram.excalidrawlib",
+     "sha256": "3cea91db177036f013b38810d4191c8c7183473a9c2fecd057731a4602c81109"
+    },
+    {
+     "path": "libraries/infamousjoeg/cyberark.excalidrawlib",
+     "sha256": "7c0e518a6f7b72970d5badabb903b3729f41266b3cd9ed0cf57331412859f670"
+    },
+    {
+     "path": "libraries/simonthomine/pathology.excalidrawlib",
+     "sha256": "82996e9955f5113dc54860a728896cc2eceeecebe4991b6008dc0eca093c00e8"
+    },
+    {
+     "path": "libraries/timothygalvin/excalidraw-archimate-template.excalidrawlib",
+     "sha256": "d5cca74a608fdc7f9685d111a7776fb484fb4db05dbb373b6f818fbb63e43bc5"
+    },
+    {
+     "path": "libraries/https-github-com-tomorrowx-dev/tomorrowx-composable-agentic-platform-cap.excalidrawlib",
+     "sha256": "ebfeee7d7e23239b0b18104fbbad0e4a2d5ccbda1bf6eebe491a36e957972a36"
+    },
+    {
+     "path": "libraries/lukethorp/databricks-architecture-icons.excalidrawlib",
+     "sha256": "a9a6a1fc3b037c64a33dfe0cfccd8226a8b2c28adb5072afdc66373557b88f5e"
+    },
+    {
+     "path": "libraries/jatinkrmalik/atlassian-product-suite.excalidrawlib",
+     "sha256": "e522d212efd4d2fbe3eaf36166a2af0a573acb6b5e5037edca530e8172f8621c"
+    },
+    {
+     "path": "libraries/datavizfairy/dashboard-charts.excalidrawlib",
+     "sha256": "37ad72e225dde87a33090370698453fb11d533460e3b3ad7c438bcbfc82d1657"
+    }
+   ]
+  },
+  {
+   "id": "jonra-agentic-flows",
+   "repo": "jonra/excalidrawlib-agentic-flows",
+   "ref": "f013efa91316657e5ede21d65324b89046790e5a",
+   "license": "MIT",
+   "bundle": true,
+   "files": [
+    {
+     "path": "agentic-flows-casual.excalidrawlib",
+     "sha256": "544e20fa3c1ab800ae5a05f6c53ef6b9f5bce236b3d4c1efe183c7f6fdecb6b0"
+    },
+    {
+     "path": "agentic-flows.excalidrawlib",
+     "sha256": "0734c26e36007241146069dc7edb59b4d59814f03d414968b0b86fb5e5d92b74"
+    }
+   ]
+  },
+  {
+   "id": "w-gitops",
+   "repo": "w-gitops/excalidrawLib",
+   "ref": "274ab8f1f51ab34cd301d9b275263054c05e3523",
+   "license": "MIT",
+   "bundle": true,
+   "files": [
+    {
+     "path": "homelab-icons-symbols.excalidrawlib",
+     "sha256": "a6b79ebf9b9c23dc4a5ecef5db16c02843fedcb3f397e2f9716b7b09a799a040"
+    },
+    {
+     "path": "homelab-icons.excalidrawlib",
+     "sha256": "6589a67662cfc717ca9fd18b8668bbe068515116b5c6ac677407de509dc343d3"
+    }
+   ]
+  },
+  {
+   "id": "jorgedlcruz",
+   "repo": "jorgedlcruz/excalidraw-library",
+   "ref": "d15be713aecc69bf7d48355a9fa8cb5fed45588a",
+   "license": "MIT",
+   "bundle": true,
+   "files": [
+    {
+     "path": "jorgedelacruz.excalidrawlib",
+     "sha256": "64c38506dc78ced6c143826a2627aac2fe0f0a1e2bcf6c9c6dda41f1847de42b"
+    }
+   ]
+  },
+  {
+   "id": "clainchoupi",
+   "repo": "clainchoupi/excalidrawLib",
+   "ref": "ea013e024e66d8356f739213ea3e744804ec2121",
+   "license": "Apache-2.0",
+   "bundle": true,
+   "files": [
+    {
+     "path": "assets/importAsLib/logosAsLib.excalidrawlib",
+     "sha256": "6271b217dfaa630be44cd401809a871f22ed28738bc4c73d3bed64cde6e3759f"
+    }
+   ]
+  },
+  {
+   "id": "jordanbrauer",
+   "repo": "jordanbrauer/excalidrawlib",
+   "ref": "4fd2a770462a127495c16c8bc4aba6ce3d840b98",
+   "license": "Unlicense",
+   "bundle": true,
+   "files": [
+    {
+     "path": "jorb.excalidrawlib",
+     "sha256": "c49dd375d4267d8dfc6b1c4148b631d5ceb0b4ee05d7bc636087014f7c82b3d6"
+    }
+   ]
+  },
+  {
+   "id": "hon668-hvac",
+   "repo": "hon668/hvac-excalidraw-library",
+   "ref": "f1918a180b0e097830c4dcff8a2882b65854c7b6",
+   "license": "MIT",
+   "bundle": true,
+   "files": [
+    {
+     "path": "library/hvac-excalidraw-library-en-v1.0.0.excalidrawlib",
+     "sha256": "6d7b8e378bf5fb4995057b8eb0579149705c1a778dc1c736aa050ead66c89feb"
+    },
+    {
+     "path": "library/hvac-excalidraw-library-zh-v1.0.0.excalidrawlib",
+     "sha256": "fb02ee840a3f9dd1b8d451dc453f70ecd9723d5b1da291c405320377ccbb1d96"
+    },
+    {
+     "path": "submission/hon668/hvac-handdrawn-components.excalidrawlib",
+     "sha256": "6d7b8e378bf5fb4995057b8eb0579149705c1a778dc1c736aa050ead66c89feb"
+    }
+   ]
+  },
+  {
+   "id": "marcrow-pentest",
+   "repo": "marcrow/pentest-excalidraw-library",
+   "ref": "2f596ff1d60fb993d29d75d0eaf88908475db365",
+   "license": "MIT",
+   "bundle": true,
+   "files": [
+    {
+     "path": "pentest.excalidrawlib",
+     "sha256": "d9c9553758b8d366c3affc4f9fae16380e08298412154cbdfb3e2ed963c59aa3"
+    }
+   ]
+  },
+  {
+   "id": "justgoscha",
+   "repo": "JustGoscha/excalidraw-libs",
+   "ref": "d992db111135a57f5913537351a8c7e712b9084c",
+   "license": "CC0-1.0",
+   "bundle": true,
+   "files": [
+    {
+     "path": "interactions/dist/interactions.excalidrawlib",
+     "sha256": "8b2a10d6d3b265f8bc0909d93a0f10448aab2222664397fdefc7cc8e779ff2c6"
+    }
+   ]
+  },
+  {
+   "id": "tonac-qa",
+   "repo": "tonac/tonac-excalidraw-library-qa",
+   "ref": "c124a6afa83640ee29dd9476798a1c18786816f1",
+   "license": "MIT",
+   "bundle": true,
+   "files": [
+    {
+     "path": "packages/excalidraw/tests/fixtures/fixture_library.excalidrawlib",
+     "sha256": "a8f50a050f4fd85006194b303df4bc5993f02a167b318fa7368a8f4597e44953"
+    }
+   ]
+  },
+  {
+   "id": "getofferhelp-zh",
+   "repo": "getofferhelp/excalidraw-libraries",
+   "ref": "3499f50cd5362cfb5f08106d9b12a12c82e70bb3",
+   "license": "MIT",
+   "bundle": "merge-names",
+   "files": [
+    {
+     "path": "libraries/7demonsrising/azure-compute.excalidrawlib",
+     "sha256": "77ecf0283b517e452b279773ccf4aa86455d1ebd5f396b226e26fe32fa67f357"
+    },
+    {
+     "path": "libraries/7demonsrising/azure-containers.excalidrawlib",
+     "sha256": "14b45aa98ff1e05a1cca8acd2d6fd105af44b64a4af43b8483d376ee1c7e4488"
+    },
+    {
+     "path": "libraries/7demonsrising/azure-general.excalidrawlib",
+     "sha256": "067838f3e85cfc3316ec12c495e5e6875c1eab8dfbbde587b9e519c2112e766e"
+    },
+    {
+     "path": "libraries/7demonsrising/azure-network.excalidrawlib",
+     "sha256": "354edf60294b55222fc2220690027df8eca57be1b8380dd2a73f0487a45493b9"
+    },
+    {
+     "path": "libraries/7demonsrising/azure-storage.excalidrawlib",
+     "sha256": "19564877a8cee7af46db8c60bb1833cb6dc7a2de172af0bde6e938bfa3273f86"
+    },
+    {
+     "path": "libraries/Arqtangeles/architecture.excalidrawlib",
+     "sha256": "388b15d89c92df39482a929421d0e7ad946ca8b1a89e541d078cc6135a34f55b"
+    },
+    {
+     "path": "libraries/BjoernKW/UML-ER-library.excalidrawlib",
+     "sha256": "67da58e0f5807b6479f1c04bfb993790fa29a1a2312ebd8488c3f116e4c917ef"
+    },
+    {
+     "path": "libraries/IvanReznikov/yellow-box.excalidrawlib",
+     "sha256": "0dbc647287e4568d6bf286bf9db45e31c2668cb33ca8ba2443a28fc7fec740bf"
+    },
+    {
+     "path": "libraries/Vasudevatirupathinaidu/random-figure-drawings.excalidrawlib",
+     "sha256": "ded61f2a56620f56cc97da94a1428dd13a1a40db2a9609047dd5b7e6ccd7a794"
+    },
+    {
+     "path": "libraries/aarondiel/logic-gates.excalidrawlib",
+     "sha256": "64f65164ddbcbec973a5af059e390b7219cb8addcefed9e74b5ad5e3df4954d9"
+    },
+    {
+     "path": "libraries/ad115/music-notation.excalidrawlib",
+     "sha256": "e5b30d34f9dc6b158800a3cb45930c42368fac1cd1b54f1e4e6c24968c453f3b"
+    },
+    {
+     "path": "libraries/adamkdean/comms-platform-icons.excalidrawlib",
+     "sha256": "7fa281e254d064e8a64309600827f37292e64f523b3f0957332ba4089f3a225e"
+    },
+    {
+     "path": "libraries/aimpizza/3d-coordinate-systems-graphs.excalidrawlib",
+     "sha256": "6dc0071c7e1f6933d360fffb8370333900c6b00ffc9cc7e49f9ed34fdaaf2684"
+    },
+    {
+     "path": "libraries/aleksandr-hovhannisyan/clocks.excalidrawlib",
+     "sha256": "394fd99a7f801751f02bcfe971c3d188a39a5bb05a621e8a0366a9617345d31f"
+    },
+    {
+     "path": "libraries/alexandertsukanov/elk-stack.excalidrawlib",
+     "sha256": "ea262913900a1cd095261ba72c22c60a0f092aea773d2f1a60e2bc41b4620d91"
+    },
+    {
+     "path": "libraries/alluvion/montessori-basic-grammar-symbols.excalidrawlib",
+     "sha256": "c60e10e4c64b795d294f6b82c4b3500ce1ffcb452457c7aa8a536754df605e44"
+    },
+    {
+     "path": "libraries/amelia/micro.excalidrawlib",
+     "sha256": "805b92298eb18bdaa9dc7f9e12faf08700b60efa3fc9cde8d8c90dc9a7ea4245"
+    },
+    {
+     "path": "libraries/andreandreandradecosta/3d-shapes.excalidrawlib",
+     "sha256": "f5632dce9df334dbc2d23d8d7e39bb6f6df745e2f0aaa150e33533fbc9e5f0ad"
+    },
+    {
+     "path": "libraries/anna-pastushko/architecture-diagram-components.excalidrawlib",
+     "sha256": "103a53d299b295e83bac30ee4f029826db451bf2a3067f864c79986f38fb6626"
+    },
+    {
+     "path": "libraries/anumithaapollo12/emojis.excalidrawlib",
+     "sha256": "c2790ddf77987ad3bafee2f943b687060b77f9371b038ac6c09af7995a1c66d9"
+    },
+    {
+     "path": "libraries/aocgame/domainstorytelling.excalidrawlib",
+     "sha256": "d940e5ec933f384c3d66be2c649598926747bb6e9eeb19b78aee303b9861e908"
+    },
+    {
+     "path": "libraries/arach/systems-design-components.excalidrawlib",
+     "sha256": "8422ec75992b83f56e6002d93642cfa679fcae7383d5e791bdd8c271f0dfaaf7"
+    },
+    {
+     "path": "libraries/aretecode/decision-flow-control.excalidrawlib",
+     "sha256": "3c03738d9a8e100975b7d3cc5f0b6a06b8fdaf57ac3ac2b25a172e855b3059d6"
+    },
+    {
+     "path": "libraries/aretecode/system-design-template.excalidrawlib",
+     "sha256": "b086710afd989f98eb6dff1cde1447a8da5c572f1f149e3371122af7c90e2330"
+    },
+    {
+     "path": "libraries/artem-anufrij-live-de/artem-s-icons.excalidrawlib",
+     "sha256": "d1ab5a3b3ad807547e46311952b917b80bb2efbb874785aef08083dadf10e2e3"
+    },
+    {
+     "path": "libraries/boemska-nik/kubernetes-icons.excalidrawlib",
+     "sha256": "2a8632978fd5e65fc48e338919b04d10b2ea5294ed1466431e06102d6954d465"
+    },
+    {
+     "path": "libraries/booknerdonmars/bullet-journal-trackers.excalidrawlib",
+     "sha256": "33748591a54fac7c36e0bce7d4436e4b31f7296a50bc9d34ddfc218d22571d5f"
+    },
+    {
+     "path": "libraries/braweria/customer-journey-map.excalidrawlib",
+     "sha256": "c651fd11a7a13fbed8f50ccc432efa2ab893624498f0cb02f2eb7a04ea8651c9"
+    },
+    {
+     "path": "libraries/cengizhanparlak/code-essentials.excalidrawlib",
+     "sha256": "b2445661c8e6dd5149332a237bb1277b5c58ddcb272aea1bd3ec32dff49928d0"
+    },
+    {
+     "path": "libraries/cespin/domain-driven-design.excalidrawlib",
+     "sha256": "130ecf2d595b738b6f720113c2379cea24f5db20c60716df85e590663b5b49b8"
+    },
+    {
+     "path": "libraries/childishgirl/aws-architecture-icons.excalidrawlib",
+     "sha256": "d8b378edd9c4b0e29a0f4d8f6173b73a60a6d163d4c2720d3f84e3517ea1d3f5"
+    },
+    {
+     "path": "libraries/chuqbach/data-platform.excalidrawlib",
+     "sha256": "1e8db82c7a31960cd9575561eef49e8e62cdc910355fdd90ad4895e25187e306"
+    },
+    {
+     "path": "libraries/claracavalcante/baby-characters.excalidrawlib",
+     "sha256": "dfe00022710f5c5750ca04bc0733a3d4145cde137cf3b22164390c728c6f7e98"
+    },
+    {
+     "path": "libraries/clementbosc/gcp-icons.excalidrawlib",
+     "sha256": "6e19f89b718e7837be5af6e1b02de45908a4da49964c1a66d115e8eac56a5be2"
+    },
+    {
+     "path": "libraries/cloud/cloud.excalidrawlib",
+     "sha256": "1e3aefc9cddde22c550d8beb0eddcbde8ed8491aebfa394095c32ddfd31d4205"
+    },
+    {
+     "path": "libraries/coexist/mq.excalidrawlib",
+     "sha256": "e712adee6ed56f532167ee5a7b88d2932820a1aaa122d9480a56beee65f56ebd"
+    },
+    {
+     "path": "libraries/corlaez/hexagonal-architecture.excalidrawlib",
+     "sha256": "d1b2c883f07560dfec8830e3d8a3cdd13f8c6d5f1bb190d48ea3f3ca4c392f85"
+    },
+    {
+     "path": "libraries/damitr/astronomical-symbols.excalidrawlib",
+     "sha256": "8e5dd7845322b596b97019a3d95d2579fc2018d3dc8ad066feb86297ced05fab"
+    },
+    {
+     "path": "libraries/danielpza/barotrauma.excalidrawlib",
+     "sha256": "74f96dfb5653a8a4dfdd2f55e4bfc010f266134c6975eda605b5b37e3da389ec"
+    },
+    {
+     "path": "libraries/danimaniarqsoft/scrum-board.excalidrawlib",
+     "sha256": "b6c99d9da2d3f07ef16b7b7dac1c44c49200826083e9be3a0c82075763283ca2"
+    },
+    {
+     "path": "libraries/david-prta/dart-and-flutter-icons.excalidrawlib",
+     "sha256": "e2aed6d8021bb53415070ac1d5d7a7ec37130f7b780dbd3ba7aef330bd4ed4bc"
+    },
+    {
+     "path": "libraries/dbssticky/data-viz.excalidrawlib",
+     "sha256": "9918f5610092592970728a0f07aa3371712da51c7fd73ee7425975255a11c986"
+    },
+    {
+     "path": "libraries/dday987/common-home-network-basics.excalidrawlib",
+     "sha256": "2a7824d4cb57e25bdf4f9b0c700f9eee82af5db03bda52ba26ac16e85d8df8f8"
+    },
+    {
+     "path": "libraries/demondarakna/dnd-writing-icons-for-dm.excalidrawlib",
+     "sha256": "d5a591fa3a35af5a305d916efe45cc589ca28e734c264af78cb80b50b6a00620"
+    },
+    {
+     "path": "libraries/dhaval_godwani/webpage-frames.excalidrawlib",
+     "sha256": "04c054be14b585b840eacd3b22298a998f6de509047df9893b9d77afeb3b6e8e"
+    },
+    {
+     "path": "libraries/dhtoran/stick-people.excalidrawlib",
+     "sha256": "0deee25cb1410fc07fa123b33dd9317ce61fd09ce0bfb864688479cfb5c5d175"
+    },
+    {
+     "path": "libraries/dimitrios-fkliaras/clouds.excalidrawlib",
+     "sha256": "9fb06fb77bc4320160787a3785353151a7ad5344c19a27001ab8ff465e0f9680"
+    },
+    {
+     "path": "libraries/dmitry-burnyshev/c4-architecture.excalidrawlib",
+     "sha256": "54f7841eb8b24dcfab0230761f4d5099c29eacacb48b83f8856a2d70aaf15679"
+    },
+    {
+     "path": "libraries/dpalay/common-screen-resolutions.excalidrawlib",
+     "sha256": "b69419a160eddac5fa60953348623ac92d8b5d1b4f5f3631d229a2d54bdbfe57"
+    },
+    {
+     "path": "libraries/drwnio/drwnio.excalidrawlib",
+     "sha256": "7748ef9f0b91d70a32cae141814f49c21e89cb30cc09e4184e308617f5294586"
+    },
+    {
+     "path": "libraries/drwnio/storytelling.excalidrawlib",
+     "sha256": "4dac33a4b1aae87fa59136afd8f6aa5d84dc3bea42ec2873edd55e711f758816"
+    },
+    {
+     "path": "libraries/dwelle/despair.excalidrawlib",
+     "sha256": "62703c0f5622698b3a8e35b5951158f2275885735530160d4008e35656221412"
+    },
+    {
+     "path": "libraries/dwelle/hearts.excalidrawlib",
+     "sha256": "b68b9702494118266cc2f0738f832a76fadb44b394c70c8c6be9cacf5e6f94ed"
+    },
+    {
+     "path": "libraries/dwelle/network-topology-icons.excalidrawlib",
+     "sha256": "3775004a854b9b1bee92babe6b3783c8f7881556efa342eb336bd08afc227fb7"
+    },
+    {
+     "path": "libraries/econ-graphs/macroeconomics.excalidrawlib",
+     "sha256": "54b11c3fc7288fa13c2209cabd142e233345b3d4655e952b4e3c9dd406bfd8b7"
+    },
+    {
+     "path": "libraries/egor-romanov/risk-based-test-strategy.excalidrawlib",
+     "sha256": "9aecfc15ee598b9ce2619ac88d26a51a2c88f46f58e7fa6d2ffbfeb288f95c02"
+    },
+    {
+     "path": "libraries/eho9734/2022-gantt.excalidrawlib",
+     "sha256": "c8f37e54e59f9042cb6b681f921b27cb75cde6a9b507af64e541846a88f76c54"
+    },
+    {
+     "path": "libraries/ei-au/computers.excalidrawlib",
+     "sha256": "f140f9d50b78057b676cdfd348fdf68b3318d78b95c6c38556cb73bb1d4b95bf"
+    },
+    {
+     "path": "libraries/ella/science-chemistry-gcse.excalidrawlib",
+     "sha256": "8c7d507c371586e0bd34177d66828a8280bde7cbc0fdb8193afde747f8fd0908"
+    },
+    {
+     "path": "libraries/erlina/data-processing.excalidrawlib",
+     "sha256": "ad604a9c036141e0b527f1a4a89592c5877b6b94ec5c959e8889d338ff33264b"
+    },
+    {
+     "path": "libraries/esteevens/logos.excalidrawlib",
+     "sha256": "624aedfd65f0dec209dd6a9286ffb99175decc429ae4923c9aa9e9e865ef4c20"
+    },
+    {
+     "path": "libraries/esteevens/retail-peripherals.excalidrawlib",
+     "sha256": "4b064a18390bea943ad71e96a77994a7e2b813b83d09bf3e9b2ae679f004e47d"
+    },
+    {
+     "path": "libraries/excacomp/mobile-kit.excalidrawlib",
+     "sha256": "c26148158f82a2eed95471357da97382dcc8faaebf3071a6490e0db4952b0840"
+    },
+    {
+     "path": "libraries/excacomp/web-kit.excalidrawlib",
+     "sha256": "d4065eae35c37f66ed71ce7788bc32c659ed777f153ae36accb058245498c50f"
+    },
+    {
+     "path": "libraries/excalidraw/valentine-s-day.excalidrawlib",
+     "sha256": "4c0d9d0304bad79833b9b8786ed93fadd3eea4e4b8f931b0f269c3a9db1dd8f8"
+    },
+    {
+     "path": "libraries/farisology/data-science.excalidrawlib",
+     "sha256": "c9d7e3a883cfdcb91c44000d714ff20192487e096b12730020d6b6125a2af13e"
+    },
+    {
+     "path": "libraries/ferminrp/awesome-icons.excalidrawlib",
+     "sha256": "02a2a249da93305990109af4665ce8f3b3d8a60fedd085ea1fce90b21cf6c8e1"
+    },
+    {
+     "path": "libraries/ferminrp/awesome-slides.excalidrawlib",
+     "sha256": "d30ec078ee3a5d2fe9617ead961e5ca01de54a9480f3628238f20e9490debb18"
+    },
+    {
+     "path": "libraries/ferminrp/gantt.excalidrawlib",
+     "sha256": "8791a29d8be4b5b6ddea2eea255fe6961e7e40f0da4d7696970f1062a0acf75e"
+    },
+    {
+     "path": "libraries/ferminrp/post-it.excalidrawlib",
+     "sha256": "a1ded7f6b7cf1a9a038b7c8ceff06bb951bf13ba643cc0f83b2e735f6df856cc"
+    },
+    {
+     "path": "libraries/fibreninja/fibre-network.excalidrawlib",
+     "sha256": "305e6092ed629367e3d92be8e0808e76c0d932cf1e8b87a1cb3673f9d570735e"
+    },
+    {
+     "path": "libraries/franky47/apple-devices-frames.excalidrawlib",
+     "sha256": "1c3514c0d15018dc16f68a46b09cdcbd301794dfa88b38755f1b0c233cab39ad"
+    },
+    {
+     "path": "libraries/fraoustin/bpmn.excalidrawlib",
+     "sha256": "da7259b867465b6446f96fc71dafabad48c0312424b4db248642a4d08f4f3b66"
+    },
+    {
+     "path": "libraries/g-script/android.excalidrawlib",
+     "sha256": "45324c090fffba66cf8dc444522e5c5d4b4a04f2532c19ab9d214ad1d53e957b"
+    },
+    {
+     "path": "libraries/g-script/charts.excalidrawlib",
+     "sha256": "b40cc04b419d55d125fc1739588dd270d1111b86d6fca238064712e7b381fbcd"
+    },
+    {
+     "path": "libraries/g-script/forms.excalidrawlib",
+     "sha256": "b83a58ceb13e04aa771a26c42b17c867b860efba3f7bd24f2127f4770a5af445"
+    },
+    {
+     "path": "libraries/g-script/medias.excalidrawlib",
+     "sha256": "0721b80041b60efab0be1f5aac998260d309ede4b4eddff18522357e6e994ecd"
+    },
+    {
+     "path": "libraries/gabi-as-cosmos/periodic-table.excalidrawlib",
+     "sha256": "da92332e089501c1493be4c49842dbc6933cad3b8feb26bd16524c78339ceab8"
+    },
+    {
+     "path": "libraries/gabrielamacakova/basic-ux-wireframing-elements.excalidrawlib",
+     "sha256": "5d7ea7f26203c23a1590678ddd7eb3fde86763781e905e716000321fb0098fa3"
+    },
+    {
+     "path": "libraries/gabrielamacakova/christmas-essentials.excalidrawlib",
+     "sha256": "df3216f96c345f705cff188e27a56725ca585bedfca3578a634d47f09ba6c892"
+    },
+    {
+     "path": "libraries/gabrielamacakova/halloween-elements.excalidrawlib",
+     "sha256": "88aa8da0d614122c2bcd482f7b2c5e3f5f0773aee77bd6160cd3442aa699d318"
+    },
+    {
+     "path": "libraries/gabrielamacakova/presentation-bundle.excalidrawlib",
+     "sha256": "780ac44d95a3bc24feba2214ad0c262fd06182d4b8576ece18bea7433ce751ff"
+    },
+    {
+     "path": "libraries/gianpaima/stick-figures-collaboration.excalidrawlib",
+     "sha256": "f1c3c09e6b56d6856de096bf410a26526df0281ed3219bc6d8db5ff16f6da49e"
+    },
+    {
+     "path": "libraries/gregory/golang-gophers.excalidrawlib",
+     "sha256": "bd7891ae1dc6e5cb3b2e39c90c62d1858eb17eeb39cdcc694fac3144cf386c07"
+    },
+    {
+     "path": "libraries/h7y/dropdowns.excalidrawlib",
+     "sha256": "dd71e10aed2c37e0e4f25fb94e6dc0a235594d917ad43457bcf62c3afb455ee0"
+    },
+    {
+     "path": "libraries/hartmut-co-uk/kafka-streams-topology-design.excalidrawlib",
+     "sha256": "c0aabe9edf4e26cb3828c78bd8df5d8ecdbefcc0c01f122d557058f909dde370"
+    },
+    {
+     "path": "libraries/https-github-com-papacrispy/uml-library-activity-diagram.excalidrawlib",
+     "sha256": "d445c1ceec31507e22fbdbf3cb139565e86eee85b23d6aa335765814b4e49e36"
+    },
+    {
+     "path": "libraries/https-github-com-patrickcuba/snowflake-iconography.excalidrawlib",
+     "sha256": "fb176d23db77211ceef42caf75e75ceb5ca266b037d3acb24aeed9201431d516"
+    },
+    {
+     "path": "libraries/https-github-com-sly-dog/ds-visualizations.excalidrawlib",
+     "sha256": "28dfe726eeff181d6256e79953f4c8f63ed998ca74229456828225e9d26cda34"
+    },
+    {
+     "path": "libraries/https-github-com-ytrkptl/math-teacher-library.excalidrawlib",
+     "sha256": "738232d016274332001d6376f7a2d09333b50ee739678e1d039706d48b27c986"
+    },
+    {
+     "path": "libraries/husainkhambaty/aws-simple-icons.excalidrawlib",
+     "sha256": "2f6c3ae029dd3c7d41690515a1388f580fdab85124acf05450520d445abb4ac1"
+    },
+    {
+     "path": "libraries/ibex-technology/web3-crypto-solution-design-v1.excalidrawlib",
+     "sha256": "ec51247b83d0c5040e168b2744460de678faa3c2af38da67ea37a42c48efa2f5"
+    },
+    {
+     "path": "libraries/intradeus/algorithms-and-data-structures-arrays-matrices-trees.excalidrawlib",
+     "sha256": "3af6a2c6978b37322efc6b8649d45df30cfba6df5e0ff586889075666f92e6c4"
+    },
+    {
+     "path": "libraries/inwardmovement/information-architecture.excalidrawlib",
+     "sha256": "2ef9e19ae13331bffaf82590124efaaf7b8ccc0a865dcc10ff572b5f5ee0b6a6"
+    },
+    {
+     "path": "libraries/ipedrazas/go-icons.excalidrawlib",
+     "sha256": "4e09b8adaffa1c69615c9049f975f43bfd643f13a563164b7175cee6b15aa633"
+    },
+    {
+     "path": "libraries/itsmestefanjay/camunda-platform-icons.excalidrawlib",
+     "sha256": "35079d94396a7bb0aefe7591cccaf272acbe21054e5452bbc21ab9a1e5fcf14a"
+    },
+    {
+     "path": "libraries/jakubpawlina/graphs.excalidrawlib",
+     "sha256": "56ea4559508773480f2bb965be8715b65e430e54560bf602eaed308dd9d9274f"
+    },
+    {
+     "path": "libraries/jasoncoelho/arduino-micro.excalidrawlib",
+     "sha256": "8c36db5f7b11cfc0fa71c439cb59cd215bb6e5654d4b903613ee09c6cb31d3d5"
+    },
+    {
+     "path": "libraries/jdelacruz/veeam_unofficial.excalidrawlib",
+     "sha256": "64c38506dc78ced6c143826a2627aac2fe0f0a1e2bcf6c9c6dda41f1847de42b"
+    },
+    {
+     "path": "libraries/jgansaown/ultimate-frisbee.excalidrawlib",
+     "sha256": "ea4e0ce4a86f37d67831b947bbc938870399ef70fff5736713d81475f28ad0f6"
+    },
+    {
+     "path": "libraries/jgodoy/network-locations.excalidrawlib",
+     "sha256": "ae7f3bc84536ebbbb439cfd9b3d40a62dfda499ed7abbd1baab27d87f4efe3bf"
+    },
+    {
+     "path": "libraries/jgodoy/organization-chart.excalidrawlib",
+     "sha256": "f8b2cd0fbf86418634bbc878900c3eb22b2219056dbc077cbcfc91ecffdce4e5"
+    },
+    {
+     "path": "libraries/jgodoy/racks-and-servers-components.excalidrawlib",
+     "sha256": "7a7bea894cec3c7f3ecb2c3b310831e27b90888993e6b1209241c8f220c3a4ae"
+    },
+    {
+     "path": "libraries/jhoughes/veeam.excalidrawlib",
+     "sha256": "c61791ed6b0e5dc4c30c98c3bc3f68c9866c2bce81e252fb7a8619b09a0d76fb"
+    },
+    {
+     "path": "libraries/jjadup/mathematical-symbols.excalidrawlib",
+     "sha256": "37308beeacdae6d117b808e1154e495fb294a4f9278eb42cd28e2febf22514ee"
+    },
+    {
+     "path": "libraries/jkattnis/traffic-signs.excalidrawlib",
+     "sha256": "24a102f89560d35a1ca9917240c579497facacd9b890df934cb9765fa77d8429"
+    },
+    {
+     "path": "libraries/jumpingrivers/r.excalidrawlib",
+     "sha256": "22ad9ad00840fc4aaf157bab00102bd07e55f37073ef9d713fbedb1c3f36beda"
+    },
+    {
+     "path": "libraries/jurgen-kattnis/picasso-s-line-drawings.excalidrawlib",
+     "sha256": "f1e8f8ede28a8db984aebdddbe048697259f0229fd98bc2397f21e877233983d"
+    },
+    {
+     "path": "libraries/kabirsinghshekhawat/genealogy-essentials.excalidrawlib",
+     "sha256": "46291b954b90e27079abc3403032e35ebfa99d9f2804e4859a83b7c59ffcbdd6"
+    },
+    {
+     "path": "libraries/kaligule/robots.excalidrawlib",
+     "sha256": "5c14136103d1b813baed5280a5c8bddadf39210f6d5104fe945f007d04c117dc"
+    },
+    {
+     "path": "libraries/kinghavok/some-common-cloud-apps.excalidrawlib",
+     "sha256": "05d0fa98b8da3560edc930bde939e787aec40acbe061bc9cace6cbe44fd819c2"
+    },
+    {
+     "path": "libraries/kleinpetr/simple-sticky-notes.excalidrawlib",
+     "sha256": "8cbe612ab383db4c60ff9ae325ebf5cb7be1867361dcee301bc123b903f063d4"
+    },
+    {
+     "path": "libraries/krustvalentin/printers.excalidrawlib",
+     "sha256": "4369fa339dd657242e318313b1fd2f590f36f606292e0f50910bbcfc0fed5226"
+    },
+    {
+     "path": "libraries/kvchitrapu/data-sources.excalidrawlib",
+     "sha256": "feb47456ecf9f9d8d7b40910ecb01cf41d1d33383e674107ecac626cc890c2e4"
+    },
+    {
+     "path": "libraries/kvchitrapu/secure_shell.excalidrawlib",
+     "sha256": "98467943fdf428e6bc2de4269daa338593edfcef08afc3f13bc36eaeb7b69043"
+    },
+    {
+     "path": "libraries/kwirke/some-handdrawn-signs.excalidrawlib",
+     "sha256": "83a787f8ef5a5e6af8b2e95ea705314c63dbd4dff4998c4a6382dde6e5ec9ee9"
+    },
+    {
+     "path": "libraries/l8y/music-instruments.excalidrawlib",
+     "sha256": "d5c1aa48b44edd5f9157929b6b519f79e63c96d847eca56fbcd2344d73ed3cbf"
+    },
+    {
+     "path": "libraries/lipis/polygons.excalidrawlib",
+     "sha256": "0c00ca695f26ef23452fddbcf04864b5f17ebf7e471165e02520bdb21281dd25"
+    },
+    {
+     "path": "libraries/lipis/stars.excalidrawlib",
+     "sha256": "fc614ddac49ebd65a6e15e55fbe61207f99af36a9e4977899839ef41d89d05c2"
+    },
+    {
+     "path": "libraries/lowess/kubernetes-icons-set.excalidrawlib",
+     "sha256": "88804deb121aaac9fba7f8956682860c555e320d0399a219338771cf80137b6f"
+    },
+    {
+     "path": "libraries/m47812/office-items.excalidrawlib",
+     "sha256": "b4b7362c878ae5d41b6976b0eae0deae209147e97d9cad6f19cf248f9c71e419"
+    },
+    {
+     "path": "libraries/madhusuthanan-b/front-end-tech-and-tools.excalidrawlib",
+     "sha256": "ce1dc657a2235ed13eea2b43764eb676cb758bfdcf26dafd14f04ca4a467a564"
+    },
+    {
+     "path": "libraries/madhusuthanan-b/html-css-js-icons.excalidrawlib",
+     "sha256": "5b624ae32b6be5d6f239bcb523605762d1566ebddcfe22bfd40adc29256a5f9b"
+    },
+    {
+     "path": "libraries/maeddes/technology-logos.excalidrawlib",
+     "sha256": "5c27e1f720191cfe22e40d93ed2620e0321f62484889d40ce3c3f4c85e1789fe"
+    },
+    {
+     "path": "libraries/manuelernestog/universal-ui-kit.excalidrawlib",
+     "sha256": "7facea7114870f1174a5412295ed70ac0dfeb04f5780cd3f602f96c154ab3cea"
+    },
+    {
+     "path": "libraries/marcottebear/raspberrypi-zero.excalidrawlib",
+     "sha256": "116ef78510c7935cc257614f5a91e1f4b6952662191665bf3c9b39bfb30ea0a1"
+    },
+    {
+     "path": "libraries/markopolo123/dev_ops.excalidrawlib",
+     "sha256": "395927facdf7d2e10e6ff52c107bb4f4e94f6e00b698063cbed9e77aa51a1fbc"
+    },
+    {
+     "path": "libraries/martinberger-ch/oracle-cloud-infrastructure-icons.excalidrawlib",
+     "sha256": "c8a3ed0c3bcb09f49f0a7729f93b4474714b5d618f1a5bd388aed8c15072c7ee"
+    },
+    {
+     "path": "libraries/marwinburesch/github-icons.excalidrawlib",
+     "sha256": "ef32a221b74c8747075c940227493cbcd0e2ef5d99737827aa1a5bfd45641189"
+    },
+    {
+     "path": "libraries/marwinburesch/html-input-elements.excalidrawlib",
+     "sha256": "aeb5f54f7886b3f2507849fc11c81d310bbece859fac8ffcaaa7706fee864970"
+    },
+    {
+     "path": "libraries/mateuszbaransanok/it-icons.excalidrawlib",
+     "sha256": "67c69561e0e7ffd7d929f2e052f8a2b84bfbeabc703a9862ea81c5b99206322b"
+    },
+    {
+     "path": "libraries/matthijssloep/fair-web-icons.excalidrawlib",
+     "sha256": "b95df1d00c1eb1a4e271e368f74ddd72b467d16764db648769b429f500719dcc"
+    },
+    {
+     "path": "libraries/mayankguptadotcom/wardley-mapping-canvas.excalidrawlib",
+     "sha256": "19f308424763ad1cfeba353ae306aba31150371dab272ae53320a888bd04fc24"
+    },
+    {
+     "path": "libraries/mguidoti/google-icons.excalidrawlib",
+     "sha256": "ff46e82f18c9857a23d6f65b21f141a377e19370ea2bdcbdccdc533e7660e72a"
+    },
+    {
+     "path": "libraries/mguidoti/it-tools-logos.excalidrawlib",
+     "sha256": "f51211ea1fec6ad69c2a6ea3998dc65f83c067086be73cc7183f1b9197a832de"
+    },
+    {
+     "path": "libraries/mguidoti/original-google-architecture-icons.excalidrawlib",
+     "sha256": "3322be7e42351001e1e5815d23bc353b41d6d03ec5d8f8eda810d8478c51e2c2"
+    },
+    {
+     "path": "libraries/michelcaradec/cloud-design-patterns.excalidrawlib",
+     "sha256": "80c2e4929e8350b9dec28bf385a1241441f96a8db88b1d82460fbed61d92c5ac"
+    },
+    {
+     "path": "libraries/mikhailredis/redis-grafana.excalidrawlib",
+     "sha256": "70d587ebebcec53ed99676bce87895cf12f921e34a9c39ef8bd41d7afc9a7aa3"
+    },
+    {
+     "path": "libraries/molibden/types-and-values-in-javascript.excalidrawlib",
+     "sha256": "2dc13affab518e2b1a342dda0f4c59defa3e7ef7b4469348627b965cc9a07908"
+    },
+    {
+     "path": "libraries/monty/an-adjustable-arrow-shape-that-can-be-modified-in-a-number-of-ways-to-suit-different-use-cases.excalidrawlib",
+     "sha256": "95892848561980227c8da9cbca1ebc400cfb2de5075763ad0ab1021af2eaa10b"
+    },
+    {
+     "path": "libraries/moochin/simple-characters.excalidrawlib",
+     "sha256": "bff1480413ed3518e89ee47cc57bc333b24cc329b395a9b1c49850efb8b1ad34"
+    },
+    {
+     "path": "libraries/morgemoensch/gadgets.excalidrawlib",
+     "sha256": "b38609fd96400f8ae3ebf237f9794c12b20571e7de2bb490013670c086112913"
+    },
+    {
+     "path": "libraries/mppowell/circuit-components.excalidrawlib",
+     "sha256": "e051020dc500bb6f51eed5fba9bd818c92627aa173ec8adf0319b62aa157684e"
+    },
+    {
+     "path": "libraries/mrmaffen/dnd-ttrpg-battle-map-creature-tokens.excalidrawlib",
+     "sha256": "031161fd2046b1f137ae69bb59e67c2be0d347ae3d83d659e8860ef3ba4ed469"
+    },
+    {
+     "path": "libraries/narhari-motivaras/aws-architecture-icons.excalidrawlib",
+     "sha256": "809b328fc1b233e50d91234d6ad4f2a8945491384c56151ab2a84a9ad1ffcf47"
+    },
+    {
+     "path": "libraries/nemeki/ttrpg-clocks.excalidrawlib",
+     "sha256": "87f20095d840433e308b0d7e12346974f243bf239002cc08e7edc7e1cb0611cc"
+    },
+    {
+     "path": "libraries/newbyca/cryptocurrencies.excalidrawlib",
+     "sha256": "4c0e46940521d200061009c4f036d186877d3f25f65557cfd12546a52c3e325b"
+    },
+    {
+     "path": "libraries/niknm/systemdesignicons.excalidrawlib",
+     "sha256": "bd3ba0167df3efdaa9fa1e054385e8fa2ee94dd35cda2f878302bd04a0f0b374"
+    },
+    {
+     "path": "libraries/nikordaris/team-topologies.excalidrawlib",
+     "sha256": "de164a325d0ed489e74761dffc60028c1590f7e9b9c050ba494e93e98fb05710"
+    },
+    {
+     "path": "libraries/novakkkarel/nsx-t-vmware.excalidrawlib",
+     "sha256": "58f5280d0ce09b3adddfa327118c0694d8cf93cd72de8c244e4f35065c7baccc"
+    },
+    {
+     "path": "libraries/ocapraro/bubbles.excalidrawlib",
+     "sha256": "8810b2ee759019daa601786e87a19b224fde77313ebcacf72c4c1f25962eff3e"
+    },
+    {
+     "path": "libraries/odraghi/vmware-architecture-design.excalidrawlib",
+     "sha256": "82cf61b4bf3096c5877947602371845dd346f004199b403c9db4b6bbc642432a"
+    },
+    {
+     "path": "libraries/oehrlis/db-eng.excalidrawlib",
+     "sha256": "57219d639c039ef774447ceaf2cbc448f1d7b5bdb561e2edc779dd0e624eb6e1"
+    },
+    {
+     "path": "libraries/patrickcuba/data-vault.excalidrawlib",
+     "sha256": "02263f2c04fb16f667b6289d8782987126d2922961db8130e297a0a283406f37"
+    },
+    {
+     "path": "libraries/pclainchard/it-logos.excalidrawlib",
+     "sha256": "9030c537df65dbc9623d9c29943279b2ddf1c070db86aca97405ecfd3d41d9ec"
+    },
+    {
+     "path": "libraries/pfound/football-icons.excalidrawlib",
+     "sha256": "ef76b5ae4c17b49d3ddf3323a8e559cee6ab1eb9b9c1f5fd3fff88cd9f03ff35"
+    },
+    {
+     "path": "libraries/pgilfernandez/basic-shapes.excalidrawlib",
+     "sha256": "2325c8a631211824cde105ddf3b153ab29be30876b8a5b6399e2565d08262dde"
+    },
+    {
+     "path": "libraries/pixelass/body-builder-kit-1.excalidrawlib",
+     "sha256": "35e041df45fa797d23fb2d046447ac0490efbe3bb0228766de6ec8ddbae2dc00"
+    },
+    {
+     "path": "libraries/pixelass/character-kit-1.excalidrawlib",
+     "sha256": "ff05cfcd946597f60ec50f955b504583336626ff4393ecfe6a46aedf861d0729"
+    },
+    {
+     "path": "libraries/pixelass/female-heads-diverse.excalidrawlib",
+     "sha256": "6d7428f1c83503128466379f060ac008fe68077f1664fa782597d654c6333f3c"
+    },
+    {
+     "path": "libraries/pixelass/head-builder-kit-1.excalidrawlib",
+     "sha256": "8fdd60067beb4a26ba0b4c7538c57ba4924ca9c785556dfed9a0ba075c28acf9"
+    },
+    {
+     "path": "libraries/pixelass/male-heads-diverse-1.excalidrawlib",
+     "sha256": "52103ccd8aafed184b488b24c2bfc14836fd0c9e117a328b637443fd6e9a5a83"
+    },
+    {
+     "path": "libraries/pixelass/tools.excalidrawlib",
+     "sha256": "883c5ec81a31a3f6137c38ca23b41cd5835b6ea76979f034f117793bc3599ade"
+    },
+    {
+     "path": "libraries/pocomane/boardgame.excalidrawlib",
+     "sha256": "c2502fae7c8c9729e7cd693b0cd7fa1f2fe2927373cdc627c511f1a8c649fce9"
+    },
+    {
+     "path": "libraries/powelljustin/fortinet.excalidrawlib",
+     "sha256": "f2833f8661dc01c2a0d18017b897ed555a348a879fa9bbffa232132ba53f9904"
+    },
+    {
+     "path": "libraries/pratheeshpm/basic-system-design.excalidrawlib",
+     "sha256": "f23434d8882314d5a953283fb9eaca37ebc512f9b910a725d50f2be19100e02f"
+    },
+    {
+     "path": "libraries/pret/chess-set.excalidrawlib",
+     "sha256": "86d6712a6c0dc36c66c26d03b9e3814587dc10d536f303f1d2684aab3517231e"
+    },
+    {
+     "path": "libraries/r4z4/elixir.excalidrawlib",
+     "sha256": "7ed45f6ead6170617977479d469331dbb8c2797adbcac1c4d03c7edb9a413d20"
+    },
+    {
+     "path": "libraries/revolunet/raspberrypi3.excalidrawlib",
+     "sha256": "ca17cd7594192090b79b821097a89038bdc559f0f249b7328867cafd8eeedb62"
+    },
+    {
+     "path": "libraries/risjain/electrical-engineering.excalidrawlib",
+     "sha256": "0325fbe72bce269eae5c0335608376789ab9c9c13022d9092c23e39f69fad466"
+    },
+    {
+     "path": "libraries/rkjc/arduino-boards.excalidrawlib",
+     "sha256": "d0014d88c6b13007dca98426b163ba0d5db0dc4f760a95bd8756a92ee3847a21"
+    },
+    {
+     "path": "libraries/rkjc/schematic-symbols.excalidrawlib",
+     "sha256": "ba3bf4411e1404bdaa8b664900d47c2781f575b9ef73d0cba9e0f0a2ee93b650"
+    },
+    {
+     "path": "libraries/robin-muller/digital-signal-processing.excalidrawlib",
+     "sha256": "b827b2c9155a30782d5d8032d4aa5e26d9b2aa8ac633e9018d4b3d799ac64b49"
+    },
+    {
+     "path": "libraries/rochacbruno/computer-parts.excalidrawlib",
+     "sha256": "c05db146308461602b814ba00f785aa2aa5acb9dc29d84adf3620d06433382bc"
+    },
+    {
+     "path": "libraries/rockssk/microsoft-azure-cloud-icons.excalidrawlib",
+     "sha256": "33256eb86faa9f9df8240dbff1998b376918edb5324ce71c4ddccdeb1b03b9a0"
+    },
+    {
+     "path": "libraries/rohanp/system-design.excalidrawlib",
+     "sha256": "4042532130ed87478388d28d4177177423c52ef7953c570822d60695a0b74bf7"
+    },
+    {
+     "path": "libraries/samu_x86/network-elements.excalidrawlib",
+     "sha256": "281841505e2701957644385e04b481668b2c82a87e882dfb6645ce359a09d22f"
+    },
+    {
+     "path": "libraries/schiriki123/playing-cards.excalidrawlib",
+     "sha256": "9ea3ab3ace40c43644fe11748224240ee4581fe4420669ab4dc96f17f061a546"
+    },
+    {
+     "path": "libraries/selanas/it-logos.excalidrawlib",
+     "sha256": "6b7834abd11b4b4fd7d1e3490ff6bd1d11a74f0a11ec7499e39f3e67aa371553"
+    },
+    {
+     "path": "libraries/sharathsanketh/biology.excalidrawlib",
+     "sha256": "8a940210412902f3425e49968d220b60f8f61d6ce96b6c4ade850a46f261cd1d"
+    },
+    {
+     "path": "libraries/shellerbrand/canvases.excalidrawlib",
+     "sha256": "b91d7e7f1e3bd918c430be2c317185648dd2ce20947078e52e75baafaa18a8ed"
+    },
+    {
+     "path": "libraries/shinkim/desktop-resolutions.excalidrawlib",
+     "sha256": "fe1986be3646da296391ec55e0cc73f394a56274fc679b92c89be42492f9cc29"
+    },
+    {
+     "path": "libraries/shinkim/presentation-templates.excalidrawlib",
+     "sha256": "e2d6e678748d7a568afeaa03656af944c0ea5243e0ff72672463015a0df1f6db"
+    },
+    {
+     "path": "libraries/simalexan/wardley-maps-symbols.excalidrawlib",
+     "sha256": "c28e6b7defec44dde55997a8bc3d4b785b4a6cf12ab2c830100697d7ed209666"
+    },
+    {
+     "path": "libraries/sketchingdev/banners.excalidrawlib",
+     "sha256": "43e42b48c3f671e70e6d1dad5afc75784dede2cf0575edcaba280bf191e359ac"
+    },
+    {
+     "path": "libraries/slobodan/aws-serverless.excalidrawlib",
+     "sha256": "0dd78bbcdd694b762ffb92bc87cd20051b4149f2de94d8caf1a19bfaefe6b4fd"
+    },
+    {
+     "path": "libraries/spfr/lo-fi-wireframing-kit.excalidrawlib",
+     "sha256": "bf5c3f6db095885e6362ad5c9c3051d50ab1246599d19f9bc3c7542d94e91f91"
+    },
+    {
+     "path": "libraries/stojanovic/aws-serverless-icons-v2.excalidrawlib",
+     "sha256": "a14c4d6028c83ed086797085eeb4de71daeb811fec9c0795a0bdd64febc905eb"
+    },
+    {
+     "path": "libraries/stuc2010/enterprise-integration-patterns.excalidrawlib",
+     "sha256": "99a1dbead5e7031a5a28968094a316bf68e0ce7ef023fb7388102513840347ae"
+    },
+    {
+     "path": "libraries/sudotachy/medicine.excalidrawlib",
+     "sha256": "1e7a49ec982c4c6466126a3550d0d51dec67ca8729e9d4703fecbefb770f7b8b"
+    },
+    {
+     "path": "libraries/surya-teja-venteddu/make-your-calendar.excalidrawlib",
+     "sha256": "9c9399beb9fa92185cbef3cb0e9146b2341b20dd17f641f7392497a09e608081"
+    },
+    {
+     "path": "libraries/swissarmysam/maps.excalidrawlib",
+     "sha256": "b3efc9268de1578eccf0332193e342d40c891addd32d54215f5e277d33e01c9b"
+    },
+    {
+     "path": "libraries/thebrahmnicboy/Logic-Gates.excalidrawlib",
+     "sha256": "70c54e3c81a3116515780f8b0f6a7d5bf39ac400e3f513ac14616ca52fd6ea77"
+    },
+    {
+     "path": "libraries/thijsdev/snowflake.excalidrawlib",
+     "sha256": "33d77439cd2674979cb2d06624eb7923b05fb34214a05adad9123fa23f2a2a36"
+    },
+    {
+     "path": "libraries/thrsz/organic-chemistry-basics.excalidrawlib",
+     "sha256": "aa60c1ce0d0c93714a7e1b543d5242e3c580fdd83723f8e176962fb4b87c465f"
+    },
+    {
+     "path": "libraries/tuckdiaz/internet-service-providers.excalidrawlib",
+     "sha256": "4dc14a33b5c41d301c16091179c757708e8b845f45e4beae4143f6cc201de147"
+    },
+    {
+     "path": "libraries/tvoozmagnificent/coordinates.excalidrawlib",
+     "sha256": "7d487391b4392f1574a318b6d49e14ee55f08b605ed87fa306fe6a7fb3246fea"
+    },
+    {
+     "path": "libraries/tylerkron/event-storming.excalidrawlib",
+     "sha256": "996d941dd489ea1ce9325ba0be24a01460e00c75967ca1e4ac0e19daf2389876"
+    },
+    {
+     "path": "libraries/ubigene/misc-azure-icons.excalidrawlib",
+     "sha256": "a4fa3277ac76df4e96ad75950f622fc0a52bc45945ccf2131ff4eb24a1608bc2"
+    },
+    {
+     "path": "libraries/weareborg/synths-and-fx.excalidrawlib",
+     "sha256": "dfdfb0a1c356b32c727ed95ca9e2b77a00f0cae8e28cba09bc140e7cd2fb352e"
+    },
+    {
+     "path": "libraries/webkul/ecommerce-mobile-ui.excalidrawlib",
+     "sha256": "0fb61c2aec6e138180ceeb7cb30010206a499a139ce6214cfe0f63e1b273edef"
+    },
+    {
+     "path": "libraries/wictorwilen/microsoft-365-icons.excalidrawlib",
+     "sha256": "f29cae89264d769aabb940412b4a0726ecb4398b30d21e26696878fcdb0f5f79"
+    },
+    {
+     "path": "libraries/wmartzh/data-flow.excalidrawlib",
+     "sha256": "cedd53b1bfdfd202b1690ab4f825f4e52a006ae6a4e6b0c7672b8cf8b34bd16f"
+    },
+    {
+     "path": "libraries/xxxdeveloper/icons.excalidrawlib",
+     "sha256": "578d04493eb2bedaf8e7e96f574ae8cce348e528ac6fb5f991bdc17bc8535a17"
+    },
+    {
+     "path": "libraries/xxxdeveloper/system-icons.excalidrawlib",
+     "sha256": "9953df11049add6c1ff4ce612231778286019484c069e2b103d96683e2b1db33"
+    },
+    {
+     "path": "libraries/xxxdeveloper/wireframing-placeholders.excalidrawlib",
+     "sha256": "458012b11be6118c8c78197566b4c7b0e2b9e619a62ca070d12ff30fc1f59f0d"
+    },
+    {
+     "path": "libraries/youritjang/azure-cloud-services.excalidrawlib",
+     "sha256": "1b595ec710435310f531b0ddd71d4102726ec291bd26a0fb4e4b6435da037948"
+    },
+    {
+     "path": "libraries/youritjang/software-architecture.excalidrawlib",
+     "sha256": "5dead109b7569066a5fd3c2bcfe5f045c156f27a391eed71e6dd640b4317ce65"
+    },
+    {
+     "path": "libraries/youritjang/stick-figures.excalidrawlib",
+     "sha256": "cde1668c4abac3a415a650c1c75626684397904c0592fc7a660934295391caae"
+    },
+    {
+     "path": "libraries/yuelfei/deep-learning.excalidrawlib",
+     "sha256": "0724e8baa73b7499109bfa84758e8e61563acb245f361beab6f1cfbee9cbc5e7"
+    },
+    {
+     "path": "libraries/zanetworker/red-hat.excalidrawlib",
+     "sha256": "d201f8260e8a7c249dc7f117c1e620f08f55455cf3d7dfd80b0770b0a5509528"
+    },
+    {
+     "path": "libraries/zesty-lemur/microsoft-apps.excalidrawlib",
+     "sha256": "9d293a2295a13dc49ba009d635ec4d3a7b8f858475bdba06e595a6128153c84d"
+    }
+   ]
+  },
+  {
+   "id": "jdebnath21",
+   "repo": "jdebnath21/excalidraw-libraries",
+   "ref": "fae8b1415fec3835e123c8cc6489780852d25cf1",
+   "license": "MIT",
+   "bundle": "merge-names",
+   "files": [
+    {
+     "path": "UML-ER-library.excalidrawlib",
+     "sha256": "67da58e0f5807b6479f1c04bfb993790fa29a1a2312ebd8488c3f116e4c917ef"
+    },
+    {
+     "path": "apple-devices-frames.excalidrawlib",
+     "sha256": "1c3514c0d15018dc16f68a46b09cdcbd301794dfa88b38755f1b0c233cab39ad"
+    },
+    {
+     "path": "awesome-icons.excalidrawlib",
+     "sha256": "02a2a249da93305990109af4665ce8f3b3d8a60fedd085ea1fce90b21cf6c8e1"
+    },
+    {
+     "path": "aws-serverless.excalidrawlib",
+     "sha256": "0dd78bbcdd694b762ffb92bc87cd20051b4149f2de94d8caf1a19bfaefe6b4fd"
+    },
+    {
+     "path": "aws-simple-icons.excalidrawlib",
+     "sha256": "2f6c3ae029dd3c7d41690515a1388f580fdab85124acf05450520d445abb4ac1"
+    },
+    {
+     "path": "azure-cloud-services.excalidrawlib",
+     "sha256": "bb860da6d8e1e68b68137fdbec0c908628711d91d932f6f5bae7c12a7c2f6ccc"
+    },
+    {
+     "path": "basic-shapes.excalidrawlib",
+     "sha256": "2325c8a631211824cde105ddf3b153ab29be30876b8a5b6399e2565d08262dde"
+    },
+    {
+     "path": "cloud-design-patterns.excalidrawlib",
+     "sha256": "80c2e4929e8350b9dec28bf385a1241441f96a8db88b1d82460fbed61d92c5ac"
+    },
+    {
+     "path": "cloud.excalidrawlib",
+     "sha256": "1e3aefc9cddde22c550d8beb0eddcbde8ed8491aebfa394095c32ddfd31d4205"
+    },
+    {
+     "path": "computers.excalidrawlib",
+     "sha256": "f140f9d50b78057b676cdfd348fdf68b3318d78b95c6c38556cb73bb1d4b95bf"
+    },
+    {
+     "path": "cryptocurrencies.excalidrawlib",
+     "sha256": "4c0e46940521d200061009c4f036d186877d3f25f65557cfd12546a52c3e325b"
+    },
+    {
+     "path": "data-science.excalidrawlib",
+     "sha256": "c9d7e3a883cfdcb91c44000d714ff20192487e096b12730020d6b6125a2af13e"
+    },
+    {
+     "path": "data-viz.excalidrawlib",
+     "sha256": "9918f5610092592970728a0f07aa3371712da51c7fd73ee7425975255a11c986"
+    },
+    {
+     "path": "db-eng.excalidrawlib",
+     "sha256": "57219d639c039ef774447ceaf2cbc448f1d7b5bdb561e2edc779dd0e624eb6e1"
+    },
+    {
+     "path": "decision-flow-control.excalidrawlib",
+     "sha256": "3c03738d9a8e100975b7d3cc5f0b6a06b8fdaf57ac3ac2b25a172e855b3059d6"
+    },
+    {
+     "path": "dev_ops.excalidrawlib",
+     "sha256": "9621c00364f4bc492ea36959f2dc3774b7ee9a028764278f1721b5d756b7df14"
+    },
+    {
+     "path": "dropdowns.excalidrawlib",
+     "sha256": "dd71e10aed2c37e0e4f25fb94e6dc0a235594d917ad43457bcf62c3afb455ee0"
+    },
+    {
+     "path": "drwnio.excalidrawlib",
+     "sha256": "7748ef9f0b91d70a32cae141814f49c21e89cb30cc09e4184e308617f5294586"
+    },
+    {
+     "path": "emojis.excalidrawlib",
+     "sha256": "c2790ddf77987ad3bafee2f943b687060b77f9371b038ac6c09af7995a1c66d9"
+    },
+    {
+     "path": "forms.excalidrawlib",
+     "sha256": "b83a58ceb13e04aa771a26c42b17c867b860efba3f7bd24f2127f4770a5af445"
+    },
+    {
+     "path": "front-end-tech-and-tools.excalidrawlib",
+     "sha256": "ce1dc657a2235ed13eea2b43764eb676cb758bfdcf26dafd14f04ca4a467a564"
+    },
+    {
+     "path": "gadgets.excalidrawlib",
+     "sha256": "b38609fd96400f8ae3ebf237f9794c12b20571e7de2bb490013670c086112913"
+    },
+    {
+     "path": "gantt.excalidrawlib",
+     "sha256": "8791a29d8be4b5b6ddea2eea255fe6961e7e40f0da4d7696970f1062a0acf75e"
+    },
+    {
+     "path": "github-icons.excalidrawlib",
+     "sha256": "ef32a221b74c8747075c940227493cbcd0e2ef5d99737827aa1a5bfd45641189"
+    },
+    {
+     "path": "graphs.excalidrawlib",
+     "sha256": "56ea4559508773480f2bb965be8715b65e430e54560bf602eaed308dd9d9274f"
+    },
+    {
+     "path": "html-css-js-icons.excalidrawlib",
+     "sha256": "5b624ae32b6be5d6f239bcb523605762d1566ebddcfe22bfd40adc29256a5f9b"
+    },
+    {
+     "path": "information-architecture.excalidrawlib",
+     "sha256": "b8f337943697c416154481d065048b2f7641789a45ff4438702e596e77c2feae"
+    },
+    {
+     "path": "it-logos.excalidrawlib",
+     "sha256": "0eaee8a72a195cfa3cf4579310f2d285b28491a6a5c9365e39a124426c6a8790"
+    },
+    {
+     "path": "lo-fi-wireframing-kit.excalidrawlib",
+     "sha256": "bf5c3f6db095885e6362ad5c9c3051d50ab1246599d19f9bc3c7542d94e91f91"
+    },
+    {
+     "path": "logos.excalidrawlib",
+     "sha256": "f84fdc9ff2d15bfdcf245cfc2854e85711434e23e161a535cd18648e7e0ab45f"
+    },
+    {
+     "path": "mobile-kit.excalidrawlib",
+     "sha256": "c26148158f82a2eed95471357da97382dcc8faaebf3071a6490e0db4952b0840"
+    },
+    {
+     "path": "polygons.excalidrawlib",
+     "sha256": "0c00ca695f26ef23452fddbcf04864b5f17ebf7e471165e02520bdb21281dd25"
+    },
+    {
+     "path": "post-it.excalidrawlib",
+     "sha256": "a1ded7f6b7cf1a9a038b7c8ceff06bb951bf13ba643cc0f83b2e735f6df856cc"
+    },
+    {
+     "path": "redis-grafana.excalidrawlib",
+     "sha256": "70d587ebebcec53ed99676bce87895cf12f921e34a9c39ef8bd41d7afc9a7aa3"
+    },
+    {
+     "path": "software-architecture.excalidrawlib",
+     "sha256": "5dead109b7569066a5fd3c2bcfe5f045c156f27a391eed71e6dd640b4317ce65"
+    },
+    {
+     "path": "stick-figures.excalidrawlib",
+     "sha256": "2f28c2bd28c2398db45963980f6d5d9f2a7965c963adf255efc9498ede2fc872"
+    },
+    {
+     "path": "storytelling.excalidrawlib",
+     "sha256": "4dac33a4b1aae87fa59136afd8f6aa5d84dc3bea42ec2873edd55e711f758816"
+    },
+    {
+     "path": "system-design-template.excalidrawlib",
+     "sha256": "b086710afd989f98eb6dff1cde1447a8da5c572f1f149e3371122af7c90e2330"
+    },
+    {
+     "path": "system-design.excalidrawlib",
+     "sha256": "4042532130ed87478388d28d4177177423c52ef7953c570822d60695a0b74bf7"
+    },
+    {
+     "path": "technology-logos.excalidrawlib",
+     "sha256": "5c27e1f720191cfe22e40d93ed2620e0321f62484889d40ce3c3f4c85e1789fe"
+    },
+    {
+     "path": "wardley-maps-symbols.excalidrawlib",
+     "sha256": "c28e6b7defec44dde55997a8bc3d4b785b4a6cf12ab2c830100697d7ed209666"
+    },
+    {
+     "path": "web-kit.excalidrawlib",
+     "sha256": "d4065eae35c37f66ed71ce7788bc32c659ed777f153ae36accb058245498c50f"
+    }
+   ]
+  },
+  {
+   "id": "rkrokson-msft",
+   "repo": "RKrokson/msft-icons-excalidraw",
+   "ref": "9bc407b09080cf6061a9df17ab4e3cf1e79d81d0",
+   "license": "MIT",
+   "bundle": false,
+   "reason": "Converted Microsoft/Azure product icons: Microsoft's icon terms allow use in diagrams but not redistribution as an icon set.",
+   "files": 33
+  },
+  {
+   "id": "lucide",
+   "package": "lucide-static",
+   "version": "1.48.0",
+   "license": "ISC",
+   "tarballSha256": "3c2ecda3d25f6a9692d83f8036d9a526f7da584a51af74cd16eda4498c5c33d8",
+   "icons": 1854
+  }
+ ],
+ "stats": {
+  "official": {
+   "files": 232,
+   "items": 4187,
+   "kept": 4125,
+   "dup": 14,
+   "skipped": 48
+  },
+  "jonra-agentic-flows": {
+   "files": 2,
+   "items": 60,
+   "kept": 30,
+   "dup": 30,
+   "skipped": 0
+  },
+  "w-gitops": {
+   "files": 2,
+   "items": 613,
+   "kept": 7,
+   "dup": 0,
+   "skipped": 606
+  },
+  "jorgedlcruz": {
+   "files": 1,
+   "items": 76,
+   "kept": 0,
+   "dup": 76,
+   "skipped": 0
+  },
+  "clainchoupi": {
+   "files": 1,
+   "items": 16,
+   "kept": 16,
+   "dup": 0,
+   "skipped": 0
+  },
+  "jordanbrauer": {
+   "files": 1,
+   "items": 87,
+   "kept": 86,
+   "dup": 1,
+   "skipped": 0
+  },
+  "hon668-hvac": {
+   "files": 3,
+   "items": 48,
+   "kept": 32,
+   "dup": 16,
+   "skipped": 0
+  },
+  "marcrow-pentest": {
+   "files": 1,
+   "items": 90,
+   "kept": 17,
+   "dup": 73,
+   "skipped": 0
+  },
+  "justgoscha": {
+   "files": 1,
+   "items": 19,
+   "kept": 19,
+   "dup": 0,
+   "skipped": 0
+  },
+  "tonac-qa": {
+   "files": 1,
+   "items": 1,
+   "kept": 1,
+   "dup": 0,
+   "skipped": 0
+  },
+  "getofferhelp-zh": {
+   "files": 212,
+   "items": 3539,
+   "kept": 0,
+   "dup": 3228,
+   "skipped": 311
+  },
+  "jdebnath21": {
+   "files": 42,
+   "items": 647,
+   "kept": 0,
+   "dup": 517,
+   "skipped": 130
+  },
+  "rkrokson-msft": {
+   "files": 33,
+   "items": 0,
+   "kept": 0,
+   "dup": 0,
+   "skipped": 0
+  },
+  "lucide": {
+   "files": 25,
+   "items": 1854,
+   "kept": 1853,
+   "dup": 1,
+   "skipped": 0
+  }
+ },
+ "naming": {
+  "library": 5050,
+  "text": 537,
+  "model": 589,
+  "none": 10
+ },
+ "outputs": [
+  {
+   "path": "items/official/jumpingrivers/r.json",
+   "sha256": "f7eae6b4d119ee283f490caad579398a35af55a8058f2513bd12a53fc5af956e"
+  },
+  {
+   "path": "items/official/thijsdev/snowflake.json",
+   "sha256": "e90dae8f73fb9c0314c8234229ce6321afc78010024d1c442908d60236137cf2"
+  },
+  {
+   "path": "items/official/kaligule/robots.json",
+   "sha256": "cf2e6ece9a7212159e05f920ad429ad74ade641c221971a060af63b41251f2b0"
+  },
+  {
+   "path": "items/official/lipis/polygons.json",
+   "sha256": "9907ebe2c739423ab8378c639697935a8f44d47886f4debf32101326ceaacafd"
+  },
+  {
+   "path": "items/official/lipis/stars.json",
+   "sha256": "10b5ed43f78178c9c23628ac243bcadaaa83b26268a8b0b99ddfa876fa7f4156"
+  },
+  {
+   "path": "items/official/morgemoensch/gadgets.json",
+   "sha256": "39257fd65538d2fa5784a6d6590ed93bd4fd203772a6eec0bf61b94dbba2aac8"
+  },
+  {
+   "path": "items/official/g-script/android.json",
+   "sha256": "e10e1bf38b3daf85d20f7acb6e6d038dddae09f2835c5d80f0562be3ba159d9c"
+  },
+  {
+   "path": "items/official/g-script/charts.json",
+   "sha256": "47bf47bde926b11de156cdcb04df969b5b811638b055c21096485450d426a37c"
+  },
+  {
+   "path": "items/official/g-script/forms.json",
+   "sha256": "34adfd160cd7f3eed9138d646101e0cc62a2e0a5d3a76e0661b2532c49dc719d"
+  },
+  {
+   "path": "items/official/g-script/medias.json",
+   "sha256": "57bf63c4608a4ef2355c37012004bd7d5bcea69adb351193e5c0345b3ba9d925"
+  },
+  {
+   "path": "items/official/revolunet/raspberrypi3.json",
+   "sha256": "b7b627988ccef169a6f1fc16cd3cc3a00bb9fa62b891106bbdc7de9fec45d4a0"
+  },
+  {
+   "path": "items/official/youritjang/stick-figures.json",
+   "sha256": "30ebe8c2105e9574de9d503c638f05445a865fad436b5b456363e308fb727fa0"
+  },
+  {
+   "path": "items/official/dbssticky/data-viz.json",
+   "sha256": "ec6de81c469139f8622cdcc760be13449e80fc3e889c2f2e3e02f2e008f3cf76"
+  },
+  {
+   "path": "items/official/dwelle/hearts.json",
+   "sha256": "e369e6206b84623a72fcc04ab27332f40e75a6c787b69cd1a0d842fea84844a3"
+  },
+  {
+   "path": "items/official/franky47/apple-devices-frames.json",
+   "sha256": "52e942b1d76d123aaaa4509c397fab96a6689bea8d4db06d202162c5e15121c1"
+  },
+  {
+   "path": "items/official/youritjang/software-architecture.json",
+   "sha256": "250861e90d074c25d02cd072d5abe3cf1142be7fcaac869c481cf0e345bbac0a"
+  },
+  {
+   "path": "items/official/h7y/dropdowns.json",
+   "sha256": "da8ef1b36e76bf7d7c03fc36c3b70c6304efa095d90ffaeb5b7b2d5f36d3ff91"
+  },
+  {
+   "path": "items/official/inwardmovement/information-architecture.json",
+   "sha256": "cb39796e86ed34427a69fb3838024128d71b197086d4beabc3c6b55b2922be7a"
+  },
+  {
+   "path": "items/official/pclainchard/it-logos.json",
+   "sha256": "70997479c178e836d9c2b189e88bf8df1a907aee31594bfc7365a38e166e8955"
+  },
+  {
+   "path": "items/official/excacomp/mobile-kit.json",
+   "sha256": "0b9244292ea7cecd388c68f1544dff1ccce9be1c1c9cda5f49e6240ec5e89ebf"
+  },
+  {
+   "path": "items/official/excacomp/web-kit.json",
+   "sha256": "0dd8096c800e5744152e8b6be5dfb803b290bd315253b9b57fd0141c5c18424b"
+  },
+  {
+   "path": "items/official/drwnio/drwnio.json",
+   "sha256": "caf25d28cee0230bed1e9cedf401650dec33a6cef52ee999d782f392ec0a5142"
+  },
+  {
+   "path": "items/official/maeddes/technology-logos.json",
+   "sha256": "922efea4c90234dc6410bc35863e12facc41b7bdccb80a782d976d4ceefb63fe"
+  },
+  {
+   "path": "items/official/drwnio/storytelling.json",
+   "sha256": "4f87594872ffb47f68831fc26adf0a0ec92267002370b0df2f4732e6ebaa5403"
+  },
+  {
+   "path": "items/official/newbyca/cryptocurrencies.json",
+   "sha256": "7fde67ce0eac6127fe7a0c77ef271b1b9a008a8a34ffa267f4ed457922b1ada5"
+  },
+  {
+   "path": "items/official/marcottebear/raspberrypi-zero.json",
+   "sha256": "166baeba9ff0a199aa387084f4749b33c1717ebfa52d3a1e20793ee74465238f"
+  },
+  {
+   "path": "items/official/shinkim/presentation-templates.json",
+   "sha256": "e00aa3ed2f8fc5378eba3fdd579aabecbe5f173f06cbd3ec4c44c385ff9a7979"
+  },
+  {
+   "path": "items/official/jakubpawlina/graphs.json",
+   "sha256": "35f0bd575ebdb0ffeea5d5ff889e05c3e695b2ef2446f02fcec14e2fbaa40467"
+  },
+  {
+   "path": "items/official/shinkim/desktop-resolutions.json",
+   "sha256": "fd98d95adf05f1a8e5e6a55efacfb574a6f00268a18ae0c2cca90383ca617310"
+  },
+  {
+   "path": "items/official/spfr/lo-fi-wireframing-kit.json",
+   "sha256": "78b1c5f7f772666c37ad6d99739841ba4a9a258a965f9a08040aa34204b3f528"
+  },
+  {
+   "path": "items/official/michelcaradec/cloud-design-patterns.json",
+   "sha256": "055e8334ae6165c7ff3870d02380a28761fca6ea8eeb2a442b6b6dcf911c4f98"
+  },
+  {
+   "path": "items/official/slobodan/aws-serverless.json",
+   "sha256": "0de7b273d3e11c84372d5eb9c3ff23087b93fcdbd01f8ee86cb1b4ddb47bd12c"
+  },
+  {
+   "path": "items/official/simalexan/wardley-maps-symbols.json",
+   "sha256": "eced0ce8e96afa9a58491a551872e3903d2c9d3a26cc12719d9f4c22ec1f3426"
+  },
+  {
+   "path": "items/official/ocapraro/bubbles.json",
+   "sha256": "d0285d3645c3fff5fca9317f6a00cc559d9167a02412673db3be078086cae9a4"
+  },
+  {
+   "path": "items/official/shellerbrand/canvases.json",
+   "sha256": "10b2f6b2d06e58ff58252b050de9c4780d595e7db42960259515109da01c2307"
+  },
+  {
+   "path": "items/official/jhoughes/veeam.json",
+   "sha256": "d55c34355f66fe4ef7d3f9246cc1a06c6a75578c8ea7dba85566be14618a9d5e"
+  },
+  {
+   "path": "items/official/farisology/data-science.json",
+   "sha256": "6ae98d5d0d97b25540129312d43793b8eb75bb1edcab705945c1cff55478fef6"
+  },
+  {
+   "path": "items/official/rkjc/arduino-boards.json",
+   "sha256": "7fb101197cc141c318fdf90bb16152b97cbc4842710c237948fe42c24352b99d"
+  },
+  {
+   "path": "items/official/rkjc/schematic-symbols.json",
+   "sha256": "9abfe21c17945ca5c2887b095b7b14760e1884d59acd78c37d252a1d2fe080ee"
+  },
+  {
+   "path": "items/official/cloud/cloud.json",
+   "sha256": "3feb8815dc6d4ebf769bdbc3d21e835a32a138788663ffeeab74829f71889663"
+  },
+  {
+   "path": "items/official/madhusuthanan-b/html-css-js-icons.json",
+   "sha256": "d49314b7d8da499df2e3e365ff4d7e85e9bcd316936e77ad0080aa0d10b018b7"
+  },
+  {
+   "path": "items/official/anumithaapollo12/emojis.json",
+   "sha256": "d10a4954f567d2d46d04de6ad0c7e971b3628201bcb647462defd86fffd80ec6"
+  },
+  {
+   "path": "items/official/mikhailredis/redis-grafana.json",
+   "sha256": "2ff7f35274738c1a0883fda3295c167738564c70a552fbbc30aa8b2d54c85ef9"
+  },
+  {
+   "path": "items/official/husainkhambaty/aws-simple-icons.json",
+   "sha256": "a4c2a76367bc57dc8bc158b091843147fedd43333e841d354eab54fda1c29e4e"
+  },
+  {
+   "path": "items/official/ei-au/computers.json",
+   "sha256": "0883d0f82d8e7ad530698622180b961cb934c4562fd61576a284a8c63e4aab16"
+  },
+  {
+   "path": "items/official/madhusuthanan-b/front-end-tech-and-tools.json",
+   "sha256": "3f159eb9bd89cc0ba145e59c645c23755df323c4ebaa3069198603ea9b9b1fbf"
+  },
+  {
+   "path": "items/official/Arqtangeles/architecture.json",
+   "sha256": "17561bbe901e4a4bdb7bd5745323f0446af0b7ceb63b23cf8b2e7c2af9516498"
+  },
+  {
+   "path": "items/official/nikordaris/team-topologies.json",
+   "sha256": "e71289e9c19e5e9d1d67bb32139cbd79406864f4a0251e21357dee02c0bc81fe"
+  },
+  {
+   "path": "items/official/youritjang/azure-cloud-services.json",
+   "sha256": "fe4f3a46785b91c1b24007ea2e3161bc169f10854524f8cd1f6c6221b9e707c7"
+  },
+  {
+   "path": "items/official/l8y/music-instruments.json",
+   "sha256": "aad1a0a51c654d7650686eab4c0d7f4b89f7429b30033bb1b93080e647f60f3b"
+  },
+  {
+   "path": "items/official/braweria/customer-journey-map.json",
+   "sha256": "405559964d747f6b40a178e4ec959b4bde1bff369a938bc7b11cd4fd5e2b70f6"
+  },
+  {
+   "path": "items/official/ferminrp/post-it.json",
+   "sha256": "5a74e0627f9b0c0bf4f6f692531d683acd567c1e54d80fb9691fad2b79ae9b2f"
+  },
+  {
+   "path": "items/official/ferminrp/gantt.json",
+   "sha256": "ff44e93c97d52c0b421edafe8d7d7a550272e2e7539965a1d9f3a7e068c91dc2"
+  },
+  {
+   "path": "items/official/novakkkarel/nsx-t-vmware.json",
+   "sha256": "01863a7213c8d7e0f99c837294a268d3ed9cb497ebc2d84b21c3c7306301ccee"
+  },
+  {
+   "path": "items/official/pgilfernandez/basic-shapes.json",
+   "sha256": "cbe5601735861528e1e4bf52d18f142f532b50af3a098d571ee0d9a38fc682e4"
+  },
+  {
+   "path": "items/official/pret/chess-set.json",
+   "sha256": "13f7c2bc80a773e5634e9cb63345381f4120cd679eb34c5560068ed0d193522a"
+  },
+  {
+   "path": "items/official/Vasudevatirupathinaidu/random-figure-drawings.json",
+   "sha256": "d046335c436c3b40e79f8ae43f1cee3bb4d7ba1c431aee04ed483d037af61831"
+  },
+  {
+   "path": "items/official/danimaniarqsoft/scrum-board.json",
+   "sha256": "1275ec21b4b2aeb8cd5383275985840cfe435f6d7b671a8ad622821101bde462"
+  },
+  {
+   "path": "items/official/dpalay/common-screen-resolutions.json",
+   "sha256": "f659994bcf0eddac22df278d4ad92ed0f62f6e00ad316b1a4ec5c0d5c7105aa2"
+  },
+  {
+   "path": "items/official/ferminrp/awesome-slides.json",
+   "sha256": "34fcc3476a945f9a14ac9d0d50c4c4b9b03ea791b05da6b8350cee5c04e74b13"
+  },
+  {
+   "path": "items/official/ferminrp/awesome-icons.json",
+   "sha256": "f5b75dbfa5c5499f499a76b376b53cc73abc832aaa74638982db7a1954c35c33"
+  },
+  {
+   "path": "items/official/BjoernKW/UML-ER-library.json",
+   "sha256": "6680940fb04d228ce26bf0f95a7765cb4a6d44a4fbaf7379a5bf79be2075c29e"
+  },
+  {
+   "path": "items/official/aretecode/decision-flow-control.json",
+   "sha256": "9ce59d2878406a595f08e013670229083728321dac56a31dc157d513e6fbdca4"
+  },
+  {
+   "path": "items/official/aretecode/system-design-template.json",
+   "sha256": "85409cb0ac6800fb6e9c6f3052099efc049fff75a2624ac46a92408a0a23c9ca"
+  },
+  {
+   "path": "items/official/IvanReznikov/yellow-box.json",
+   "sha256": "3b905095bed6c1d6f02f06d537f507f04eb700462bc617f3c6c8ff9dd7ae5435"
+  },
+  {
+   "path": "items/official/jdelacruz/veeam_unofficial.json",
+   "sha256": "2f99737b4ba40b1920bd45d2f8705789fb8d2efe389eac5c4c34bbac56a33297"
+  },
+  {
+   "path": "items/official/markopolo123/dev_ops.json",
+   "sha256": "2009fe0f7f0b88b4bb66e1de64da0c16a063f4971666a7176bacdba63c0331be"
+  },
+  {
+   "path": "items/official/corlaez/hexagonal-architecture.json",
+   "sha256": "b5641c7ed42aa874fdfb4de59831d57e78da684a4fe8fc5c8b64c99e782c3867"
+  },
+  {
+   "path": "items/official/jasoncoelho/arduino-micro.json",
+   "sha256": "e057e02f561bdc25164ee41b847386887e22b3d8f53bba4832fa68a9dd0946a7"
+  },
+  {
+   "path": "items/official/thebrahmnicboy/Logic-Gates.json",
+   "sha256": "417b1c0883fbdf020b54355557708e36c0065850de812cdad31e52f7e21a6d79"
+  },
+  {
+   "path": "items/official/gabi-as-cosmos/periodic-table.json",
+   "sha256": "dc517bf9af46890a28d4628daef57da0ebbc92ea3bb383d4308938bd71c25a30"
+  },
+  {
+   "path": "items/official/rohanp/system-design.json",
+   "sha256": "918147ab193ff337b95150996df96de9741b4b43c3fd00c073b98290d08e5fad"
+  },
+  {
+   "path": "items/official/swissarmysam/maps.json",
+   "sha256": "3968c22c4edf72a1c976a03fed90daba2bfc580a5ed708087b5b86b91fe4df49"
+  },
+  {
+   "path": "items/official/marwinburesch/github-icons.json",
+   "sha256": "c4575c7667797dc0bae03ed913fe192bba115213b0c61294e4b25354c0bca33a"
+  },
+  {
+   "path": "items/official/esteevens/logos.json",
+   "sha256": "42f9ec4c42e8ecf64766a5f018a4331057dec84f864d4d6c259cf2986de48518"
+  },
+  {
+   "path": "items/official/aleksandr-hovhannisyan/clocks.json",
+   "sha256": "78259031fce7ac6aebe3a948a346b3c5e879a495e24d2fe61cbc71d45400e627"
+  },
+  {
+   "path": "items/official/oehrlis/db-eng.json",
+   "sha256": "7d6fca7a5307551f3b11ca8becdd4435c99ada22cf31110735f3d9894c480f77"
+  },
+  {
+   "path": "items/official/niknm/systemdesignicons.json",
+   "sha256": "25791f91f8df7097e552a78e9be815827cfa7cd192e97ee4cff70a438d0d34a9"
+  },
+  {
+   "path": "items/official/claracavalcante/baby-characters.json",
+   "sha256": "97cb3f07910927c24d97682fdd3c0603b800ead83ea299c5b8e16bd666473a20"
+  },
+  {
+   "path": "items/official/kinghavok/some-common-cloud-apps.json",
+   "sha256": "6db316ab1c9f39bb3378d35c3719a5a3eea3b8d8f23b36fcd46d21ead7ea7988"
+  },
+  {
+   "path": "items/official/narhari-motivaras/aws-architecture-icons.json",
+   "sha256": "77dbd6af085780a5f4819880eeff16cabf352b9b36aa9d653fac673f409b29e3"
+  },
+  {
+   "path": "items/official/dwelle/network-topology-icons.json",
+   "sha256": "348ee8058d8c4deb59f1486c3fce961456340bc2eaf228824a8282bbb3e7f630"
+  },
+  {
+   "path": "items/official/arach/systems-design-components.json",
+   "sha256": "fb6b9abb04d49ea4b5af43d9e61ae1df1b8a90966f74f59dfb75b4c21382b2c4"
+  },
+  {
+   "path": "items/official/sudotachy/medicine.json",
+   "sha256": "ebced3e9847a5fe52b9c1e5c89f6fdde958fa7237d6eb03695476bcc9aa3c486"
+  },
+  {
+   "path": "items/official/andreandreandradecosta/3d-shapes.json",
+   "sha256": "d63e49f221ea989999d310d5323631677c7bf0378b88e6a83c53d40e7777f632"
+  },
+  {
+   "path": "items/official/jjadup/mathematical-symbols.json",
+   "sha256": "04ad948ec327edec244ccfb89cb961efe324864257d977b18815b4c0c0258a21"
+  },
+  {
+   "path": "items/official/robin-muller/digital-signal-processing.json",
+   "sha256": "1d947a9eeec0952d38452002349034440b3e68c817c8998184a67f9908a15c0e"
+  },
+  {
+   "path": "items/official/https-github-com-ytrkptl/math-teacher-library.json",
+   "sha256": "81ef7df2c7e85db453eb2a495a062b6a287ab78751d2491e82002609bac6c075"
+  },
+  {
+   "path": "items/official/xxxdeveloper/icons.json",
+   "sha256": "5609b495898ffa2938449f3df39654a39f27c48add3ea1c148fc27e0b58bc50b"
+  },
+  {
+   "path": "items/official/clementbosc/gcp-icons.json",
+   "sha256": "dfc2ea708fafb551101a1c3ec697901ebd49725b3b44970dd004c7ddc1f7ed58"
+  },
+  {
+   "path": "items/official/xxxdeveloper/system-icons.json",
+   "sha256": "22613b0abea4f41e8c86ebd3452b7ea69637a02241d9b5fda9ffce3949ee717e"
+  },
+  {
+   "path": "items/official/zanetworker/red-hat.json",
+   "sha256": "0321b94bc670fa428acacb0339fe5b4a69d5e3c932a7f43308d6523323bf13fe"
+  },
+  {
+   "path": "items/official/selanas/it-logos.json",
+   "sha256": "4610167b208b8e16623f4cfbbacc642ad4311fe2380e0b57b52e1683ae1a2266"
+  },
+  {
+   "path": "items/official/xxxdeveloper/wireframing-placeholders.json",
+   "sha256": "12ffe8498bbed983115dc6758b9a053ec60adef5f19cdc35f86dd74ca124f4d9"
+  },
+  {
+   "path": "items/official/eho9734/2022-gantt.json",
+   "sha256": "eb8da1fcff123235231118b799e1331647259efbe6ca529fb1d0d8eb671b6ff7"
+  },
+  {
+   "path": "items/official/samu_x86/network-elements.json",
+   "sha256": "693c9f8221857f6248361acd145c66a2966ed94202ce5483f5771a5f0b1d2290"
+  },
+  {
+   "path": "items/official/coexist/mq.json",
+   "sha256": "c107243238d49b87d23a7dee1b319ead887db97f807c71d3a35ea1a811971e63"
+  },
+  {
+   "path": "items/official/risjain/electrical-engineering.json",
+   "sha256": "f8dd2d0483acd2eebb89145afe2d8d68f37dc168032864c20ecd53f001a4e07d"
+  },
+  {
+   "path": "items/official/esteevens/retail-peripherals.json",
+   "sha256": "ead2bc93309861f72d89e4d6c45c7fae61639e51c05ba427f50098207cae2716"
+  },
+  {
+   "path": "items/official/fibreninja/fibre-network.json",
+   "sha256": "83867364f8acdd3c1401a6ce07f1f2ac10f5c27a7d595550f870b8a29e7af946"
+  },
+  {
+   "path": "items/official/sharathsanketh/biology.json",
+   "sha256": "6096902022d7af07c65b34f0d5636a8207995bcc249d251c7d3f00ca51d95db0"
+  },
+  {
+   "path": "items/official/excalidraw/valentine-s-day.json",
+   "sha256": "373e7d08b5251c8f08de7dfb243f44c5207db5354707755e0d260080b971dbc9"
+  },
+  {
+   "path": "items/official/rochacbruno/computer-parts.json",
+   "sha256": "d5d2e4058755cc8b74619f0a5322ef46be7877df2c6e7c75905ef465d3f7d9e8"
+  },
+  {
+   "path": "items/official/kvchitrapu/secure_shell.json",
+   "sha256": "07fd9fadc268cee4b346a9a1d32d0a4dbf3554bafdb484242598885862095e63"
+  },
+  {
+   "path": "items/official/kvchitrapu/data-sources.json",
+   "sha256": "51c5adc4f6496a387ae70743637aa70ea6f02386386afbd862dc8ca70c5d0372"
+  },
+  {
+   "path": "items/official/intradeus/algorithms-and-data-structures-arrays-matrices-trees.json",
+   "sha256": "b8389053ab6ef535189515611d4d69e0d2a34be27519acc0dd54272758ae31f4"
+  },
+  {
+   "path": "items/official/danielpza/barotrauma.json",
+   "sha256": "0add3ea177ec9dff4966e1bc7303e76a585944e2d76727d979a8b2d6b8e7d5c6"
+  },
+  {
+   "path": "items/official/https-github-com-sly-dog/ds-visualizations.json",
+   "sha256": "9e0c687f5a01fb2bbfb4071cfd5b57146c83233ac766d13bb2e987f3975f01fa"
+  },
+  {
+   "path": "items/official/jgodoy/racks-and-servers-components.json",
+   "sha256": "b38a30e2f9b77cc4d1b5783679187d611fd9eea044f3ae704d8784feb499bf3a"
+  },
+  {
+   "path": "items/official/m47812/office-items.json",
+   "sha256": "d9c0cc6272000c1f3464026a1c4b01415e23bf6b2c7e899a310c5940fb469e75"
+  },
+  {
+   "path": "items/official/pocomane/boardgame.json",
+   "sha256": "adf7abef7e07a2e15bb1f7beeb2cedae1107c1a22ba326314936a63916b64655"
+  },
+  {
+   "path": "items/official/mppowell/circuit-components.json",
+   "sha256": "cfad1058fe37e03c03ad937356838bdbaa04676f2d7a3cad012a302edc30bb71"
+  },
+  {
+   "path": "items/official/marwinburesch/html-input-elements.json",
+   "sha256": "6f9721d3073af515f0acfe252af34b8580c88803afb70010ca6ded94bf1efd03"
+  },
+  {
+   "path": "items/official/fraoustin/bpmn.json",
+   "sha256": "28caab08cc5b7dc566cbe1ff1d00ffdc8f578cdbeadc38e7ab28c89a68b194bf"
+  },
+  {
+   "path": "items/official/7demonsrising/azure-network.json",
+   "sha256": "fb0682a90f31206657995b7206e8fcd8dba49ef518035a361f761d4a5ac3e300"
+  },
+  {
+   "path": "items/official/7demonsrising/azure-containers.json",
+   "sha256": "2d97f559a3f726bef807de6c9a85117d725fe5c13637864e9184a8105781c91c"
+  },
+  {
+   "path": "items/official/7demonsrising/azure-storage.json",
+   "sha256": "54adc929380793910b5971fb0dbc191f2079f9c47c06579b07ae68fe3c38f3fb"
+  },
+  {
+   "path": "items/official/7demonsrising/azure-compute.json",
+   "sha256": "344f69c75e4b5f131639d74b31a327a69512ca799540f135316cd805232edcd2"
+  },
+  {
+   "path": "items/official/7demonsrising/azure-general.json",
+   "sha256": "c755db5039bf13bcab3ee220cd753c26d8e14342532703edbc08e1ea69155cf2"
+  },
+  {
+   "path": "items/official/david-prta/dart-and-flutter-icons.json",
+   "sha256": "8405fef901f87715e5e60eefa6c98c2ca155cdd9b0d953bfa189074a79bb43a5"
+  },
+  {
+   "path": "items/official/yuelfei/deep-learning.json",
+   "sha256": "fa33e56a3836a3a19ff9fb33f5dd476a54806700be7214b4b396dc6d28c10e13"
+  },
+  {
+   "path": "items/official/dwelle/despair.json",
+   "sha256": "9e94c67edfbfbc087380b6959afa0868eeae522817cd2cac172630af9a6cef56"
+  },
+  {
+   "path": "items/official/tvoozmagnificent/coordinates.json",
+   "sha256": "6cfe44f4127f2d0622a1ea1d91305acad4d59f59ed445587a926a1062f774289"
+  },
+  {
+   "path": "items/official/mguidoti/google-icons.json",
+   "sha256": "3a0461bb388164f2a529fc5d68d4148ba70ef55893c2d1e410379d045a6ce501"
+  },
+  {
+   "path": "items/official/mguidoti/original-google-architecture-icons.json",
+   "sha256": "74ffba0f0a5c556c1315fe191d0dec843f6f72050f6ca5c27735f2baba42120d"
+  },
+  {
+   "path": "items/official/jgodoy/network-locations.json",
+   "sha256": "d17b1ac7ed09f731d76a3a06ac1cc7b55c00906ca0e4c507e286bd04bef3610d"
+  },
+  {
+   "path": "items/official/surya-teja-venteddu/make-your-calendar.json",
+   "sha256": "2f9200227113b7d3e57a0746decdb5692b44e064cb8c1e28c71660d11359edb5"
+  },
+  {
+   "path": "items/official/tuckdiaz/internet-service-providers.json",
+   "sha256": "c821b1292c1cc7c25880aefcc9df73c2197a4f499c01a38c99cd5f09ddb5801f"
+  },
+  {
+   "path": "items/official/sketchingdev/banners.json",
+   "sha256": "0b7a46c5b4cf0d71b96aa843b53ccb58f4402e97df929a15ca99c0cb39e3e235"
+  },
+  {
+   "path": "items/official/dmitry-burnyshev/c4-architecture.json",
+   "sha256": "180b9a3e0d5465c517a84dc738df064313c2f2d0e6e8833e77e1cff1fefb0246"
+  },
+  {
+   "path": "items/official/mguidoti/it-tools-logos.json",
+   "sha256": "e5c96d63d1c1f1c0da2a063f52bdfeb5d3a82124e84f335397af07724dec492e"
+  },
+  {
+   "path": "items/official/anna-pastushko/architecture-diagram-components.json",
+   "sha256": "08a2d76b20f7cf7cc0d3e4b3c89132b2f3618d27f7992bb159700fda5636f284"
+  },
+  {
+   "path": "items/official/adamkdean/comms-platform-icons.json",
+   "sha256": "99287efa70cc2836d66c077be7817de5e6a3b4069447f3f6c1269c2aa58933e0"
+  },
+  {
+   "path": "items/official/krustvalentin/printers.json",
+   "sha256": "6ce8da6b3c074383cac33e32f7f745bb2e1ae9ed8fb0b64fb19bfc377cdd56d6"
+  },
+  {
+   "path": "items/official/zesty-lemur/microsoft-apps.json",
+   "sha256": "e65c83dc862c8a5ad7489e5902aae033ca72f50d09dbed82c9204c2c1c37f20d"
+  },
+  {
+   "path": "items/official/amelia/micro.json",
+   "sha256": "9594b06a36c582929a7233533527db42f08165ae2399e86ab542993f0cbfe3da"
+  },
+  {
+   "path": "items/official/schiriki123/playing-cards.json",
+   "sha256": "e4c64954092c44ba05c6fa24dc5a2971c75264285bd5cc97a4f2d399e0cbb026"
+  },
+  {
+   "path": "items/official/kwirke/some-handdrawn-signs.json",
+   "sha256": "dbee5e59f272ed0404c83c453648e0313647ddbdeef255a8ac908ad36b069eba"
+  },
+  {
+   "path": "items/official/https-github-com-papacrispy/uml-library-activity-diagram.json",
+   "sha256": "590880fc5701ade907512c242b95142e59289774348dd9ad7200de40c76f60aa"
+  },
+  {
+   "path": "items/official/egor-romanov/risk-based-test-strategy.json",
+   "sha256": "8ba92028aecb43a0fc72f85f808ede05fc23091f7a1d01d2f4d6c37b579628a5"
+  },
+  {
+   "path": "items/official/wmartzh/data-flow.json",
+   "sha256": "381e043d6d3047ad85ef5ba1480d224b5e2fefb1e1c27882611c896ec9f2443d"
+  },
+  {
+   "path": "items/official/jgodoy/organization-chart.json",
+   "sha256": "84e31fa7ec9a7cd2a0789fe4c05834b957961f5089c0de1a319a3b738f2bcf79"
+  },
+  {
+   "path": "items/official/gabrielamacakova/basic-ux-wireframing-elements.json",
+   "sha256": "97458dddb786e7150afb5742bfeefc35a0ea8bf570221633ce3f286b7306deb9"
+  },
+  {
+   "path": "items/official/dhaval_godwani/webpage-frames.json",
+   "sha256": "192f4ec114d3380a1c0146245d16779158e30bfd220bbe4b41a16939716f75b6"
+  },
+  {
+   "path": "items/official/thrsz/organic-chemistry-basics.json",
+   "sha256": "67004fde7592716bcd7a6ed040c47d8f83f82b68a9c4336ee9da671a2101acec"
+  },
+  {
+   "path": "items/official/econ-graphs/macroeconomics.json",
+   "sha256": "7ef86057e6f41c6e96df3107336c4d44389801a6b27541c865444be56f142275"
+  },
+  {
+   "path": "items/official/dday987/common-home-network-basics.json",
+   "sha256": "b8b8d59fb83b13bea89b94cd5b7d3e79604630e01bd4b6e8e2c8637893e44641"
+  },
+  {
+   "path": "items/official/cespin/domain-driven-design.json",
+   "sha256": "071b12e724abe2bef4613c6582a27efa1e7722aff883aaa582396cbdbe5097bd"
+  },
+  {
+   "path": "items/official/jkattnis/traffic-signs.json",
+   "sha256": "6e056edcc3ab86439bb69b9e18cb471001545095aa66b8d59a5e626470446f30"
+  },
+  {
+   "path": "items/official/jurgen-kattnis/picasso-s-line-drawings.json",
+   "sha256": "f27cc0291bc0f02986243cdb810455db012ffaf12e83ee820355c34591cf237a"
+  },
+  {
+   "path": "items/official/ipedrazas/go-icons.json",
+   "sha256": "b650317fc469eadfa995ae53858b296d415eae94c80dfa762933eb58ebbd4fe0"
+  },
+  {
+   "path": "items/official/https-github-com-patrickcuba/snowflake-iconography.json",
+   "sha256": "0ee93e8093bfc58f9fdf8f03fb75f6fe681da4d322fbd21d1ac6580c0bc8f81e"
+  },
+  {
+   "path": "items/official/cengizhanparlak/code-essentials.json",
+   "sha256": "350173aa77fb26cf31a6f93154186cee7e7b0731c351ff18612294e7bd8bf50d"
+  },
+  {
+   "path": "items/official/patrickcuba/data-vault.json",
+   "sha256": "7de139db4e8b2a1114f667ebb841b513ca7830884282d5f1650de83f0166907c"
+  },
+  {
+   "path": "items/official/ubigene/misc-azure-icons.json",
+   "sha256": "23402346e52c4a9415f261b72296a14844aa4779e94d42ccf9a2df4018bc1e3c"
+  },
+  {
+   "path": "items/official/weareborg/synths-and-fx.json",
+   "sha256": "69cb20bea0bba3c4016d19e4e8218ff602d2fb4ae2edb5a146564f1eb63b042f"
+  },
+  {
+   "path": "items/official/gabrielamacakova/halloween-elements.json",
+   "sha256": "8f5eefa8a9bdfd782e2a8ee32fc88a6a24e81790e6f5a9854736d6e5b4096e23"
+  },
+  {
+   "path": "items/official/rockssk/microsoft-azure-cloud-icons.json",
+   "sha256": "6b707c9b75d04a895ce3d42fcf2afe9043d0a4c2a73b382adc6a6a653c6e9546"
+  },
+  {
+   "path": "items/official/ella/science-chemistry-gcse.json",
+   "sha256": "54b31cf38d1fe4302a012ee5ab6a7b670696e6faf76ccff313f3fe7f8ba6efff"
+  },
+  {
+   "path": "items/official/kabirsinghshekhawat/genealogy-essentials.json",
+   "sha256": "87a0921e26cc2526cfa3b67cdc7aa006f6670eab940bfae38f7a53807702877c"
+  },
+  {
+   "path": "items/official/ibex-technology/web3-crypto-solution-design-v1.json",
+   "sha256": "1ed6a16564f3acf6c96bcdc37d7825e90cc0ce68448e6d99ce47a39ce18a8368"
+  },
+  {
+   "path": "items/official/stuc2010/enterprise-integration-patterns.json",
+   "sha256": "a96e4986e10465f3cbc8d221684366c0c7a949b975af38d28f656568ff06d558"
+  },
+  {
+   "path": "items/official/pixelass/body-builder-kit-1.json",
+   "sha256": "c93db1ef58b9469e2135d535d760b4331a4a5d552ae5cbdaf32395c29b02f1da"
+  },
+  {
+   "path": "items/official/pixelass/character-kit-1.json",
+   "sha256": "83c3d641c236ec3ad2442c27e3609af9558335fc0f16021f5bc0da2fb0d7215c"
+  },
+  {
+   "path": "items/official/pixelass/female-heads-diverse.json",
+   "sha256": "bc390924c8979a8dee31ea8771a8b515a09b721c31086c6d69a8c1be2295c0f0"
+  },
+  {
+   "path": "items/official/pixelass/head-builder-kit-1.json",
+   "sha256": "8512d73d1d91a39ee2171377c5e4ea39a2fd4f942373e1e1e8ab769d03414bc1"
+  },
+  {
+   "path": "items/official/pixelass/male-heads-diverse-1.json",
+   "sha256": "abcf08931fa0d28b81624a2a13631bf103519f60f3ff272d57b551043a71a397"
+  },
+  {
+   "path": "items/official/ad115/music-notation.json",
+   "sha256": "5944196e361a26edc8bc5a497eeac1b08f05663cbf0eb491d28c548966b8b3cf"
+  },
+  {
+   "path": "items/official/gregory/golang-gophers.json",
+   "sha256": "5718bdcb3f7f5fcda9f17a42fe9b76695aedd069696567fa9abc9161349dd4b6"
+  },
+  {
+   "path": "items/official/chuqbach/data-platform.json",
+   "sha256": "c0b22a5f592187be16f92fca34da0a745d6b66a5fce2b38dc6cb1116cd478f18"
+  },
+  {
+   "path": "items/official/aarondiel/logic-gates.json",
+   "sha256": "d8430e5211957296eacfd666297b7b6a64e391b892d038a8cebf5c380f74017d"
+  },
+  {
+   "path": "items/official/pixelass/tools.json",
+   "sha256": "1ddaae647309bc09e20d47ead8018d0d7ef16d2099716b544c6f40c63bd78466"
+  },
+  {
+   "path": "items/official/artem-anufrij-live-de/artem-s-icons.json",
+   "sha256": "2dd5e2ad0cd6fc1d948f1ee1da5647e9a78d29dcd05f4eacc4373a9f7100024c"
+  },
+  {
+   "path": "items/official/tylerkron/event-storming.json",
+   "sha256": "cd1ad476ed0073a23914d6b7453406291160ee8f1d1eaa7eefbfd39b14b1d12a"
+  },
+  {
+   "path": "items/official/manuelernestog/universal-ui-kit.json",
+   "sha256": "b5cc71241ef2f2eb4726c3d7b52b209611841c130686c4cf7c059bba23996370"
+  },
+  {
+   "path": "items/official/jgansaown/ultimate-frisbee.json",
+   "sha256": "3f9ad35596309be33c3b7dfa0d12b27ba97be3293d85631baa4200ebd213e121"
+  },
+  {
+   "path": "items/official/demondarakna/dnd-writing-icons-for-dm.json",
+   "sha256": "1b8be860a15df4aee38464e41a5d0c949338c08663d2993622ca8cacce0be57d"
+  },
+  {
+   "path": "items/official/lowess/kubernetes-icons-set.json",
+   "sha256": "eac80abfae6883893dea8299a0a2d36c025d63dad79ef8f99867b70452bc4ca7"
+  },
+  {
+   "path": "items/official/mayankguptadotcom/wardley-mapping-canvas.json",
+   "sha256": "51187a32cf93ec484c91350f5742a007e1df5c49b3d92a92f6d0585316e46d7f"
+  },
+  {
+   "path": "items/official/dhtoran/stick-people.json",
+   "sha256": "de4b0dc98c2c1feb622bfac4a9ab106956f47fb2c6ac7777048ae42970fd4f02"
+  },
+  {
+   "path": "items/official/kleinpetr/simple-sticky-notes.json",
+   "sha256": "70fce8242ea73b97dcbed4c02a0791015ce440d4e7e36c17681fcfc495148ca0"
+  },
+  {
+   "path": "items/official/molibden/types-and-values-in-javascript.json",
+   "sha256": "533c58205b9a5e0513c161d68e1c1eb6817d5629e6d2a5fa03cfe31880d6d4f6"
+  },
+  {
+   "path": "items/official/dimitrios-fkliaras/clouds.json",
+   "sha256": "af57215886c5d966bfa98f16519d926652e8fc47f2a686c626c1aafb4b48d983"
+  },
+  {
+   "path": "items/official/kbentekik/piping-and-instrumentation-diagram-p-id.json",
+   "sha256": "38bebbf36bd3be9d742815e07ffadc38d08fb1431e9ca7926d27d4a0c7949925"
+  },
+  {
+   "path": "items/official/alexandertsukanov/elk-stack.json",
+   "sha256": "72aec92b4fd4f80491072e675a7a49068c802ffba7bee22e314e5fc3a1c03b77"
+  },
+  {
+   "path": "items/official/odraghi/vmware-architecture-design.json",
+   "sha256": "be17937034941cdf9346eea3711561bebfb4c1dc5176cb893f6de83a6087c377"
+  },
+  {
+   "path": "items/official/boemska-nik/kubernetes-icons.json",
+   "sha256": "1b7f4f33681d36aedba17e9add12966a998431d6882a6d761730e18d8cc884f5"
+  },
+  {
+   "path": "items/official/aimpizza/3d-coordinate-systems-graphs.json",
+   "sha256": "1e29101bbc5de487993aa0cbc67566a7ccb1eeae72d52b95484fce8b969536c4"
+  },
+  {
+   "path": "items/official/erlina/data-processing.json",
+   "sha256": "d8838616719082e4f74e0ccb5c51234b6c518f1e197d2496ff3ca77948e6617d"
+  },
+  {
+   "path": "items/official/gianpaima/stick-figures-collaboration.json",
+   "sha256": "8825f5b15db125a9ec0b2b8f06b75d4a3bd81aeb44e5c064c752c253724c1a5a"
+  },
+  {
+   "path": "items/official/stojanovic/aws-serverless-icons-v2.json",
+   "sha256": "554fdf808af91c43c2608db8dfce73fed8fe3118f55e45e5108ae7cb529dd691"
+  },
+  {
+   "path": "items/official/alluvion/montessori-basic-grammar-symbols.json",
+   "sha256": "1542a2b61068e24c3342edf97026c8f8e8202674a9c7ac9606ca686f8190836c"
+  },
+  {
+   "path": "items/official/nemeki/ttrpg-clocks.json",
+   "sha256": "b3844bfb084485056a3ad8417dceed8075b031676ab7cf996a072234bedebe15"
+  },
+  {
+   "path": "items/official/pfound/football-icons.json",
+   "sha256": "fc95238f14f2f7167538066800a8d353115e5b821d3fc7adaff73ac2951b2487"
+  },
+  {
+   "path": "items/official/wictorwilen/microsoft-365-icons.json",
+   "sha256": "951a62d5d0b98f41e471e62177edfc0664621a13a548cda87a186cc30c540ffb"
+  },
+  {
+   "path": "items/official/webkul/ecommerce-mobile-ui.json",
+   "sha256": "ba8b5b7874265b03fcb8255cf31df2e25f60a2607cd5b8f6c0541a34f79cb801"
+  },
+  {
+   "path": "items/official/damitr/astronomical-symbols.json",
+   "sha256": "ff4d98b2ea1c119e9ac2d9904c8f0e5ac87f36adc0ad86697c76bb75b3b12b06"
+  },
+  {
+   "path": "items/official/r4z4/elixir.json",
+   "sha256": "7794d1f941ab7372b8a5f649a3882bdcf2b5c3e01d104ed81c5833b0e3ddf4b0"
+  },
+  {
+   "path": "items/official/mateuszbaransanok/it-icons.json",
+   "sha256": "6b8ddec5dcd45fd5c0fb6ba6edf9bc29efb83d69fd9b6ece0caf05a2687d74c8"
+  },
+  {
+   "path": "items/official/monty/an-adjustable-arrow-shape-that-can-be-modified-in-a-number-of-ways-to-suit-different-use-cases.json",
+   "sha256": "26106b9c5f0cd7c82f1cfbd20fe4fa3fbcb5bdaf6287765756f6e1c6b69adb0d"
+  },
+  {
+   "path": "items/official/gabrielamacakova/presentation-bundle.json",
+   "sha256": "7e7048ee56d721fba371332e32965cacce45b09a6be0d2f25b57021b20e74a9e"
+  },
+  {
+   "path": "items/official/aocgame/domainstorytelling.json",
+   "sha256": "343dbc80eb578f0ad0e5ebdee277f9cb511ad9297252993052a9bc4c8f748725"
+  },
+  {
+   "path": "items/official/pratheeshpm/basic-system-design.json",
+   "sha256": "6089a4d86ee3c346e765b1b5105fc7616683a0dd7b0e8516b4a6e71921488530"
+  },
+  {
+   "path": "items/official/matthijssloep/fair-web-icons.json",
+   "sha256": "2038ef73c23d4769f1e7356bc37adf9022c46044350fad2d267389969ec798be"
+  },
+  {
+   "path": "items/official/booknerdonmars/bullet-journal-trackers.json",
+   "sha256": "e775953ce262a8cdc2e07859a40b30dc1f33e27bb8badfda660fb555d78426b1"
+  },
+  {
+   "path": "items/official/itsmestefanjay/camunda-platform-icons.json",
+   "sha256": "8a1e27bddacb7d67a4bdbdd7c11dd2cfa0059eb8594872634aa60a4e064242ed"
+  },
+  {
+   "path": "items/official/gabrielamacakova/christmas-essentials.json",
+   "sha256": "bf61ce9b90ffb33352f2a660d6178ef4faed986dd35b26f11ce77a2326e4b32f"
+  },
+  {
+   "path": "items/official/moochin/simple-characters.json",
+   "sha256": "7184d113a6530941ff0f9086f5f24f49d64e3de020cf9b211dfccd38dc03bfb4"
+  },
+  {
+   "path": "items/official/finfin/flow-chart-symbols.json",
+   "sha256": "ac850a406106e471d4aa12574e242b8613f6bafacd461db8083088b373e0ea1e"
+  },
+  {
+   "path": "items/official/mrmaffen/dnd-ttrpg-battle-map-creature-tokens.json",
+   "sha256": "29ee88a5abaa67dfdd02cf5f4a8250572b3b25e5e16a1791c0f358adeec846a8"
+  },
+  {
+   "path": "items/official/martinberger-ch/oracle-cloud-infrastructure-icons.json",
+   "sha256": "f407ce64d2fc0593589e558e4b7be7e8757b4dbab14f77f51ddcf87c40443c7b"
+  },
+  {
+   "path": "items/official/hartmut-co-uk/kafka-streams-topology-design.json",
+   "sha256": "041279705f5e32819cea5a8df95a74c6aac0a919269a1a48aca58623c280a1e7"
+  },
+  {
+   "path": "items/official/ewels/nextflow-seqera-nf-core.json",
+   "sha256": "f47d9dd91fe5bb614ccbc210b066adb19951af13c2b7ff205720242a102f542d"
+  },
+  {
+   "path": "items/official/childishgirl/aws-architecture-icons.json",
+   "sha256": "a724358272cf1fc7fd811dd5f9b6c8a42af2073eca736dea5d4497a973bde17d"
+  },
+  {
+   "path": "items/official/mwc360/microsoft-fabric-architecture-icons.json",
+   "sha256": "45fa36f97989a9839a0d4458bcd5eee5cce1d5422925602b19015021ca120733"
+  },
+  {
+   "path": "items/official/https-github-com-jinmingyi1998/collective-operation.json",
+   "sha256": "43f41400624000054f528e327e35d9dd3cecd6ca1fa9caec7518818e17840df2"
+  },
+  {
+   "path": "items/official/fortijosh/fortinet.json",
+   "sha256": "307af9a426832bf0f85eaeac613cd0fee15894110a94061f9ec566af44345dad"
+  },
+  {
+   "path": "items/official/mattias-fjellstrom/hashicorp.json",
+   "sha256": "118e5896a430eeb695cae650b73d4b215cd27a886c1c5afa8e6224b7379d72d2"
+  },
+  {
+   "path": "items/official/devdaejungyoon/github-actions.json",
+   "sha256": "3bc1d28657c4fe7249418b6f6466b806e83504e3577341ac69e350bc74a27efc"
+  },
+  {
+   "path": "items/official/adrigrana/japanese-pitch-accent-graphs-template-collection.json",
+   "sha256": "4b651c286e6057780babc91fba35eeda7ad1eaac28eb1bbc9344606aedb8bdaf"
+  },
+  {
+   "path": "items/official/dmtwng/archimate-application-layer.json",
+   "sha256": "67ae02c7dd29dfe93c2759aad617b094ef9e330e24f5297357ce2e52b95528c9"
+  },
+  {
+   "path": "items/official/toman/checkmarks.json",
+   "sha256": "affcf870c5bb88f91b1451f9b80c5f95227f1631c5fc67f0048c27ea32c316a1"
+  },
+  {
+   "path": "items/official/kvmet/chickens.json",
+   "sha256": "cce43d61c1efc6cefe8fd278e678e84c634871ad188d13c47a321aa9c7c344f9"
+  },
+  {
+   "path": "items/official/jordangeurtsen/uml-deployment-diagram.json",
+   "sha256": "510d4eb9895fe370c49254b124b353834d4a732e0d3ca3fb02a860ffb48719a6"
+  },
+  {
+   "path": "items/official/jordangeurtsen/uml-component-diagram.json",
+   "sha256": "16c96135203e2f9615ef9d2a86df25a87b2a7b43640a284500003e784babb6d5"
+  },
+  {
+   "path": "items/official/infamousjoeg/cyberark.json",
+   "sha256": "f65db246a04907ab3b0dee9221d48532bf8e20bd258494280feea645f1d90c8b"
+  },
+  {
+   "path": "items/official/simonthomine/pathology.json",
+   "sha256": "07b3606c701991ce463dc1133d274b96e4e3711b47febe16d3c6640cfbb2613b"
+  },
+  {
+   "path": "items/official/timothygalvin/excalidraw-archimate-template.json",
+   "sha256": "1c5a17345fa4f5397a496393a3daefe44f8f4ffdcc9a6dce8c426ef2c512296e"
+  },
+  {
+   "path": "items/official/https-github-com-tomorrowx-dev/tomorrowx-composable-agentic-platform-cap.json",
+   "sha256": "60e63a46b46262dd66e56157b79f8e9f36f0c6351ac32bf753dc868d5b03cc35"
+  },
+  {
+   "path": "items/official/lukethorp/databricks-architecture-icons.json",
+   "sha256": "f23728823a74d1a28e712d396cd635be49d9d6a8b75941490683db0652892049"
+  },
+  {
+   "path": "items/official/jatinkrmalik/atlassian-product-suite.json",
+   "sha256": "6d5b11c3b34e9bb05aae7958af1f9d3c0d166d0e86b0737b9385300c4f75121d"
+  },
+  {
+   "path": "items/official/datavizfairy/dashboard-charts.json",
+   "sha256": "4be9e01ded8e8eff024365941f35e51ac65c6ce34d1a0fc067b8d45b24d774f3"
+  },
+  {
+   "path": "items/jonra-agentic-flows/agentic-flows-casual.json",
+   "sha256": "9b0e5d07e30fb491b765b2db2ee95c034f08e8f61860012beb19e24e76e74fc6"
+  },
+  {
+   "path": "items/w-gitops/homelab-icons-symbols.json",
+   "sha256": "0259830b697e05c362bb56c93a8f657869544b4298fb6d3d57716979ce3c96fe"
+  },
+  {
+   "path": "items/clainchoupi/assets/importAsLib/logosAsLib.json",
+   "sha256": "4edbd4fdd54a0349fd97cfae67a39aa2ea95fe6c3e5d020426934d8942947c9b"
+  },
+  {
+   "path": "items/jordanbrauer/jorb.json",
+   "sha256": "1c52fe9924fa8d8dce7f946d465000e26ca6c60e2e33dfcf0e8631a5b42515b8"
+  },
+  {
+   "path": "items/hon668-hvac/library/hvac-excalidraw-library-en-v1.0.0.json",
+   "sha256": "d16019bd3c99c125d7adec27fc3e9e4df2a35a8271e6ba163304048049b4d5b8"
+  },
+  {
+   "path": "items/hon668-hvac/library/hvac-excalidraw-library-zh-v1.0.0.json",
+   "sha256": "a98a442e9f61642bdb98135d06fa21c217e622124d0aede267a40fbab4c0487a"
+  },
+  {
+   "path": "items/marcrow-pentest/pentest.json",
+   "sha256": "77443923fc324b1c7ca137ca72d285167c2ef261bdc8fbe2953f8bb4abd6d526"
+  },
+  {
+   "path": "items/justgoscha/interactions/dist/interactions.json",
+   "sha256": "c3e3c2b61ab0b931d41df8c73ca71faa51bfebf1edd1adff3a8f6d3f46c5a9c9"
+  },
+  {
+   "path": "items/tonac-qa/packages/excalidraw/tests/fixtures/fixture_library.json",
+   "sha256": "ee9efe70240cfedd33de81a40cc8c2993cfa96d3f197b468e67ae263ff2555d2"
+  },
+  {
+   "path": "items/lucide/a.json",
+   "sha256": "5c2d83eff604cae46eadf96c4e739721b7145e21852f623953511e8160418e2d"
+  },
+  {
+   "path": "items/lucide/b.json",
+   "sha256": "5576bdf3ab2f928f1b6d51a1af5dc005b1d8a51f273af1e7e2e056705be99680"
+  },
+  {
+   "path": "items/lucide/c.json",
+   "sha256": "10b48c0affe590a89ed472985f1c8aa1aab3b69e66265436511657e180569027"
+  },
+  {
+   "path": "items/lucide/d.json",
+   "sha256": "cbb664616ac1354a91d80c2f6b82de80b149bf50792b4219297c803e426af51a"
+  },
+  {
+   "path": "items/lucide/e.json",
+   "sha256": "f22dfce0be6c7e74bde4368a4091886e0a16e2c0d44212fdc2ff880e5659f893"
+  },
+  {
+   "path": "items/lucide/f.json",
+   "sha256": "f24ee641dd12476c4b96b6a6d76c41284505de7575e99b5ea21cbddae3aa2572"
+  },
+  {
+   "path": "items/lucide/g.json",
+   "sha256": "9966dcb31ae968e8c6af22dff17d7dac4a5788a3ef514890c8c8bda352f649a3"
+  },
+  {
+   "path": "items/lucide/h.json",
+   "sha256": "d7724f3b4d993a402845915cf0b5456f130b9b4c4be479407029426e90df4120"
+  },
+  {
+   "path": "items/lucide/i.json",
+   "sha256": "e5be04b9de12e49584833c4bff3e98c4c2051dd466d7afc02529c7e60304e3b2"
+  },
+  {
+   "path": "items/lucide/j.json",
+   "sha256": "2b7f8b54355d629288a6b269753fa78bdab6d5a1beac63e163147caac1af851d"
+  },
+  {
+   "path": "items/lucide/k.json",
+   "sha256": "fde57a4af5b94c3a125d4eb5d10b3d997f6cd5bb19eac4ca76892a9cadc44ce5"
+  },
+  {
+   "path": "items/lucide/l.json",
+   "sha256": "1a35cfd79f46553662c21d34d80b71e1c446d5b8a26e0cd87efd020cd2e7c6ff"
+  },
+  {
+   "path": "items/lucide/m.json",
+   "sha256": "036e7b720bbdec1ca337efc7b4b4a303ac211e5a33c02f4206cf2a3d8551f32c"
+  },
+  {
+   "path": "items/lucide/n.json",
+   "sha256": "c23505205cffc85bc85a466dbdb066ea03422051a9feecddd6a322687172c0a4"
+  },
+  {
+   "path": "items/lucide/o.json",
+   "sha256": "0ac6905228c3d943316d9953199ee25b27ce4fa2ff37ae3d9b239fd2af0bba2a"
+  },
+  {
+   "path": "items/lucide/p.json",
+   "sha256": "ffe1fc0e3c832da44ea4d8a76baf66563a0bffd6e5c3534b0b8a9409562ca4ad"
+  },
+  {
+   "path": "items/lucide/q.json",
+   "sha256": "2520d45cee7d6b3071e417dd28d0e790f0061726ac786c56dd5da3563990d32f"
+  },
+  {
+   "path": "items/lucide/r.json",
+   "sha256": "1e33c075e87a53a7c2732b9aa1bda604f85aefe483b56d1cdc68019c097d9171"
+  },
+  {
+   "path": "items/lucide/s.json",
+   "sha256": "5d89dac1a3086cecfce46bed1f6dac4f1d7ba72be050baadee2eaa355de46ac5"
+  },
+  {
+   "path": "items/lucide/t.json",
+   "sha256": "e9a78f20526d1224e7accde0b036280acd7531aaa9d65e2445f1a1b5f92ef3e8"
+  },
+  {
+   "path": "items/lucide/u.json",
+   "sha256": "4fdcdb48c18c636965308352c0262547131d9ce030a467b6b0126a0b90f6b06d"
+  },
+  {
+   "path": "items/lucide/v.json",
+   "sha256": "2b1062e2bf1933018a047eb668a45b08f0c042950fd23119135f0a2260fc572f"
+  },
+  {
+   "path": "items/lucide/w.json",
+   "sha256": "6c137742e614f58f9d0928a429ad8d5a5c4e064a13adc508a47b84c981e20de1"
+  },
+  {
+   "path": "items/lucide/x.json",
+   "sha256": "4b8d3bf0916af0b5d613093234152b26877bbaf0a55288810227d23e5d3a226c"
+  },
+  {
+   "path": "items/lucide/z.json",
+   "sha256": "678520f51355860b7b4b9735666c9fa3f6ec14a82e79dfe10d07d88a98a94745"
+  }
+ ]
+}

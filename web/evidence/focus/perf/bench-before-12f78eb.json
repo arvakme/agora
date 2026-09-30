@@ -1,0 +1,52 @@
+{
+  "label": "before",
+  "agents": 18,
+  "elements": 500,
+  "seconds": 5,
+  "results": {
+    "on/idle": {
+      "fps": 4.6,
+      "p50": 100,
+      "p95": 1500,
+      "over20ms": 22,
+      "mainMsPerFrame": 238.21,
+      "mainMsPer60Hz": 26.2,
+      "tracedFrames": 33,
+      "wsMsPerFrame": null
+    },
+    "on/pan": {
+      "fps": 7.8,
+      "p50": 116.6,
+      "p95": 950,
+      "over20ms": 29,
+      "mainMsPerFrame": 167.67,
+      "mainMsPer60Hz": 24.03,
+      "tracedFrames": 43,
+      "wsMsPerFrame": null
+    },
+    "off/idle": {
+      "fps": 60,
+      "p50": 16.7,
+      "p95": 16.7,
+      "over20ms": 0,
+      "mainMsPerFrame": 0.4,
+      "mainMsPer60Hz": 0.4,
+      "tracedFrames": 305,
+      "wsMsPerFrame": null
+    },
+    "off/pan": {
+      "fps": 120.4,
+      "p50": 0,
+      "p95": 16.7,
+      "over20ms": 0,
+      "mainMsPerFrame": 0.41,
+      "mainMsPer60Hz": 1.27,
+      "tracedFrames": 939,
+      "wsMsPerFrame": null
+    }
+  },
+  "overlayMsPerFrame": {
+    "idle": 25.8,
+    "pan": 22.76
+  }
+}

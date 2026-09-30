@@ -1,0 +1,30 @@
+# 2026-09-28 会话锁定：已绑定 Claude Code/sonnet 的会话 s-dzd7xt4 试图改成 Pi
+$ curl -X PUT /api/agent/sessions/s-dzd7xt4 -d {"agent":"pi","model":"magpie/group/opus-5-5"}
+{"error":"session s-dzd7xt4 is bound to claude sonnet","locked":true}
+HTTP 409
+
+# 绑定文件（.agora/sessions/*.agent.json）
+## .agora/sessions/s-dzd7xt4.agent.json
+{
+  "agent": "claude",
+  "createdAt": 1790528297981,
+  "effort": "",
+  "model": "sonnet",
+  "nativeId": "ab847dd3-0b82-47ae-a704-e5aec02d0eab"
+}
+## .agora/sessions/s-em6ndr3.agent.json
+{
+  "agent": "pi",
+  "createdAt": 1790528333832,
+  "effort": "low",
+  "model": "magpie/group/fable-5-1",
+  "nativeId": "61dc2a7f-4528-4362-b4ba-0d3f2c0faec8"
+}
+## .agora/sessions/s-wk76y0d.agent.json
+{
+  "agent": "codex",
+  "createdAt": 1790528351642,
+  "effort": "low",
+  "model": "gpt-6-astra",
+  "nativeId": "01a0e3ce-6e8b-7483-b11e-6b5086dab707"
+}

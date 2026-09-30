@@ -1,171 +1,208 @@
 # Agora
 
-多 Agent 和人待在同一间房里的聊天后端。新消息会叫醒房间里的 Agent；每个 Agent 串行跑 turn，突发叫醒合并成一轮，避免 N 条消息打出 N 次推理。项目要解决的是多 Agent 协作里的两类失败——抢答碰撞和脑判失误——并把「时间窗上的竞态」交给代码、「语义上的对错」交给模型。目前完成到 Phase 7：房间 / 消息 / WebSocket / Redis 叫醒调度，一张 LangGraph（小模型 triage、大模型 `reply`/`claim`、代码节点 freshness HOLD、提交时事务内新鲜度校验与逐字复读拦截、按 seq 锚定的 `task_key`、`llm_calls` 账本、把 `send_anyway` 当确认而非跳过的 hold token、房间级的 agent-only 循环上限），计数游戏 / one-of-us 两条真模型协调测试，BYOA——同一张图跑在用户自己的 Computer 上，服务端不持有用户的模型 key——可选的云端 K8s Job 宿主（未开 k8s 时回退进程内），`GET /rooms/{id}/digest` 把房间沉淀为 Markdown brief（transcript / moderated 房间的决策时间线 / active claims / 模型花费，纯格式化零模型调用），以及 **moderated 房间**：指定一名 moderator，落地消息默认只叫醒主持；主持用同一张图上的 `decide` 工具点名 / 开口 / 沉默，`@Name` 是唯一写死的点名协议。没有前端，演示靠 CLI、日志和测试。
+**每个项目自带一个 Agora：在项目的架构图上，和你自己选的 coding agent 讨论设计，再一键回到终端接着写代码。**
+
+*A per-project architecture canvas where you and your own coding agent (Pi, Claude Code or Codex) discuss the design, then continue the very same session in the terminal.*
+
+![Agora 演示：让 Claude Code 改代码和架构图，指针跟着改动在图上移动，轨迹里展开一次工具调用](docs/media/agora-demo.gif)
+
+在项目目录里运行 `agora up`，就得到只属于这个项目的本地服务：架构图、评论、会话记录都存在项目的 `.agora/` 里，跟着代码一起提交、克隆、切分支。
+
+## 为什么
+
+- **架构讨论和开发是脱节的。** 图画在白板工具里，代码写在终端里，讨论完的结论要靠人搬运。
+- **Agent 不记得项目是怎么定的。** 每次开新会话都要重新解释模块怎么分、为什么这么分。
+- **Agent 的改动不可见。** 它改了哪些文件、落在架构的哪一块、有没有改到计划之外，只能事后翻 diff。
+
+Agora 把这三件事放到同一张图上：图就在仓库里，agent 能读能改；它写代码时，图上的指针告诉你它正在动哪一块。
+
+## 核心能力
+
+### 1. 一个项目一个 Agora，数据跟着代码走
+
+`agora up` 在当前目录初始化 `.agora/` 并起本项目专属服务（只监听 `127.0.0.1`，不同项目各占一个端口）。画布是标准 `.excalidraw` 文件，评论是 JSON，键排序、内容不变就不重写，git diff 可读。会话记录、运行状态和分享记录默认不提交。格式见[项目存储](web/docs/project-storage.md)。
+
+![画布与会话并排：左边是项目的架构图和评论钉，右边是 Claude Code 会话](docs/media/overview.png)
+
+### 2. 你自己的 coding agent，平级、会话锁定
+
+每个会话开始时从 **Pi / Claude Code / Codex** 里选一个，连同模型和强度一起锁定。会话就是这个 CLI 自己的原生会话，Agora 不另存对话，而是跟随 CLI 的会话日志。agent 通过 `agora` skill 调 `agora canvas read / apply / link / anim` 读图、改图，每次改图都是一批可撤销的修改。画布上的评论可以直接「交给 Agent」，答复会贴回评论线程。见 [Agent 会话](web/docs/agent-sessions.md)。
+
+![新会话先选 agent、模型和强度，选定后不能更改](docs/media/choose-agent.png)
+
+### 3. 一键在终端继续，双向同步
+
+「在终端打开」用同一个原生会话 id 起交互式 CLI（`claude --resume`、`pi --session-id`、`codex resume`），在本项目专属的 tmux 服务器里起，再用 Kitty（没有就 Terminal.app）打开窗口。你在终端里说的话、agent 的回复和工具调用都会出现在面板上；从面板发的消息会等 agent 这一轮结束、且没有人占着终端的输入（接管了，或挂着一个可写窗口）时粘贴进去，队列不丢。
+
+![终端已接管：面板显示 tmux attach 命令，对话继续同步](docs/media/terminal.png)
+
+### 4. 进度指针：AI 正在改架构图的哪一块
+
+给节点关联代码路径（glob，存在元素的 `customData.codePaths` 里，随图提交），可以手动设，也可以让 agent 按目录结构批量关联。agent 读写哪个文件，它的小人就走到这个文件所属的节点上干活（小人就是指针，见[工位视图](web/docs/workstation.md)）；不属于任何节点的文件在图外托盘。终端里发生的改动同样驱动它。映射规则见[进度指针](web/docs/progress-pointer.md)。
+
+![指针停在「浏览器」节点上，点开是这个节点最近改动的文件和所在轮次](docs/media/pointer.png)
+
+### 5. 轨迹逐步可查
+
+「对话 / 轨迹」两种视图（信息结构取自 DeepSeek Harness）：每轮的模型、强度、输入 / 输出 / 缓存 tokens、耗时、花费；时间轴总览；每次工具调用可展开看完整输入、输出、改到的文件和起止时间。
+
+![轨迹视图：时间轴、每轮用量，展开的 Edit 调用显示完整输入](docs/media/trajectory.png)
+
+### 6. 经 quietharbor.de 分享给别人只读评论
+
+`agora share create --for 1d`（或顶栏「分享」）经 Cloudflare Tunnel 给一块画布开一个独立子域名，访客只能看图、读评论、发评论和回复；改图、会话、终端、代码路径和本地路径都不下发。到期或撤销后 DNS 记录和隧道一起删除。域名来自你自己的 Cloudflare zone（作者本机用的是 `quietharbor.de`）。没有账号也行：`agora share create --quick` 用 `cf tunnels quick-start` 开一个临时 trycloudflare.com 地址（一次一个分享，撤销或 `agora down` 即失效）。想把画布交给别的开发者：`agora share export` 导出分享包（访客页也有「导入到我的 Agora」），对方 `agora import` 就成了他项目里的新画布，评论作为只读历史；**分享包一旦给出去就收不回来**。见[分享](web/docs/sharing.md)。
+
+| 作者：选画布和有效期 | 访客：只读画布，可评论 |
+|---|---|
+| ![分享弹层](docs/media/share.png) | ![访客页](docs/media/guest.png) |
+
+## 架构
 
 ```mermaid
 flowchart LR
-  subgraph clients [接入]
-    CLI[agora CLI / curl]
-    OAuth[GitHub OAuth + JWT]
+  subgraph browser [浏览器]
+    UI[Agora 页面<br/>Excalidraw 画布 · 会话 · 轨迹 · 指针]
   end
-  subgraph server [FastAPI 服务端]
-    API[REST + WebSocket]
-    Scheduler[唤醒调度器<br/>open 全员 / moderated 主持]
-    Ledger[(llm_calls 成本账本)]
+  subgraph project [你的项目目录]
+    Server[本项目的 agora 服务<br/>127.0.0.1:随机端口]
+    Files[(.agora/<br/>canvases · threads · sessions · config)]
+    subgraph tmux [tmux -L agora-项目哈希]
+      TUI[交互式 CLI<br/>claude / pi / codex]
+    end
+    Headless[无头续接<br/>claude -p · pi -p · codex exec]
+    Logs[(CLI 原生会话日志<br/>~/.claude · ~/.pi · ~/.codex)]
   end
-  subgraph brain [同一张 LangGraph]
-    Triage[triage 节点<br/>小模型: me/each/one-of-us]
-    Loop[工具循环节点<br/>大模型: reply/claim/decide]
-    Fresh[freshness 节点<br/>过期则 interrupt-HOLD]
+  subgraph share [分享]
+    Guest[访客浏览器<br/>子域名.quietharbor.de]
+    CF[cf tunnels run<br/>Cloudflare Tunnel]
+    Gateway[分享网关<br/>白名单路由]
   end
-  PG[(Postgres<br/>消息/认领/checkpoint)]
-  RD[(Redis<br/>pub/sub + hold token)]
-  subgraph hosts [两种 Computer]
-    K8sJob[云端: K8s Job]
-    Daemon[BYOA daemon<br/>用户自己的 key]
-  end
-  CLI --> API
-  OAuth --> API
-  API --> PG
-  API --> RD
-  RD --> Scheduler
-  Scheduler --> K8sJob
-  Scheduler --> Daemon
-  K8sJob --> brain
-  Daemon --> brain
-  brain --> API
-  brain --> Ledger
+
+  UI <-->|HTTP + SSE| Server
+  Server <-->|原子写 + 版本校验| Files
+  Server -->|发消息| Headless
+  Server -->|粘贴 / 托管| TUI
+  Headless -->|agora skill<br/>agora canvas read/apply/link| Server
+  TUI -->|agora skill| Server
+  Headless --> Logs
+  TUI --> Logs
+  Logs -->|每 0.4s 跟随| Server
+  Server -->|改图请求| UI
+  Guest -->|HTTPS| CF --> Gateway -->|一块画布 + 评论| Files
 ```
 
-图中 OAuth 为规划中的准入层，尚未实现。云端宿主默认仍是进程内 `DirectWorld`；打开 `AGORA_K8S_ENABLED` 后，同一条 per-agent 车道会为 `computer_id` 为空的 Agent 创建一个 Job（`python -m brain.job`，cluster token + `HttpWorld`）。BYOA daemon 不变。
+- 画布由页面持有：`agora canvas apply` 经服务转给最近连接的页面执行（校验 schema、引用和新鲜度），结果写回 `.agora/`。
+- 对话以 CLI 自己的会话日志为准；服务跟随日志，把终端和面板两边的轮次都推给页面。
+- 分享网关只通到被分享的那一块画布和它的评论；作者自己的应用不在隧道后面。
 
-Inspired by Cumora (github.com/yetone/cumora); independently designed and implemented from scratch.
+## 快速开始
 
-设计说明见 [docs/design.md](docs/design.md)。计划中的[本地 Agent 工作台](docs/canvas-workbench-plan.md)由 Pi Master 协调专属 tmux 中可 attach 的原生 CLI，Docker 仅承载后端；产品尚未实现，画布范围与许可待定。开发入口见 [AGENTS.md](AGENTS.md)，任务进度见 [Agora Project](https://github.com/users/arvakme/projects/2)。
+依赖：
 
-## 本地原生问答（agora_ask）
-
-在专属 tmux 里向 Codex CLI 问一个问题，等原生 JSONL 终态，回答打印到终端并写入 Postgres。这是当前第一条端到端原生控制链路，不是 HTTP API，也不做多会话并发。用法、环境变量与限制见 [docs/agora-ask.md](docs/agora-ask.md)。
-
-```bash
-docker compose up -d --wait
-export AGORA_DATABASE_URL=postgresql://agora:agora@127.0.0.1:5433/agora
-uv run python -m agora_ask "帮我看看这段代码有没有问题"
-```
-
-## 怎么跑
-
-本机若 5432 已被占用，compose 把 Postgres 映到 **5433**（容器内仍是 5432）。Redis 用 6379。
+| 依赖 | 用途 |
+|---|---|
+| [uv](https://docs.astral.sh/uv/)（Python 3.12+） | 服务和 `agora` 命令 |
+| Node 24（写在 `web/mise.toml`，装了 [mise](https://mise.jdx.dev) 会自动选用） | 构建前端 |
+| tmux | 「在终端打开」 |
+| 至少一个已登录的 agent CLI：`claude`、`pi` 或 `codex` | 会话 |
+| 可选：`cf`（没装时自动用 `npx cf@1.0.0-beta.5`，`AGORA_CF_VERSION` 可改；先 `npx cf auth login`）+ 自己的 Cloudflare 域名 | 分享 |
 
 ```bash
-cd agora
-docker compose up -d --wait
+git clone https://github.com/arvakme/agora.git ~/code/agora
+cd ~/code/agora
 uv sync
-# 变量说明见仓库根目录 .env.example
-export AGORA_DATABASE_URL=postgresql://agora:agora@127.0.0.1:5433/agora
-export AGORA_REDIS_URL=redis://127.0.0.1:6379/0
-uv run uvicorn server.main:app --reload --port 8000
+cd web && npm ci && npm run build && cd ..      # 用 mise 时：mise exec -- npm ci，以此类推
+
+cd ~/code/my-service                            # 你的项目
+~/code/agora/bin/agora open                     # 初始化 .agora/，起本项目服务并打开浏览器
+~/code/agora/bin/agora status                   # 在跑就打印地址、端口、pid
+~/code/agora/bin/agora down                     # 停掉服务和本项目的 tmux
+~/code/agora/bin/agora doctor [--fix]           # 检查本机数据；--fix 从备份和本机注册表放回丢了的东西
 ```
 
-另开一个终端跑 demo（进程内拉起应用，不依赖上面的 uvicorn，但仍要 Postgres + Redis）：
+- 删除的画布和会话进「回收站」，30 天内可恢复（刷新、重启后也行）；「所有画布」底部还有「会话历史」，可以按时间、agent、主题、画布找会话，也能把本机找到的原生会话重新导入。
+- 仓库移动、`cp -r` 复制、重新 clone 都有处理：移动后 Pi 会话的日志跟着挪；副本里的会话只读、可分叉继续；别的机器建的会话显示成只读卡片。`git clean -fdx` 删掉的本机数据（会话绑定、改图记录、回收站）由仓库外的每日备份和本机注册表兜底：`agora doctor --fix`。见[项目存储](web/docs/project-storage.md)。
+
+- 首次打开会建一块以项目命名的空画布和一个会话；会话里的「画出这个项目的架构」按钮让推荐的 agent 看一遍项目、把架构画上去（也可以自己选 agent、自己写第一句话）；「看一个示例」会把示例图作为另一张画布打开。
+- 绑定会话时会自动为该 agent 安装 `agora` skill（旧的 `agora-canvas` 链接会被换掉）；也可以手动 `agora skill install --agent claude|codex|pi|all`（Claude Code 链接到 `.claude/skills/`，Codex 链接到 `.agents/skills/`，Pi 每次启动带 `--skill`；链接写进 `.git/info/exclude`，不改全局配置）。
+- 把 `~/code/agora/bin` 加进 `PATH` 后可以直接用 `agora up` / `agora open`。`agora up` 只起服务并打印地址；`agora open --dev` 走 vite 热更新，开发 Agora 本身时用。
+
+分享需要 `cf`（Cloudflare CLI；没装就用固定版本的 `npx cf`），并已 `npx cf auth login`（凭据归 `cf` 管，Agora 不存也不读）；`AGORA_SHARE_DOMAIN` 指定分享用的域名（账号里只有一个域名时可省）：
 
 ```bash
-uv run python scripts/demo_phase1.py          # 叫醒 / 合并，走 turn 桩
-
-# 真模型 demo：本地 OpenAI 兼容中继，不需要真实 key
-export OPENAI_API_KEY=relay-no-key
-export OPENAI_BASE_URL=http://192.168.1.100:8317/v1
-export OPENAI_API_BASE=$OPENAI_BASE_URL
-export AGORA_SMALL_MODEL=gpt-5.6-luna          # triage，默认即此
-export AGORA_BIG_MODEL=gpt-5.6-terra           # 工具循环，默认即此
-uv run python scripts/demo_phase2.py           # one-of-us 介绍房间
-uv run python scripts/demo_phase7.py           # moderated 房间：主持点名 + @ 直通 + 拒答 pass 再点名
-uv run python scripts/demo_byoa.py             # 云端 + 本地 daemon，然后把 daemon 杀掉
+agora share create --for 1d        # 默认分享聚焦的画布；--canvas <id|名字>；--for 10m|2h|1d|7d|forever
+agora share list
+agora share revoke <id>            # 或 --all
 ```
 
-## BYOA 快速开始
+## 评测
 
-Computer 是宿主：`computer_id` 为空的 Agent 走进程内云端车道；有值的走那台机器上的 daemon。daemon 用自己的 `OPENAI_API_KEY` 跑同一张图，只通过 `/runtime/*` 读写世界，服务端看不到 key。
+固定的 7 类改图任务，每类跑 3 次，逐次检查：通过 schema 校验、新鲜度、改对元素、没有误伤、撤销后完全还原。最近一次（2026-09-28，`claude-sonnet-5`）：
 
-另开一个终端（服务已经在 8000 端口）：
+| 任务 | 通过 | 平均耗时 | 平均花费 |
+|---|---|---|---|
+| T1 改名 | 3/3 | 5.7 s | $0.0088 |
+| T2 新增节点并连线 | 3/3 | 8.7 s | $0.0092 |
+| T3 给箭头加标签 | 3/3 | 4.6 s | $0.0039 |
+| T4 对齐两个节点 | 3/3 | 26.2 s | $0.0232 |
+| T5 删除节点并重连 | 3/3 | 4.8 s | $0.0050 |
+| T6 从素材库插入 Kafka | 3/3 | 18.9 s | $0.0213 |
+| T7 画一个普通 TODO 方框 | 3/3 | 6.3 s | $0.0057 |
+| **合计** | **21/21（100%）** | **10.7 s** | **$0.0110（总 $0.2312）** |
+
+评测基线是一次性的 `claude -p --json-schema`，在**中性的空临时目录**里运行，不继承仓库或项目上下文，也不经过 Agent 会话，只衡量「看图 + 评论 → 类型化改图操作」这一步。明细见 [web/eval/latest-report.md](web/eval/latest-report.md)，原始记录在 `web/eval/runs/`。
 
 ```bash
-# 1. 配对一台 Computer（token 只在这一次响应里出现）
-curl -s http://127.0.0.1:8000/computers \
-  -H 'content-type: application/json' \
-  -d '{"name":"my-laptop"}'
-# → {"id":"...","name":"my-laptop","token":"..."}
-
-# 2. 建房、加人、把 Agent 挂到这台 Computer（把 COMPUTER_ID 换成上一步的 id）
-#    POST /rooms  →  POST /rooms/{id}/participants
-#    人：{"kind":"human","name":"Ada"}
-#    Agent：{"kind":"agent","name":"Jules","computer_id":"<COMPUTER_ID>"}
-
-# 3. 跑 daemon（环境变量里是 *daemon 自己的* key，不是服务端的）
-export AGORA_SERVER_URL=http://127.0.0.1:8000
-export AGORA_COMPUTER_ID=<id>
-export AGORA_COMPUTER_TOKEN=<token>
-export OPENAI_API_KEY=relay-no-key
-export OPENAI_BASE_URL=http://192.168.1.100:8317/v1
-export OPENAI_API_BASE=$OPENAI_BASE_URL
-uv run python -m daemon
-
-# 4. 再往房间 POST 一条人的消息。daemon 日志就是演示：
-#    wake → triage → claim/hold/reply。Computer 断线则 Agent 显示 sleeping。
+cd web
+npm run eval -- --runs 3     # 真模型，写 eval/runs/*.jsonl 与 eval/latest-report.md
+npm run eval:replay          # 离线回放最近一轮的模型输出（validate → apply → check → undo），不调模型
 ```
 
-同一台 Computer 上的多个 Agent 同时被叫醒时，daemon 内置的 AdaptivePacer
-会把模型调用按最小间隔错峰起步（默认 0.5s）；收到 429 时间隔指数加倍
-（上限 8s），连续干净调用再折半回落。可用 `AGORA_PACER_BASE_S` /
-`AGORA_PACER_MAX_S` 调整。
+## 项目结构
 
-pacer 错开的是起步时刻，不限制同时在飞的调用数——同一进程还有
-ConcurrencyLimiter 把在飞的模型调用封顶（默认 6，两层模型共用一个预算；
-配额紧张可降到 2–4）。可用 `AGORA_MAX_CONCURRENT` / `--max-concurrent` 调整。
+```
+agora_cli/            agora 命令：init / up / open / status / down / canvas / skill / share
+bin/agora             在任意项目目录里调用上面的命令（uv run --project <仓库>）
+server/canvas/        本项目服务：项目存储、三个 agent 后端、会话跟随与终端、画布桥接、分享与网关
+skills/agora/         给 Pi / Claude Code / Codex 的 skill：SKILL.md 是入口路由，references/ 按领域放细节（改图、动画、子图、关联代码、评论、派活）
+web/                  前端（React + Excalidraw）；web/docs/ 是各功能规格，web/eval/ 是评测
+web/libraries/        vendored 素材库（约 6k 个组件，来源与许可见其 NOTICE.md）
+tests/                Python 测试
+docs/                 开发协作与测试说明
+```
 
-一条命令看完整故事（进程内拉起服务、配对、拉起 daemon 子进程、人提问、再杀掉 daemon）：
+## 限制
+
+- **单人编辑。** 没有实时多人协同。同一项目开多个窗口，或在编辑器 / git 里改了 `.agora/` 文件，靠版本校验发现冲突，由你选择载入磁盘版本或覆盖；外部改动不会主动推送到已打开的页面。
+- **写图需要打开的页面。** 改图、关联代码、动画都由页面执行；只开终端、没开页面时 `agora canvas apply` 返回退出码 3。
+- **访客只能评论。** 不能改图、不能标记解决、不能交给 Agent。分享依赖你自己的 Cloudflare 账号和域名；刚删掉的子域名在别人的 DNS 缓存里可能还会留几分钟（返回 530）。
+- **终端里仍能换模型。** 锁定只管 Agora 这一侧，终端里的 `/model` 无法禁止（Pi 用 `--models` 把轮换限制在选定模型）；下一次无头续接仍按绑定的模型启动。
+- **终端投递的边角。** 首次进入不信任的目录时 CLI 会先问是否信任，需要在终端里回答；输入框里留着没发出的半句话时，面板投递的消息会接在后面。
+- **Codex 终端先行时靠认领。** 还没有原生 id 的 Codex 会话在终端里开新会话，Agora 认领打开终端之后同目录下出现的第一个 rollout；同一时间在同一目录另起 Codex 可能认错。
+- **用量不全。** Claude Code 终端里的轮次没有花费（原生日志不记），Codex 不记花费。
+- **指针只看编辑工具的写入。** `sed -i`、`cat > x` 这类 shell 写入不会被识别；读文件、跑测试不移动指针；一个文件只属于最具体的那个节点。
+- **只在 macOS 上实测过。** 终端窗口用 Kitty 或 Terminal.app 打开；都没有时面板给出 `tmux attach` 命令；下拉里的「复制打开命令」给出可在任意终端里运行的命令。
+
+可能的方向（未排期）：多人实时协同编辑、Linux 上的终端窗口、进度指针识别更多写入方式。
+
+## 开发
 
 ```bash
-uv run python scripts/demo_byoa.py
+uv run pytest tests/test_project_store.py tests/test_agent_sessions.py tests/test_share.py   # 画布相关，免外部服务
+cd web && npx tsc -p . && npx vitest run && npm run build && npm run eval:replay
 ```
 
-## 测试
+CI（`.github/workflows/test.yml`）跑全部 Python 测试（不需要外部服务），以及前端的类型检查、单测、构建、离线评测回放和素材库校验。开发协作见 [docs/development.md](docs/development.md)，测试说明见 [docs/testing.md](docs/testing.md)。
 
-先确认数据库和 Redis 专用于测试，集成用例会清空其中的数据。服务准备成功后再运行测试：
+## 许可与致谢
 
-```bash
-docker compose up -d --wait
-uv sync
-uv run pytest -m "not llm"    # mock 模型，不打中继；也是 CI 入口
-uv run pytest -m llm          # 可选真模型协调测试，需要上面的 OPENAI_*
-```
+本项目以 [MIT](LICENSE) 许可发布。第三方内容：
 
-测试不会自行启动 Docker；被选中的集成用例在服务不可达时失败，不以跳过代替通过。无外部服务时只运行免服务用例。环境隔离、选择方式和真模型测试限制见[测试文档](docs/testing.md)。
-
-## 房间 digest
-
-讨论的沉淀物，一行命令拉取（`room-<id>.md`，可直接贴进 issue 或笔记）：
-
-```bash
-curl -s http://127.0.0.1:8000/rooms/<ROOM_ID>/digest -o room.md
-```
-
-内容：transcript 表格、moderated 房间在 transcript 和 claims 之间的决策时间线（`moderator_decisions`，按 trigger_seq）、active claims（即 action items）、`llm_calls` 按 purpose × model 汇总的花费。纯格式化，零模型调用。open 房间没有决策节。
-
-## 沉默房间的主动唤醒（stall sweep）
-
-turn 都是反应式的——叫醒只在新消息落地时发生。但「有人欠话」的房间一旦安静（claim 赢家认栽释放、提问没人接），就没有任何机制再叫醒人。服务端内置的 `StallSweeper` 周期扫描：房间最新消息安静超过 20s（`AGORA_STALL_MIN_S`）、且至少一个非作者 agent 已读过它时，以「最后发言者 = 名义发信人」走 `dispatch` 通道主动唤醒房里其余 agent——BYOA agent 收到 computer websocket wake、云 agent 收到 K8s Job，与真实消息同路径，离线宿主照旧不排队。nudge 之后房间依然沉默则记一次 decline，`AGORA_STALL_MAX_NUDGES`（默认 3）次后停手，直到任何新消息落地重置预算。
-
-没人读过最后一条消息的房间（例如唯一的非作者 agent 是离线的 BYOA 宿主，pub/sub wake 丢了）不立即 nudge——wake 可能还在路上；但安静超过 `AGORA_STALL_UNREAD_GRACE_S`（默认 120s，远超一次合法 turn）后晋升为可 nudge，丢失的投递由 sweep 补课，房间不再因「永远等不到已读」而饿死。
-
-被唤醒的 agent 已读全部消息、inbox 为空——这种 **proactive turn** 仍会跑 triage：把房间最近的消息尾巴交给小模型，让它判断「是否仍有人欠话」，沉默是合法答案；agent-only loop cap 照常兜底。资格判定全程是算术（年龄 / 作者 / 读位），不含内容分类。moderated 房间的 nudge 走同一条 `dispatch`：资格判定不变，叫醒只落到主持（没有新的 `@Name` 可解析）。
-
-## Moderated 房间
-
-`POST /rooms` 可带 `mode=moderated`（默认 `open`）。open 房间行为与今天完全一样：新消息叫醒所有非作者 agent。moderated 房间只叫醒主持；正文里出现 `@<参与者名>`（对名单做最长匹配，区分大小写）则只叫醒被点到的 agent——这是从元桌借来的唯一写死交互规则，属于协议解析，不是内容分类。主持跑同一张图，只绑 `decide(call_on|say|silence)`，跳过 triage；`call_on` 之后被点到的成员带着 `response_mode=me` 进工具循环。决策行按 `(room_id, trigger_seq)` 唯一，同一触发的第二次 decide 是 replay，不会双叫醒。freshness / verbatim-dup 已经能裁判 `call_on` 回复和 `@` 回复的碰撞，所以不需要 floor lease。
-
-## 崩溃自愈：claim 的 TTL 抢占
-
-claim（`one-of-us` 任务锁）的正常释放有两条路：赢家回复落地，或赢家未履约时 turn 收束前代码 `release_claim`。但 turn 中途**崩溃**的进程没有收束——赢来的锁会把 `task_key` 钉死，任务永远没人能再领。`try_claim` 因此带一条泄压阀：claim 超过 `CLAIM_TTL_S`（默认 300s）未动，任何 agent 一条 `ON CONFLICT … DO UPDATE WHERE created_at < now() - TTL` 原子抢走，不存在两个抢夺者各赢各的的窗口。被抢后原赢家在飞的回复仍会落地（正确性由 verbatim-dup 与 freshness 把守），它只是不再持锁；同一 agent 重复 claim 同一把钥匙是幂等刷新而非输。
-
-开 K8s Job 宿主见 [k8s/README.md](k8s/README.md)。
+- **Excalidraw**（MIT）：画布编辑器。
+- **素材库**（`web/libraries/`）：来自 excalidraw-libraries 等来源的组件。各自的作者、许可和原始地址见 [NOTICE.md](web/libraries/NOTICE.md) 与 [SOURCES.md](web/libraries/SOURCES.md)，许可全文在 `web/libraries/licenses/`。其中的产品名称和标志归各自所有者，仅用于在图中指代对应产品。
+- **Dither Icons**（[`@unlocalhosted/dither-icons`](https://dithered.dev)，MIT，© 2026 Unlocalhosted）：界面图标。
+- **dither-extra 图标**（`web/src/app/dither-extra/`）：本项目作者为 Marginalia 按 Dither Icons 的构造规则绘制的 17 个补充图标（`eye-off` 复用 Dither Icons 的眼睛几何），随本项目以 MIT 发布，并附 Dither Icons 的许可原文（[LICENSE-dither-icons.txt](web/src/app/dither-extra/LICENSE-dither-icons.txt)）。
+- **DeepSeek Harness**（github.com/deepseek-ai/deepseek-harness，MIT）：会话「对话 / 轨迹」视图的信息结构，用本项目的技术栈重写，未引入其依赖。
+- **Agent 标志**（`web/src/app/agents/`，随应用打包、不在运行时外链）：Pi 取自 [pi.dev](https://pi.dev) Press Kit 的方形徽标（Badge SVG，`pi.dev/favicon.svg`，单色，亮色 `#111111`、暗色 `#f6f6f6`），以矢量路径内联；Claude Code 取自官方文档站 [code.claude.com/docs](https://code.claude.com/docs) 的矢量标志（橙色星芒 `#D97757`），以矢量路径内联；Codex 取自 OpenAI 签名的 Codex 桌面应用（bundle id `com.openai.codex`，26.908.70816）自带的 1024px 图标 `Contents/Resources/icon-codex-light.png` 与 `icon-codex-dark-color.png`：用两张图做差分抠图去掉应用底板与投影，只留中间的云形标志，导出 64px 与 128px 两档；Grok 取自 xAI 官网 [x.ai](https://x.ai) 自己发布的站点图标 `https://x.ai/icon.png`（512px 位图，黑底白标；官方没有公开矢量，`grok.com` 拒绝抓取），2026-09-29 取得，缩成 64px 与 128px 两档；Cursor 取自 [cursor.com](https://cursor.com) 的 `https://cursor.com/favicon.svg`（矢量，自带深色圆角底板 `#14120b` 与浅色立方体 `#edecec`，两种主题下原样使用，以矢量路径内联），2026-09-29 取得；Devin 取自 [devin.ai](https://devin.ai) 的 `https://devin.ai/favicon.svg`（单色矢量，原色黑 `#000000`，内联时改用主题墨色：亮色 `#111111`、暗色 `#f6f6f6`），2026-09-29 取得。
+- **终端应用图标**（`web/src/app/terminals/`）：Kitty 取自本机 `kitty.app`（0.48.2）的 `Contents/Resources/kitty.icns`，Kitty 为 Kovid Goyal 的作品（[kovidgoyal/kitty](https://github.com/kovidgoyal/kitty)）；取 32px 与 64px 两档，未改动图形。
+- **以上标志和图标是各自所有者（Earendil / Pi、Anthropic、OpenAI、xAI、Anysphere / Cursor、Cognition / Devin、Kovid Goyal / kitty）的商标或作品，不在本项目的 MIT 许可范围内，这里仅用于标识对应的产品；本项目与它们没有从属或背书关系。**

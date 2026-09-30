@@ -13,29 +13,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: agora
-          POSTGRES_PASSWORD: agora
-          POSTGRES_DB: agora
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      redis:
-        image: redis:7
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -43,7 +20,32 @@ jobs:
           python-version: "3.12"
           enable-cache: true
       - run: uv sync --locked
-      - run: uv run pytest -m "not llm" -q
-        env:
-          AGORA_DATABASE_URL: postgresql://agora:agora@127.0.0.1:5432/agora
-          AGORA_REDIS_URL: redis://127.0.0.1:6379/0
+      - run: uv run pytest -q
+
+  web:
+    # Excalidraw workbench frontend: typecheck, unit tests, build, vendored-asset check, eval replay.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - working-directory: web
+        run: npm ci
+      - working-directory: web
+        run: npm run typecheck
+      - working-directory: web
+        run: npx vitest run
+      - working-directory: web
+        run: npm run build
+      - working-directory: web
+        run: npm run libraries:fetch -- --check
+      # Offline eval replay: re-applies the committed model outputs in eval/runs/ through
+      # the real validate → apply → check → undo path in headless Chromium. No model calls.
+      - working-directory: web
+        run: npx playwright install --with-deps chromium
+      - working-directory: web
+        run: npm run eval:replay

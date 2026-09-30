@@ -1,0 +1,377 @@
+{
+  "agora": "http://localhost:5192",
+  "proto": "workstation-proto/index.html",
+  "times": [
+    5,
+    14,
+    24,
+    30,
+    36,
+    44
+  ],
+  "at": "2026-09-28T15:53:21.780Z",
+  "view-light": {
+    "5": {
+      "z": 1.0999998474121093,
+      "rel": {
+        "x": 439.0000305175781,
+        "y": 298
+      }
+    },
+    "14": {
+      "z": 1.0999998474121093,
+      "rel": {
+        "x": 439.0000305175781,
+        "y": 298
+      }
+    },
+    "24": {
+      "z": 1.0500001525878906,
+      "rel": {
+        "x": 444.4999694824219,
+        "y": 285
+      }
+    },
+    "30": {
+      "z": 0.99375,
+      "rel": {
+        "x": 450.6875,
+        "y": 274.875
+      }
+    },
+    "36": {
+      "z": 0.99375,
+      "rel": {
+        "x": 450.6875,
+        "y": 274.875
+      }
+    },
+    "44": {
+      "z": 0.99375,
+      "rel": {
+        "x": 450.6875,
+        "y": 274.875
+      }
+    }
+  },
+  "bubbles-light-5": [
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(452.34px, 198.53px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(133.34px, 198.53px, 0px)"
+    }
+  ],
+  "bubbles-light-14": [
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(499.92px, 183.33px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": false,
+      "tail": null,
+      "opacity": "0",
+      "vis": "",
+      "transform": "translate3d(402.62px, 168.16px, 0px)"
+    }
+  ],
+  "bubbles-light-24": [
+    {
+      "who": "Codex",
+      "folded": false,
+      "chip": false,
+      "tail": null,
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(492.44px, 144.88px, 0px)"
+    },
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(454.9px, 188.21px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": false,
+      "tail": "dr",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(243.96px, 419.13px, 0px)"
+    }
+  ],
+  "bubbles-light-30": [
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": "dr",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(171.13px, 181.15px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": false,
+      "tail": "dr",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(340.27px, 399.73px, 0px)"
+    },
+    {
+      "who": "Codex",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(770.17px, 549.59px, 0px)"
+    },
+    {
+      "who": "子代理",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(401.73px, 467.97px, 0px)"
+    }
+  ],
+  "bubbles-light-36": [
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(460.65px, 181.1px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(808.45px, 280.47px, 0px)"
+    }
+  ],
+  "bubbles-light-44": [
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(767.68px, 534.92px, 0px)"
+    }
+  ],
+  "view-dark": {
+    "5": {
+      "z": 1.0999998474121093,
+      "rel": {
+        "x": 439.0000305175781,
+        "y": 298
+      }
+    },
+    "14": {
+      "z": 1.0999998474121093,
+      "rel": {
+        "x": 439.0000305175781,
+        "y": 298
+      }
+    },
+    "24": {
+      "z": 1.0500001525878906,
+      "rel": {
+        "x": 444.4999694824219,
+        "y": 285
+      }
+    },
+    "30": {
+      "z": 0.99375,
+      "rel": {
+        "x": 450.6875,
+        "y": 274.875
+      }
+    },
+    "36": {
+      "z": 0.99375,
+      "rel": {
+        "x": 450.6875,
+        "y": 274.875
+      }
+    },
+    "44": {
+      "z": 0.99375,
+      "rel": {
+        "x": 450.6875,
+        "y": 274.875
+      }
+    }
+  },
+  "bubbles-dark-5": [
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(452.34px, 198.53px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(133.34px, 198.53px, 0px)"
+    }
+  ],
+  "bubbles-dark-14": [
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(499.92px, 183.33px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": false,
+      "tail": null,
+      "opacity": "0",
+      "vis": "",
+      "transform": "translate3d(402.62px, 168.16px, 0px)"
+    }
+  ],
+  "bubbles-dark-24": [
+    {
+      "who": "Codex",
+      "folded": false,
+      "chip": false,
+      "tail": null,
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(492.44px, 144.88px, 0px)"
+    },
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(454.9px, 188.21px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": false,
+      "tail": "dr",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(243.96px, 419.13px, 0px)"
+    }
+  ],
+  "bubbles-dark-30": [
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": "dr",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(171.13px, 181.15px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": false,
+      "tail": "dr",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(340.27px, 399.73px, 0px)"
+    },
+    {
+      "who": "Codex",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(770.17px, 549.59px, 0px)"
+    },
+    {
+      "who": "子代理",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(401.73px, 467.97px, 0px)"
+    }
+  ],
+  "bubbles-dark-36": [
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(460.65px, 181.1px, 0px)"
+    },
+    {
+      "who": "Claude Code",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(808.45px, 280.47px, 0px)"
+    }
+  ],
+  "bubbles-dark-44": [
+    {
+      "who": "Pi",
+      "folded": false,
+      "chip": false,
+      "tail": "d",
+      "opacity": "1",
+      "vis": "",
+      "transform": "translate3d(767.68px, 534.92px, 0px)"
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 """Shared contract for controlling native Agent CLI sessions.
 
 Single source of truth for the identities, the correlation rule and the
-delivery state machine that the local host (`daemon/`), the Agora backend
+delivery state machine that the local host, the Agora backend
 (`server/`) and the Pi Master extension depend on. Field lists live here only;
 documentation states ordering, ownership and reasons. Non-Python consumers read
 ``python -m native_protocol`` instead of re-typing the fields.
@@ -38,7 +38,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-AdapterKind = Literal["pi", "claude_code", "codex"]
+AdapterKind = Literal["pi", "claude_code", "codex", "devin", "cursor", "grok"]
 
 EvidenceKind = Literal[
     "native_hook",

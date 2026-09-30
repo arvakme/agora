@@ -1,0 +1,32 @@
+{
+  "kind": "codex",
+  "cli_version": "0.157.1",
+  "log_format": null,
+  "recorded": "2026-09-28",
+  "model": "gpt-5.6-luna",
+  "command": [
+    "codex",
+    "exec",
+    "--json",
+    "--skip-git-repo-check",
+    "-s",
+    "workspace-write",
+    "-m",
+    "gpt-5.6-luna",
+    "-c",
+    "model_reasoning_effort=\"low\"",
+    "<prompt>"
+  ],
+  "prompt": "Do not read or use any skill or team tooling. Call your built-in collaboration tool spawn_agent exactly once to start one worker sub-agent whose task is: create the file hello.txt containing the single word hi in the current directory. Then call wait_agent until it has finished. Then run `ls` yourself. Reply with one word: done.",
+  "cwd": "/work/project",
+  "native_id": "01a0e786-a7e2-7660-bb09-12d03fd49a0b",
+  "expected": {
+    "files": [
+      "hello.txt"
+    ],
+    "commands": 1,
+    "subagents": 1
+  },
+  "expected_unknown": [],
+  "note": "Recorded by scripts/record_agent_fixture.py; paths sanitized (/work/project, /home/user), signatures dropped. The native sessions were deleted after copying. item/CollabAgentToolCall was new in this recording and is now handled; world_state is ignored on purpose (per-turn context snapshot)."
+}

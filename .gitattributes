@@ -1,0 +1,3 @@
+# Vendored Excalidraw asset library (~35 MB of third-party .excalidrawlib JSON).
+# Sources/licenses: web/libraries/SOURCES.md, web/libraries/licenses/, NOTICE.md.
+web/libraries/** linguist-vendored

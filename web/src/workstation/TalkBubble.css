@@ -1,0 +1,23 @@
+/* 对小人说话 (web/docs/workstation.md「新想法」): a small card just under the selected figure's feet,
+ * above the bubbles, in an ink line (purple, as the figure it belongs to is selected); a tail at its
+ * top left points up at the figure. Positioned by the frame loop
+ * (transform). */
+.ws-talk { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: auto; display: flex; flex-direction: column; gap: 4px; width: 232px; max-width: 100%; padding: 4px; border-radius: var(--r-lg); background: var(--surface); box-shadow: 0 0 0 1px var(--accent); will-change: transform; animation: ws-talk-in var(--dur-glide) var(--ease-out) both; }
+@keyframes ws-talk-in { from { opacity: 0; } }
+.ws-talk[data-side="above"]::before { top: auto; bottom: -4px; left: calc(50% - 4px); transform: rotate(225deg); }
+.ws-talk[data-side="right"]::before { top: auto; bottom: 6px; left: -4px; transform: rotate(315deg); }
+.ws-talk[data-side="left"]::before { top: auto; bottom: 6px; left: auto; right: -4px; transform: rotate(135deg); }
+.ws-talk::before { content: ""; position: absolute; left: 14px; top: -4px; width: 8px; height: 8px; background: var(--surface); box-shadow: -1px -1px 0 0 var(--accent); transform: rotate(45deg); }
+.ws-talk input { position: relative; box-sizing: border-box; width: 100%; min-width: 0; text-overflow: ellipsis; height: 26px; padding: 0 10px; border: 0; border-radius: var(--r-sm); background: var(--surface); box-shadow: var(--box); color: var(--fg); font: inherit; font-size: var(--text-sm); outline: none; }
+.ws-talk input::placeholder { color: var(--fg-subtle); text-overflow: ellipsis; }
+.ws-talk input:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.ws-talk-sub, .ws-talk-err { margin: 0; padding: 2px 6px 3px; font-size: var(--text-xs); line-height: 1.45; }
+.ws-talk-sub { color: var(--fg-muted); }
+.ws-talk-sub button { margin-left: 6px; height: 20px; padding: 0 8px; border-radius: var(--r-xs); background: var(--accent-fill); color: var(--accent-fg); font-size: var(--text-xs); line-height: 20px; }
+.ws-talk-sub button:hover { background: var(--accent-fill-hover); }
+.ws-talk-sub button:disabled { background: var(--surface); box-shadow: var(--box); color: var(--fg-subtle); }
+.ws-talk-err { color: var(--negative); }
+.ws-talk-note { margin: 0; padding: 4px 8px; font-size: var(--text-sm); line-height: 1.45; color: var(--fg); }
+.ws-talk-note[data-state="queued"] { color: var(--fg-muted); }
+.ws-talk-note[data-state="delivered"] { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .ws-talk { animation-duration: 150ms; } }

@@ -1,0 +1,23 @@
+/* Comments on the whole canvas (WholeCanvas.tsx): a button in the lower right corner (left of the help button), a small list above it, the ordinary card for the one picked. */
+.whole { position: absolute; inset: 0; pointer-events: none; }
+.whole > * { pointer-events: auto; }
+.whole-btn { position: absolute; right: 62px; bottom: 12px; z-index: 7; display: inline-flex; align-items: center; gap: var(--space-2); height: 32px; padding: 0 var(--space-4); border-radius: 999px; background: var(--surface); box-shadow: var(--frame), 0 6px 18px rgb(0 0 0 / 0.14); color: var(--fg); font-size: var(--text-sm); white-space: nowrap; --icon: var(--accent); }
+.whole-btn:hover, .whole-btn[data-on="true"] { background: var(--raised); }
+.whole-btn em { font-style: normal; font-variant-numeric: tabular-nums; color: var(--fg-muted); }
+.whole-panel { position: absolute; right: 12px; bottom: 56px; z-index: 7; width: 300px; max-height: 60vh; display: flex; flex-direction: column; border-radius: 14px; background: var(--surface); box-shadow: var(--frame), 0 12px 32px rgb(0 0 0 / 0.16); color: var(--fg); overflow: hidden; }
+.whole-panel header { flex: none; display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5); }
+.whole-panel h2 { margin: 0; font-size: var(--text-sm); font-weight: var(--weight-strong); }
+.whole-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--space-2); }
+.whole-row { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: var(--space-3); border-radius: var(--r-md); text-align: left; }
+.whole-row-foot:empty { display: none; }
+.whole-row:hover { background: var(--raised); }
+.whole-row[data-resolved] { opacity: 0.6; }
+.whole-row-meta { display: flex; gap: var(--space-3); font-size: var(--text-xs); color: var(--fg-muted); }
+.whole-row-meta b { color: var(--fg); font-weight: var(--weight-medium); }
+.whole-row-text { font-size: var(--text-sm); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.whole-row-foot { display: flex; gap: var(--space-3); align-items: center; font-size: var(--text-xs); color: var(--fg-muted); }
+.whole-empty { margin: var(--space-4); text-align: center; font-size: var(--text-sm); color: var(--fg-muted); }
+.whole-write { flex: none; margin: var(--space-3); align-self: flex-end; }
+.moment-chip { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: 999px; box-shadow: var(--box); color: var(--fg-muted); font-size: var(--text-xs); --icon: var(--accent); cursor: pointer; }
+.moment-chip:hover { background: var(--raised); color: var(--fg); }
+.whole .tcard, .whole .composer { position: absolute; z-index: 8; }

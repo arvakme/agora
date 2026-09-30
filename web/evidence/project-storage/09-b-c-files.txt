@@ -1,0 +1,23 @@
+# project b: git status after agora up + new canvas
+?? .agora/.gitignore
+?? .agora/canvases/c-igi6ad.excalidraw
+?? .agora/canvases/c1.excalidraw
+?? .agora/config.toml
+?? .agora/threads/c-igi6ad.json
+?? .agora/threads/c1.json
+?? .agora/workspace.json
+!! .agora/run/server.log
+!! .agora/run/up.lock
+!! .agora/run/write.lock
+!! .agora/sessions/s-y1gk6f0.jsonl
+# project c (legacy import, dev mode): files
+.agora/.gitignore
+.agora/canvases/old1.excalidraw
+.agora/config.toml
+.agora/run/server.log
+.agora/run/up.lock
+.agora/run/vite.log
+.agora/run/write.lock
+.agora/sessions/s-old.jsonl
+.agora/threads/old1.json
+.agora/workspace.json

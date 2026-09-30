@@ -1,0 +1,176 @@
+{
+  "url": "http://127.0.0.1:5393",
+  "dark": false,
+  "reduced": false,
+  "at": "2026-09-28T11:51:59.767Z",
+  "windows": {
+    "walk": {
+      "frames": 282,
+      "seconds": 4.68,
+      "dropped": 0,
+      "maxGap": 16.8,
+      "jank25": 0,
+      "maxStep": 12.75,
+      "maxSnap": 1.75,
+      "snaps": 0,
+      "snapList": [],
+      "tracked": [
+        "fig:mock-pi",
+        "fig:mock-cc",
+        "bub:Pi",
+        "bub:Claude Code",
+        "playhead"
+      ],
+      "from": 6.398,
+      "to": 11.119
+    },
+    "pose": {
+      "frames": 270,
+      "seconds": 4.48,
+      "dropped": 0,
+      "maxGap": 16.8,
+      "jank25": 0,
+      "maxStep": 0.45,
+      "maxSnap": 0.43,
+      "snaps": 0,
+      "snapList": [],
+      "tracked": [
+        "fig:mock-pi",
+        "fig:mock-cc",
+        "bub:Pi",
+        "bub:Claude Code",
+        "playhead"
+      ],
+      "from": 12.596,
+      "to": 17.12
+    },
+    "bubbles-enter": {
+      "frames": 282,
+      "seconds": 4.68,
+      "dropped": 0,
+      "maxGap": 16.8,
+      "jank25": 0,
+      "maxStep": 9.66,
+      "maxSnap": 1.44,
+      "snaps": 0,
+      "snapList": [],
+      "tracked": [
+        "fig:mock-pi",
+        "fig:mock-cc",
+        "bub:Pi",
+        "bub:Claude Code",
+        "playhead",
+        "fig:smx:T-41",
+        "fig:smx:T-42",
+        "bub:Codex"
+      ],
+      "from": 20.4,
+      "to": 25.12
+    },
+    "handoff-exit": {
+      "frames": 390,
+      "seconds": 6.48,
+      "dropped": 0,
+      "maxGap": 16.8,
+      "jank25": 0,
+      "maxStep": 10.17,
+      "maxSnap": 3.12,
+      "snaps": 3,
+      "snapList": [
+        {
+          "el": "playhead",
+          "at": 383,
+          "px": 3.12,
+          "abc": [
+            [
+              1204.5,
+              869,
+              1
+            ],
+            [
+              1207.6,
+              869,
+              1
+            ],
+            [
+              1207.6,
+              869,
+              1
+            ]
+          ]
+        },
+        {
+          "el": "bub:Pi",
+          "at": 5783,
+          "px": 2.62,
+          "abc": [
+            [
+              857.3,
+              264.1,
+              1
+            ],
+            [
+              865,
+              265.6,
+              1
+            ],
+            [
+              874.6,
+              269,
+              1
+            ]
+          ]
+        },
+        {
+          "el": "bub:Pi",
+          "at": 5683,
+          "px": 2.06,
+          "abc": [
+            [
+              815.2,
+              250.7,
+              1
+            ],
+            [
+              820.4,
+              252.2,
+              1
+            ],
+            [
+              826.9,
+              255.1,
+              1
+            ]
+          ]
+        }
+      ],
+      "tracked": [
+        "fig:mock-pi",
+        "fig:mock-cc",
+        "fig:smx:T-41",
+        "fig:smx:T-42",
+        "fig:claude:agent-7f3",
+        "bub:Pi",
+        "bub:Claude Code",
+        "bub:Codex",
+        "playhead"
+      ],
+      "from": 34.596,
+      "to": 41.149
+    },
+    "replay-scrub": {
+      "frames": 307,
+      "seconds": 5.1,
+      "dropped": 0,
+      "maxGap": 16.8,
+      "jank25": 0,
+      "maxStep": 0,
+      "maxSnap": 0,
+      "snaps": 0,
+      "snapList": [],
+      "tracked": [],
+      "from": 42.796,
+      "to": 47.943
+    }
+  }
+}
