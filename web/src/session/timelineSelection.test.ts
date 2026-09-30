@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { HANDLE_HIT, caption, contains, count, domainOf, dragEdge, edgeX, keepTurns, panSel, partAt, posAtX, range, selectBetween, stepEdge, turnsOf } from "./timelineSelection.ts";
 import { layoutTimeline, xOf } from "./timelineLayout.ts";
 import { convo, modelOf } from "./timelineFixture.ts";
+import type { Item } from "./agents.ts";
 
 const W = 600;
 const seq = modelOf(convo(12, 8));
@@ -140,6 +141,10 @@ describe("the same records in the other projection", () => {
   const d2 = domainOf(dur);
   const l2 = layoutTimeline(dur, W);
   const s = selectBetween(dom, firstOf(3), lastOf(5));
+  it("the selection is kept as records, not as positions on an axis: same members, same caption", () => {
+    for (const sp of seq.spans) expect(contains(d2, s, sp.index), `#${sp.index}`).toBe(contains(dom, s, sp.index));
+    expect(caption(d2, s)).toBe(caption(dom, s));
+  });
   it("the edges land where those records are in the new axis", () => {
     const [a, b] = edgeX(l2, d2, s);
     const first = dur.spans.find((x) => x.index === s.from)!;
@@ -168,5 +173,41 @@ describe("a pinned selection follows new records; an unpinned one stays", () => 
     const [p0, p1] = range(d1, gone);
     expect(p0).toBeLessThanOrEqual(p1);
     expect(p1).toBeLessThan(d1.spans.length);
+  });
+});
+
+describe("tools that start in the same millisecond", () => {
+  // #1 user, #2 a long Read and #3 a short one started together, #4 the reply: "实际时长" puts the short one first
+  const parallel = (longDone: boolean): Item[] => [
+    { id: "user", kind: "user", at: 1000, text: "read these", source: "agora" },
+    { id: "long", kind: "tool", at: 2000, endAt: longDone ? 3000 : undefined, msg: "m1", tool: { name: "Read", input: "a", output: longDone ? "ok" : undefined } },
+    { id: "short", kind: "tool", at: 2000, endAt: 2100, msg: "m1", tool: { name: "Read", input: "b", output: "ok" } },
+    { id: "reply", kind: "assistant", at: 4000, text: "done" },
+    { id: "end", kind: "end", at: 4100, durationMs: 3100, turn: "user" },
+  ];
+  const members = (d: ReturnType<typeof domainOf>, sel: ReturnType<typeof selectBetween>) => d.spans.map((x) => x.index).filter((i) => contains(d, sel, i)).sort((x, y) => x - y);
+  const both = (items: Item[]) => ({ seq: domainOf(modelOf(items)), dur: domainOf(modelOf(items, "duration")) });
+
+  it("the records picked on one axis are the same records, and the same caption, on the other", () => {
+    const { seq: a, dur: b } = both(parallel(true));
+    expect(b.spans.map((x) => x.index)).not.toEqual(a.spans.map((x) => x.index)); // the two axes really do order them differently
+    const sel = selectBetween(a, 0, 2); // #1 – #3
+    expect(members(a, sel)).toEqual([1, 2, 3]);
+    expect(members(b, sel)).toEqual([1, 2, 3]);
+    expect(caption(b, sel)).toBe(caption(a, sel));
+  });
+  it("picking on the duration axis takes everything the stretch covers, and keeps it on the other axis", () => {
+    const { seq: a, dur: b } = both(parallel(true));
+    const sel = selectBetween(b, 0, 1); // the user line and the short Read: the long Read lies after it on this axis, but it is #2
+    expect(members(b, sel)).toEqual(members(a, sel));
+    expect(contains(b, sel, 3)).toBe(true);
+  });
+  it("a tool's result arriving does not change who is selected", () => {
+    const running = domainOf(modelOf(parallel(false), "duration"));
+    const sel = selectBetween(running, 0, running.spans.findIndex((x) => x.index === 3));
+    const before = members(running, sel);
+    const done = domainOf(modelOf(parallel(true), "duration"));
+    expect(members(done, sel)).toEqual(before);
+    expect(before).toEqual([1, 2, 3]);
   });
 });
