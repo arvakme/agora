@@ -32,6 +32,13 @@ const PILL_W_MIN = 96;
 /** How far the group keeps from the controls either side of it (Excalidraw's zoom / undo, 「整张图」, help). */
 const GROUP_MARGIN = 8;
 
+/** Whether something `width` wide, centred on `center`, fits between the controls either side of it (``limitLeft``: the right edge of the left ones, ``limitRight``: the left edge of the right ones; null = none) with a margin. */
+export function roomFor(o: { center: number; limitLeft: number | null; limitRight: number | null; width: number }): boolean {
+  const lo = o.limitLeft === null ? -Infinity : o.limitLeft + GROUP_MARGIN;
+  const hi = o.limitRight === null ? Infinity : o.limitRight - GROUP_MARGIN;
+  return 2 * Math.min(o.center - lo, hi - o.center) >= o.width;
+}
+
 /**
  * The dock and, when the session bar is folded, its pill beside it, as one group centred on the canvas body's middle (`center`, window px): where the dock's middle goes and how wide
  * the pill is. The pill keeps its words while the group fits between the controls either side (`limitLeft`: the right edge of the left ones, `limitRight`: the left edge of the right
@@ -39,9 +46,13 @@ const GROUP_MARGIN = 8;
  * is centred, as ever. Pure.
  */
 export function groupPlace(o: { center: number; dockW: number; pill: boolean; limitLeft: number | null; limitRight: number | null }): { dockCx: number; pillW: number } {
-  if (!o.pill) return { dockCx: o.center, pillW: 0 };
   const lo = o.limitLeft === null ? -Infinity : o.limitLeft + GROUP_MARGIN;
   const hi = o.limitRight === null ? Infinity : o.limitRight - GROUP_MARGIN;
+  if (!o.pill) {
+    if (roomFor({ center: o.center, limitLeft: o.limitLeft, limitRight: o.limitRight, width: o.dockW })) return { dockCx: o.center, pillW: 0 };
+    const left = hi - lo >= o.dockW ? Math.min(Math.max(o.center - o.dockW / 2, lo), hi - o.dockW) : o.center - o.dockW / 2; // slide clear of the controls; with no room at all, stay put
+    return { dockCx: round2(left + o.dockW / 2), pillW: 0 };
+  }
   const half = Math.min(o.center - lo, hi - o.center); // room either side of the centre
   const words = 2 * half - o.dockW - PILL_GAP; // the widest pill that keeps the group centred
   const pillW = words >= PILL_W_MIN ? Math.min(PILL_W, words) : DOCK_H;
