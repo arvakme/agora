@@ -79,13 +79,19 @@
 /* at most --bub-max wide (= bubbles.ts BUBBLE_MAX_W; the selected one adds its buttons beside the words): the long parts (path, command,
  * place, the words a step says, the question) share what is left and end in …; hovering shows the words in full */
 .ws-bub { --bub-max: 260px; }
-.ws-bub-in { max-width: calc(var(--bub-max) - 14px); }
+.ws-bub-in { max-width: calc(var(--bub-max) - 14px); min-width: 0; }
 .ws-bub[data-sub] .ws-bub-in { max-width: calc(var(--bub-max) - 11px); }
 .ws-bub-in > .f, .ws-bub-in > .q, .ws-bub-in > .portal, .ws-bub-in > span:not([class]), .ws-bub-in > .el { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-bub-in > .f, .ws-bub-in > .q, .ws-bub-in > .portal, .ws-bub-in > span:not([class]) { min-width: 0; }
 /* what gives way first: the timer / the words a step adds, then a path or a question, then the place, the sub-diagram last */
 .ws-bub-in > .el { flex-shrink: 8; }
 .ws-bub-in > .f, .ws-bub-in > .q { flex-shrink: 3; }
+/* the title (the agent's name and its session's name) is the longest and the least needed: it gives way first; the warning after the timer. The state word, the icon and the avatar never do — and neither do the buttons of the selected bubble, which sit beside the words, off them */
+.ws-bub-in > .who { flex: 0 6 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 6; }
+.ws-bub-in > .warn { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 4; }
+.ws-bub-in > .v { flex-shrink: 0; }
+.ws-bub-in > .agent-avatar { flex-shrink: 0; }
+.ws-bub-in > svg { flex-shrink: 0; }
 .ws-bub-in > span:not([class]) { flex-shrink: 2; }
 .ws-bub-in > .portal { flex-shrink: 1; }
 .ws-bub:not([data-sel]):hover .ws-bub-in { max-width: none; }
@@ -122,7 +128,7 @@
 .ws-bub[data-k="wait"][data-tail="d"]::before, .ws-bub[data-k="conflict"][data-tail="d"]::before { box-shadow: 1px 1px 0 0 var(--caution); }
 .ws-bub[data-k="wait"][data-tail="l"]::before, .ws-bub[data-k="conflict"][data-tail="l"]::before { box-shadow: -1px 1px 0 0 var(--caution); }
 .ws-bub[data-k="wait"][data-tail="r"]::before, .ws-bub[data-k="conflict"][data-tail="r"]::before { box-shadow: 1px -1px 0 0 var(--caution); }
-.ws-acts { display: none; gap: 2px; margin-left: 2px; }
+.ws-acts { display: none; gap: 2px; margin-left: 6px; flex-shrink: 0; }
 .ws-bub:hover .ws-acts, .ws-acts[data-open] { display: inline-flex; }
 .ws-acts button { height: 20px; padding: 0 7px; border-radius: var(--r-xs); box-shadow: var(--box); color: var(--fg); font-size: var(--text-xs); line-height: 20px; }
 .ws-acts button:hover { background: var(--raised-on-surface); }

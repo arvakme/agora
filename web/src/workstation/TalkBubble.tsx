@@ -89,7 +89,9 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
       // the bubbles in this layer too (they move on their own): the box never sits over one, the selected figure's own included
       const layer = el.offsetParent;
       const bubbles = layer ? boxesIn(layer.getBoundingClientRect(), [...layer.querySelectorAll<HTMLElement>(".ws-bub-pos:not([data-folded]) > .ws-bub:not([data-exit])")].filter((b) => b.parentElement!.style.opacity !== "0").map((b) => b.getBoundingClientRect())) : [];
-      const obs = [...drawing, ...bubbles];
+      // the other figures too (their bodies, as drawn): the box never sits over a head — the selected figure's own is left out, the sides are chosen round it
+      const figures = layer ? boxesIn(layer.getBoundingClientRect(), [...layer.querySelectorAll<HTMLElement>(".ws-worker .ws-hit")].filter((h) => h.closest<HTMLElement>(".ws-worker")?.dataset.run !== f.run.id).map((h) => h.getBoundingClientRect())) : [];
+      const obs = [...drawing, ...bubbles, ...figures];
       const r = placeTalk({ feet, size: { w: el.offsetWidth, h: el.offsetHeight }, area: { x: 8, y: top, w: Math.max(0, v.width - 16), h: Math.max(0, v.height - top - bottom) }, obstacles: obs, prev: side.current });
       side.current = r.side;
       el.dataset.side = r.side;
