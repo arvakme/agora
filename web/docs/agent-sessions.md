@@ -220,6 +220,17 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 | Codex | `turn_context.model` | `turn_context.effort` | `token_usage_record` | `task_complete.duration_ms` | 不记，不显示 |
 
 
+## 导入已有的原生会话（IM1）
+
+把一个已经存在的原生会话（在终端里聊过的 Pi / Claude Code / Codex 会话）接进 Agora，历史完整显示在会话面板里：
+
+1. **先分叉，别直接接**：`pi -p --fork <原会话 id> "…一句话…"`（Claude Code 是 `claude --resume <id> --fork-session`）得到一个新的原生会话 id。**不要让两个进程同时写同一个会话**（Agora 的和你终端里还开着的），日志会被两边交错写坏；接进来的是分叉出来的那份。
+2. 绑定：`curl -X PUT http://127.0.0.1:<端口>/api/agent/sessions/<Agora 会话 id> -H 'content-type: application/json' -d '{"agent":"pi","model":"","effort":"","nativeId":"<新原生会话 id>","started":true}'`。`started: true` 表示这个原生会话已经有日志了，以后只会被接着用（`--resume`），不会当成新会话再建。日志要在这个项目对应的 CLI 会话目录下（Pi：`~/.pi/agent/sessions/--<项目路径，斜杠换成横线>--/`，首行 `cwd` 是项目路径），找不到时面板会说日志不见了。
+3. 页面收到绑定和整段 transcript（`transcript` 事件带 `reset`）。以前页面没有这个会话自己的 session，历史在 store 里却没有地方显示（agent 小标签一点开的是页面自己新建的空会话，只有「怎么用」）；现在页面给每个「有绑定、没有 session」的会话补一个（`session/adoptBound.ts`，画布取最近一个会话所在的画布，否则当前打开的），列表里有它，agent 标签一点就打开，历史按轮显示。
+4. 摘要（`GET /api/agent/sessions/<id>/summary`）的开头只在原生日志真的找不到时才说「原来的原生会话记录已经丢失」；日志在的话写「下面是这个会话此前的对话摘要」（`summary_head`）。
+
+Pi 日志里的 `system` 消息、`custom`（扩展写的）、`bashExecution`、`compaction`、`parentSession` 都不会让轮次丢掉或分组失败（`tests/test_transcript.py` 有一份这样的小夹具）。
+
 ## 改图交给哪个页面（BR1）
 
 `agora canvas read/apply/anim/link/child` 由一个打开的 Agora 页面执行（它持有画布、做校验、记撤销）。挑页面的顺序（`server/canvas/executors.py`）：

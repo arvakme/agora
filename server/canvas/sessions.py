@@ -246,6 +246,13 @@ class Subscriber:
             pass
 
 
+def summary_head(found: bool) -> str:
+    """The first line of a session's summary: it says the native record is lost only when it is (an imported or a live session has its log; its summary is just a summary)."""
+    if found:
+        return "（下面是这个会话此前的对话摘要。）"
+    return "（接着之前的讨论：原来的原生会话记录已经丢失，下面是 Agora 保存的轨迹摘要。）"
+
+
 class AgentHub:
     def __init__(self, store: ProjectStore, *, terminals: Terminals | None = None, backend_factory=make_backend, local: Local | None = None) -> None:
         self.store = store
@@ -564,7 +571,9 @@ class AgentHub:
             elif it.get("kind") == "tool" and turns and (it.get("tool") or {}).get("name"):
                 t = it["tool"]
                 turns[-1].append(f"（工具 {t['name']}{': ' + t['input'] if t.get('input') else ''}）")
-        head = "（接着之前的讨论：原来的原生会话记录已经丢失，下面是 Agora 保存的轨迹摘要。）"
+        b = self.store.read_binding(sid) or {}
+        found = bool(b.get("nativeId")) and agents.locate_log(b["agent"], b["nativeId"], self.store.root, hint=(b.get("log") or {}).get("path")).state == "found"
+        head = summary_head(found)
         blocks = [f"第 {n} 轮\n" + "\n".join(lines) for n, lines in enumerate(turns, 1)]
         out: list[str] = []
         size = len(head)

@@ -83,3 +83,39 @@ def test_claude_paste_wrapper_is_not_shown():
     text = f'\n\n<pasted_content id="4fbc">\n画布评论 #1：\n- Ann：改一下\n\n{MARKER} 来自 Agora\n</pasted_content id="4fbc">\n'
     items, turns = project("claude", {"type": "user", "uuid": "u", "timestamp": "2026-09-28T00:00:00Z", "message": {"role": "user", "content": text}}, st)
     assert items[0]["text"] == "画布评论 #1：\n- Ann：改一下" and items[0]["source"] == "agora"
+
+
+def test_pi_log_of_a_terminal_session_with_forks_compactions_and_extension_entries_projects_whole():
+    """IM1: a Pi session imported by hand (forked from one used in a terminal): the header with parentSession, a model change, the system
+    prompt as a message, `custom` entries, a bash execution and compactions between turns — none of it may drop or hide the turns."""
+    def msg(role, **k):
+        return {"type": "message", "id": f"m{len(rows)}", "timestamp": f"2026-09-30T11:0{len(rows) % 10}:00.000Z", "message": {"role": role, **k}}
+
+    rows: list[dict] = [
+        {"type": "session", "version": 3, "id": "01a0f2a3", "timestamp": "2026-09-30T11:00:00.000Z", "cwd": "/p", "parentSession": "/x/old.jsonl"},
+        {"type": "model_change", "id": "mc", "provider": "magpie", "modelId": "group/sonnet"},
+        {"type": "thinking_level_change", "id": "tl", "thinkingLevel": "high"},
+    ]
+    rows.append(msg("system", content="", sections={"preamble": "你是 Pi Agent。"}))
+    rows.append(msg("user", content=[{"type": "text", "text": "先了解一下这个项目"}], timestamp=1790766343339))
+    rows.append(msg("assistant", content=[{"type": "text", "text": "好的，我先看看。"}, {"type": "toolCall", "id": "tc1", "name": "bash", "arguments": {"command": "ls"}}], usage={"input": 1, "output": 2}, stopReason="toolUse", timestamp=1790766343349))
+    rows.append(msg("toolResult", toolCallId="tc1", toolName="bash", content=[{"type": "text", "text": "a b"}], isError=False, timestamp=1790766349138))
+    rows.append(msg("assistant", content=[{"type": "text", "text": "看完了。"}], usage={"input": 1, "output": 2}, stopReason="stop", timestamp=1790766350000))
+    rows.append({"type": "custom", "customType": "butler-run-summary", "id": "cu", "data": {"elapsedMs": 5}})
+    rows.append(msg("bashExecution", command="git status", output="clean", exitCode=0, timestamp=1790766351000))
+    rows.append({"type": "compaction", "id": "co", "summary": "## Goal\n…", "firstKeptEntryId": "m4", "tokensBefore": 1000, "systemMessage": {"role": "system", "content": ""}})
+    rows.append(msg("user", content=[{"type": "text", "text": "第二个问题"}], timestamp=1790766360000))
+    rows.append(msg("assistant", content=[{"type": "text", "text": "答复"}], usage={"input": 1, "output": 2}, stopReason="stop", timestamp=1790766361000))
+    st = State()
+    items: list[dict] = []
+    turns: list[dict] = []
+    for r in rows:
+        its, tcs = project("pi", r, st)
+        items += its
+        turns += tcs
+    users = [i for i in items if i["kind"] == "user"]
+    assert [u["text"] for u in users] == ["先了解一下这个项目", "第二个问题"]
+    assert all(u["source"] == "terminal" for u in users)
+    assert [i["text"] for i in items if i["kind"] == "assistant"] == ["好的，我先看看。", "看完了。", "答复"]
+    assert any(i["kind"] == "tool" and i["tool"]["name"] == "bash" for i in items)
+    assert len([t for t in turns if t["turn"] == "end"]) >= 2

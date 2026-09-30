@@ -312,3 +312,12 @@ async def test_a_turn_that_arrives_whole_in_one_read_shows_its_transcript_before
     kinds = [e["t"] for e in evs if e["t"] in ("transcript", "done")]
     order = [e["t"] for e in evs if e["t"] == "done" or (e["t"] == "transcript" and any(i["kind"] == "user" for i in e["items"]))]
     assert order == ["transcript", "done"], kinds
+
+
+# ── IM1: the summary of an imported session does not say its native log is lost when it is there ──
+def test_summary_head_says_lost_only_when_the_log_is_lost():
+    from server.canvas.sessions import summary_head
+
+    assert "丢失" in summary_head(found=False)
+    assert "丢失" not in summary_head(found=True)
+    assert "摘要" in summary_head(found=True)
