@@ -120,9 +120,9 @@ def test_launch_opens_ghostty_first_with_the_attach_command_and_the_project_dire
     monkeypatch.setattr(terminal.subprocess, "run", runs)
     assert terms.launch("s-1", "Agora · Claude", env={}, probe=machine(tmp_path, dirs=(GHOSTTY,), commands=ALL)) == "ghostty"
     (argv, _), = runs.calls
-    assert argv[:4] == ["open", "-na", GHOSTTY, "--args"] and f"--working-directory={terms.root}" in argv
-    assert argv[-4:] == ["-e", "sh", "-c", terms.attach_command("s-1")]
-    assert "'/opt/my tmux/tmux' -L agora-test attach -t agora-s-1" == argv[-1]
+    assert argv[0] == "open" and GHOSTTY in argv  # the window's own command line is test_ghostty_opens_its_own_instance…
+    assert f"--working-directory={terms.root}" in argv
+    assert "'/opt/my tmux/tmux' -L agora-test attach -t agora-s-1" == argv[-1] == terms.attach_command("s-1")
 
 
 def test_launch_hands_the_terminal_no_seedmux_or_tmux_variables(terms, tmp_path, monkeypatch):

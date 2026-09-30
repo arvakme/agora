@@ -56,7 +56,7 @@ export function violations(rects: Record<string, Rect | null>, centresOnly = fal
 
 const browser = await chromium.launch({ headless: true });
 let failed = 0;
-// 640 wide: Excalidraw's compact layout, where the dock sits in the bottom bar (taller than the islands): only the centres have to agree there
+// a narrow pane: Excalidraw's compact layout, where the dock sits in the bottom bar (taller than the islands): only the centres have to agree there
 for (const [w, h] of centre ? [] : [[1440, 900], [1000, 800], [640, 800]]) {
   for (const theme of ["light", "dark"] as const) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, colorScheme: theme });
@@ -68,14 +68,22 @@ for (const [w, h] of centre ? [] : [[1440, 900], [1000, 800], [640, 800]]) {
     await page.waitForTimeout(1200);
     const states: [string, () => Promise<void>][] = [
       ["default", async () => {}],
-      ["评论 selected", async () => void (await page.getByRole("radio", { name: "评论" }).click())],
-      ["整张图 list open", async () => void (await page.locator(".whole-btn").click())],
+      ["评论 selected", async () => void (await page.getByRole("radio", { name: "评论" }).click({ timeout: 5000 }))],
+      ["整张图 list open", async () => void (await page.locator(".whole-btn").click({ timeout: 5000 }))],
     ];
     for (const [name, enter] of states) {
-      await enter();
+      try {
+        await enter();
+      } catch {
+        // a control that cannot be clicked is covered by another: that is a finding, not a crash
+        console.log(`FAIL ${w}×${h} ${theme} ${name}: the control cannot be clicked (something covers it)`);
+        failed++;
+        continue;
+      }
       await page.waitForTimeout(500);
       const rects = await measure(page);
-      const bad = violations(rects, w < 730);
+      // the compact layout (Excalidraw's bottom bar is there: the pane is narrow, whatever the window) seats the dock in a taller bar: only the centres have to agree
+      const bad = violations(rects, rects.bar !== null);
       const line = Object.entries(rects).filter(([, r]) => r).map(([k, r]) => `${k} ${r!.top.toFixed(1)}–${r!.bottom.toFixed(1)} (h ${r!.h.toFixed(1)}, cy ${r!.cy.toFixed(1)})`).join(" | ");
       console.log(`${bad.length ? "FAIL" : "ok  "} ${w}×${h} ${theme} ${name}: ${line}${bad.length ? `  ← ${bad.join("; ")}` : ""}`);
       if (bad.length) failed++;

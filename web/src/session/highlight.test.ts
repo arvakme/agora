@@ -21,6 +21,7 @@ describe("highlight", () => {
   it("a pinned step stays when the pointer leaves the row", () => {
     highlight.toggle(A);
     highlight.set(B);
+    expect(highlight.get()).toEqual(A); // hovering another step does not take the outline
     highlight.set(null);
     expect(highlight.get()).toEqual(A);
     expect(highlight.pinned()).toEqual(A);

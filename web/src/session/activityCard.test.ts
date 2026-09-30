@@ -10,13 +10,13 @@ const tool = (id: string, at: number, name: string, input: string, o: Partial<No
   return { id, kind: "tool", at, ...(endAt ? { endAt } : {}), tool: { name, input, ...(endAt && t.output === undefined ? { output: "ok" } : {}), ...t } };
 };
 const model = (items: Item[], live = true, waiting = false) => activityModel(buildTurns([user, ...items], {}, live)[0], { waiting });
+const thinking = model([]).title; // what the card says while no call is running: its words are the model's, what matters here is when they change
 
 describe("activityModel", () => {
   it("no action yet: thinking, nothing counted", () => {
     const m = model([]);
     expect(m.total).toBe(0);
     expect(m.current).toBeNull();
-    expect(m.title).toBe("正在分析请求");
     expect(m.stats).toBe("还没有动作");
     expect(m.failed).toEqual([]);
   });
@@ -26,7 +26,7 @@ describe("activityModel", () => {
     expect(m.current).toMatchObject({ id: "t1", text: "Bash git status --short" });
     expect(m.done).toBe(0);
     expect(m.total).toBe(1);
-    expect(m.title).toBe("正在运行命令");
+    expect(m.title).not.toBe(thinking);
     expect(m.stats).toBe("还没有动作");
   });
 
@@ -46,7 +46,8 @@ describe("activityModel", () => {
     expect(m.done).toBe(8);
     expect(m.stats).toBe("已完成 8 个动作：命令 2 · 读 2 · 改 2 · 子代理 1 · 其他 1");
     expect(m.current?.id).toBe("t9");
-    expect(m.title).toBe("正在读取文件");
+    expect(m.title).not.toBe(thinking);
+    expect(m.title).not.toBe(model([tool("c", 2000, "Bash", "ls")]).title); // reading is not running a command
   });
 
   it("kinds with no actions are left out of the stats line", () => {
@@ -80,12 +81,13 @@ describe("activityModel", () => {
     const m = model([tool("t1", 2000, "Bash", "rm x")], true, true);
     expect(m.title).toBe("等你回答");
     expect(m.waiting).toBe(true);
+    expect(m.now).toBe(m.title);
   });
 
   it("between calls nothing is current; once the turn ends nothing is running", () => {
     const between = model([tool("t1", 2000, "Bash", "ls", { endAt: 2100 })]);
     expect(between.current).toBeNull();
-    expect(between.title).toBe("正在分析请求");
+    expect(between.title).toBe(thinking);
     const over = activityModel(buildTurns([user, tool("t1", 2000, "Bash", "ls", { endAt: 2100 }), { id: "e", kind: "end", at: 2200 }], {}, false)[0]);
     expect(over.running).toBe(false);
     expect(over.current).toBeNull();
