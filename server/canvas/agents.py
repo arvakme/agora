@@ -46,6 +46,7 @@ from server.canvas.adapters.codex import CodexStream, codex_home as _codex_home,
 from server.canvas.adapters.codex import rollouts_since as codex_rollouts_since
 from server.canvas.adapters.codex import state_rollout as codex_state_rollout
 from server.canvas import proctree
+from server.canvas.turn_clock import TurnClock
 from server.canvas.adapters.common import LogLookup, StreamMapper, _hinted, add_usage, text_of  # noqa: F401
 from server.canvas.adapters.cursor import CursorStream
 from server.canvas.adapters.devin import DevinStream
@@ -61,8 +62,6 @@ SKILL_NAME = "agora"  # the project link's name; must match the skill's `name:`
 LEGACY_SKILL_NAME = "agora-canvas"  # the skill's old name: reinstalling removes its links
 SKILL_DIR = REPO / "skills" / SKILL_NAME
 AGENT_BIN = REPO / "bin"
-
-SESSION_TIMEOUT_S = 30 * 60
 
 # Runtime markers of whatever agent or tmux started the Agora server. Inherited, they make a
 # child CLI believe it is nested (Claude Code then stops saving its transcript, which is the
@@ -202,6 +201,29 @@ def check_native(kind: str, native_id: str | None, started: bool, root: Path | s
     return lookup
 
 
+def log_probe(kind: str, native_id: str | None, root: Path | str | None):
+    """How long ago the session's native log last grew, or None if it has not since this was last called (the first call only
+    takes the baseline). A CLI that says little on stdout while it works (Pi, Codex headless) still writes its log: that is a
+    turn that is going on."""
+    seen: list[tuple[int, int] | None] = []
+
+    def grew() -> float | None:
+        path = locate_log(kind, native_id, root).path if native_id else None
+        try:
+            st = path.stat() if path is not None else None
+        except OSError:
+            st = None
+        now = (st.st_size, st.st_mtime_ns) if st is not None else None
+        first = not seen
+        before = None if first else seen[0]
+        seen[:] = [now]
+        if first or st is None or now == before:
+            return None
+        return max(0.0, time.time() - st.st_mtime)
+
+    return grew
+
+
 # ——— backends ———
 async def stop_group(proc: asyncio.subprocess.Process, watch: proctree.Watch | None = None) -> None:
     """Stop a turn that is still running (timeout, "停止", client gone): its CLI and everything that turn started —
@@ -223,9 +245,10 @@ class _CliBackend:
     name = ""
     Mapper: type[StreamMapper] = StreamMapper
 
-    def __init__(self, cmd: list[str] | None = None, *, timeout_s: float = SESSION_TIMEOUT_S, env: dict[str, str] | None = None) -> None:
+    def __init__(self, cmd: list[str] | None = None, *, idle_s: float | None = None, max_s: float | None = None, env: dict[str, str] | None = None) -> None:
+        """``idle_s`` / ``max_s``: the turn clock's limits (turn_clock.py); None reads ``AGORA_TURN_IDLE_TIMEOUT_S`` / ``AGORA_TURN_MAX_S``."""
         self.cmd = cmd or [self.default_bin]
-        self.timeout_s = timeout_s
+        self.idle_s, self.max_s = idle_s, max_s
         self.env = env
 
     default_bin = ""
@@ -291,11 +314,13 @@ class _CliBackend:
         watcher = asyncio.create_task(watch.run())
 
         err_chunks: list[bytes] = []
+        clock = TurnClock(self.idle_s, self.max_s)
 
         async def drain_stderr() -> None:
             assert proc.stderr is not None
             async for chunk in proc.stderr:
                 err_chunks.append(chunk)
+                clock.touch()
 
         stderr_task = asyncio.create_task(drain_stderr())
         timed_out = False
@@ -320,8 +345,7 @@ class _CliBackend:
                 proc.stdin.close()
 
         try:
-            async with asyncio.timeout(self.timeout_s) as limit:
-                loop = asyncio.get_running_loop()
+            async with clock.guard(log_probe(self.name, o.session, req.cwd)):
                 if data is not None:
                     assert proc.stdin is not None
                     try:
@@ -336,6 +360,7 @@ class _CliBackend:
                 assert proc.stdout is not None
                 try:
                     async for raw_line in proc.stdout:
+                        clock.touch()
                         line = raw_line.decode("utf-8", "replace").strip()
                         if not line:
                             continue
@@ -345,9 +370,10 @@ class _CliBackend:
                             continue
                         if isinstance(d, dict):
                             for ev in mapper.feed(d, now_ms()):
+                                clock.observe(ev)
                                 if ev["t"] in ("request", "request_cancel"):
                                     waiting = max(0, waiting + (1 if ev["t"] == "request" else -1))
-                                    limit.reschedule(None if waiting else loop.time() + self.timeout_s)
+                                    clock.hold(bool(waiting))
                                 yield ev
                             if duplex and mapper.done:
                                 close_stdin()  # the turn is over: the CLI exits when its input ends
@@ -369,7 +395,7 @@ class _CliBackend:
 
         err = b"".join(err_chunks).decode("utf-8", "replace").strip()
         if timed_out:
-            yield finish(f"timeout after {self.timeout_s}s")
+            yield finish(clock.message())
         elif stream_error:
             yield finish(stream_error)
         elif mapper.error:

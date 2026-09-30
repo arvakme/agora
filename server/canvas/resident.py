@@ -31,6 +31,7 @@ from server.canvas import agents, proctree
 from server.canvas.adapters.codex import CodexAppStream, CodexStream
 from server.canvas.adapters.pi import PiStream
 from server.canvas.runner import STDOUT_LIMIT, RunRequest, now_ms
+from server.canvas.turn_clock import TurnClock
 
 IDLE_S = float(os.environ.get("AGORA_RESIDENT_IDLE_S") or 600)
 MAX_PROCS = int(os.environ.get("AGORA_RESIDENT_MAX") or 8)
@@ -64,6 +65,7 @@ class Proc:
         self.last_used = time.monotonic()
         self.proc: asyncio.subprocess.Process | None = None
         self.watch: proctree.Watch | None = None
+        self.clock: TurnClock | None = None  # the running turn's: every line the process prints is activity
         self._err: deque[bytes] = deque(maxlen=40)
         self._tasks: list[asyncio.Task] = []
         self._n = 0
@@ -97,6 +99,8 @@ class Proc:
                     d = json.loads(raw)
                 except ValueError:
                     continue
+                if self.clock is not None:
+                    self.clock.touch()
                 if isinstance(d, dict):
                     self.inbox.put_nowait(d)
         except Exception:  # a line past the limit, a closed pipe: the same as the end
@@ -110,6 +114,8 @@ class Proc:
         try:
             async for chunk in self.proc.stderr:
                 self._err.append(chunk)
+                if self.clock is not None:
+                    self.clock.touch()
         except Exception:
             pass
 
@@ -366,17 +372,19 @@ class ResidentBackend(agents._CliBackend):
             yield {"t": "session", "at": now_ms(), "session": proc.thread}
         yield {"t": "spawned", "at": now_ms(), "pid": proc.pid, "argv": [*proc.argv]}
         st = _Turn()
+        clock = proc.clock = TurnClock(self.idle_s, self.max_s)
         watcher = asyncio.create_task(proc.watch.run()) if proc.watch else None
         pump = asyncio.create_task(self._pump(proc, req, st)) if req.control is not None else None
         error: str | None = None
         healthy = False
         try:
             try:
-                async with asyncio.timeout(self.timeout_s):
+                async with clock.guard(agents.log_probe(self.name, proc.thread or req.options.session, req.cwd)):
                     async for ev in self.turn(proc, req, mapper, st):
+                        clock.observe(ev)
                         yield ev
             except TimeoutError:
-                error = f"timeout after {self.timeout_s}s"
+                error = clock.message()
             except Died:
                 error = f"{self.name} 的常驻进程中途退出了：{proc.stderr_tail() or '没有留下说明'}（退出码 {proc.proc.returncode if proc.proc else '?'}）"
             else:
@@ -386,6 +394,7 @@ class ResidentBackend(agents._CliBackend):
                 elif not mapper.done:
                     error = f"{self.name} ended without finishing the turn"
         finally:
+            proc.clock = None
             if pump is not None:
                 pump.cancel()
             if watcher is not None:
