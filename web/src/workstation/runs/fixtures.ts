@@ -236,7 +236,7 @@ export function longWindow(now: number, days = 5, subs = 100): WorkRun[] {
  * files send it to the 图外 tray and make the tray's suggestion.
  */
 export function scratchRun(at: number): WorkRun {
-  const dir = "/private/tmp/claude-501/-Users-zhijie-Job-intern-yuanzhuoai-dev/41a8454c-c9cd-470c-b51d-c016c85aa068/scratchpad";
+  const dir = "/private/tmp/claude-501/-Users-alice-Job-intern-demo-project/41a8454c-c9cd-470c-b51d-c016c85aa068/scratchpad";
   const list: S[] = [["think", 0, 2], ["read", 2, 5, { path: "server/app.py" }]];
   for (let i = 0; i < 24; i++) list.push(["write", 5 + i, 6 + i, { path: `${dir}/probe-${i}.py` }]);
   for (let i = 0; i < 3; i++) list.push(["write", 30 + i * 2, 31 + i * 2, { path: `docs/new/note-${i}.md` }]);

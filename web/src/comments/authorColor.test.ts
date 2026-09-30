@@ -4,12 +4,12 @@
 import { describe, expect, it } from "vitest";
 import { AUTHOR_SLOTS, authorSlot, authorSlots } from "./authorColor.ts";
 
-const me = { id: "user:zhijie" };
+const me = { id: "user:alice" };
 const slot = (id: string | undefined, viewer = me, owner = true) => authorSlot(id === undefined ? undefined : { id }, viewer, owner);
 
 describe("authorSlot", () => {
   it("is purple for yourself, whatever your id hashes to", () => {
-    expect(slot("user:zhijie")).toBe("self");
+    expect(slot("user:alice")).toBe("self");
     expect(slot(undefined)).toBe("self"); // an old comment without an author is the owner's own
     expect(slot("guest:x1", { id: "guest:x1" }, false)).toBe("self"); // a guest looking at their own comment
   });

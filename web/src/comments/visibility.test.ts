@@ -35,11 +35,11 @@ describe("groupThreads", () => {
 
 describe("resolving and replying", () => {
   it("records who resolved it; a person's reply reopens it; an agent's reply does not", () => {
-    setIdentity({ id: "u1", name: "zhijie" });
+    setIdentity({ id: "u1", name: "alice" });
     const st = createThreadStore("c1");
     const t = st.create(anchor("a"), "这里要改吗？");
     st.setResolved(t.id, true);
-    expect(st.thread(t.id)).toMatchObject({ resolved: true, resolvedBy: { id: "u1", name: "zhijie" } });
+    expect(st.thread(t.id)).toMatchObject({ resolved: true, resolvedBy: { id: "u1", name: "alice" } });
     expect(st.thread(t.id)!.resolvedAt).toBeGreaterThan(0);
     st.reply(t.id, { author: "agent", text: "已改" });
     expect(st.thread(t.id)!.resolved).toBe(true);

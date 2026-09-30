@@ -145,7 +145,7 @@ index 450cdcc..904b1ab 100644
 +      "createdAt": 1790524041935,
 +      "createdBy": {
 +        "id": "mailto:<redacted>",
-+        "name": "zhijie ma"
++        "name": "alice"
 +      },
 +      "id": "irzpewwg",
 +      "messages": [
@@ -154,7 +154,7 @@ index 450cdcc..904b1ab 100644
 +          "author": "human",
 +          "by": {
 +            "id": "mailto:<redacted>",
-+            "name": "zhijie ma"
++            "name": "alice"
 +          },
 +          "id": "pzx1ln9p",
 +          "text": "Redis 要不要换成集群版？"
@@ -164,7 +164,7 @@ index 450cdcc..904b1ab 100644
 +      "participants": [
 +        {
 +          "id": "mailto:<redacted>",
-+          "name": "zhijie ma"
++          "name": "alice"
 +        }
 +      ],
 +      "resolved": false

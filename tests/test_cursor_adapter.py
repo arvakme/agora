@@ -42,7 +42,7 @@ def test_cursor_is_a_session_agent_that_is_also_observed():
 
 def test_workspace_folder_name_is_the_clis_slug():
     # cursor-agent utils/dist/workspace-paths.js: every non-alphanumeric run → "-", trimmed.
-    assert slug("/Users/zhijie/Job/agora-wt-workbench") == "Users-zhijie-Job-agora-wt-workbench"
+    assert slug("/Users/alice/Job/agora-wt-workbench") == "Users-alice-Job-agora-wt-workbench"
     assert slug("/Users/z/.config/team/B-guide") == "Users-z-config-team-B-guide"
     assert slug("/private/tmp/claude-501/-Users-x/scratchpad") == "private-tmp-claude-501-Users-x-scratchpad"
 
