@@ -118,6 +118,17 @@ def test_a_record_that_cannot_be_read_is_skipped_not_deleted_and_does_not_stop_t
     assert (state / "broken.json").exists()
 
 
+def test_a_record_with_an_odd_dirty_value_is_shown_as_not_known_and_does_not_break_status(state, tmp_path, monkeypatch, capsys):
+    path = record(state, "iid-odd", tmp_path, pid=4242, port=5242)
+    odd = json.loads(path.read_text())
+    odd["dirty"] = "maybe"
+    path.write_text(json.dumps(odd))
+    serving(monkeypatch, {4242})
+
+    assert fleet.cmd_status(None, None) == 0
+    assert "aaaaaaa+?" in capsys.readouterr().out
+
+
 def test_the_commit_is_shown_with_what_is_known_about_uncommitted_changes():
     row = {"sha": "1234567" + "0" * 33}
     assert fleet._sha({**row, "dirty": False}) == "1234567"
