@@ -268,7 +268,9 @@ class AgentHub:
         self.bridge_offers: dict[str, dict[str, Any]] = {}  # rid → which page it is offered to, who claimed it
         self._loop_task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._follow_lock = threading.Lock()
+        # Reentrant: on the loop thread (`items()` at startup) `broadcast` calls the listeners inline while the follower
+        # holds this, and a listener (dispatch.py) reads `live.items` under it too.
+        self._follow_lock = threading.RLock()
         # Who else needs to know what the hub sees (dispatch.py): every broadcast event (on the loop
         # thread); the moment before a message is injected into a CLI (session id, send id; from a
         # worker thread or the loop, and it must not block); the first time the loop starts.
