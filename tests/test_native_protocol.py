@@ -18,11 +18,9 @@ TURN = "turn-1"
 def make_request(*, side_effecting: bool = True) -> np.DeliveryRequest:
     return np.DeliveryRequest(
         request_id=uuid4(),
-        origin=np.RequestOrigin(room_id=uuid4(), request_seq=7, requested_by=uuid4()),
+        origin=np.RequestOrigin(request_seq=7),
         session=np.NativeSession(
             deployment="test",
-            participant_id=uuid4(),
-            computer_id=uuid4(),
             adapter="codex",
             tmux_target="sock:w.0",
             native_locator=LOCATOR,

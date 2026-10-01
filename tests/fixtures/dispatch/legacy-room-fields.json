@@ -6,10 +6,14 @@
     "request": {
       "request_id": "0d5f6a1e-7b3c-4c1f-9a52-3e8d2b6c4f10",
       "origin": {
-        "request_seq": 1
+        "room_id": "6f0b1e52-3a7c-4d1e-9b8a-2c5d7e9f0a13",
+        "request_seq": 1,
+        "requested_by": "6f0b1e52-3a7c-4d1e-9b8a-2c5d7e9f0a13"
       },
       "session": {
         "deployment": "/work/p",
+        "participant_id": "6f0b1e52-3a7c-4d1e-9b8a-2c5d7e9f0a13",
+        "computer_id": "6f0b1e52-3a7c-4d1e-9b8a-2c5d7e9f0a13",
         "adapter": "codex",
         "tmux_target": "agora-s-b",
         "native_locator": "s-b"
