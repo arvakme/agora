@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import signal
 import time
 from pathlib import Path
 
@@ -230,6 +231,42 @@ async def test_after_a_restart_nothing_that_may_have_been_injected_is_sent_again
         assert hub2.terms.pastes == []
     finally:
         await hub2.close()
+
+
+async def test_a_restart_whose_target_log_gained_records_does_not_wait_on_its_own_lock(rig, store, monkeypatch):
+    # The server was killed while B's turn ran and B's CLI went on writing. At the next start `recover()` reads that
+    # log on the loop thread, the follower tells the listeners about the new records while it holds the follower
+    # lock, and the dispatch listener looks at the same transcript: it must not wait for a lock this thread holds.
+    rid, _ = await go(rig)
+    await rig.deliver(rid)
+    hub2 = AgentHub(store, terminals=FakeTerms("s-a", "s-b"))
+    dp2 = Dispatches(hub2)
+    real = hub2._follow_locked
+
+    def follow_finding_news(sid, lv):
+        real(sid, lv)
+        if sid == "s-b":
+            news = rig.user(sid, "u1", rid)
+            lv.items[news["id"]] = news
+            hub2.broadcast({"t": "transcript", "sessionId": sid, "items": [news]})
+
+    monkeypatch.setattr(hub2, "_follow_locked", follow_finding_news)
+    stuck = []
+
+    def give_up(*_):
+        stuck.append(True)
+        raise TimeoutError  # a lock wait is interrupted by the signal; the hub's listener guard swallows this, hence the flag
+
+    old = signal.signal(signal.SIGALRM, give_up)
+    signal.setitimer(signal.ITIMER_REAL, 5)
+    try:
+        dp2.recover()
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old)
+    assert not stuck, "recover() waited on a lock its own thread holds"
+    d = dp2.get(rid)
+    assert d.delivery.bound is not None and d.delivery.bound.turn == "u1" and hub2.terms.pastes == []
 
 
 async def test_after_a_restart_the_marker_in_b_s_log_settles_what_it_can(rig, store, monkeypatch):
@@ -670,7 +707,7 @@ async def test_the_log_followers_items_are_read_under_the_follow_lock(rig):
 
     class Watching(OrderedDict):
         def values(self):
-            held.append(rig.hub._follow_lock.locked())
+            held.append(rig.hub._follow_lock._is_owned())  # held by this very thread
             return super().values()
 
     rid, _ = await go(rig)
