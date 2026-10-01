@@ -79,6 +79,12 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
  * agent's mark centred on it. Mark sizes are optical: Pi's square badge needs more margin than
  * Codex's cloud to sit inside the circle. No shadow, no glow. */
 .agent-avatar { --av: 32px; flex: none; display: inline-grid; place-items: center; width: var(--av); height: var(--av); border-radius: 50%; background: var(--avatar-tile); box-shadow: inset 0 0 0 1px var(--avatar-edge); overflow: hidden; user-select: none; }
+/* the dot on a session tab's mark: at work (the accent, breathing) or waiting for the person (caution, still) */
+.session-mark { position: relative; flex: none; display: inline-flex; }
+.session-mark[data-state]::after { content: ""; position: absolute; right: -3px; bottom: -3px; width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); }
+.session-mark[data-state="working"]::after { background: var(--accent); animation: session-working 1.4s ease-in-out infinite; }
+.session-mark[data-state="waiting"]::after { background: var(--caution-dot); }
+@keyframes session-working { 50% { opacity: 0.35; } }
 .agent-avatar > svg, .agent-avatar > img { display: block; width: calc(var(--av) * var(--mark, 0.6)); height: calc(var(--av) * var(--mark, 0.6)); }
 .agent-avatar[data-agent="pi"] { --mark: 0.46; }
 .agent-avatar[data-agent="claude"] { --mark: 0.62; }
@@ -122,6 +128,7 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 /* icons are ink by default (the facade falls back to the accent); the rules for what is selected,
  * primary or being written set --icon back to the purple */
 .app { position: fixed; inset: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); color: var(--fg); --icon: var(--fg-muted); }
+@media (pointer: coarse) { .app { top: var(--vvt, 0); bottom: auto; height: var(--vvh, 100%); } } /* app/viewport.ts: the part of the page the keyboard leaves */
 
 /* ——— top bar: one 54px column head ——— */
 .topbar { flex: none; height: var(--column-head); display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-5) 0 var(--space-6); background: var(--bg); border-bottom: 1px solid var(--line); min-width: 0; }
@@ -730,3 +737,30 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .empty-cv[data-busy] .empty-cv-box { transform: translateY(132px); }
 .empty-cv[data-busy] .dither-field { display: none; }
 .canvas-view:has(.empty-cv[data-busy]) .excalidraw .HintViewer { display: none; }
+
+/* iOS Safari zooms the whole page when a field under 16px takes focus, and does not zoom back: on a touch screen fields are 16px.
+   !important because the fields set their own sizes in their own sheets; Excalidraw's own text editing is left alone. */
+@media (pointer: coarse) {
+  :is(input, textarea, select):not(.excalidraw *):not([type="checkbox"]):not([type="radio"]):not([type="range"]) { font-size: 16px !important; }
+}
+
+/* A phone plays a turn with the canvas over the session (workspace/narrow.ts): the canvas is only watched, so Excalidraw's tools, the dock and the
+   whole-canvas button give their room to the diagram; the session keeps the play controls and the current step, not the composer. */
+@media (max-width: 640px) {
+  html[data-replay-stack] .excalidraw :is(.App-top-bar, .App-bottom-bar, .mobile-misc-tools-container),
+  html[data-replay-stack] .dock,
+  html[data-replay-stack] .whole,
+  html[data-replay-stack] .sp[data-playing] :is(.sp-composer, .sp-inputright) { display: none; }
+}
+
+/* A phone with the session panel as a bottom bar (workspace/narrow.ts sheetPair): folded, the session keeps its tab bar, what it waits to be answered, its status line and its composer. */
+@media (max-width: 640px) {
+  .wm-slot[data-sheet="folded"] .sp > :not(.sp-composer, .sp-livebar, .sp-requests, .sp-inputright) { display: none; }
+}
+
+/* A phone's divider between the canvas and the session (workspace/Workspace.tsx onStackShare): a finger-sized strip with a grip, since 9px of hit area cannot be found by touch */
+@media (max-width: 640px) {
+  .wm-sash { touch-action: none; }
+  .wm-sash[data-dir="col"]::before { inset: -14px 0; }
+  .wm-sash[data-dir="col"]::after { left: calc(50% - 24px); right: auto; width: 48px; top: -3px; height: 5px; border-radius: 3px; background: var(--fg-muted); opacity: 0.7; }
+}
