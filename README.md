@@ -125,7 +125,7 @@ cd ~/code/my-service                            # 你的项目
 
 - 首次打开会建一块以项目命名的空画布和一个会话；会话里的「画出这个项目的架构」按钮让推荐的 agent 看一遍项目、把架构画上去（也可以自己选 agent、自己写第一句话）；「看一个示例」会把示例图作为另一张画布打开。
 - 绑定会话时会自动为该 agent 安装 `agora` skill（旧的 `agora-canvas` 链接会被换掉）；也可以手动 `agora skill install --agent claude|codex|pi|all`（Claude Code 链接到 `.claude/skills/`，Codex 链接到 `.agents/skills/`，Pi 每次启动带 `--skill`；链接写进 `.git/info/exclude`，不改全局配置）。
-- 把 `~/code/agora/bin` 加进 `PATH` 后可以直接用 `agora up` / `agora open`。`agora up` 只起服务并打印地址；`agora open --dev` 走 vite 热更新，开发 Agora 本身时用。
+- 把 `~/code/agora/bin` 加进 `PATH` 后可以直接用 `agora up` / `agora open`。`agora up` 只起服务并打印地址；`agora open --dev` 走 vite 热更新，开发 Agora 本身时用。同时开着几个 worktree 的服务时，`agora dev status` 列出本机所有服务和各自跑的 git SHA，`agora dev gc` 清掉已退出的记录。
 
 分享需要 `cf`（Cloudflare CLI；没装就用固定版本的 `npx cf`），并已 `npx cf auth login`（凭据归 `cf` 管，Agora 不存也不读）；`AGORA_SHARE_DOMAIN` 指定分享用的域名（账号里只有一个域名时可省）：
 

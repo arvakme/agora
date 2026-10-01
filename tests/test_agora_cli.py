@@ -183,3 +183,24 @@ def test_up_in_a_copy_of_a_running_project_leaves_the_original_server_alone(tmp_
         agora("down", cwd=b)
         agora("down", cwd=a)
 
+
+
+def test_dev_status_shows_the_code_a_real_server_runs_and_gc_clears_it_after_down(tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True, check=True).stdout.strip()
+    try:
+        assert agora("up", cwd=proj).returncode == 0
+        port = json.loads((proj / ".agora" / "run" / "server.json").read_text())["port"]
+        assert get(f"http://127.0.0.1:{port}/api/project/health")["sha"] == head
+
+        shown = agora("dev", "status", cwd=tmp_path)
+        assert shown.returncode == 0 and str(proj.resolve()) in shown.stdout and head[:7] in shown.stdout and "answering" in shown.stdout
+        assert "nothing to clear" in agora("dev", "gc", cwd=tmp_path).stdout  # a live server is not cleared
+
+        assert agora("down", cwd=proj).returncode == 0
+        assert "stopped" in agora("dev", "status", cwd=tmp_path).stdout or "no Agora server records" in agora("dev", "status", cwd=tmp_path).stdout
+        agora("dev", "gc", cwd=tmp_path)
+        assert "no Agora server records" in agora("dev", "status", cwd=tmp_path).stdout
+    finally:
+        agora("down", cwd=proj)

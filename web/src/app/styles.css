@@ -126,6 +126,7 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 /* ——— top bar: one 54px column head ——— */
 .topbar { flex: none; height: var(--column-head); display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-5) 0 var(--space-6); background: var(--bg); border-bottom: 1px solid var(--line); min-width: 0; }
 .brand { display: inline-flex; align-items: center; gap: var(--space-4); font-size: var(--text-lg); font-weight: var(--weight-strong); letter-spacing: var(--track-title); flex: none; }
+.build-sha { color: var(--fg-muted); font: var(--text-xs) var(--font-mono); margin-right: var(--space-3); flex: none; }
 .project-name { color: var(--fg-muted); font-size: var(--text-sm); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: var(--space-3); }
 .topbar-gap { flex: 1; min-width: 0; }
 .all-docs { position: relative; flex: none; }
@@ -133,7 +134,7 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .all-docs-btn[aria-expanded="true"] { background: var(--raised); color: var(--fg); }
 .topbar-sep { width: 1px; height: 16px; background: var(--line); flex: none; }
 @media (max-width: 960px) {
-  .project-name, .topbar .iseg, .topbar-sep { display: none; }
+  .project-name, .build-sha, .topbar .iseg, .topbar-sep { display: none; }
 }
 @media (max-width: 640px) {
   .topbar { gap: var(--space-2); padding: 0 var(--space-4); }
