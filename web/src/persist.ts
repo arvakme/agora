@@ -24,7 +24,9 @@ export const onCanvasRefused = (f: (canvasId: string) => void) => void (onRefuse
 
 export const project = createClient({ onRefusedEmpty: (slot) => slot.startsWith("canvas:") && onRefusedEmpty(slot.slice("canvas:".length)) });
 
-export type ProjectInfo = { id: string; name: string; root: string; me: Person };
+/** The code the server runs (server/canvas/version.py): HEAD of its checkout, and whether tracked files differ from it. */
+export type BuildInfo = { sha: string | null; dirty: boolean };
+export type ProjectInfo = { id: string; name: string; root: string; me: Person; build?: BuildInfo };
 type Versioned<T> = { data: T; version: string };
 /** A project file the server could not read (server/canvas/project.py `file_error`, `_read_checked`). */
 export type FileError = { file: string; error: "merge-conflict" | "invalid-json" | "unreadable"; line?: number | null; detail?: string; kind?: string; id?: string | null };
@@ -66,6 +68,7 @@ type Snapshot = ProjectInfo & {
   bindings?: Record<string, Binding>;
   local?: { instanceId: string; change: LocalChange | null };
   origins?: Record<string, Origin>;
+  build?: BuildInfo;
 };
 export type Loaded = {
   project: ProjectInfo;
@@ -132,7 +135,7 @@ export async function connect(): Promise<Loaded> {
   folded.logged.forEach((l, id) => logged.set(id, l));
   latestSessions = folded.state;
   return {
-    project: { id: snap.id, name: snap.name, root: snap.root, me: snap.me },
+    project: { id: snap.id, name: snap.name, root: snap.root, me: snap.me, build: snap.build },
     empty: snap.empty,
     errors,
     workspace: snap.workspace?.data,
