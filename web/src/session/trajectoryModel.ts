@@ -343,9 +343,21 @@ export const filesOf = (turns: TrajTurn[]): FileTouch[] => turns.flatMap((t) => 
 
 // ——— timeline (DSH timeline.ts) ———
 export type TimelineMode = "sequence" | "duration";
-export type Span = { start: number; end: number; index: number; kind: RecordKind; lane: number; isError: boolean; label: string; turn: number };
+/** `start` / `end` are timeline coordinates (slots, or ms with idle gaps removed); `at` / `durationMs` are what the log recorded. */
+export type Span = { start: number; end: number; index: number; kind: RecordKind; activity?: Activity; isError: boolean; label: string; turn: number; at: number; durationMs: number | null };
 export type TimelineModel = { start: number; end: number; spans: Span[]; turnBoundaries: { turn: number; at: number }[] };
-const laneFor = (k: RecordKind) => (k === "tool" ? 2 : k === "message" ? 1 : 0);
+const spanOf = (r: TrajRecord, turn: number, start: number, end: number): Span => ({
+  start,
+  end,
+  index: r.index,
+  kind: r.kind,
+  activity: r.kind === "tool" ? toolActivity(r.item) : undefined,
+  isError: r.isError,
+  label: r.text,
+  turn,
+  at: r.at,
+  durationMs: r.durationMs,
+});
 
 export function deriveTimeline(turns: TrajTurn[], mode: TimelineMode): TimelineModel | null {
   const recs = turns.flatMap((t) => t.steps.flatMap((s) => s.records.map((r) => ({ r, turn: t.n }))));
@@ -357,7 +369,7 @@ export function deriveTimeline(turns: TrajTurn[], mode: TimelineMode): TimelineM
     recs.forEach(({ r, turn }, i) => {
       if (turn !== seen) turnBoundaries.push({ turn, at: i });
       seen = turn;
-      spans.push({ start: i, end: i + 1, index: r.index, kind: r.kind, lane: laneFor(r.kind), isError: r.isError, label: r.text, turn });
+      spans.push(spanOf(r, turn, i, i + 1));
     });
     return { start: 0, end: recs.length, spans, turnBoundaries };
   }
@@ -371,7 +383,7 @@ export function deriveTimeline(turns: TrajTurn[], mode: TimelineMode): TimelineM
     if (covered !== null && x.start > covered + MIN_GAP) removed += x.start - covered - MIN_GAP;
     const s = x.start - removed;
     const e = x.end - removed;
-    spans.push({ start: s, end: e, index: x.r.index, kind: x.r.kind, lane: laneFor(x.r.kind), isError: x.r.isError, label: x.r.text, turn: x.turn });
+    spans.push(spanOf(x.r, x.turn, s, e));
     covered = covered === null ? x.end : Math.max(covered, x.end);
   }
   for (const t of turns) {
@@ -382,7 +394,3 @@ export function deriveTimeline(turns: TrajTurn[], mode: TimelineMode): TimelineM
   const end = Math.max(...spans.map((s) => s.end), start + 1);
   return { start, end, spans, turnBoundaries };
 }
-
-/** Record indexes active anywhere inside [a, b] (DSH `trajectoryTimelineFocusIndexes`). */
-export const focusIndexes = (model: TimelineModel, a: number, b: number) =>
-  new Set(model.spans.filter((s) => s.start <= b && s.end >= a).map((s) => s.index));

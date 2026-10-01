@@ -19,7 +19,7 @@ const PI: WorkRun = {
   lastAt: 0,
   children: [],
 };
-const MAIN_DOCK: Record<string, { x: number; y: number }> = { api: { x: 0, y: 0 }, db: { x: 700, y: 0 } };
+const MAIN_DOCK: Record<string, { x: number; y: number }> = { api: { x: 0, y: 0 }, db: { x: 350, y: 0 } }; // (POL3: a door takes 1.3 s now, so the docks are half as far apart as they were: the walks still fit between the segments)
 const SUB_DOCK: Record<string, { x: number; y: number }> = { app: { x: 0, y: 0 }, users: { x: 150, y: 0 } };
 const main: Ctx = {
   locate: (p) => (p === "server/app.py" || p === "server/users.py" ? { place: "api", portal: { canvasId: "c-api", label: "应用入口" } } : p.startsWith("server/db/") ? { place: "db" } : null),
@@ -77,9 +77,10 @@ describe("more work behind the same door while it is still walking to it", () =>
   it("it goes in when it gets there — not when the second piece of work begins", () => {
     // 48 s: sets off for the entrance's node; 51 s (long before it is there): the next file behind the same door
     const run: WorkRun = { ...PI, segs: [seg("read", 0, 2, "server/db/x.py"), seg("read", 2, 5, "server/app.py"), seg("write", 5, 12, "server/users.py")] };
-    const walk = stateAt(run, 2.1 * S, { ...main, run: () => run }).trip!;
+    const far = { ...main, dock: (p: string) => (p === "db" ? { x: 700, y: 0 } : MAIN_DOCK[p]) }; // a long way
+    const walk = stateAt(run, 2.1 * S, { ...far, run: () => run }).trip!;
     expect(walk.t1 - walk.t0).toBeGreaterThan(3 * S); // over 3 s: the second piece of work starts (5 s) while it is still on the way
-    const st = (t: number) => stateAt(run, t, { ...main, run: () => run });
+    const st = (t: number) => stateAt(run, t, { ...far, run: () => run });
     expect(walk.t1).toBeGreaterThan(5.4 * S);
     expect(st(5.3 * S).doorsIn).toEqual([walk.t1]);
     expect(st(5.3 * S).pose).toBe("walk");

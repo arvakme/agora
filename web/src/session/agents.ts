@@ -252,10 +252,11 @@ export type Status = {
   steerWhy?: string | null;
   activity: string | null;
   error: string | null;
-  /** The session's terminal: Agora's own tmux pane (Kitty / Terminal attach to it). `inputRight`: who may type into it (a person's takeover pauses delivery). */
+  /** The session's terminal: Agora's own tmux pane (Ghostty / Kitty / Terminal attach to it). `inputRight`: who may type into it (a person's takeover pauses delivery). */
   terminal: { alive: boolean; attach: string; clients: number; app: "tmux" | null; inputRight?: "host" | "human"; paused?: boolean; writers?: number };
 };
-export type TerminalApps = { kitty: boolean };
+/** Which terminal「在终端打开」uses (server/canvas/terminal_apps.py); both null when none is installed. */
+export type TerminalApps = { chosen: "ghostty" | "kitty" | "terminal" | null; name: string | null };
 export type CatalogEntry = {
   kind: AgentKind;
   name: string;
@@ -580,7 +581,7 @@ export const agents = {
   async openTerminal(sessionId: string, canvasId: string, launch = true) {
     return (await json(
       await fetch(`/api/agent/sessions/${sessionId}/terminal`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ launch, canvasId }) }),
-    )) as { attach: string; launched: "kitty" | "terminal" | null; created: boolean };
+    )) as { attach: string; launched: "ghostty" | "kitty" | "terminal" | null; created: boolean };
   },
   terminalApps: async () => (await json(await fetch("/api/agent/terminals"))) as TerminalApps,
   /** A transcript item in full (tool args / output past the preview). */

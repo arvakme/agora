@@ -5,7 +5,7 @@
 // While someone is in the sub-diagram, the parent canvas keeps what they went down through: a hole in the node's top edge, the
 // upper end of the ladder standing out of it, and one head looking out — the traced one's, else the followed one's, else the
 // one that went in last. It is all a function of the runs' door states at t.
-import { DOOR_H, DOOR_MS, RIG } from "./rig";
+import { DOOR_H, DOOR_MS, RIG, rungCount } from "./rig";
 import type { RunState, Side } from "./place";
 
 /** The head rises out of the hole over this long once its owner is all the way down, and ducks over SINK_MS as it starts to come out. */
@@ -32,8 +32,6 @@ export function peekBox(dock: { x: number; y: number }, k: number, note: boolean
 
 /** The rails of a ladder on the parent canvas stand this far above the floor (figure units): the upper end that shows. */
 export const HATCH_POST = 34;
-/** Rungs are about this far apart, as on any ladder (./rig.ts). */
-const RUNG = 5.5;
 /** How far a ladder's rails are apart, and how wide the hole is (figure units). */
 export const LADDER_HALF = 2.6;
 
@@ -43,7 +41,7 @@ export const cutLine = (dir: 1 | -1, k: number) => (dir === 1 ? 0 : -DOOR_H * k)
 
 /** A door's ladder as it is drawn, in figure units with the floor at 0 (up is −y): the rails from `top` to `bottom`, the rungs between. */
 export function ladderShape(dir: 1 | -1): { top: number; bottom: number; rungs: number[] } {
-  const sp = DOOR_H / Math.max(1, Math.round(DOOR_H / RUNG));
+  const sp = DOOR_H / rungCount(DOOR_H);
   const top = dir === 1 ? -HATCH_POST : -DOOR_H;
   const rungs: number[] = [];
   for (let y = -sp; y >= top - 1e-6; y -= sp) rungs.push(y);

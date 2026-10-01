@@ -160,7 +160,7 @@ export const SUB_SCALE = 0.8;
  * 2026-09-29 用户决定调慢走路: 0.22 = 220 px/s (a step a little under 5 frames); a way is never hurried
  * along to fit a time limit, however far. */
 export const WALK_SPEED = 0.22;
-export const CLIMB_SPEED = 0.13;
+export const CLIMB_SPEED = 0.0625;
 /** A walk or climb gathers speed over this long (and slows over as much) — or over RAMP of its time, when
  * that is shorter (a short one); so a long walk spends its time at WALK_SPEED, not in the ramps. */
 export const RAMP_MS = 300;
@@ -177,9 +177,14 @@ export const STEP_MAX = 12;
 // The gait, in figure units (× the trip's k for world px).
 const STRIDE = 15; // between footfalls at the natural pace (Loom's 15.3)
 const LIFT = 3.4; // how high a swinging foot comes up (and how far a hand or foot comes off a ladder)
-const RUNG = 5.5; // rung spacing, about: a ladder's rungs split its height evenly
+/** The rungs are at most this far apart (figure units): a ladder's height is split evenly into as many as it takes (`rungCount`; hatch.ts draws a door's ladder with the same). Far enough apart that a limb's move is a whole reach, not a flick: a limb
+ * reaches 4 rungs a move (the leg's reach, with the bent knee), so a pair of them changes over every 2 rungs of climbing, 16 units of body. */
+export const RUNG = 8.5;
+/** How many rungs a ladder of height `h` (figure units) has: the fewest that keep them within RUNG of each other. */
+export const rungCount = (h: number) => Math.max(1, Math.ceil(h / RUNG - 1e-9));
+/** Hands and feet change over (a diagonal pair lets go and reaches on) this many times a second at the top of a climb, at most: the top pace of a ladder is what its rungs allow at that rate (`climbPace`). 3.125 is one change every 320 ms. */
+export const CLIMB_SWAPS = 3.125;
 const GAP = 4; // the body keeps this far off a ladder it climbs; hands and feet reach forward to it
-const POST = 22; // the rails reach this far above the upper floor: a handhold getting on and off
 const GRAB_MS = 150; // hands and feet go onto a ladder over this much either side of where the climb starts (and off it where it ends)
 const RAMP = 0.3; // a walk or a climb gathers speed over this share of its time, and slows over as much
 /** World px/ms² at the reference scale (× the figure's scale): no walk or climb gathers speed (or slows) harder — 1200 px/s², under 0.02 px/ms of change a frame at 60 fps. */
@@ -279,7 +284,7 @@ function holdAt(z: number, from: number, R: number, lo: number, hi: number): { j
   const a = from + R * i;
   const src = clamp(a, lo, hi);
   const dst = clamp(a + R, lo, hi);
-  const j = clamp(a + R * (fr < 0.5 ? smooth(fr / 0.5) : 1), lo, hi);
+  const j = mix(src, dst, fr < 0.5 ? smooth(fr / 0.5) : 1); // a move that would start below the ladder's foot (or end above its top) is a shorter one over the same time, not one that starts late (or stops early)
   // between two rungs it is off the ladder (lift > 0 however close to one it is); on a rung, 0
   const up = j > src && j < dst ? Math.sin((Math.PI * (j - src)) / (dst - src)) : 0;
   return { j, up, lift: up ? Math.max(1e-3, up) : 0 };
@@ -289,33 +294,47 @@ function holdAt(z: number, from: number, R: number, lo: number, hi: number): { j
  * the far hand with the near foot, the pairs taking turns; a limb between rungs comes off toward the body. */
 function holds(r: Rungs, x: number, f: 1 | -1, y: number, k: number): { feet: [Foot, Foot]; hands: [Foot, Foot] } {
   const z = (r.bot - y) / r.sp;
-  const at = (h: { j: number; up: number; lift: number }, ahead = 0): Foot => ({ x: x + f * (ahead - h.up * LIFT) * k, y: r.bot - h.j * r.sp, lift: h.lift });
+  // a foot off its rung comes toward the body, a hand away from it: a hand that came in would pass within a few units of the shoulder, and the elbow whips round it
+  const at = (h: { j: number; up: number; lift: number }, ahead = 0, off = -1): Foot => ({ x: x + f * (ahead + off * h.up * LIFT) * k, y: r.bot - h.j * r.sp, lift: h.lift });
   const half = r.R / 2;
+  // one pair is always on the move (each moves for half the time), so a climb that starts at the foot (or the top) has one pair at the start of its move, not half way through it: its
+  // first change is a full one later, not a few ms after it starts (four rungs a move; with two rungs a move the rungs allow no such phase)
+  const p = r.R % 4 === 0 ? r.R / 4 : 0;
   return {
-    feet: [at(holdAt(z, 0, r.R, 0, r.n)), at(holdAt(z, half, r.R, 0, r.n))],
-    hands: [at(holdAt(z + r.m, (half + r.m) % r.R, r.R, 1, r.top), r.ahead), at(holdAt(z + r.m, r.m % r.R, r.R, 1, r.top), r.ahead)],
+    feet: [at(holdAt(z, p, r.R, 0, r.n)), at(holdAt(z, p + half, r.R, 0, r.n))],
+    hands: [at(holdAt(z + r.m, (p + half + r.m) % r.R, r.R, 1, r.top), r.ahead, 1), at(holdAt(z + r.m, (p + r.m) % r.R, r.R, 1, r.top), r.ahead, 1)],
   };
 }
 
-/** Going down, a limb reaches half as far a move (the short steps of feeling for the next rung below), so the hips can stay higher: the legs long, not folded like a seat. */
+/** Going down, the hips may stay this share of the standing height (higher than going up, 0.8: the legs long, not folded like a seat) if the reach allows it (`rungsOf`). */
 const DOWN_HIP = 0.9;
 /** …its body comes in to the ladder: it leans this much more to it (°), its hips end up this far behind the feet's line and shift at most this far (figure units) to get there, and its hands hold this far ahead of the rails, clear of the shoulders that came forward. */
 const DOWN_LEAN = 6;
 const DOWN_BEHIND = 0.8;
 const DOWN_SWAY_MAX = 3;
 const DOWN_AHEAD = 2.5;
-/** The rungs of a ladder from y0 to y1 for a figure at k world px per unit, its limbs reaching R rungs a move (half that going down: y1 below y0; the hips then up to `downHip` of the standing height, the hands ahead of the rails). */
-function rungsOf(y0: number, y1: number, k: number, R0: number, downHip = DOWN_HIP): Rungs {
+/** A hand on a ladder is at least this far (figure units) over the shoulder, at the low end of its reach — and the rails reach as far above the upper floor as the shoulder plus that (about 33: the door's ladder on the parent canvas, HATCH_POST 34): a handhold getting on and off, never one that brings the hand down through the shoulder, where the elbow would whip round. */
+const HAND_MIN = 3;
+/** The rungs of a ladder from y0 to y1 for a figure at k world px per unit: the height split evenly into rungs at most RUNG apart, a limb reaching 4 of them a move (the body goes 2 between one diagonal pair's move and the other's). Going down
+ * (y1 below y0), the hips are up to `downHip` of the standing height (0.8 going up) if the reach allows it, the hands ahead of the rails. */
+function rungsOf(y0: number, y1: number, k: number, downHip = DOWN_HIP): Rungs {
   const down = y1 > y0;
-  const R = down ? R0 / 2 : R0;
   const bot = Math.max(y0, y1);
   const H = bot - Math.min(y0, y1);
-  const n = Math.max(1, Math.round(H / (RUNG * k)));
+  const n = rungCount(H / k);
   const sp = H / n;
+  const R = 4;
   // hips low enough that a foot at the bottom of its reach (R/4 rungs under the body) still gets there
   const hip = Math.min((down ? downHip : 0.8) * RIG.hip, 0.97 * (RIG.thigh + RIG.shin) - (R / 4) * (sp / k));
-  const hand = hip + RIG.torso - SHOULDER + 0.5 * (RIG.upper + RIG.fore);
-  return { bot, sp, n, top: n + Math.max(1, Math.round((POST * k) / sp)), R, m: Math.max(1, Math.round((hand * k) / sp)), hip, ahead: down ? DOWN_AHEAD : 0, snug: down };
+  // the hands hold m rungs over the feet: the fewest that keep a hand (which ranges R/4 rungs either side of that) off the shoulder, where the elbow would whip round
+  const shoulder = hip + RIG.torso - SHOULDER;
+  const m = Math.max(1, Math.ceil((shoulder + HAND_MIN + (R / 4) * (sp / k)) / (sp / k) - 1e-9));
+  return { bot, sp, n, top: n + Math.max(1, Math.ceil((shoulder + HAND_MIN) / (sp / k) - 1e-9)), R, m, hip, ahead: down ? DOWN_AHEAD : 0, snug: down };
+}
+/** How fast the body climbs a ladder of height `h` (world px) at most, for a figure at k world px per unit (× its scale): CLIMB_SPEED, or slower if the rungs are nearer than that pace allows for CLIMB_SWAPS changes a second. */
+export function climbPace(h: number, k: number): number {
+  const sp = h / rungCount(h / k);
+  return Math.min(CLIMB_SPEED * (k / REF_K), (CLIMB_SWAPS * 2 * sp) / 1000);
 }
 
 /** A walk from a to b (root) over level legs and steps: footsteps, and the body's rise over each step. */
@@ -428,7 +447,7 @@ export function planTrip(m: Move, rt: Route, from: Pt, k = 1): Trip {
   // down to the ladder and the climb starts from that pace, not from rest; the ends of the trip are at rest. Never changing speed faster than ACCEL (× the figure's scale).
   const sc = (k / REF_K) * (m.boost ?? 1);
   const A = ACCEL * sc;
-  const pace = runs.map((r) => (r.climb ? CLIMB_SPEED : WALK_SPEED) * sc);
+  const pace = runs.map((r, i) => (r.climb ? climbPace(len[i], k) * (m.boost ?? 1) : WALK_SPEED * sc));
   const v: number[] = [0]; // v[i]: the speed where stretch i starts (v[n]: where the last ends)
   for (let i = 1; i < runs.length; i++) v.push(len[i - 1] > 0 && len[i] > 0 ? CORNER * Math.min(pace[i - 1], pace[i]) : 0);
   v.push(0);
@@ -467,7 +486,7 @@ export function planTrip(m: Move, rt: Route, from: Pt, k = 1): Trip {
       continue;
     }
     const x = r.legs[0].a.x;
-    const rungs = rungsOf(a.y, e.y, k, quick >= 1.25 ? 6 : 4);
+    const rungs = rungsOf(a.y, e.y, k);
     trip.phases.push({ kind: "climb", t0: t, t1: t + T, a, b: e, f: face[i], prof: profs[i], x, rungs, on: 0, off: 0 });
     // off it at the ladder's foot (or top), on the floor there
     feet = [
@@ -475,7 +494,7 @@ export function planTrip(m: Move, rt: Route, from: Pt, k = 1): Trip {
       { x, y: e.y, lift: 0 },
     ];
     t += T;
-    // drawn while walked: rails and rungs, the topmost leg's rails reaching POST above the upper floor
+    // drawn while walked: rails and rungs, the topmost leg's rails reaching `rungs.top` rungs above the upper floor
     const upper = rungs.bot - rungs.n * rungs.sp;
     for (const l of r.legs) {
       const lo = Math.min(l.a.y, l.b.y);
@@ -527,7 +546,7 @@ export function planDoor(k: number, dir: 1 | -1, leaving: boolean, f: 1 | -1 = 1
   const far: Pt = { x: 0, y: dir * DOOR_H * k };
   const floor: Pt = { x: 0, y: 0 };
   const [a, b] = leaving ? [floor, far] : [far, floor];
-  const rungs = { ...rungsOf(a.y, b.y, k, 4, DOOR_DOWN_HIP), ahead: DOOR_AHEAD, snug: false };
+  const rungs = { ...rungsOf(a.y, b.y, k, DOOR_DOWN_HIP), ahead: DOOR_AHEAD, snug: false };
   const st = RIG.stance * k;
   const home = (foot: 0 | 1): Pt => ({ x: (foot ? -st : st) * f, y: 0 });
   const hold: [Foot, Foot] = [{ ...home(0), lift: 0 }, { ...home(1), lift: 0 }];
@@ -543,6 +562,11 @@ export function planDoor(k: number, dir: 1 | -1, leaving: boolean, f: 1 | -1 = 1
     trip.phases.push({ kind: "climb", t0: 0, t1: T, a, b, f, prof: restProfile(DOOR_RAMP), x: 0, rungs, on: 0, off: DOOR_GRAB }, stand(T, DOOR_MS, onLadder, steps));
   }
   return trip;
+}
+
+/** The rungs each climb of a trip holds: rung j is at world y = bot − j·sp (0 the lower floor). What the hands and feet are put on, for the pose check (./poseHealth.ts) to hold against the drawn rungs. */
+export function rungGrid(p: Trip): { bot: number; sp: number; n: number }[] {
+  return p.phases.flatMap((x) => (x.kind === "climb" ? [{ bot: x.rungs.bot, sp: x.rungs.sp, n: x.rungs.n }] : []));
 }
 
 /** Where a walk or a climb has everything at t (hands and feet on the ladder while climbing). */
@@ -916,7 +940,7 @@ export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolea
     const a = Math.atan2(h[1], h[0]);
     const ang = jump || sa.xp == null ? sa.reset(a) : sa.step(step, sa.y + wrapAngle(a - sa.y));
     const rad = S(sr, r);
-    return [rad * Math.cos(ang), rad * Math.sin(ang)];
+    return [rad * Math.cos(ang), rad * Math.sin(ang), ang];
   };
   const near = swing(sp.nx, sp.ny, T.near);
   const far = swing(sp.fx, sp.fy, T.far);
@@ -972,13 +996,13 @@ export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolea
   const shN = { x: shx + L(0.6), y: shy };
   const shF = { x: shx - L(0.6), y: shy };
   // the hands: the pose's (through the springs), drawn onto their holds while getting on a ladder
+  // A hand goes onto a rung along an arc about the shoulder (same reason as `swing`), from where the pose has it (h[2]: the spring's own angle, which turns steadily through the line straight behind, where `atan2` would
+  // flip by a full turn) to the rung's angle (from the facing, 0 = straight ahead, + down): from hanging (+90°) to a rung overhead (−90°) it goes through ahead, never round behind the body.
   const reach = (h: number[], at: Pt | undefined): [number, number] => {
     const x = shx + L(h[0]);
     const y = shy + h[1];
     if (!at) return [x, y];
-    // onto the rung along an arc about the shoulder too (same reason as `swing`); the angles are from the facing (0 = straight ahead), so
-    // from hanging (+90°) to a rung overhead (−90°) it goes through ahead, never round behind the body
-    const a0 = Math.atan2(y - shy, (x - shx) * f);
+    const a0 = h[2];
     const a1 = Math.atan2(at.y - shy, (at.x - shx) * f);
     const a = mix(a0, a1, climb);
     const r = mix(Math.hypot(x - shx, y - shy), Math.hypot(at.x - shx, at.y - shy), climb);

@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { handOff, undoAgent } from "../ops/agent";
 import type { AnchorState } from "../canvas/anchors";
-import { IconCheck, IconClose, IconHint, IconPencil, IconRetry, IconSend, IconTarget, IconTrash, IconUndo } from "../app/icons";
+import { IconCheck, IconClose, IconHint, IconPencil, IconRetry, IconSend, IconTarget, IconTrash } from "../app/icons";
 import type { Message, Thread, ThreadStore } from "./threads";
 import { canDelete, canEdit, identity, isGuestId } from "./threads";
 import { offerUndo } from "./undo";
@@ -16,6 +16,8 @@ import { useTrash } from "../workspace/trash";
 import { useAgentName, useAgents } from "../session/agents";
 import { AgentAvatar } from "../session/AgentAvatar";
 import { ui } from "../session/ui";
+import { canRedoTurn, redoTurn } from "../session/runTurn";
+import { UndoButtons } from "../session/StepActs";
 import { collapseSuperseded, PIN_LABEL, pinState } from "./handoffState";
 import { handoffLine, routeMessage, submitMention, type MentionTarget } from "./mention";
 import { MentionField } from "./MentionField";
@@ -105,7 +107,7 @@ export function ThreadCard({ t, st, mode, api, store, pos, onHover, onRepin }: {
               </Reveal>
             ) : (
               <Reveal key={m.id}>
-                <Row m={m} tools={{ store, threadId: t.id }} slot={colors.ofMessage(m)} onUndo={GUEST ? undefined : () => undoAgent(api, store, t.id, m.id)} />
+                <Row m={m} tools={{ store, threadId: t.id }} slot={colors.ofMessage(m)} onUndo={GUEST ? undefined : () => undoAgent(api, store, t.id, m.id)} onRedo={GUEST || !m.turnId ? undefined : () => redoTurn(api, m.turnId!)} />
               </Reveal>
             ))}
           {full && running && (
@@ -160,7 +162,7 @@ function Reveal({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Row({ m, first, onUndo, tools, slot }: { m: Message; first?: boolean; onUndo?: () => void; tools?: { store: ThreadStore; threadId: string }; /** the author's colour (./authorColor.ts) */ slot?: AuthorSlot }) {
+function Row({ m, first, onUndo, onRedo, tools, slot }: { m: Message; first?: boolean; onUndo?: () => void; onRedo?: () => void; tools?: { store: ThreadStore; threadId: string }; /** the author's colour (./authorColor.ts) */ slot?: AuthorSlot }) {
   const [editing, setEditing] = useState(false);
   // Eval replies are the session turn itself; native-session replies carry the agent's own
   // text and point at their last canvas change (for undo) and the session.
@@ -206,10 +208,10 @@ function Row({ m, first, onUndo, tools, slot }: { m: Message; first?: boolean; o
         {reply?.changes && (
           <div className="tchanges" data-undone={!!reply.undone}>
             <ul>{reply.changes.map((c, i) => <li key={i}>{c}</li>)}</ul>
-            {reply.undone ? (
-              <span className="tundone"><IconUndo size={14} />已撤销</span>
+            {onUndo && reply.batchId ? (
+              <span className="tchanges-acts"><UndoButtons undone={!!reply.undone} canRedo={!!m.turnId && canRedoTurn(m.turnId)} canAct onUndo={onUndo} onRedo={onRedo ?? (() => {})} /></span>
             ) : (
-              onUndo && reply.batchId && <button className="btn sm ghost" onClick={onUndo}><IconUndo size={14} />撤销这次修改</button>
+              reply.undone && <span className="act-status">已撤销</span>
             )}
           </div>
         )}

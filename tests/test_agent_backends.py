@@ -248,10 +248,10 @@ async def test_stopping_a_running_turn_kills_its_process_group(tmp_path, monkeyp
         "print('{\"type\": \"thread.started\", \"thread_id\": \"t\"}', flush=True)\n"
         "time.sleep(600)\n"
     )
-    b = CodexBackend([sys.executable, str(script)], timeout_s=1.5)
+    b = CodexBackend([sys.executable, str(script)], idle_s=1.5)
     req = RunRequest(schema=None, system=None, prompt="p", options=ExecOptions(backend="codex", model=""), cwd=str(tmp_path))
     res = [e async for e in b.run(req)][-1]
-    assert res["error"].startswith("timeout")
+    assert "没有任何输出" in res["error"]
     import os
     import time
 

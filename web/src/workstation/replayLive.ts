@@ -14,6 +14,7 @@ import { clock } from "./clock";
 import { choose, chosenRun, NONE, type Choice } from "./followChoice";
 import { isWorking, newSpell, pickFollow, spellStep, type Pick, type Spell } from "./liveCamera";
 import { canvasWhere } from "./place";
+import { pickPane } from "../workspace/frontPane";
 import { beforePlay, plays } from "./replayMode";
 import { quiet } from "./replayQuiet";
 import { ctxFor, createCamera } from "./replayView";
@@ -44,14 +45,12 @@ let choice: Choice = NONE;
 /** The live camera has no window: it is "now". */
 const NOW = { start: 0, end: null };
 const runOf = (): WorkRun | null => (state.run ? (runs.get().byId.get(state.run) ?? null) : null);
-/** The canvas the person has in front of them: the first visible canvas pane (panes stay mounted when hidden). */
-const currentCanvas = () => {
-  for (const el of document.querySelectorAll<HTMLElement>('[data-pane]:not([data-hidden="true"])')) {
-    const id = el.dataset.pane;
-    if (id && canvasWhere.has(id)) return id;
-  }
-  return null;
-};
+/** The canvas the person has in front of them: the pane they last used, else the first visible canvas pane (panes stay mounted when hidden). */
+const currentCanvas = () =>
+  pickPane(
+    [...document.querySelectorAll<HTMLElement>("[data-pane]")].map((el) => ({ id: el.dataset.pane ?? "", hidden: el.dataset.hidden === "true", front: el.dataset.front === "true" })),
+    (id) => canvasWhere.has(id),
+  );
 
 /** When the page opened: a turn that was going already is followed only when it does something new (./liveCamera.ts `spellStep`). */
 const OPENED_AT = Date.now();

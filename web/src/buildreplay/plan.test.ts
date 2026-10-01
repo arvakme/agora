@@ -71,7 +71,7 @@ describe("planBuild", () => {
     const into = plan.beats[4];
     expect(into.land - into.start).toBeGreaterThanOrEqual(DOOR_MS);
     const out = plan.beats[5]; // a different actor: its first place
-    expect(out.land - out.start).toBe(LAND_LEAD_MS);
+    expect(out.land - out.start).toBeCloseTo(LAND_LEAD_MS, 6);
   });
 
   it("through the doors: to the entrance and up, to the node that opens the next canvas and down, then the last walk", () => {

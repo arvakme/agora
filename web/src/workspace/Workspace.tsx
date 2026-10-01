@@ -15,6 +15,8 @@ import { IconClose, IconFolder, IconLayers, IconMessage, IconPencil, IconPlus, I
 import { activate, equalize, groupOf, groups, layout, resize, type Node, type Rect, type Sash } from "./layout";
 import { dropTab } from "./twoColumns";
 import { groupKind, plusMenu, type NewWhat } from "./model";
+import { nextFront } from "./frontPane";
+import { installPinchRouting } from "./pinchRoute";
 
 // Panes are flush: a 1px gap over the hairline-coloured workspace is the divider (D13).
 const GAP = 1, PAD = 0, HEADER = 36, MIN_PANE = 220;
@@ -78,6 +80,10 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
     return () => clearTimeout(t);
   }, [root, size, onSettled]);
 
+  // the pinch of a trackpad goes to the canvas under the fingers (./pinchRoute.ts); the pane in front is the canvas last used (./frontPane.ts)
+  useEffect(() => installPinchRouting(), []);
+  const front = useRef<string | null>(null);
+  front.current = nextFront(front.current, focused, (t) => kinds[t]);
   const all = groups(root);
   // A floating group leaves the layout (the other columns take its room) and is drawn at the card's / bar's rectangle (./useFloat.ts); it needs something to float over.
   const flt = float && all.length > 1 && all.some((g) => g.id === float.group) ? float : undefined;
@@ -236,7 +242,7 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
         // visible appear in place (gliding from a stale rect would sweep across other panes).
         const entering = shown && !wasShown.current.has(t);
         return (
-          <div key={t} className="wm-slot" data-pane={t} data-hidden={!shown} data-entering={entering} data-float={isFloat ? flt.mode : undefined} data-float-mode={isFloat ? (flt.mode === "card" ? "card" : F.strip ? "strip" : "half") : undefined} style={box(isFloat ? F.slot! : body(rectOf(g.id)))} onPointerDownCapture={() => t !== focused && onFocus(t)}>
+          <div key={t} className="wm-slot" data-pane={t} data-hidden={!shown} data-front={t === front.current} data-entering={entering} data-float={isFloat ? flt.mode : undefined} data-float-mode={isFloat ? (flt.mode === "card" ? "card" : F.strip ? "strip" : "half") : undefined} style={box(isFloat ? F.slot! : body(rectOf(g.id)))} onPointerDownCapture={() => t !== focused && onFocus(t)}>
             {renderCanvas(t)}
           </div>
         );

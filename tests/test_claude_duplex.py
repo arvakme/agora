@@ -186,7 +186,7 @@ async def test_a_pending_request_is_not_a_timeout(tmp_path):
     """The person may take a while: the turn's time limit does not run while a request waits for them."""
     ctl = Control()
     seen = []
-    async for ev in backend(tmp_path, "ask", timeout_s=0.6).run(request(tmp_path, ctl)):
+    async for ev in backend(tmp_path, "ask", idle_s=0.6).run(request(tmp_path, ctl)):
         seen.append(ev)
         if ev["t"] == "request":
             await asyncio.sleep(1.0)

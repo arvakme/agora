@@ -72,6 +72,8 @@ Agora 发出的消息末尾有一行隐藏页脚：`[[agora]] 来自 Agora · �
 
 一个会话同时只跑一轮无头续接，后来的消息排队；「停止」取消当前一轮。
 
+**一轮什么时候被中止（`server/canvas/turn_clock.py`，无头和常驻共用一只钟）**：不因为「跑得久」，只因为「没动静」。这一轮连续 **30 分钟**没有任何活动才中止（`AGORA_TURN_IDLE_TIMEOUT_S` 改秒数，0 = 不设）。算活动的：CLI 的每一行 stdout、stderr，以及原生日志（大小或修改时间）有新增——Pi、Codex 无头几乎不在 stdout 说话，靠日志认它还在干活；日志只在快到点时才去看一次（看的时候发生的新输出、等你回答都算数，以此刻的钟为准；跟的是这一轮此刻的原生 id，新会话的 id 要等 CLI 报出来才有，那份日志从零算起）。有没结束的工具调用（`tool_use` 还没等到 `tool_result`）时静默上限放宽到 4 倍（一条命令可以一声不吭地跑很久）；CLI 在等你回答审批或问题时两个限制都不走，回答完再重新计；工具调用结束、等待结束这类让截止时间提前的变化，会立刻叫醒看钟的任务重新排时间，不会睡到旧的截止点。另有一根**保险丝**：一轮总共跑满 **6 小时**也中止（`AGORA_TURN_MAX_S`，0 = 不设），等你的时间不算在内。中止时整棵进程树停掉（规则同「停止」，见 `proctree.py`，不动你自己的进程），已写进原生日志的内容都在；这一轮以「这一轮 30 分钟没有任何输出，已中止；原生会话还在，发「继续」就能接着」结束，面板在这条错误旁放一个「继续」按钮，点它就是把「继续」当下一条消息发出（走普通发送，`SessionPane.tsx` 按这句话的固定格式认，`turnStop.ts`）。测试：`tests/test_turn_clock.py`（规则）、`tests/test_turn_idle.py`（无头与常驻各一套，假 CLI 见 `tests/fake_timed_cli.py`）。
+
 ## 3. agora skill 与 `agora canvas`
 
 `skills/agora/SKILL.md`（一页路由：什么时候用、各领域的核心步骤）+ `references/`（`canvas-ops.md` 改图操作、`animation.md` 动画脚本、`nested.md` 子图、`link.md` 关联代码、`comments.md` 答复评论、`dispatch.md` 派活）+ `scripts/agora`（PATH 上没有 `agora` 时用，顺着软链接找到 Agora 仓库的 `bin/agora`），三个 CLI 共用一份。命令都输出一个 JSON 对象：
@@ -109,14 +111,14 @@ agora canvas child create --parent c1 --node api   # 节点展开成子画布（
 
 ## 4. 在终端打开与双向同步
 
-**终端**：「在终端打开」（按钮，⋯ 菜单里还有「复制打开命令」）。每份项目一个独立的 tmux 服务器 `tmux -L agora-<实例 id 前 10 位>`（和路径无关，移动后照样找得到原来的 pane；旧版本用路径哈希，`agora down` 一并清掉），配置用 `.agora/run/tmux.conf`（不读 `~/.tmux.conf`），每个会话一个 tmux 会话 `agora-<会话 id>`，pane 里直接跑 §2 的交互式续接命令（不经 shell）：CLI 退出 = tmux 会话结束 = 不再持有。打开时创建或复用这个 pane，用 Kitty（`kitty --detach`）打开窗口，没有 Kitty 用 macOS Terminal（`osascript`），并在面板上给出 attach 命令（复制时带 `env -u TMUX`，在 tmux 的 pane 里也能直接运行）。「复制打开命令」先起 Agora 的 tmux pane，再复制 `env -u TMUX tmux -L … attach -t …`，在任意终端里粘贴即可；只想看不想动，加 `-r`（只读 attach，不占输入权，键盘输入被 tmux 丢掉）。实现只有一份：`server/canvas/terminal.py`。
+**终端**：「在终端打开」（按钮，⋯ 菜单里还有「复制打开命令」）。每份项目一个独立的 tmux 服务器 `tmux -L agora-<实例 id 前 10 位>`（和路径无关，移动后照样找得到原来的 pane；旧版本用路径哈希，`agora down` 一并清掉），配置用 `.agora/run/tmux.conf`（不读 `~/.tmux.conf`），每个会话一个 tmux 会话 `agora-<会话 id>`，pane 里直接跑 §2 的交互式续接命令（不经 shell）：CLI 退出 = tmux 会话结束 = 不再持有。打开时创建或复用这个 pane，再开一个终端窗口去 attach。用哪个终端：环境变量 `AGORA_TERMINAL=ghostty|kitty|terminal|auto` 指定的（没装就照自动顺序）；否则按 Ghostty > Kitty > macOS Terminal 找已安装的（`/Applications/Ghostty.app`、`~/Applications/Ghostty.app`、`which kitty` 或 `kitty.app`、`osascript`），不读它们的配置文件；一个没开成就试下一个，都不行就只给 attach 命令。每种终端一个小适配（窗口命令行），在 `server/canvas/terminal_apps.py` 的表里：Ghostty 是 `open -na Ghostty.app --args --title=… --working-directory=… --confirm-close-surface=false -e sh -c <attach>`（另开一个实例，不动你已经开着的 Ghostty；`-e` 让这个实例随最后一个窗口退出），Kitty 是 `kitty --detach -o macos_quit_when_last_window_closed=yes …`，Terminal 是 `osascript` 的 `do script`。关窗口只是 detach，pane 和里面的 CLI 照常运行。窗口命令行的环境变量取 `child_env()`（`open` 会把自己的环境交给它启动的应用，所以不带 `SEEDMUX_*`、`TMUX`）。面板上给出 attach 命令（复制时带 `env -u TMUX`，在 tmux 的 pane 里也能直接运行）。「复制打开命令」先起 Agora 的 tmux pane，再复制 `env -u TMUX tmux -L … attach -t …`，在任意终端里粘贴即可；只想看不想动，加 `-r`（只读 attach，不占输入权，键盘输入被 tmux 丢掉）。实现只有一份：`server/canvas/terminal.py`。
 
 「关闭终端」结束持有它的 CLI；`agora down` 关掉整个 tmux 服务器。无头一轮进行中不能打开终端（同一原生会话不能两个进程同时写）。
 
 **输入权**（运行时事实放 `.agora/run/`，语义对应 `native_protocol.SessionGate`）：
 
 - **接管**（`POST /sessions/{id}/takeover`，记在 `run/input-right/<tmux 名>.json`）：人占着终端输入，自动投递暂停，队列保留不丢。detach、控制连接异常断开、Agora 服务重启都不算归还，只有显式归还（`POST /sessions/{id}/return`）、关掉这个终端或换一个新的 pane 才结束；这一步不取消任何在跑的东西。
-- **可写窗口**：只要有一个不是 Agora 自己挂的可写 tmux 客户端连着这个会话（例如 Kitty 里的 attach），就暂停投递，窗口关掉后恢复；不强踢，也不把它当成接管。状态行显示「排队中：…」的原因。
+- **可写窗口**：只要有一个不是 Agora 自己挂的可写 tmux 客户端连着这个会话（例如 Ghostty / Kitty 里的 attach），就暂停投递，窗口关掉后恢复；不强踢，也不把它当成接管。状态行显示「排队中：…」的原因。
 - **Agora 自己的输入**：走一个 Agora 自己挂的可写 control-mode 客户端（`tmux -C attach -f ignore-size,no-output`，首次投递时才起，不计入窗口数），回车用 `send-keys -c <这个客户端>`。tmux 3.7b 里不指定客户端的 `send-keys` 会走「当前客户端」，最后一个连上来的是只读窗口时直接报 `client is read-only`，所以只读窗口不会挡投递，也不会被拿来输入。
 - **存活**：`run/panes/<tmux 名>.json` 记着打开时登记的真实 pane id、CLI 进程 pid 和它的启动时间；判断时对照 tmux 现在报的 pane 与 `ps`：都对得上是 `running`，pane 在但没登记（旧版本开的，或 `run/` 丢了）是 `unknown`（当作在），pane 没了 / CLI 退出了 / pid 被别的进程占了是 `gone`。CLI 在一轮中途退出、日志里没有结束记录时，这一轮（以及已粘贴、日志里还没出现的消息）如实报「结果未知」（`done` 事件带 `outcome: "unknown"`，先把它退出前写下的日志读完再判断），不写成完成或失败。
 
@@ -146,7 +148,7 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 | POST | `/sessions/{id}/interrupt` | 停止当前无头一轮并清空排队 |
 | POST / DELETE | `/sessions/{id}/terminal` | 打开（`{launch}`）/ 关闭终端；状态里的 `terminal` 带 `alive`、`attach`、`clients`（不含 Agora 自己的客户端）、`inputRight`（`host` 或 `human`） |
 | POST | `/sessions/{id}/takeover`、`/sessions/{id}/return` | 接管终端输入（暂停自动投递、队列保留）/ 归还（恢复投递） |
-| GET | `/terminals` | 能在哪儿打开：`{kitty}` |
+| GET | `/terminals` | 用哪个终端打开：`{chosen: "ghostty"｜"kitty"｜"terminal"｜null, name}`；`POST …/terminal` 的回答里 `launched` 是实际开成的那个 |
 | GET | `/sessions/{id}/items/{itemId}` | 一条会话记录的全文（工具输入 / 输出超过预览长度时，页面「展开全文」用） |
 | GET | `/sessions/{id}/summary` | `{text}`：按快照生成的「接着之前的讨论」摘要（最近的轮次优先，约 6000 字以内），不调用模型 |
 | POST | `/sessions/{id}/restart` | 原生日志确实没了：换一个新的原生 id（`started: false`），下一条消息新建它；日志还在时拒绝 |
@@ -158,6 +160,7 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 
 ## 6. 限制
 
+- **一轮 30 分钟没有任何输出会被中止**：不是 30 分钟总时长；一直有输出的轮不受限（直到 6 小时的保险丝），见 §2 末的「一轮什么时候被中止」。
 - **终端里仍能换模型**：锁定只管 Agora 这一侧；终端里用户自己 `/model` 切换，CLI 不提供禁止的开关（Pi 用 `--models` 把 Ctrl+P 轮换限制在选定模型）。下一次无头续接仍按绑定的模型启动。
 - **首次进入不信任的目录**：Claude Code / Pi 在终端里会先问是否信任该目录，需要在终端里回答；这时从面板投递的消息会等到回合空闲判断之后才发，可能落进信任提示里。
 - **输入到一半的草稿**：投递只在没有人占着输入（接管、可写窗口）时进行；如果终端输入框里留着没发出去的半句话，粘贴会接在它后面。
@@ -187,7 +190,7 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 | 派发回执（`[Agora 派发回执 …]`：派活方收到的「你派给 X 的任务：完成了…」） | `card: {kind: "receipt", id, state, agent, session, answer}`；新的另带 `receipt`（页脚标记，重启补发靠它） | 一张卡片：「Codex 交回了你派的任务 · 完成」，下面是答复的开头，展开看全文，「打开 Codex 那个会话」；没有路径、`agora dispatch status`、「这是通知，不需要回复」；这一轮的轮头写「收到回执」；agent 对它的简短确认（没做别的事、160 字以内）淡显 |
 | 派发的任务信封（`[Agora 派发 …] 来自 …：先读任务文件 …`：被派会话收到的） | `card: {kind: "task", id, from, session?, scope}`、`dispatch`（完整的派发 id） | 卡片「Claude 会话 s-… 派来一个任务」，第一行是派发记录里的任务摘要，范围；轮头「收到任务」 |
 | 评论交接（`画布评论 #n（锚点：名字（id）…）：`，经派发送达） | `dispatch`；页面自己读（`comments/handoff.ts` `parseCommentMessage`，和写它的 `commentMessage` 放在一起） | 卡片「画布评论 #2」，第一条评论的开头，展开看整条线程，「在画布上看这条评论」；轮头「收到评论」 |
-| 发消息时的选区、`#` 引用 | `selection: {id}`（页脚里的 `agora-sel-<id>`）；老消息正文末尾的 `（当前选区：a, b）` 服务端读成 `selection: {ids}` 并从正文里去掉 | 用户气泡下面一张小图：选中元素的缩略图 + 「选区 · 21 个元素」；悬停列出名字，点击在画布上高亮这些元素；老消息没有图，只有这个标签 |
+| 发消息时的选区、`#` 引用 | `selection: {id}`（页脚里的 `agora-sel-<id>`）；老消息正文末尾的 `（当前选区：a, b）` 服务端读成 `selection: {ids}` 并从正文里去掉 | 用户气泡下面一张小图：选中元素的缩略图 + 「选区 · 21 个元素」；悬停列出名字，点击在图上标出这些元素（再点取消）；老消息没有图，只有这个标签 |
 | 「上一轮随服务重启中断了」「这一轮被停止了」「被 auto 拦下」「你在这里插了一句」 | 服务端加的 `notice` 条目，不是用户消息 | 一行小字，本来就不是气泡 |
 
 这些消息的 `text` 仍是 CLI 日志里的原文（轨迹里点开看到的是原文，标着「来自 Agora · 原文」；轨迹的一行和会话标题用卡片的一句话）；只有对话里的画法变了。按钮触发、由页面写的提示（「让 AI 画子图」的展开提示、「画出这个项目的架构」）目前仍按用户气泡画。
@@ -207,9 +210,9 @@ pane 不在时一律无头续接（§2）。两边用的是同一个原生会话
 - **找回**：从强到弱——本机注册表的绑定记录（精确到原生 id）；Agora 发出的消息里的隐藏页脚 `(canvas=… session=… project=…)`（项目 id 前 8 位对得上就算这个项目的，`session=` 给出原来的 Agora 会话 id，`canvas=` 给出画布）；只有画布 id 的旧页脚；只在项目目录里跑过、从没经过 Agora 的会话（默认折叠在最后）。扫的是当前根目录和注册表里记下的每个历史根目录：Claude 的转义目录、Pi 的 `--…--` 目录、Codex 的 `state_5.sqlite`（`threads where cwd in (…)`，只读；没有这个库就看最近 400 个 rollout 的首行）。
 - **操作**：打开（清单里的）、恢复（回收站里的）、导入（找到的 / 注册表里的）：按原来的 Agora 会话 id（页脚里有、且没被占用时）建会话、挂到页脚里的画布（没有就当前画布），绑定到那个原生 id、`started: true`——续接，不会新建。
 
-**对话视图**：每轮一个头（第 N 轮 · 终端 · 时间 · 模型 · 强度 · 输入 / 输出 / 缓存 tokens · 耗时 · 花费，只显示日志里有的），然后是用户消息、**过程折叠成一行**（「已读取文件并修改了文件 · 用时 12 s · 4 次工具调用」，按工具类别计数取前三；进行中显示「正在编辑文件，用时 …」且保持展开，出错的轮次也保持展开），展开后是中间消息和工具调用，每个工具调用可再展开看输入、输出、改到的文件和起止时间；这一轮里的改图卡片；最后是答复。答复按 Markdown 渲染（`web/src/session/markdown.tsx`：标题、列表、表格、代码块、引用、行内代码与链接），直接生成 React 元素，文字里的 HTML 标签原样显示为文字，链接只保留 http(s) 与 mailto，所以答复里的内容不会执行脚本。
+**对话视图**：每轮一个头（第 N 轮 · 终端 · 时间 · 模型 · 强度 · 输入 / 输出 / 缓存 tokens · 耗时 · 花费，只显示日志里有的），然后是用户消息、**过程折叠成一行**（「已读取文件并修改了文件 · 用时 12 s · 4 次工具调用」，按工具类别计数取前三；出错的轮次保持展开；**进行中**默认「简洁」：智能体的说明文字照常显示，工具调用不逐条列，换成一张活动卡片——「正在运行命令 · 12 s」、当前正在执行的那一个动作（等宽一行，省略号）、「已完成 8 个动作：命令 5 · 读 3」，点卡片展开成完整列表（最新的一条高亮，「自动滚到底」可关）；失败的动作（红 ✕，最多 3 条，其余在完整列表里）始终在卡片外，需要你批准的请求和智能体的提问是输入框上方的卡片，改图卡片的撤销 / 标出改动在它自己那一行，都不会被折叠。输入框上方另有一行常驻的「当前动作 · 用时 · ■ 停止」（进行中才有，停止就是打断这一轮，和输入框里的停止同一个入口）。⋯ 菜单的「过程：简洁 / 详细」按会话记在本浏览器里（`agora.processMode`，不写进项目，旧会话第一次打开也是简洁），「详细」就是逐条列出。一轮结束后折回上面那行摘要；结束前展开着的，结束后保持展开，`web/src/session/activityCard.ts`、`ProcessCard.tsx`），展开后是中间消息和工具调用，每个工具调用可再展开看输入、输出、改到的文件和起止时间；这一轮里的改图卡片；最后是答复。答复按 Markdown 渲染（`web/src/session/markdown.tsx`：标题、列表、表格、代码块、引用、行内代码与链接），进行中卡片上方、折叠展开后的说明文字用同一个渲染器（还没写完的 `**`、代码块、列表按已写出的部分显示，不报错；进行中的说明文字和答复同色，折叠里的略淡），直接生成 React 元素，文字里的 HTML 标签原样显示为文字，链接只保留 http(s) 与 mailto，所以答复里的内容不会执行脚本。
 
-**轨迹视图**：工具栏（轮数 · 记录数 · 调用数，时间轴「等宽 / 实际时长」，展开 / 收起所有轮次，搜索）；时间轴总览（用户 / 消息 / 工具三条泳道、轮次分界；「实际时长」按记录的开始时间与时长、去掉记录之间的空闲；拖动选一段只看这段里的记录，右键或「清除选择」取消）；明细按轮分组，粘性轮头带用量，轮内是「消息」和「第 N 步」（步骤描述：墙钟时长 + 工具直方图，如 `1.5 s Bash×6`），每条记录 `#序号 · 类型 · 摘要 · 用时`，点开就地看输入输出。进度指针或别处要看某一轮时，面板切到轨迹并定位到那一轮。
+**轨迹视图**：工具栏（轮数 · 记录数 · 调用数，时间轴「等宽 / 实际时长」，展开 / 收起所有轮次，搜索）；时间轴总览（`TrajectoryTimeline.tsx`：用户 / 消息 / 工具三条泳道画在一张 canvas 上，高度固定；「实际时长」按记录的开始时间与时长、去掉记录之间的空闲；拖动选一段只看这段里的记录，见「选区」）：**配色**走 `app/tokens.css` 的 `--tl-*`（浅 / 深各一套），紫色只给助手消息和当前选中，用户灰蓝、读文件青、改文件橙、命令蓝、子代理粉、等你黄、失败红；不只靠颜色——读是空心、改是实心、失败带 ✕（块太窄放不下 ✕ 时块上方加一个小帽），图例一行、可折叠（记在浏览器里）；**分轮**：轮与轮交替浅底色、细虚线分界，≤14 轮每轮标号，更多每 5 轮标一次（挤不下就 10、20…），选中记录 / 正在回放的那一轮描边，选中记录外圈紫环；**悬停或键盘光标停 0.5 秒**出精确到毫秒的时间、耗时、种类、摘要（Tab 进来后 ←→ 移动、Enter 选中、Esc 收起）；**对话很长**：总览高度不变，每轮宽度按动作数（实际时长下按时长）分，每条记录不足 2px 时更早的轮次收成「密度条」（只看颜色分布，点它跳到那一轮，悬停看各类数量，折叠部分最多占宽度的 40%），窗口里仍不足 1.5px 的同色相邻块合成色带；**选区**（`timelineSelection.ts`，纯函数）：在总览上拖一段，选区内保持原色、选区外蒙一层半透明底色（不去色），紫色描边 + 左右把手（命中区 12px，光标 ew-resize，可拖边界；拖选区身体整体平移，夹在两端）+ 右上角小标签「第 a–b 轮 · N 条」；账本下面一条细提示「只看第 a–b 轮 · N 条 · 清除」，只列选区里的轮和记录；点总览上的空白处、Esc、右键或「清除」取消（点块仍是选中那条记录）；选区按记录保存（首尾 `#序号`），成员是这两条之间按日志顺序的全部记录，不看它们在轴上的位置——切「等宽 / 实际时长」、同一毫秒开始的并发工具在轴上换了次序、工具结果到达，选区都不变（拖选时，拖过的每条记录都算进去）；右边界落在最新一条时钉住，进行中的一轮来新记录会跟着变长，手动拖离最新处则不跟；选区覆盖的轮在总览里保持展开成单个块（放得下为止，放不下同色窄块合成色带），松手后才重排，拖动过程中不动；键盘：Tab 到把手（`role=slider`，带读屏标签），←→ 移一条、Shift+←→ 移一轮、Esc 取消并回到总览；布局与命中是纯函数（`timelineLayout.ts`，测试 `timelineLayout.test.ts`、`timelineSelection.test.ts`），200 轮 × 30 动作（约 8000 条记录）布局 + 绘制各约 0.5 ms；明细按轮分组，粘性轮头带用量，轮内是「消息」和「第 N 步」（步骤描述：墙钟时长 + 工具直方图，如 `1.5 s Bash×6`），每条记录 `#序号 · 类型 · 摘要 · 用时`，点开就地看输入输出。进度指针或别处要看某一轮时，面板切到轨迹并定位到那一轮。
 
 **用量从哪来、缺什么**：
 
@@ -250,7 +253,7 @@ Pi 日志里的 `system` 消息、`custom`（扩展写的）、`bashExecution`�
 
 1. **已有页面里挑**（上面 BR1）。有页面**认领了却没回报**（`PageTookIt`）就停在这里报错，不走后面几步：那次改图可能已经落在它的画布上，绝不再换个地方执行第二遍。
 2. **自己打开一个页面**：用系统的打开命令（macOS `open`，其他 `xdg-open`）打开这个项目的地址（`run/server.json` 里的 `url`）。同一个项目 **2 分钟内最多自动打开一次**（不开一堆标签）；偏好里可以关掉，**默认开**（`GET/PUT /api/agent/auto-open`，存在 `.agora/local/settings.json` 的 `autoOpenPage`，不提交；页面上的开关还没做，要关先 `curl -X PUT …/api/agent/auto-open -d '{"enabled":false}'`）。新页面带 `executor=2` 连上来最多等 15 秒，连上就把同一个请求交给它（它也要先认领，同一批只落一次）。
-3. **服务端直接改文件**（`server/canvas/fallback.py`）：只对 `apply`。做和页面一样的三项检查：结构（`web/generated/plan.schema.json`）、引用、新鲜度，然后改 `.agora/canvases/<id>.excalidraw`，并写一份和页面一样的撤销记录（会话里的一轮 + 一个批次，页面里照样能「撤销这次修改」）；之后页面连上来直接读这份文件，页面在此期间保存的手改会和它冲突、由页面报告，不会被覆盖（`project.py` 的带版本写入）。**能力比页面小，而且是有意的**：改图引擎（`applyPlan`：摆放、连线、素材库）不复制到 Python，服务端只做不需要引擎的操作，眼下是「改节点或画框的文字」；别的（`move`、`resize`、`add_shape`、`add_arrow`、`delete`、`insert_library_item`，以及箭头和素材库组件的文字）一律在改任何东西之前返回 `needs-page`，写明「这条要打开页面才能做」，**整条计划一条都不执行**。`fallback.EXTRA_OPS` 是以后布局 / lint 模块登记「不需要页面也能做」的操作的地方。
+3. **服务端直接改文件**（`server/canvas/fallback.py`）：只对 `apply`。做和页面一样的三项检查：结构（`web/generated/plan.schema.json`）、引用、新鲜度，然后改 `.agora/canvases/<id>.excalidraw`，并写一份和页面一样的撤销记录（会话里的一轮 + 一个批次，页面里照样能「撤销」）；之后页面连上来直接读这份文件，页面在此期间保存的手改会和它冲突、由页面报告，不会被覆盖（`project.py` 的带版本写入）。**能力比页面小，而且是有意的**：改图引擎（`applyPlan`：摆放、连线、素材库）不复制到 Python，服务端只做不需要引擎的操作，眼下是「改节点或画框的文字」；别的（`move`、`resize`、`add_shape`、`add_arrow`、`delete`、`insert_library_item`，以及箭头和素材库组件的文字）一律在改任何东西之前返回 `needs-page`，写明「这条要打开页面才能做」，**整条计划一条都不执行**。`fallback.EXTRA_OPS` 是以后布局 / lint 模块登记「不需要页面也能做」的操作的地方。
 4. 三步都不行才报错，话里说清每一步试了什么（「开着的页面…没有认领；自己打开了页面…没连上；服务端直接改文件也做不了这一种」）。`link`、`child`、`anim` 没有服务端后备（它们要页面持有的工作区或动画播放器），走 1、2 之后直接是这条报错。
 
 **校验只有一份规则**：`web/generated/plan.rules.json`（每个 op 收哪些字段、每个字段能指向哪几种元素、各种上限、`ref` 的正则）。页面的 `validatePlan`（`web/src/ops/ops.ts`）读它，服务端的 `server/canvas/plan_rules.py` 读它（`load()` 和 `scene_kinds()` 是给布局、lint 这些服务端工具复用的），`web/generated/plan.cases.json` 是两边必须给出**完全相同**错误的同一批用例（`web/src/ops/planRules.test.ts`、`tests/test_plan_rules.py` 各跑一遍）。规则文件里少一种元素类型，两边一起变；只改一边，两个测试里有一个会红。新鲜度是 `staleIds`（`web/src/canvas/context.ts`）在服务端的孪生（`plan_rules.stale_ids`，版本串用 `model_view.version_of`）。结构 schema 还是原来从 TS 生成的 `plan.schema.json`。
