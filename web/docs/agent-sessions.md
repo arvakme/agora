@@ -126,10 +126,17 @@ agora canvas child create --parent c1 --node api   # 节点展开成子画布（
 
 **面板 → 终端**：Agora 发的消息末尾带一行上下文 `[[agora]] 来自 Agora · 画布「…」…`（面板显示时隐去，也用来标记来源）。pane 持有会话时：
 
-1. 排队，直到没有人占着输入（没有接管，也没有可写窗口连着）、终端打开满 6 秒（CLI 还在启动时粘贴会丢）、agent 这一轮答完（日志里看到回合结束）——面板状态行显示「排队中：…」原因。
+1. 排队，直到没有人占着输入（没有接管，也没有可写窗口连着）、CLI 说它空闲（见下「CLI 回报状态」；不能回报的 CLI 是终端打开满 6 秒，CLI 还在启动时粘贴会丢）、agent 这一轮答完（日志里看到回合结束）——面板状态行显示「排队中：…」原因。
 2. `load-buffer` + `paste-buffer -p`（bracketed paste）+ 从 Agora 自己的客户端发 Enter，和人粘贴回车一样。
 3. 日志里出现这条用户消息即确认送达；它这一轮结束时把回复交给等待者（例如评论线程）。30 秒内日志里没出现 → 报「终端没有确认收到」。
 4. 投递时 pane 已退出 → 这条改走无头续接。
+
+**CLI 回报状态**（`server/canvas/pane_state.py`、`bin/agora-state`）：往启动中的 CLI、权限弹窗或「信任此目录」菜单里粘贴，文字会丢，而固定的启动时间猜不出这些。所以 Agora 在自己起的终端里用 CLI 自己的钩子让它回报 `idle` / `running` / `waiting` / `exited`（经 `POST /api/agent/sessions/<id>/cli-state`，服务启动时把自己的地址放进 `AGORA_URL`），**只有 `idle` 才投递**；`waiting`（在等人确认权限）和 `running` 都排队，说明理由。
+- **Claude Code**：`--settings` 内联一份钩子（`SessionStart`、`UserPromptSubmit`、`PermissionRequest`、`Stop`、`SessionEnd`），不碰用户的配置；实测打开后约 1 秒报 `idle`。子 agent 的事件不算会话自己的状态。
+- **Codex**：`--enable hooks -c hooks.<事件>=…`。Codex 对**新的或改过的钩子**要人审核一次（菜单「Hooks need review」，选「Trust all」后信任写进 Codex 自己的配置，键形如 `/<session-flags>/config.toml:stop:0:0`；钩子文本不变就不再问，Agora 目录挪位置会再问一次）。它的 `SessionStart` 要到第一轮才触发，所以第一条消息之前改看屏幕：出现输入框（`? for shortcuts`）才算就绪，菜单没有这行。
+- **Pi**：`-e server/canvas/pane_state_pi.ts`，用扩展的 `session_start` / `agent_start` / `agent_settled` / `session_shutdown`。
+- **没说话 ≠ 就绪**：CLI 一直没回报（多半停在某个菜单里）就一直不粘，45 秒后状态行改说「CLI 一直没有报告就绪：可能在等你在终端里确认」，人看过后可以点「现在送出」放行队首一条（终端窗口连着时出现的那个按钮）。`waiting` 与 `running` 不能被放行越过。人确认权限之后，状态要到这一轮结束（`Stop`）才变回 `idle`（不为每次工具调用多开一个进程），其间排队理由可能还写着「在等确认」。
+- Grok、Cursor、Devin 还不回报，照旧按 6 秒计时。服务重启后，重启前打开的终端也回到计时（回报状态记在服务进程里）。
 
 pane 不在时一律无头续接（§2）。两边用的是同一个原生会话 id，所以哪边说的话另一边都接得上。
 

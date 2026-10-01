@@ -499,7 +499,7 @@ def create_project_app(
     # project's Pi logs follow it; a copy gets its own id and read-only sessions).
     probe = Terminals(store.root, store.run_dir, socket=local.socket(), legacy=local.legacy_sockets())
     local.reconcile(alive=probe.alive)
-    hub = hub or AgentHub(store, local=local)
+    hub = hub or AgentHub(store, local=local, url=os.environ.get("AGORA_URL") or None)
     if gateway and hub.opener is None:  # the running app (not a test) may open a page itself when an edit finds none (page_help.py)
         from server.canvas.page_help import default_opener
 

@@ -462,6 +462,7 @@ def cmd_serve(p: Project, a) -> int:
     try:
         # The first SIGTERM ends the pages' event streams from this side (uvicorn would wait for them for ever), a second
         # stops all waiting, and open connections are cancelled after a few seconds: shutdown.py.
+        os.environ["AGORA_URL"] = f"http://{HOST}:{a.port}"  # the CLIs in this server's terminal panes report their state to it (server/canvas/pane_state.py)
         server = shutdown.AgoraServer(uvicorn.Config(create_project_app(p.root, gateway=True), host=HOST, port=a.port, log_level="info", timeout_graceful_shutdown=shutdown.GRACE_S))
         server.run()
     finally:
