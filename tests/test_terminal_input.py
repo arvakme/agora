@@ -466,6 +466,36 @@ async def test_closing_the_last_window_gives_the_session_back_to_the_panel(hub, 
 
 
 @needs_tmux
+async def test_a_window_attaching_or_leaving_is_pushed_to_the_page_without_anything_else_happening(hub, monkeypatch):
+    from server.canvas import sessions
+
+    monkeypatch.setattr(sessions, "DETACH_GRACE_S", 60)  # the pane stays: only the window comes and goes
+    hub.ensure_started()
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    hub.live["s-t"].pane_since = time.time() - 60
+    sub = hub.subscribe(False)
+
+    async def pushed(clients: int) -> None:
+        def seen() -> bool:
+            while not sub.q.empty():
+                e = sub.q.get_nowait()
+                if e.get("t") == "status" and e["terminal"]["clients"] == clients:
+                    return True
+            return False
+
+        await _until(seen)
+
+    await pushed(0)
+    viewer = await asyncio.to_thread(_attach, hub.terms, "s-t", readonly=False)
+    try:
+        await pushed(1)
+    finally:
+        _detach(viewer)
+    await pushed(0)
+
+
+@needs_tmux
 async def test_a_busy_cli_is_left_running_and_closed_when_it_is_idle(hub, monkeypatch):
     from server.canvas import sessions
 
