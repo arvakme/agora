@@ -29,5 +29,8 @@
 .mention-list { position: fixed; z-index: 70; margin: 0; padding: var(--space-2); list-style: none; max-height: 220px; overflow-y: auto; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--frame); }
 .mention-list li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) var(--space-4); border-radius: var(--r-sm); font-size: var(--text-sm); cursor: pointer; }
 .mention-list li[aria-selected="true"] { background: var(--accent-tint); }
+/* the two halves of the list: continuing a conversation, starting a new one */
+.mention-list li.mention-group { padding: var(--space-2) var(--space-4); color: var(--fg-subtle); font-size: var(--text-xs); cursor: default; }
+.mention-list li[data-running="true"] .mention-kind { color: var(--accent); }
 .mention-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mention-kind { flex: none; color: var(--fg-subtle); font-size: var(--text-xs); }

@@ -1,5 +1,7 @@
 import { buildReplay } from "../buildreplay/store";
 import { DOCK_H, PILL_GAP, dockBottom, dockGroup, groupPlace, isCompact, roomFor } from "../canvas/dockPlace";
+import { narrowRoot, sheetPair, useNarrow } from "../workspace/narrow";
+import { usePlay } from "../workstation/replayMode";
 import { MotionConfig, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { resolveAnchor } from "../canvas/anchors";
@@ -19,6 +21,7 @@ import { HistoryPanel } from "../workspace/HistoryPanel";
 import { byId, type El } from "../canvas/scene";
 import { SessionPane } from "../session/SessionPane";
 import { useSessionFloat } from "./useSessionFloat";
+import { prefs, usePrefs } from "./prefs";
 import { sessions, type Session, type Turn } from "../session/store";
 import { agentChoice, canvases, ui } from "../session/ui";
 import { agents, useAgentName, type Binding } from "../session/agents";
@@ -33,7 +36,7 @@ import { canvasFromUrl, nav, nested, urlFor } from "../nested/store";
 import { isEditableTarget, markBackHintSeen, upOnKey } from "../nested/up";
 import { threadSessionTitles } from "../comments/sessionTitles";
 import { sessionNames } from "../multi/writes";
-import { setRunsRoot } from "../workstation/runs/store";
+import { runs, setRunsRoot } from "../workstation/runs/store";
 import { AgentTags } from "../session/AgentTagRow";
 import { WorkerDefs } from "../workstation/RunAvatar";
 import { WaitNotifier } from "../workstation/WaitNotifier";
@@ -212,7 +215,18 @@ export function App({ boot }: { boot: Boot }) {
   const open = new Set(openIds(root));
   // The canvas the dock and keyboard act on: the most recent one on screen (the current tab of
   // some group). With no canvas on screen there is no dock.
-  const shown = new Set(groups(root).map((g) => g.active));
+  const narrow = useNarrow(); // a phone shows one tab at a time (workspace/narrow.ts)
+  // While a turn plays, the phone shows the canvas it plays on over the session that is being replayed.
+  const played = usePlay().play;
+  const playedSession = played && runs.get().byId.get(played.runId)?.sessionId;
+  const playedDoc = playedSession ? docs.find((d) => d.kind === "session" && d.sessionId === playedSession) : undefined;
+  const { floatSession, stackShare } = usePrefs();
+  const playStack = narrow && played?.canvasId && playedDoc ? { top: played.canvasId, bottom: playedDoc.id, ...(stackShare && { bottomShare: stackShare }) } : null;
+  // With the session panel as a bottom bar, a phone shows the canvas with the session folded to a strip under it (or pulled up); the card and the dock are tabs there.
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const stack = playStack ?? (narrow && floatSession === "bar" ? sheetPair(open, focused, lastCanvas, kindOf, (id) => { const d = docOf(id); return d?.kind === "session" ? sessions.get().sessions[d.sessionId]?.canvasId : undefined; }, sheetOpen, stackShare) : null);
+  useEffect(() => void document.documentElement.toggleAttribute("data-replay-stack", !!playStack), [!!playStack]); // styles.css: no drawing tools while a turn plays
+  const shown = new Set(groups(narrow ? narrowRoot(root, focused, stack) : root).map((g) => g.active));
   const canvasDoc = canvasDocs.find((d) => d.id === lastCanvas && shown.has(d.id)) ?? canvasDocs.find((d) => shown.has(d.id));
   const handle = canvasDoc && handles.current.get(canvasDoc.id);
   const sessionCanvas = (d: SessionDoc) => sessions.get().sessions[d.sessionId]?.canvasId ?? "";
@@ -950,6 +964,9 @@ export function App({ boot }: { boot: Boot }) {
         )}
 
         <Workspace
+          stack={stack}
+          sheet={stack && !playStack ? { open: sheetOpen, toggle: () => setSheetOpen((o) => !o) } : undefined}
+          onStackShare={playStack || (stack && sheetOpen) ? (share) => prefs.set({ stackShare: share }) : undefined}
           root={root}
           setRoot={setRoot}
           titles={names}
@@ -981,7 +998,7 @@ export function App({ boot }: { boot: Boot }) {
           renderCanvas={(id) => {
             const doc = docs.find((d) => d.id === id);
             if (!doc || !synced) return null;
-            if (doc.kind === "session") return <SessionPane sessionId={doc.sessionId} canvasTitles={canvasTitles} />;
+            if (doc.kind === "session") return <SessionPane sessionId={doc.sessionId} canvasTitles={canvasTitles} onRename={() => setEditing(id)} />;
             return (
               <CanvasView
                 doc={{ id, title: doc.title, store: storeFor(id) }}

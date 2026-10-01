@@ -12,7 +12,7 @@ import { chooserView, type CatalogState } from "./chooserModel";
 import { ConflictNotice } from "../multi/ConflictNotice";
 import { AnimatePresence, motion } from "motion/react";
 import { startTransition, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { IconChevron, IconCommentSolid, IconCopy, IconLayers, IconLock, IconMore, IconPath, IconTerminal } from "../app/icons";
+import { IconChevron, IconCommentSolid, IconCopy, IconLayers, IconLock, IconMore, IconPath, IconPencil, IconTerminal } from "../app/icons";
 import { panelView, replayTime, useReplay, useTick, type PanelView } from "../workstation/clock";
 import { usePlay } from "../workstation/replayMode";
 import { useRuns } from "../workstation/runs/store";
@@ -36,6 +36,8 @@ import { modeLabel, waitLabel } from "./requestModel";
 import { canvasChoices, topOf } from "./canvasChoices";
 import { agents, effortChoices, forkHeadless, loadAdapters, sessionKinds, steerOf, useAgentName, useAgents, type AgentKind, type Catalog, type TerminalApps } from "./agents";
 import { planSend, type SendMode } from "./steerModel";
+import { copyText, windowsLine } from "./terminalModel";
+import { useNarrow } from "../workspace/narrow";
 import { FIRST_DRAW_MARK } from "./pageMessage";
 import { AgentAvatar } from "./AgentAvatar";
 import { Picker } from "./Picker";
@@ -57,7 +59,8 @@ import "./session.css";
 const fmt = (ms: number) => (ms < 10000 ? `${(ms / 1000).toFixed(1)}s` : ms < 60000 ? `${Math.round(ms / 1000)}s` : `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`);
 const clock = (at: number) => new Date(at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
 
-export function SessionPane({ sessionId, canvasTitles }: { sessionId: string; canvasTitles: Record<string, string> }) {
+/** `onRename`: starts renaming this session's tab (a phone has no double-click or right-click to do it by). */
+export function SessionPane({ sessionId, canvasTitles, onRename }: { sessionId: string; canvasTitles: Record<string, string>; onRename?: () => void }) {
   // a session with an open tab: "交给 Agent" starts from the ones the person has open
   useEffect(() => (openSessions.mount(sessionId), () => void openSessions.unmount(sessionId)), [sessionId]);
   const { sessions: all } = useSessions();
@@ -70,7 +73,7 @@ export function SessionPane({ sessionId, canvasTitles }: { sessionId: string; ca
   // the agent picker (that would start a new, unrelated conversation under its name).
   if (!binding && origin && origin.state !== "copy") return <OriginCard sessionId={sessionId} origin={origin} canvasTitles={canvasTitles} />;
   if (!binding) return <Chooser sessionId={sessionId} canvasTitle={canvasTitles[session.canvasId]} />;
-  return <AgentSession sessionId={sessionId} canvasTitles={canvasTitles} />;
+  return <AgentSession sessionId={sessionId} canvasTitles={canvasTitles} onRename={onRename} />;
 }
 
 /** Start a new session of the same agent and model on a canvas, and open it (the old one stays as it is). */
@@ -323,7 +326,7 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
 /** What each agent is good for, in one line (the picker's cards). */
 const AGENT_BLURB: Record<string, string> = { pi: "快，适合边画边聊", claude: "擅长大改动，能派子代理", codex: "适合按清单写代码和测试", grok: "xAI 出品，读写代码，能派子代理", cursor: "多种模型可选，读写代码，能派子代理", devin: "Cognition 出品，读写代码，工具默认不用批准" };
 
-function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTitles: Record<string, string> }) {
+function AgentSession({ sessionId, canvasTitles, onRename }: { sessionId: string; canvasTitles: Record<string, string>; onRename?: () => void }) {
   const nameOf = useAgentName();
   const { sessions: all, turns: canvasTurns } = useSessions();
   const ag = useAgents();
@@ -399,6 +402,8 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   };
   const plan = planSend({ running: !!status?.running, terminalAlive: !!status?.terminal.alive, ...steerOf(binding.agent, status) });
   const [termMenu, setTermMenu] = useState(false);
+  const [cmdText, setCmdText] = useState<string | null>(null);
+  const narrow = useNarrow(); // a phone: the terminal that opens is the Mac's, so the way in is the copied command
   const [apps, setApps] = useState<TerminalApps | null>(null);
   useEffect(() => {
     void agents.terminalApps().then(setApps).catch(() => setApps(null));
@@ -416,18 +421,46 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
       setTermNote((e as Error).message);
     }
   };
-  /** Fallback for any terminal: start Agora's pane, copy the attach command. */
+  /** Fallback for any terminal (the way on a phone): start Agora's pane, copy the attach command. A copy the browser refuses is said so, and the command is shown to copy by hand. */
   const copyOpen = async () => {
-    setTermMenu(false);
     setTermNote(null);
+    setCmdText(null);
     try {
       const r = await agents.openTerminal(sessionId, session.canvasId, false);
-      await navigator.clipboard?.writeText(`env -u TMUX ${r.attach}`).catch(() => {});
-      setTermNote("已复制命令：在任意终端里新开一个窗口粘贴运行");
+      const cmd = `env -u TMUX ${r.attach}`;
+      if (await copyText(cmd)) {
+        setTermMenu(false);
+        setTermNote(narrow ? "已复制命令：粘贴到手机的终端 App 里运行（要先 SSH 到这台 Mac）" : "已复制命令：在任意终端里新开一个窗口粘贴运行");
+      } else {
+        setCmdText(cmd);
+        setTermNote("没能复制：长按菜单里的命令自己复制");
+      }
     } catch (e) {
       setTermNote((e as Error).message);
     }
   };
+  useEffect(() => {
+    if (!termMenu) setCmdText(null);
+  }, [termMenu]);
+  const openItem = (
+    <button
+      role="menuitem"
+      disabled={!status?.terminal.alive && !!status?.running}
+      title={apps && !apps.chosen ? "没找到 Ghostty、Kitty 或 macOS 终端：用「复制打开命令」" : `在 ${termName} 窗口里打开这个会话的终端`}
+      onClick={() => void openTerminal()}
+    >
+      <span className="menu-check" />
+      {termIcon}
+      {apps && !apps.chosen ? "在终端打开" : `用 ${termName} 打开`}
+    </button>
+  );
+  const copyItem = (
+    <button role="menuitem" disabled={!status?.terminal.alive && !!status?.running} onClick={() => void copyOpen()} title="在任意终端里新开窗口粘贴运行">
+      <span className="menu-check" />
+      <IconCopy size={16} />
+      {narrow ? "复制命令，到手机终端里接着跑" : "复制打开命令"}
+    </button>
+  );
   useEffect(() => {
     if (!termNote) return;
     const t = setTimeout(() => setTermNote(null), 6000);
@@ -461,7 +494,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
   const liveText = liveTurn ? activityModel(liveTurn, { waiting: !!status?.waiting }).now : status?.busy ? `${nameOf(binding.agent)} 正在回复${status.terminal.alive ? "（终端）" : ""}` : "已发送，等待开始…";
   const totalMs = turns.some((t) => t.durationMs != null) ? turns.reduce((n, t) => n + (t.durationMs ?? 0), 0) : null;
   return (
-    <div className="sp" data-agent={binding.agent}>
+    <div className="sp" data-agent={binding.agent} data-playing={playing || undefined}>
       {/* One line: the model (fixed at creation) and the canvas; the name is already on the tab. */}
       <header className="sp-head sp-head1">
         <span className="sp-lock" title="创建会话时选定，不能更改">
@@ -480,7 +513,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
         <button className="icon-btn sm" aria-pressed={view === "trajectory"} data-on={view === "trajectory"} onClick={() => setView((v) => panelView(v, "toggle"))} title={view === "trajectory" ? "回到对话" : "轨迹：每一步做了什么"} aria-label="轨迹">
           <IconPath size={16} />
         </button>
-        <button
+        {!narrow && <button
           className="icon-btn sm"
           disabled={(!status?.terminal.alive && !!status?.running) || stuck}
           onClick={() => void openTerminal()}
@@ -488,7 +521,7 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
           aria-label="在终端打开"
         >
           {termIcon}
-        </button>
+        </button>}
         <div className="sp-term">
           <button className="icon-btn sm" aria-haspopup="dialog" aria-expanded={termMenu} aria-label="用量与更多" title="用量、会话 id、在哪个终端打开" onClick={() => setTermMenu((v) => !v)}>
             <IconMore size={16} />
@@ -509,22 +542,17 @@ function AgentSession({ sessionId, canvasTitles }: { sessionId: string; canvasTi
                   <dd className="mono">{binding.nativeId ? binding.nativeId.slice(0, 8) : "第一轮后生成"}</dd>
                 </dl>
                 <hr />
+                {onRename && (
+                  <button role="menuitem" onClick={() => (setTermMenu(false), onRename())} title="给这个会话起个名字，@ 它和切标签时更好认">
+                    <span className="menu-check" />
+                    <IconPencil size={16} />
+                    重命名
+                  </button>
+                )}
                 <p className="menu-title">在哪里打开</p>
-                <button
-                  role="menuitem"
-                  disabled={!status?.terminal.alive && !!status?.running}
-                  title={apps && !apps.chosen ? "没找到 Ghostty、Kitty 或 macOS 终端：用「复制打开命令」" : `在 ${termName} 窗口里打开这个会话的终端`}
-                  onClick={() => void openTerminal()}
-                >
-                  <span className="menu-check" />
-                  {termIcon}
-                  {apps && !apps.chosen ? "在终端打开" : `用 ${termName} 打开`}
-                </button>
-                <button role="menuitem" disabled={!status?.terminal.alive && !!status?.running} onClick={() => void copyOpen()} title="在任意终端里新开窗口粘贴运行">
-                  <span className="menu-check" />
-                  <IconCopy size={16} />
-                  复制打开命令
-                </button>
+                {status && <p className="sp-term-line" role="status">{windowsLine(status.terminal)}</p>}
+                {narrow ? copyItem : <>{openItem}{copyItem}</>}
+                {cmdText && <code className="sp-term-cmd">{cmdText}</code>}
                 {status?.terminal.alive && (
                   <button role="menuitem" onClick={() => (setTermMenu(false), void agents.closeTerminal(sessionId))} title="结束终端里的 CLI；会话可随时再续接">
                     <span className="menu-check" />

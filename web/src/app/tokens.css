@@ -113,8 +113,6 @@
   --fig-ink: #2c3136;
   --fig-fill: #ffffff;
   --fig-far: #e3e7ea;
-  --fig-sel-fill: #efe9f8;
-  --fig-sel-far: #ddd1f3;
   --fig-mark-fg: #ffffff;
   --canvas-bg: #ffffff;
 }
@@ -190,8 +188,6 @@
     --fig-ink: #d9dee2;
     --fig-fill: #2b3035;
     --fig-far: #3a4147;
-    --fig-sel-fill: #3b3350;
-    --fig-sel-far: #473d60;
     --fig-mark-fg: #ffffff;
     --canvas-bg: #e6ebef; /* invert(93%) hue-rotate(180deg) of this = #202428 */
   }
@@ -265,8 +261,6 @@
   --fig-ink: #d9dee2;
   --fig-fill: #2b3035;
   --fig-far: #3a4147;
-  --fig-sel-fill: #3b3350;
-  --fig-sel-far: #473d60;
   --fig-mark-fg: #ffffff;
   --canvas-bg: #e6ebef; /* invert(93%) hue-rotate(180deg) of this = #202428 */
 }

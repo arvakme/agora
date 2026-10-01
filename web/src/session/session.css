@@ -26,6 +26,9 @@
 .sp-term-scrim { position: fixed; }
 .sp-term-menu .menu-title { margin: var(--space-2) var(--space-4) var(--space-2); color: var(--fg-subtle); font-size: var(--text-xs); }
 .sp-term-menu hr { margin: var(--space-2) 0; border: 0; border-top: 1px solid var(--line); }
+.sp-term-menu .sp-term-line { margin: 0 var(--space-4) var(--space-2); color: var(--fg-muted); font-size: var(--text-xs); }
+/* the attach command a refused copy leaves to be copied by hand */
+.sp-term-menu .sp-term-cmd { display: block; margin: var(--space-2) var(--space-4); padding: var(--space-2); max-width: 320px; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; font-size: var(--text-xs); background: var(--bg-sunken, var(--bg)); border: 1px solid var(--line); border-radius: var(--radius-sm, 6px); }
 .sp-term-menu button[data-on="true"] { color: var(--accent); }
 .sp-term-menu button:disabled { opacity: 0.5; cursor: default; }
 .sp-term-menu button:disabled:hover { background: transparent; color: inherit; }
