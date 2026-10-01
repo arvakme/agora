@@ -72,6 +72,8 @@ import { receiptText, type FlatRun } from "./runs/types";
 import { TalkBubble } from "./TalkBubble";
 import { glideTo } from "../canvas/glide";
 import { itemOfStop, itemsOfStop, latestTurnWindow, pointAt, spanOf, stopForItem, traceAt, walkedAt, type Trace, type TurnWindow } from "./trace";
+import { useNarrow } from "../workspace/narrow";
+import { OffDiagramChip } from "./OffDiagramChip";
 import { TrayHint } from "./TrayHint";
 import "./workstation.css";
 
@@ -427,6 +429,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const playState = usePlay();
   const playing = !!playState.play;
   const camFollow = useLiveFollow();
+  // a phone has the session's own box for talking to the agent: the one over the figure would only cover the canvas
+  const narrow = useNarrow();
   const fo = useFocus();
   const reduced = prefersReducedMotion();
   const keep = useMemo(() => keepOf(runs, fo.traced), [runs, fo.traced]);
@@ -840,7 +844,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         if (!f) continue;
         const d0 = g.dock(place);
         const ps = stateAt(f.run, t, c);
-        x.node.place(d0.x, d0.y, k * (f.depth > 0 ? SUB_SCALE : 1), peekRise(ps, still), still, dimmed(x.id), focus.get().selected === x.id, ps.pose === "idle");
+        x.node.place(d0.x, d0.y, k * (f.depth > 0 ? SUB_SCALE : 1), peekRise(ps, still), still, dimmed(x.id), ps.pose === "idle");
       }
       for (const tt of s.tethers) {
         const p = tethers.current.get(tt.child);
@@ -1272,8 +1276,9 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
           <g ref={peekLayer} className="ws-peeks" />
         </g>
       </svg>
-      {figuresOn && <TalkBubble canvasId={view.id} obstacles={() => [...geomRef.current.obstacles, ...(geomRef.current.tray ? [geomRef.current.tray] : []), ...floats.map((b) => ({ x: b.x / a.zoom.value - a.scrollX, y: b.y / a.zoom.value - a.scrollY, w: b.w / a.zoom.value, h: b.h / a.zoom.value }))]} />}
+      {figuresOn && !narrow && <TalkBubble canvasId={view.id} obstacles={() => [...geomRef.current.obstacles, ...(geomRef.current.tray ? [geomRef.current.tray] : []), ...floats.map((b) => ({ x: b.x / a.zoom.value - a.scrollX, y: b.y / a.zoom.value - a.scrollY, w: b.w / a.zoom.value, h: b.h / a.zoom.value }))]} />}
       <EntryMarks view={view} peeks={peekMap} />
+      {figuresOn && !ctx.door?.entrance && <OffDiagramChip locate={geom.locate} />}
       {snap.tray && (
         <div className="ws-tray" ref={trayEl}>
           <b>图外</b>
@@ -1379,13 +1384,10 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
               <span className="ws-bub-chip" key={`c${b.key}`}>{b.chip}</span>
               {sel && f && !exiting && (
                 <span className="ws-acts" data-open>
-                  {bubbleActions(!!f.root.sessionId).map((act) =>
-                    act === "打开会话" ? (
-                      <button key={act} onClick={(e) => (e.stopPropagation(), openRun(f))}>{act}</button>
-                    ) : (
-                      <button key={act} data-on={following || undefined} aria-pressed={following} title={following ? "镜头正跟着它" : "让镜头跟着它（F）"} onClick={(e) => (e.stopPropagation(), liveFollow.follow(id))}>{act}</button>
-                    ),
-                  )}
+                  {following && !camFollow.paused && <span className="ws-follow-tag" title="镜头正跟着它；点气泡取消选中（镜头仍跟着）">跟随中</span>}
+                  {bubbleActions(!!f.root.sessionId).map((act) => (
+                    <button key={act} onClick={(e) => (e.stopPropagation(), openRun(f))}>{act}</button>
+                  ))}
                 </span>
               )}
             </div>
@@ -1424,7 +1426,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
       {!playing && !only && followLine && (
         <div className="ws-follow-status" role="status">
           <span>{followLine.text}</span>
-          {followLine.resume && <button className="btn sm ghost" onClick={() => liveFollow.resume()} title="你动了画布，镜头停下了；点一下继续跟着它走">继续</button>}
+          <button className="btn sm ghost" onClick={() => liveFollow.resume()} title="你动了画布，镜头停下了；点一下继续跟着它走">继续</button>
         </div>
       )}
       {playing && <ReplayMarks view={view} ctx={ctx} />}

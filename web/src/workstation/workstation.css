@@ -133,7 +133,14 @@
 .ws-bub:hover .ws-acts, .ws-acts[data-open] { display: inline-flex; }
 .ws-acts button { height: 20px; padding: 0 7px; border-radius: var(--r-xs); box-shadow: var(--box); color: var(--fg); font-size: var(--text-xs); line-height: 20px; }
 .ws-acts button:hover { background: var(--raised-on-surface); }
-.ws-acts button[data-on] { background: var(--accent-wash); box-shadow: inset 0 0 0 1px var(--accent-ring); color: var(--accent-ink); }
+/* the followed bubble says it is followed: a word, not a button (clicking the bubble does the following) */
+.ws-follow-tag { display: inline-flex; align-items: center; height: 20px; padding: 0 4px; color: var(--accent-ink); font-size: var(--text-xs); line-height: 20px; white-space: nowrap; }
+/* a finger needs more to hit than a pointer: the bubble (what is clicked to follow) and its button grow */
+@media (pointer: coarse) {
+  .ws-bub:not([data-chip]) { min-height: 36px; }
+  .ws-bub[data-chip] { min-height: 32px; height: 32px; }
+  .ws-acts button { height: 28px; padding: 0 10px; line-height: 28px; }
+}
 .rc { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--r-xs); background: var(--surface); box-shadow: var(--box); color: var(--fg-muted); font-size: 11px; font-weight: var(--weight-medium); white-space: nowrap; }
 .rc[data-r="running"], .rc[data-r="acknowledged"] { background: var(--ws-hatch), var(--surface); color: var(--fg); }
 .rc[data-r="claimed"], .rc[data-r="returned"] { color: var(--fg); }
@@ -154,6 +161,8 @@
 
 .ws-tray { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; border-radius: var(--r-sm); border: 1px dashed var(--line-strong); background: var(--bg); color: var(--fg-subtle); font-size: var(--text-xs); }
 .ws-tray b { color: var(--fg-muted); font-weight: var(--weight-strong); }
+/* its box is in the world and shrinks with the zoom, the type does not: a line each, cut with an ellipsis, never a word a letter high */
+.ws-tray > b, .ws-tray > span { min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
 .ws-banner { pointer-events: auto; position: absolute; z-index: 7; top: 60px; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 4px 0 12px; border-radius: var(--r-md); background: var(--surface); box-shadow: 0 0 0 1px var(--accent); font-size: var(--text-sm); white-space: nowrap; --icon: var(--accent); }
 .ws-banner b { color: var(--accent-ink); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }

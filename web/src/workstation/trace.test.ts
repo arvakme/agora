@@ -53,9 +53,9 @@ const ctx = (runs: WorkRun[], reduced = false): Ctx => ({
 });
 
 // Pi: at API 服务 (reading in its sub-diagram), up the ladder to MySQL (with a glance back at API 服务), back
-// down to write, a glance at Web 前端, over a scaffold to the 图外 tray and back. It sends Codex (which walks
-// to the tray and back to hand over) and worker-3 (known only by its receipts).
-const codex = run("codex", [seg("read", 21, 24, "server/users.py"), seg("write", 24, 30, "tests/test_users.py"), seg("exec", 30, 33)], { parentId: "pi", spawnAt: 19.6 * S, doneAt: 33.6 * S });
+// down to write, a glance at Web 前端, then a long read there and back. It sends Codex (which walks
+// to Web 前端 and back to hand over) and worker-3 (known only by its receipts).
+const codex = run("codex", [seg("read", 21, 24, "server/users.py"), seg("write", 24, 30, "web/src/api.test.ts"), seg("exec", 30, 33)], { parentId: "pi", spawnAt: 19.6 * S, doneAt: 33.6 * S });
 const w3 = run("w3", [], { parentId: "pi", coarse: true, spawnAt: 20.5 * S, doneAt: 38 * S });
 const pi = run(
   "pi",
@@ -69,8 +69,8 @@ const pi = run(
     seg("delegate", 19, 20),
     seg("read", 20, 21, "web/src/api.ts"),
     seg("write", 21, 25, "server/users.py"),
-    // 2026-09-29 用户决定调慢走路: was read 25–29, write 29–36 — a walk to the tray is now ~4.8 s, so it stands there a while before walking back
-    seg("read", 25, 33, "docs/notes.md"),
+    // 2026-09-29 用户决定调慢走路: was read 25–29, write 29–36 — a walk to Web 前端 is several seconds, so it stands there a while before walking back
+    seg("read", 25, 33, "web/src/api.ts"),
     seg("write", 33, END, "server/users.py"),
   ],
   { children: [codex, w3] },
@@ -83,7 +83,7 @@ describe("traceAt (追踪)", () => {
   it("lists the places it went to in order, from where it appeared: a glance is not a visit, a second visit to a node is a new stop", () => {
     const tr = traceAt(pi, END * S, C);
     expect(tr.id).toBe("pi");
-    expect(places(tr)).toEqual(["api", "db", "api", OUTSIDE, "api"]);
+    expect(places(tr)).toEqual(["api", "db", "api", "web", "api"]);
     expect(tr.stops.map((s) => s.t0 / S)).toEqual([0, 6.5, 12, 25, 33]);
     expect(tr.stops.every((s) => s.done)).toBe(true);
     expect(tr.ways.map((w) => [w.from, w.to])).toEqual([[0, 1], [1, 2], [2, 3], [3, 4]]);
@@ -140,7 +140,7 @@ describe("traceAt (追踪)", () => {
 
   it("with reduced motion there is no walk: a stop is reached as the figure sets off (it fades across), and its way is there whole from then", () => {
     const tr = traceAt(pi, END * S, ctx(all, true));
-    expect(places(tr)).toEqual(["api", "db", "api", OUTSIDE, "api"]);
+    expect(places(tr)).toEqual(["api", "db", "api", "web", "api"]);
     for (const s of tr.stops) expect(s.at).toBe(s.t0);
     for (const w of tr.ways) {
       expect(w.trip).toBeNull();
@@ -167,7 +167,7 @@ describe("traceAt (追踪)", () => {
     expect(tr.subs.map((s) => s.id)).toEqual(["codex"]);
     const s = tr.subs[0];
     expect(s.sent).toMatchObject({ place: "api", t0: 19.6 * S, done: true });
-    expect(s.stops.map((x) => x.place)).toEqual(["api", OUTSIDE, "api"]);
+    expect(s.stops.map((x) => x.place)).toEqual(["api", "web", "api"]);
     expect(s.back).toMatchObject({ place: "api", t0: 33.6 * S, done: true });
     expect(s.back!.at).toBeGreaterThan(33.6 * S);
     expect(stateAt(codex, s.back!.at, C)).toMatchObject({ at: "api", pose: "handoff" });
