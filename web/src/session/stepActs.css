@@ -1,0 +1,13 @@
+/* 撤销 / 重做 / 标出改动 (StepActs.tsx): a small button with its word next to the icon. Narrow rows keep the icon and drop the word. */
+.act { display: inline-flex; align-items: center; gap: var(--space-2); height: 24px; padding: 0 var(--space-3); border-radius: var(--r-xs); color: var(--fg-muted); font-size: var(--text-sm); white-space: nowrap; --icon: var(--fg-muted); }
+.act:hover:not(:disabled) { background: var(--raised); color: var(--fg); --icon: var(--fg); }
+.act:disabled { opacity: 0.45; cursor: default; }
+.act-icon { display: inline-grid; }
+.act[data-kind="redo"] .act-icon { transform: scaleX(-1); } /* 重做 is the 撤销 arrow turned around */
+.act[data-kind="mark"][data-on] { background: var(--accent-wash); color: var(--accent); --icon: var(--accent); }
+.act-status { flex: none; padding: 0 var(--space-3); color: var(--fg-subtle); font-size: var(--text-sm); font-weight: var(--weight-medium); white-space: nowrap; }
+@container (max-width: 340px) { .act-label { display: none; } .act { padding: 0; width: 24px; justify-content: center; } }
+
+/* On the canvas: the note that the outline is held (HighlightNote.tsx). */
+.hl-note { position: absolute; left: 50%; bottom: 72px; transform: translateX(-50%); z-index: 3; display: inline-flex; align-items: center; gap: var(--space-3); height: var(--control-md); padding: 0 var(--space-5); border-radius: 999px; background: var(--surface); box-shadow: var(--box), var(--shadow-float, 0 2px 8px rgb(0 0 0 / 0.12)); color: var(--accent); font-size: var(--text-sm); font-weight: var(--weight-medium); pointer-events: auto; --icon: var(--accent); }
+.hl-note:hover { background: var(--raised); }

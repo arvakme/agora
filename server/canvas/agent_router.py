@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
-from server.canvas import adapters, agents, agora_msg, graph_hub, nested
+from server.canvas import adapters, agents, agora_msg, graph_hub, nested, terminal_apps
 from server.canvas.dispatch import DispatchError, Dispatches
 from server.canvas.project import Gone, Locked, NotFound
 from server.canvas.selection import Selections
@@ -403,8 +403,9 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
 
     @router.get("/terminals")
     async def terminals():
-        """Where「在终端打开」can open: Kitty / macOS Terminal on this machine."""
-        return {"kitty": hub.terms.kitty() is not None}
+        """Which terminal「在终端打开」uses on this machine (terminal_apps.py): ``{chosen, name}``, both null when none is installed."""
+        app = terminal_apps.chosen()
+        return {"chosen": app and app.key, "name": app and app.name}
 
     @router.post("/sessions/{sid}/takeover")
     async def takeover(sid: str):

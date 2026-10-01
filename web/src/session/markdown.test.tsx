@@ -45,4 +45,10 @@ describe("agent reply markdown", () => {
     const out = html("第一行\n第二行 my_var_name");
     expect(out).toBe('<div class="md"><p>第一行<br/>第二行 my_var_name</p></div>');
   });
+
+  it("renders a reply that is still being written, at every point it could be cut", () => {
+    const sample = "先说 **结论**：\n\n- 一条 `code`\n- [链接](https://example.com)\n\n```js\nconst x = 1;\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |";
+    for (let i = 0; i <= sample.length; i++) expect(() => html(sample.slice(0, i))).not.toThrow();
+    expect(html("```js\nconst x = 1;")).toContain('<pre data-lang="js"><code>const x = 1;</code></pre>');
+  });
 });

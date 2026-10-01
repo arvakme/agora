@@ -1,0 +1,38 @@
+/* 进行中的一轮 as one card, and the bar above the composer (session/ProcessCard.tsx). */
+.ds-act { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+/* the agent's words above the card read like its reply (ds-say), not like the muted list inside */
+.ds-act > .ds-process-say { margin: 0; color: var(--fg); line-height: var(--leading-read); }
+.ds-act-card { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; padding: var(--space-3) var(--space-5) var(--space-4); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--box); }
+.ds-act[data-wait] .ds-act-card { box-shadow: inset 0 0 0 1px var(--caution-dot); }
+.ds-act-head { display: flex; align-items: center; gap: var(--space-3); min-height: 26px; min-width: 0; margin: 0 calc(-1 * var(--space-3)); padding: 0 var(--space-3); border-radius: var(--r-sm); text-align: left; font-size: var(--text-md); }
+.ds-act-head:hover { background: var(--raised); }
+.ds-act-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--weight-strong); }
+.ds-act-head time, .sp-livebar time { flex: none; color: var(--fg-subtle); font-family: var(--font-mono); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+/* ◐ — a half-filled disc that turns */
+.ds-act-spin { flex: none; width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--accent); background: linear-gradient(90deg, var(--accent) 50%, transparent 50%); animation: ds-act-turn 1.4s linear infinite; }
+.ds-act[data-wait] .ds-act-spin, .sp-livebar[data-wait] .ds-act-spin { box-shadow: inset 0 0 0 1.5px var(--caution); background: linear-gradient(90deg, var(--caution) 50%, transparent 50%); }
+@keyframes ds-act-turn { to { transform: rotate(360deg); } }
+.ds-act-now { display: flex; align-items: center; gap: var(--space-3); min-width: 0; padding: 3px var(--space-4); border-radius: var(--r-sm); background: var(--raised); }
+.ds-act-now code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: var(--text-sm); color: var(--fg); }
+.ds-act-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.ds-act-stats { margin: 0; color: var(--fg-subtle); font-size: var(--text-xs); line-height: 1.5; word-break: break-word; }
+/* opened: the whole list in a box that follows the newest call */
+.ds-act-list { display: flex; flex-direction: column; gap: 2px; min-width: 0; max-height: 260px; padding: 0 var(--space-3); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
+.ds-act-list .ds-process-say { margin: var(--space-2) 0; }
+.ds-act-item[data-latest] { border-radius: var(--r-sm); background: var(--accent-wash); box-shadow: -2px 0 0 var(--accent); }
+.ds-act-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-4); color: var(--fg-subtle); font-size: var(--text-xs); }
+.ds-act-foot > span { min-width: 0; }
+.ds-act-foot .ds-text-btn { flex: none; color: var(--fg-muted); }
+.ds-act-foot .ds-text-btn[aria-pressed="true"] { color: var(--accent); }
+/* failed calls stay out of the card */
+.ds-act-failed { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: var(--space-2) var(--space-4); border-radius: var(--r-md); background: var(--negative-wash); }
+.ds-act-failed .ds-tool[data-error="true"] .ds-tool-line::before { content: "✕"; flex: none; color: var(--negative); font-weight: var(--weight-strong); }
+.ds-act-more { margin: 0; color: var(--negative); font-size: var(--text-xs); }
+@media (prefers-reduced-motion: reduce) { .ds-act-spin { animation: none; } }
+
+/* 正在做什么 · 停止 — one line above the composer while the agent works */
+.sp-livebar { flex: none; display: flex; align-items: center; gap: var(--space-3); min-width: 0; margin: 0 var(--space-5) var(--space-3); padding: 4px 10px; border-radius: var(--r-sm); background: var(--raised); color: var(--fg); font-size: var(--text-sm); }
+.sp-livebar[data-wait] { background: var(--caution-wash); color: var(--caution); }
+.sp-livebar-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: var(--text-xs); }
+.sp-livebar-stop { flex: none; height: 22px; padding: 0 8px; border-radius: var(--r-xs); background: var(--surface); box-shadow: var(--box); color: var(--fg); font-size: var(--text-xs); white-space: nowrap; }
+.sp-livebar-stop:hover { background: var(--raised); }

@@ -8,14 +8,13 @@
 //                      ui-chat/src/client/chat/ChatGroupSeat.tsx (process title from activity)
 //   TrajectoryView   ← ui-trajectory/src/client/TrajectoryView.tsx (toolbar + overview + ledger)
 //   Timeline         ← ui-trajectory/src/client/TrajectoryTimeline.tsx (Chrome-Network-style
-//                      lanes, turn boundaries, drag an interval to focus the ledger)
+//                      lanes, turn boundaries, drag an interval to focus the ledger); here ./TrajectoryTimeline.tsx
 //   TurnSection      ← TrajectoryTurn.tsx + TrajectoryTurnHeader.tsx (sticky "第 N 轮" header
 //                      with usage columns)
 //   GroupHeader      ← TrajectoryGroupHeader.tsx ("消息" / "第 N 步" + description)
 //   RecordRow        ← TrajectoryCell.tsx (#index, kind tag, one-line text, time) and the
 //                      record inspector (input / output / timing / usage)
-import { useDragGuard } from "../app/dragGuard";
-import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { IconChevron, IconCopy, IconSearch } from "../app/icons";
 import { agents, type AgentKind, type Item } from "./agents";
 import { messageCard } from "./agentMessage";
@@ -27,6 +26,7 @@ import { clock as replayClock } from "../workstation/clock";
 import { jumpTo } from "../workstation/replayStart";
 import { plays } from "../workstation/replayMode";
 import { AgentAvatar } from "./AgentAvatar";
+import { Markdown } from "./markdown";
 import {
   ACTIVITY_NOW,
   toolActivity,
@@ -34,7 +34,6 @@ import {
   fmtCost,
   fmtDuration,
   fmtTokens,
-  focusIndexes,
   processTitle,
   type TimelineMode,
   type TrajRecord,
@@ -43,6 +42,8 @@ import {
   type UsageSum,
 } from "./trajectoryModel";
 import { JumpPill, useJumpToBottom } from "./JumpPill";
+import { TrajectoryTimeline } from "./TrajectoryTimeline";
+import { caption, contains, domainOf, type Sel } from "./timelineSelection";
 import { PlayControls } from "./PlayControls";
 import { currentRecord } from "./replayStep";
 import { isUserScroll, quietFor } from "./followModel";
@@ -204,7 +205,7 @@ export function ProcessFold({ sessionId, turn, children }: { sessionId: string; 
           {process.map((s) =>
             s.records.map((r) =>
               r.kind === "message" ? (
-                <p key={r.id} className="ds-process-say">{r.item.text}</p>
+                <Markdown key={r.id} className="ds-process-say" text={r.item.text ?? ""} />
               ) : (
                 <ToolRow key={r.id} sessionId={sessionId} item={r.item} open={!!tools[r.id]} onToggle={() => setTools({ ...tools, [r.id]: !tools[r.id] })} />
               ),
@@ -222,16 +223,16 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
   const [mode, setMode] = useState<TimelineMode>("sequence");
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
-  const [range, setRange] = useState<[number, number] | null>(null);
+  const [sel, setSel] = useState<Sel | null>(null);
   const [query, setQuery] = useState("");
   const scroll = useRef<HTMLDivElement>(null);
   const runs = useRuns();
   const top = runs.flat.find((f) => f.depth === 0 && f.run.sessionId === sessionId)?.run;
   const kids = useMemo(() => (top ? kidsByTurn(top, turns) : new Map<number, WorkRun[]>()), [top, turns]);
   const model = useMemo(() => deriveTimeline(turns, mode), [turns, mode]);
-  const focus = useMemo(() => (model && range ? focusIndexes(model, range[0], range[1]) : null), [model, range]);
+  const dom = useMemo(() => (model ? domainOf(model) : null), [model]);
   const q = query.trim().toLowerCase();
-  const visible = (r: TrajRecord) => (!focus || focus.has(r.index)) && (!q || r.text.toLowerCase().includes(q) || (r.item.tool?.output ?? "").toLowerCase().includes(q));
+  const visible = (r: TrajRecord) => (!sel || !dom || contains(dom, sel, r.index)) && (!q || r.text.toLowerCase().includes(q) || (r.item.tool?.output ?? "").toLowerCase().includes(q));
   const records = turns.reduce((n, t) => n + t.steps.reduce((m, s) => m + s.records.length, 0), 0);
   const calls = turns.reduce((n, t) => n + t.toolCount, 0);
 
@@ -268,7 +269,7 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
         return next;
       });
     setQuery("");
-    setRange(null);
+    setSel(null);
     const go = setTimeout(() => {
       const many = stopIds.current?.itemId === focusItem.id ? stopIds.current.ids : [focusItem.id];
       scroll.current?.querySelector(`[data-rec-id="${CSS.escape(focusItem.id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -332,6 +333,23 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
   };
   const playFrom = (t: TrajTurn, r: TrajRecord) => void playTurn(sessionId, t, { from: r.at });
   const allOpen = collapsed.size === 0;
+  // a block (or a folded turn's bar) on the overview: open that turn in the ledger and bring the record (or the turn's head) into view
+  const reveal = (turn: number, id?: string) => {
+    setCollapsed((c) => {
+      const next = new Set(c);
+      next.delete(turn);
+      return next;
+    });
+    setTimeout(() => scroll.current?.querySelector(id ? `[data-rec-id="${CSS.escape(id)}"]` : `[data-traj-turn="${turn}"]`)?.scrollIntoView({ block: id ? "center" : "start", behavior: reducedMotion() ? "auto" : "smooth" }), 60);
+  };
+  const pickRecord = (index: number) => {
+    const id = recordId(turns, index);
+    setSelected(id);
+    const turn = id ? turns.find((t) => t.steps.some((s) => s.records.some((r) => r.id === id)))?.n : undefined;
+    if (turn != null && id) reveal(turn, id);
+  };
+  const selectedIndex = selected ? (turns.flatMap((t) => t.steps.flatMap((s) => s.records)).find((r) => r.id === selected)?.index ?? null) : null;
+  const selectedTurn = selected ? turns.find((t) => t.steps.some((s) => s.records.some((r) => r.id === selected)))?.n : undefined;
   return (
     <div className="ds-traj" data-replay={cutoff != null || undefined}>
       <PlayControls />
@@ -341,7 +359,7 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
         </span>
         <div className="seg" data-static role="radiogroup" aria-label="时间轴">
           {(["sequence", "duration"] as const).map((m) => (
-            <button key={m} role="radio" aria-checked={mode === m} data-on={mode === m} onClick={() => (setMode(m), setRange(null))} title={m === "sequence" ? "每条记录等宽" : "按记录的实际开始时间与时长（去掉空闲间隔）"}>
+            <button key={m} role="radio" aria-checked={mode === m} data-on={mode === m} onClick={() => setMode(m)} title={m === "sequence" ? "每条记录等宽" : "按记录的实际开始时间与时长（去掉空闲间隔）"}>
               {m === "sequence" ? "等宽" : "实际时长"}
             </button>
           ))}
@@ -354,12 +372,16 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索" aria-label="搜索轨迹" />
         </label>
       </div>
-      {model ? <Timeline model={model} mode={mode} range={range} onRange={setRange} onPick={(i) => setSelected(recordId(turns, i))} /> : <div className="ds-timeline ds-empty-line">还没有记录</div>}
-      {range && (
+      {model ? (
+        <TrajectoryTimeline model={model} sel={sel} onSel={setSel} onPick={pickRecord} onPickTurn={(n) => reveal(n)} selectedIndex={selectedIndex} activeTurn={selectedTurn ?? play?.n ?? null} />
+      ) : (
+        <div className="ds-timeline ds-empty-line">还没有记录</div>
+      )}
+      {sel && dom && (
         <div className="ds-traj-focus">
-          只看时间轴选中区间内的 {focus?.size ?? 0} 条记录
-          <button className="ds-text-btn" onClick={() => setRange(null)}>
-            清除选择
+          只看{caption(dom, sel)}
+          <button className="ds-text-btn" onClick={() => setSel(null)}>
+            清除
           </button>
         </div>
       )}
@@ -369,7 +391,7 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
       >
         {turns.map((t) => {
           const steps = t.steps.map((s) => ({ ...s, records: s.records.filter(visible) })).filter((s) => s.records.length);
-          if ((focus || q) && !steps.length) return null;
+          if ((sel || q) && !steps.length) return null;
           return (
             <TurnSection key={t.n} sessionId={sessionId} turn={t} kids={kids.get(t.n)} open={turnOpen(t.n, play?.n ?? null, collapsed)} dim={!!play && play.n !== t.n} onToggle={() => !play && setCollapsed((c) => (c.has(t.n) ? (c.delete(t.n), new Set(c)) : new Set(c).add(t.n)))}>
               {steps.map((s) => (
@@ -487,84 +509,6 @@ function RecordRow({ sessionId, r, canPlay, onGo, onPlay, selected, onSelect, ag
             </div>
           </div>
         ))}
-    </div>
-  );
-}
-
-// ——— overview timeline (DSH TrajectoryTimeline: three lanes, turn marks, drag to focus) ———
-function Timeline({ model, mode, range, onRange, onPick }: { model: NonNullable<ReturnType<typeof deriveTimeline>>; mode: TimelineMode; range: [number, number] | null; onRange: (r: [number, number] | null) => void; onPick: (index: number) => void }) {
-  const track = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ x0: number; moved: boolean } | null>(null);
-  const [live, setLive] = useState<[number, number] | null>(null);
-  const guard = useDragGuard();
-  const span = model.end - model.start || 1;
-  const frac = (v: number) => (v - model.start) / span;
-  const valueAt = (clientX: number) => {
-    const b = track.current!.getBoundingClientRect();
-    return model.start + Math.min(1, Math.max(0, (clientX - b.left) / b.width)) * span;
-  };
-  const down = (e: RPointerEvent) => {
-    if (e.button !== 0) return;
-    guard(e, { onEnd: (why) => why !== "up" && ((drag.current = null), setLive(null)) });
-    drag.current = { x0: e.clientX, moved: false };
-  };
-  const move = (e: RPointerEvent) => {
-    const d = drag.current;
-    if (!d) return;
-    if (Math.abs(e.clientX - d.x0) >= 3) d.moved = true;
-    if (d.moved) {
-      const a = valueAt(d.x0), b = valueAt(e.clientX);
-      setLive([Math.min(a, b), Math.max(a, b)]);
-    }
-  };
-  const up = (e: RPointerEvent) => {
-    const d = drag.current;
-    drag.current = null;
-    if (d?.moved && live) onRange(live);
-    else if (!d?.moved) {
-      const hit = (e.target as HTMLElement).closest("[data-index]") as HTMLElement | null;
-      if (hit) onPick(Number(hit.dataset.index));
-    }
-    setLive(null);
-  };
-  const sel = live ?? range;
-  return (
-    <div className="ds-timeline" aria-label="轨迹时间轴">
-      <div className="ds-timeline-labels" aria-hidden>
-        <span>用户</span>
-        <span>消息</span>
-        <span>工具</span>
-      </div>
-      <div
-        className="ds-timeline-track"
-        ref={track}
-        onPointerDown={down}
-        onPointerMove={move}
-        onPointerUp={up}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          onRange(null);
-        }}
-        title="拖动选择一段时间，只看这段里的记录；右键清除"
-      >
-        {model.turnBoundaries.map((b) => (
-          <span key={b.turn} className="ds-timeline-turn" style={{ left: `${frac(b.at) * 100}%` }}>
-            <i>{b.turn}</i>
-          </span>
-        ))}
-        {model.spans.map((s) => (
-          <span
-            key={s.index}
-            data-index={s.index}
-            data-kind={s.kind}
-            data-error={s.isError}
-            className="ds-timeline-span"
-            title={`#${s.index} ${KIND[s.kind]} · 第 ${s.turn} 轮\n${s.label.slice(0, 160)}${mode === "duration" && s.end > s.start ? `\n${fmtDuration(s.end - s.start)}` : ""}`}
-            style={{ left: `${frac(s.start) * 100}%`, width: `max(3px, ${((s.end - s.start) / span) * 100}%)`, top: 6 + s.lane * 14 }}
-          />
-        ))}
-        {sel && <span className="ds-timeline-sel" style={{ left: `${frac(sel[0]) * 100}%`, width: `${((sel[1] - sel[0]) / span) * 100}%` }} />}
-      </div>
     </div>
   );
 }

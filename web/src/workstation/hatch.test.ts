@@ -150,7 +150,9 @@ describe("which climb a state is drawn on", () => {
   it("on the sub-diagram's canvas: coming in, the ladder goes up from the floor", () => {
     const outer = main([A]);
     const behind = inAt + DOOR_MS;
-    expect(doorClimb(stateAt(A, behind + 50, sub([A], outer)), false)).toEqual({ dir: -1, leaving: false, t: 50 });
+    const c = doorClimb(stateAt(A, behind + 50, sub([A], outer)), false);
+    expect(c).toMatchObject({ dir: -1, leaving: false });
+    expect(c!.t).toBeCloseTo(50, 6);
   });
   it("reduced motion has no ladder", () => {
     const rc = main([A], { reduced: true });

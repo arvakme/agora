@@ -25,10 +25,13 @@ describe("geometryWalk", () => {
   const g = geometryWalk(tl);
 
   it("a farther node takes longer to walk to; the same node takes nothing; what is not there is a settle", () => {
-    const near = g.walk("c1", "a", "c"); // 400 px down
-    const far = g.walk("c1", "a", "b"); // 700 px across
+    // level, side by side: the farther is the longer (a ladder is another matter: climbed at half the walking pace or slower, 400 px down takes longer than 700 across)
+    const row = geometryWalk({ ...tl, steps: [add(0, "c1", "a", 0, 0), add(1, "c1", "d", 300, 0), add(2, "c1", "b", 700, 0)], sources: { ...tl.sources, steps: 3 } });
+    const near = row.walk("c1", "a", "d"); // 300 px across
+    const far = row.walk("c1", "a", "b"); // 700 px across
     expect(near).toBeGreaterThan(800);
     expect(far).toBeGreaterThan(near);
+    expect(g.walk("c1", "a", "c")).toBeGreaterThan(800); // 400 px down a ladder
     expect(g.walk("c1", "a", "a")).toBe(500);
     expect(g.walk("c1", null, "a")).toBe(500);
     expect(g.walk("nope", "a", "b")).toBe(500);

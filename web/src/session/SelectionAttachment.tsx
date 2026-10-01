@@ -1,6 +1,6 @@
 // The selection a message was sent with, under its bubble: a thumbnail of just those elements (saved with the
 // message: server/canvas/selection.py) and 「选区 · N 个元素」. Hovering lists the names; a click lights the
-// elements up on the canvas. A message from before pictures has the names only, no thumbnail.
+// elements up on the canvas (a second click lets go). A message from before pictures has the names only, no thumbnail.
 import { useEffect, useState } from "react";
 import { IconSelect } from "../app/icons";
 import { elementNames } from "../canvas/anchors";
@@ -13,7 +13,7 @@ import "./agentCard.css";
 export function SelectionView({ elements, thumb, onPick }: { elements: SelEl[]; thumb?: string; onPick: () => void }) {
   return (
     <div className="sel-view" data-thumb={thumb ? "" : undefined}>
-      <button className="sel-btn" onClick={onPick} aria-label={`在画布上高亮这 ${elements.length} 个元素`}>
+      <button className="sel-btn" onClick={onPick} aria-label={`在图上标出这 ${elements.length} 个元素（再点取消）`}>
         {thumb && <img className="sel-thumb" src={thumb} alt="" loading="lazy" />}
         <span className="sel-count">
           <IconSelect size={12} />
@@ -48,13 +48,10 @@ function useSelectionMeta(id: string | undefined): Meta | null {
   return m;
 }
 
-const HOLD_MS = 2600;
-/** Bring the canvas forward and light up the elements (the ones that are still there). */
+/** Bring the canvas forward and outline the elements (the ones that are still there) until clicked again. */
 function light(canvasId: string, ids: string[]) {
   ui.focusPane(canvasId);
-  const h = { canvasId, ids };
-  highlight.set(h);
-  setTimeout(() => highlight.get() === h && highlight.set(null), HOLD_MS);
+  highlight.toggle({ canvasId, ids, key: `sel:${canvasId}:${ids.join(",")}` });
 }
 
 /** The selection of one user message, from the saved record (`{id}`) or, for an old message, the ids it named. */

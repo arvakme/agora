@@ -36,12 +36,14 @@ import shutil
 import subprocess
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from native_protocol import SessionGate
 from server.canvas.agents import _NESTED, child_env, leaked
+from server.canvas.terminal_apps import Probe, candidates
 
 CONF = """\
 # Agora's tmux server for this project (not the user's ~/.tmux.conf).
@@ -530,36 +532,15 @@ class Terminals:
         """``agora down``: this project's own tmux server."""
         self.kill_server()
 
-    @staticmethod
-    def kitty() -> str | None:
-        return shutil.which("kitty") or ("/Applications/kitty.app/Contents/MacOS/kitty" if Path("/Applications/kitty.app").exists() else None)
-
-    def launch(self, session_id: str, title: str) -> str | None:
-        """Open a terminal window attached to the pane: Kitty, else macOS Terminal. Returns which."""
+    def launch(self, session_id: str, title: str, *, env: Mapping[str, str] | None = None, probe: Probe | None = None) -> str | None:
+        """Open a terminal window attached to the pane (which terminal: terminal_apps.py). Returns its key, None when none opened."""
         attach = self.attach_command(session_id)
-        kitty = self.kitty()
-        if kitty:
+        for app, found in candidates(env, probe):
             try:
-                subprocess.Popen(
-                    # Its own kitty process (not the user's instance); on macOS an app outlives its last
-                    # window by default, so tell this one to quit when the attach window closes.
-                    [kitty, "--detach", "-o", "macos_quit_when_last_window_closed=yes", "--title", title, "--directory", str(self.root), "sh", "-c", attach],
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
-                    env=child_env(),
-                )
-                return "kitty"
-            except OSError:
-                pass
-        if shutil.which("osascript"):
-            script = f'tell application "Terminal" to do script {_applescript_str(attach)}\ntell application "Terminal" to activate'
-            r = subprocess.run(["osascript", "-e", script], capture_output=True, timeout=10)
+                # Nothing of this process's own environment but what an agent CLI gets: `open` hands its environment to the app it starts.
+                r = subprocess.run(app.argv(found, title, str(self.root), attach), stdin=subprocess.DEVNULL, capture_output=True, timeout=10, start_new_session=True, env=child_env())
+            except (OSError, subprocess.TimeoutExpired):
+                continue
             if r.returncode == 0:
-                return "terminal"
+                return app.key
         return None
-
-
-def _applescript_str(s: str) -> str:
-    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'

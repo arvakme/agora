@@ -77,6 +77,13 @@ describe("deriveTimeline", () => {
     expect(m.spans.length).toBe(8);
     expect(m.turnBoundaries).toEqual([{ turn: 1, at: 0 }, { turn: 2, at: 6 }]);
   });
+  it("a span knows what the record did and when it really happened (the hover and the colour need both)", () => {
+    const m = deriveTimeline(turns, "duration")!;
+    const read = m.spans.find((s) => s.index === 3)!;
+    expect(read).toMatchObject({ kind: "tool", activity: "read", at: 2100, durationMs: 500, isError: false });
+    expect(m.spans.find((s) => s.index === 5)).toMatchObject({ activity: "write", isError: true });
+    expect(m.spans.find((s) => s.kind === "user")!.activity).toBeUndefined();
+  });
   it("duration: idle gaps between records removed", () => {
     const m = deriveTimeline(turns, "duration")!;
     const u2 = m.spans.find((s) => s.turn === 2 && s.kind === "user")!;

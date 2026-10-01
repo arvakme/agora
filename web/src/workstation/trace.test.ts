@@ -13,6 +13,8 @@ import type { RunSeg, WorkRun } from "./runs/types.ts";
 import { itemOfStop, itemsOfStop, pointAt, spanOf, stopForItem, traceAt, turnWindowOf, walkedAt, type Trace } from "./trace.ts";
 
 const S = 1000;
+// POL3: a ladder is climbed at half the pace it was (and the walks back and forth over it take that much longer), so the run goes on a while longer before it is looked at
+const END = 48;
 const seg = (kind: RunSeg["kind"], start: number, end: number, path?: string): RunSeg => ({ kind, start: start * S, end: end * S, label: kind, ...(path ? { path } : {}) });
 const run = (id: string, segs: RunSeg[], x: Partial<WorkRun> = {}): WorkRun => ({ id, agent: "pi", name: id, segs, receipts: [], running: false, lastAt: 0, children: [], ...x });
 const pts = (...n: number[]) => n.filter((_, i) => i % 2 === 0).map((x, i) => ({ x, y: n[2 * i + 1] }));
@@ -69,7 +71,7 @@ const pi = run(
     seg("write", 21, 25, "server/users.py"),
     // 2026-09-29 用户决定调慢走路: was read 25–29, write 29–36 — a walk to the tray is now ~4.8 s, so it stands there a while before walking back
     seg("read", 25, 33, "docs/notes.md"),
-    seg("write", 33, 40, "server/users.py"),
+    seg("write", 33, END, "server/users.py"),
   ],
   { children: [codex, w3] },
 );
@@ -79,7 +81,7 @@ const places = (tr: Trace) => tr.stops.map((s) => s.place);
 
 describe("traceAt (追踪)", () => {
   it("lists the places it went to in order, from where it appeared: a glance is not a visit, a second visit to a node is a new stop", () => {
-    const tr = traceAt(pi, 40 * S, C);
+    const tr = traceAt(pi, END * S, C);
     expect(tr.id).toBe("pi");
     expect(places(tr)).toEqual(["api", "db", "api", OUTSIDE, "api"]);
     expect(tr.stops.map((s) => s.t0 / S)).toEqual([0, 6.5, 12, 25, 33]);
@@ -88,7 +90,7 @@ describe("traceAt (追踪)", () => {
   });
 
   it("a stop is reached when the figure stops walking there; up to t only those are reached, and in replay the ones after t are listed, not yet reached", () => {
-    const tr = traceAt(pi, 40 * S, C);
+    const tr = traceAt(pi, END * S, C);
     for (const s of tr.stops.slice(1)) {
       expect(stateAt(pi, s.at - 1, C).pose, s.place).toBe("walk");
       expect(stateAt(pi, s.at, C).pose, s.place).not.toBe("walk");
@@ -101,7 +103,7 @@ describe("traceAt (追踪)", () => {
   });
 
   it("each walk follows the route the figure walks: legs end to end from the dock it left to the dock it goes to, and every bridge and ladder the walk draws lies on them", () => {
-    const tr = traceAt(pi, 40 * S, C);
+    const tr = traceAt(pi, END * S, C);
     for (const w of tr.ways) {
       const from = tr.stops[w.from].place;
       const to = tr.stops[w.to].place;
@@ -118,7 +120,7 @@ describe("traceAt (追踪)", () => {
   });
 
   it("the walked part of a walk grows with the walker: none before it sets off, all once it is there, never shrinking or jumping, its end at the walker's feet", () => {
-    const w = traceAt(pi, 40 * S, C).ways[0]; // API 服务 → MySQL, up the ladder
+    const w = traceAt(pi, END * S, C).ways[0]; // API 服务 → MySQL, up the ladder
     expect(walkedAt(w, w.t0 - 100)).toBe(0);
     expect(walkedAt(w, w.t1)).toBe(w.len);
     expect(walkedAt(w, w.t1 + 500)).toBe(w.len);
@@ -137,7 +139,7 @@ describe("traceAt (追踪)", () => {
   });
 
   it("with reduced motion there is no walk: a stop is reached as the figure sets off (it fades across), and its way is there whole from then", () => {
-    const tr = traceAt(pi, 40 * S, ctx(all, true));
+    const tr = traceAt(pi, END * S, ctx(all, true));
     expect(places(tr)).toEqual(["api", "db", "api", OUTSIDE, "api"]);
     for (const s of tr.stops) expect(s.at).toBe(s.t0);
     for (const w of tr.ways) {
@@ -148,7 +150,7 @@ describe("traceAt (追踪)", () => {
   });
 
   it("a stop where it worked on files its node claims through a sub-diagram carries that entry: the canvas and the nodes it went to in there, in order; a glance from elsewhere does not count", () => {
-    const tr = traceAt(pi, 40 * S, C);
+    const tr = traceAt(pi, END * S, C);
     expect(tr.stops.map((s) => s.portal ?? null)).toEqual([
       { canvasId: "c-api", labels: ["应用入口"] },
       null, // MySQL (the glance back at server/app.py was from there)
@@ -161,7 +163,7 @@ describe("traceAt (追踪)", () => {
   });
 
   it("sub-agents: each is sent from where its dispatcher stood and hands back where the dispatcher is when it is done, through the places it went; one known only by its receipts never walks and has no way to show", () => {
-    const tr = traceAt(pi, 40 * S, C);
+    const tr = traceAt(pi, END * S, C);
     expect(tr.subs.map((s) => s.id)).toEqual(["codex"]);
     const s = tr.subs[0];
     expect(s.sent).toMatchObject({ place: "api", t0: 19.6 * S, done: true });
@@ -170,7 +172,7 @@ describe("traceAt (追踪)", () => {
     expect(s.back!.at).toBeGreaterThan(33.6 * S);
     expect(stateAt(codex, s.back!.at, C)).toMatchObject({ at: "api", pose: "handoff" });
     // before it is done it has not handed back; before it is sent it is not there
-    const mid = traceAt(pi, 30 * S, C).subs[0];
+    const mid = traceAt(pi, 32.5 * S, C).subs[0];
     expect(mid.back).toBeNull();
     expect(mid.stops.map((x) => x.done)).toEqual([true, true, false]);
     expect(traceAt(pi, 19 * S, C).subs).toEqual([]);

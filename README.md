@@ -32,7 +32,7 @@ Agora 把这三件事放到同一张图上：图就在仓库里，agent 能读�
 
 ### 3. 一键在终端继续，双向同步
 
-「在终端打开」用同一个原生会话 id 起交互式 CLI（`claude --resume`、`pi --session-id`、`codex resume`），在本项目专属的 tmux 服务器里起，再用 Kitty（没有就 Terminal.app）打开窗口。你在终端里说的话、agent 的回复和工具调用都会出现在面板上；从面板发的消息会等 agent 这一轮结束、且没有人占着终端的输入（接管了，或挂着一个可写窗口）时粘贴进去，队列不丢。
+「在终端打开」用同一个原生会话 id 起交互式 CLI（`claude --resume`、`pi --session-id`、`codex resume`），在本项目专属的 tmux 服务器里起，再用 Ghostty（没有就 Kitty，再没有就 Terminal.app）打开窗口。你在终端里说的话、agent 的回复和工具调用都会出现在面板上；从面板发的消息会等 agent 这一轮结束、且没有人占着终端的输入（接管了，或挂着一个可写窗口）时粘贴进去，队列不丢。
 
 ![终端已接管：面板显示 tmux attach 命令，对话继续同步](docs/media/terminal.png)
 
@@ -176,12 +176,13 @@ docs/                 开发协作与测试说明
 - **单人编辑。** 没有实时多人协同。同一项目开多个窗口，或在编辑器 / git 里改了 `.agora/` 文件，靠版本校验发现冲突，由你选择载入磁盘版本或覆盖；外部改动不会主动推送到已打开的页面。
 - **写图需要打开的页面。** 改图、关联代码、动画都由页面执行；只开终端、没开页面时 `agora canvas apply` 返回退出码 3。
 - **访客只能评论。** 不能改图、不能标记解决、不能交给 Agent。分享依赖你自己的 Cloudflare 账号和域名；刚删掉的子域名在别人的 DNS 缓存里可能还会留几分钟（返回 530）。
+- **一轮 30 分钟没有任何输出会被中止。** 只看静默，不看总时长：一直有输出的轮、有工具调用在跑的轮（放宽到 2 小时）都不受这条限制；另有 6 小时总时长的保险丝。中止后原生会话还在，面板上点「继续」接着跑。`AGORA_TURN_IDLE_TIMEOUT_S` / `AGORA_TURN_MAX_S` 改秒数，0 = 不设。
 - **终端里仍能换模型。** 锁定只管 Agora 这一侧，终端里的 `/model` 无法禁止（Pi 用 `--models` 把轮换限制在选定模型）；下一次无头续接仍按绑定的模型启动。
 - **终端投递的边角。** 首次进入不信任的目录时 CLI 会先问是否信任，需要在终端里回答；输入框里留着没发出的半句话时，面板投递的消息会接在后面。
 - **Codex 终端先行时靠认领。** 还没有原生 id 的 Codex 会话在终端里开新会话，Agora 认领打开终端之后同目录下出现的第一个 rollout；同一时间在同一目录另起 Codex 可能认错。
 - **用量不全。** Claude Code 终端里的轮次没有花费（原生日志不记），Codex 不记花费。
 - **指针只看编辑工具的写入。** `sed -i`、`cat > x` 这类 shell 写入不会被识别；读文件、跑测试不移动指针；一个文件只属于最具体的那个节点。
-- **只在 macOS 上实测过。** 终端窗口用 Kitty 或 Terminal.app 打开；都没有时面板给出 `tmux attach` 命令；下拉里的「复制打开命令」给出可在任意终端里运行的命令。
+- **只在 macOS 上实测过。** 终端窗口用 Ghostty、Kitty 或 Terminal.app 打开（按这个顺序找已安装的，环境变量 `AGORA_TERMINAL=ghostty|kitty|terminal|auto` 可指定）；都没有时面板给出 `tmux attach` 命令；下拉里的「复制打开命令」给出可在任意终端里运行的命令。
 
 可能的方向（未排期）：多人实时协同编辑、Linux 上的终端窗口、进度指针识别更多写入方式。
 
@@ -192,7 +193,7 @@ uv run pytest tests/test_project_store.py tests/test_agent_sessions.py tests/tes
 cd web && npx tsc -p . && npx vitest run && npm run build && npm run eval:replay
 ```
 
-CI（`.github/workflows/test.yml`）跑全部 Python 测试（不需要外部服务），以及前端的类型检查、单测、构建、离线评测回放和素材库校验。开发协作见 [docs/development.md](docs/development.md)，测试说明见 [docs/testing.md](docs/testing.md)。
+CI（`.github/workflows/test.yml`）跑全部 Python 测试（不需要外部服务），以及前端的类型检查、单测、构建、离线评测回放和素材库校验。开发协作见 [docs/development.md](docs/development.md)，测试说明见 [docs/testing.md](docs/testing.md)，后端编排（Agent 生命周期、派发与恢复）见 [docs/orchestration.md](docs/orchestration.md)，一页面试讲法见 [docs/orchestration-interview.md](docs/orchestration-interview.md)。
 
 ## 许可与致谢
 

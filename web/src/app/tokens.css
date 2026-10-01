@@ -69,6 +69,19 @@
   --series-2: #bea5f5;
   --series-3: #5e686d;
   --series-4: #d5dadd;
+  /* Agora: trajectory overview (session/timelineLayout.ts). Purple is only the assistant's message and
+   * the current selection; the rest is by kind of action. Read = outline, edit = solid, failed = with a
+   * cross, so colour is never the only cue. Graphics >= 3:1 on --code-surface. */
+  --tl-user: #6f7d8b;
+  --tl-message: var(--accent);
+  --tl-read: #178a79;
+  --tl-write: #cc6d1c;
+  --tl-run: #3479b8;
+  --tl-agent: #b84a94;
+  --tl-wait: #b98600;
+  --tl-fail: #d13c3c;
+  --tl-other: #8d979e;
+  --tl-band: rgb(20 30 40 / 0.045);   /* every other turn's ground */
 
   /* Depth. Neutral graphite shadow, never tinted. */
   --shadow-tint: rgb(20 30 40 / 0.08);
@@ -154,6 +167,16 @@
     --series-2: #7a5cbf;
     --series-3: #a0a8ad;
     --series-4: #3d444a;
+    --tl-user: #9aa6b2;
+    --tl-message: var(--accent);
+    --tl-read: #43c9b3;
+    --tl-write: #f3a862;
+    --tl-run: #6cadec;
+    --tl-agent: #e585c2;
+    --tl-wait: #ebc03a;
+    --tl-fail: #ff7777;
+    --tl-other: #7d878d;
+    --tl-band: rgb(255 255 255 / 0.05);
     --shadow-tint: rgb(0 0 0 / 0.28);
     --shadow-tint-strong: rgb(0 0 0 / 0.32);
     --well-on-surface: #353b41;
@@ -219,6 +242,16 @@
   --series-2: #7a5cbf;
   --series-3: #a0a8ad;
   --series-4: #3d444a;
+  --tl-user: #9aa6b2;
+  --tl-message: var(--accent);
+  --tl-read: #43c9b3;
+  --tl-write: #f3a862;
+  --tl-run: #6cadec;
+  --tl-agent: #e585c2;
+  --tl-wait: #ebc03a;
+  --tl-fail: #ff7777;
+  --tl-other: #7d878d;
+  --tl-band: rgb(255 255 255 / 0.05);
   --shadow-tint: rgb(0 0 0 / 0.28);
   --shadow-tint-strong: rgb(0 0 0 / 0.32);
   --segment-on: #40474e;

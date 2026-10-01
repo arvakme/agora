@@ -1,5 +1,5 @@
 import { buildReplay } from "../buildreplay/store";
-import { dockBottom, isCompact } from "../canvas/dockPlace";
+import { dockBottom, dockGroup, groupPlace, isCompact } from "../canvas/dockPlace";
 import { MotionConfig, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { resolveAnchor } from "../canvas/anchors";
@@ -834,20 +834,27 @@ export function App({ boot }: { boot: Boot }) {
   }, []);
 
   // The dock belongs to the canvas it acts on: keep it at that pane's bottom centre, so a
-  // session pane below the canvas is never covered.
+  // session pane below the canvas is never covered. With the session bar folded to its pill beside the dock, the two are one group, centred together (canvas/dockPlace.ts groupPlace).
+  const pill = float?.mode === "bar" && float.folded;
   const [dockAt, setDockAt] = useState<{ x: number; bottom: number } | null>(null);
   useLayoutEffect(() => {
     // The canvas stage, not the whole pane: with the comments column open the dock stays centred on the drawing.
     const el = canvasDoc && document.querySelector<HTMLElement>(`[data-pane="${canvasDoc.id}"] .canvas-layers`);
-    if (!el) return;
+    if (!el) return void dockGroup.set({ center: null, pillW: 0 });
     const place = () => {
       const r = el.getBoundingClientRect();
       // A narrow canvas puts Excalidraw in its compact layout, whose toolbar sits at the bottom: clear it.
       const compact = isCompact(!!el.querySelector(".excalidraw--mobile"), r.width);
-      // in the compact layout the dock sits in the bottom bar's empty middle (canvas/dockPlace.ts)
-      const bar = el.querySelector<HTMLElement>(".App-bottom-bar .Island")?.getBoundingClientRect();
+      // level with Excalidraw's own bottom controls: the zoom island, or in the compact layout the bottom bar's (whose empty middle it sits in) (canvas/dockPlace.ts)
+      const island = el.querySelector<HTMLElement>(compact ? ".App-bottom-bar .Island" : ".zoom-actions")?.getBoundingClientRect();
+      const edges = (sel: string) => [...el.querySelectorAll<HTMLElement>(sel)].map((e) => e.getBoundingClientRect()).filter((b) => b.width > 0);
+      const lefts = edges(".whole-btn, .layer-ui__wrapper__footer-right > *").map((b) => b.left);
+      const rights = edges(".zoom-actions, .undo-redo-buttons").map((b) => b.right);
+      const center = r.left + r.width / 2;
+      const g = groupPlace({ center, dockW: document.querySelector<HTMLElement>(".dock")?.getBoundingClientRect().width ?? 0, pill, limitLeft: rights.length ? Math.max(...rights) : null, limitRight: lefts.length ? Math.min(...lefts) : null });
+      dockGroup.set({ center, pillW: g.pillW });
       setDockAt((d) => {
-        const next = { x: Math.round(r.left + r.width / 2), bottom: dockBottom({ paneBottom: r.bottom, windowHeight: innerHeight, compact, bar: bar ? { top: bar.top, bottom: bar.bottom } : null, dockHeight: document.querySelector<HTMLElement>(".dock")?.offsetHeight }) };
+        const next = { x: g.dockCx, bottom: dockBottom({ paneBottom: r.bottom, windowHeight: innerHeight, compact, island: island ? { top: island.top, bottom: island.bottom } : null, dockHeight: document.querySelector<HTMLElement>(".dock")?.offsetHeight }) };
         return d && d.x === next.x && d.bottom === next.bottom ? d : next;
       });
     };
@@ -859,9 +866,11 @@ export function App({ boot }: { boot: Boot }) {
     frame = requestAnimationFrame(loop);
     const ro = new ResizeObserver(() => requestAnimationFrame(place));
     ro.observe(el);
+    const dockEl = document.querySelector(".dock");
+    if (dockEl) ro.observe(dockEl); // its width (a count badge) moves the group's middle
     addEventListener("resize", place);
     return () => (cancelAnimationFrame(frame), ro.disconnect(), removeEventListener("resize", place));
-  }, [canvasDoc?.id, root, handle]); // `handle` arrives once the pane has mounted
+  }, [canvasDoc?.id, root, handle, pill]); // `handle` arrives once the pane has mounted
 
   const canvasTitles = Object.fromEntries(canvasDocs.map((d) => [d.id, d.title]));
   return (

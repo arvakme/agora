@@ -144,6 +144,11 @@ export const sessions = {
     set({ ...state, batches: { ...state.batches, [id]: { before: [...batch.before], after: [...batch.after] } } });
     return id;
   },
+  /** After a redo the batch's elements carry newer versions; undo checks against them, so the batch is told. */
+  setBatchAfter(id: string, after: Map<string, number>) {
+    const b = state.batches[id];
+    if (b) set({ ...state, batches: { ...state.batches, [id]: { ...b, after: [...after] } } });
+  },
   batch(id: string): Batch | undefined {
     const b = state.batches[id];
     return b && { before: new Map(b.before), after: new Map(b.after) };

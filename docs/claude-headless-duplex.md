@@ -42,7 +42,7 @@ claude -p --input-format stream-json --output-format stream-json --verbose \
 
 - 放在 `sessions.py` 的 `Live.requests`，不落盘；页面通过 `GET /api/agent/sessions/<sid>/requests` 和 SSE 的 `request` / `request_cancel` 事件拿到，`POST …/requests/<rid>` 回答（`decision`: `allow` | `allow_session` | `deny`）。
 - 请求对应的工具调用在对话里被标成「等你」（`tool.waitsUser`），工位视图、状态带和 `WaitNotifier` 沿用这个标记；`AskUserQuestion` 本来就是。
-- 这一轮等人的时间**不算**它的超时。
+- 这一轮等人的时间**不算**它的无活动超时和总时长上限（`turn_clock.py`）。
 - 服务重启：挂着的请求随进程一起结束，绝不自动重放。每一轮启动时在 `.agora/run/headless/<sid>.json` 记下 CLI 进程；服务再起来时，仍然在跑同一条命令的进程被结束，对话里加一行「上一轮随服务重启中断了」，会话不再显示忙。
 
 ## 终端窗口和输入权
@@ -53,7 +53,7 @@ claude -p --input-format stream-json --output-format stream-json --verbose \
 
 ## 没人回答的请求：一直等，但要看得见等了多久
 
-按用户定的规则，没有回答的审批或问题**不会自动拒绝**，这一轮一直等到有人回答或停止；等人的时间也不计入整轮的超时。
+按用户定的规则，没有回答的审批或问题**不会自动拒绝**，这一轮一直等到有人回答或停止；等人的时间也不计入无活动超时和总时长上限（`turn_clock.py`）。
 
 - 会话状态里有 `waitingSince`（毫秒，最早那条挂着的请求的开始时间）；面板头部显示「等你」→「等你 N 分钟」，顶栏的 agent 标签同样（标签取当前那段等待的开始时间）。
 - 停止（`/interrupt`）：发 interrupt，挂着的请求随之撤掉，进程结束；15 秒内没结束才强杀进程组。
