@@ -45,7 +45,7 @@ from server.canvas.adapters.claude import dir_name as claude_dir_name
 from server.canvas.adapters.codex import CodexStream, codex_home as _codex_home, codex_usage
 from server.canvas.adapters.codex import rollouts_since as codex_rollouts_since
 from server.canvas.adapters.codex import state_rollout as codex_state_rollout
-from server.canvas import proctree
+from server.canvas import pane_state, proctree
 from server.canvas.turn_clock import TurnClock
 from server.canvas.adapters.common import LogLookup, StreamMapper, _hinted, add_usage, text_of  # noqa: F401
 from server.canvas.adapters.cursor import CursorStream
@@ -463,15 +463,18 @@ BACKEND_CLASSES["cursor"] = CursorBackend
 
 
 # ——— interactive resume (terminal pane) ———
-def interactive_argv(kind: str, native_id: str | None, model: str | None, effort: str | None, *, new: bool = False, root: Path | str | None = None, fork: dict[str, Any] | None = None) -> list[str]:
+def interactive_argv(kind: str, native_id: str | None, model: str | None, effort: str | None, *, new: bool = False, root: Path | str | None = None, fork: dict[str, Any] | None = None, hooks: bool = False) -> list[str]:
     """The CLI's interactive command that continues ``native_id`` (or starts it when ``new``: the
     session never ran; or forks ``fork["from"]`` into a new native session). Callers check the log
     first (``check_native``); Pi has no resume-only flag, so for Pi that check is the only guard
-    against a silent new session."""
+    against a silent new session. With ``hooks`` the CLI is started so that it reports its state
+    (pane_state.py); one that cannot is started as without."""
     a = adapters.need(kind)
     if fork:
-        return [*a.fork_argv(fork), *interactive_argv(kind, None, model, effort)[1:]]
-    return a.interactive_argv(native_id, model, effort, new=new, has_log=lambda: locate_log(kind, native_id, root).path is not None, skill_dir=SKILL_DIR)
+        argv = [*a.fork_argv(fork), *interactive_argv(kind, None, model, effort)[1:]]
+    else:
+        argv = a.interactive_argv(native_id, model, effort, new=new, has_log=lambda: locate_log(kind, native_id, root).path is not None, skill_dir=SKILL_DIR)
+    return pane_state.with_hooks(kind, argv) if hooks else argv
 
 
 # Where each CLI looks for project skills: Claude Code .claude/skills, Codex .agents/skills.

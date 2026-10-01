@@ -15,6 +15,7 @@ uv run pytest tests/test_project_store.py tests/test_agent_sessions.py tests/tes
 
 终端与派发（碰真实 tmux 的用例用独立的 `-L` socket，结束时关掉）：
 
+- `tests/test_pane_state.py`：CLI 在终端里回报状态——`bin/agora-state` 脚本（子 agent 不算、没有服务或会话时静默退出）、三家 CLI 的启动参数、投递闸门的规则；闸门接进服务的部分在 `test_terminal_input.py`（真实 tmux 加假 CLI）。
 - `tests/test_terminal_input.py`：输入权、按登记的 pane 和进程判断存活、Codex 从 pane 进程认 rollout、会话环境里没有 `SEEDMUX_*`。
 - `tests/test_dispatch_store.py`、`test_dispatch.py`、`test_dispatch_marks.py`、`test_dispatch_api.py`：派发的记录格式（样本 `tests/fixtures/dispatch/sample.json`）、状态流转、重启对账、撤销后迟到的结果、三家日志里的标记、评论经派发贴回线程、`agora dispatch|reply`、运行树里的 `via: "dispatch"`（设计与接口见 [dispatch.md](dispatch.md)）。
 

@@ -546,3 +546,82 @@ def test_a_pane_has_no_seedmux_variables_even_when_the_tmux_server_already_carri
         time.sleep(0.1)
     got = out.read_text()
     assert "AGORA_SESSION=s-1" in got and "SEEDMUX" not in got
+
+
+# ——— a CLI that reports its own state (server/canvas/pane_state.py) ———
+async def _reporting_pane(hub):
+    """A pane opened by a hub the CLIs can reach, so the CLI in it is started to report (the fake one does not: the test speaks for it)."""
+    hub.url = "http://127.0.0.1:1"
+    hub.ensure_started()
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    lv = hub.live["s-t"]
+    assert lv.reports and lv.cli_state is None and hub.status("s-t")["terminal"]["cliState"] is None
+    return lv
+
+
+@needs_tmux
+async def test_nothing_is_pasted_until_the_cli_says_it_is_idle_and_never_into_a_dialog(hub):
+    lv = await _reporting_pane(hub)
+    lv.pane_since = time.time() - 5  # past the old boot timer: the report is what counts now
+    hub.send("s-t", "等它说空闲的一句")
+    await _held(hub, "s-t", "报告就绪")
+    await asyncio.sleep(1.0)
+    assert len(lv.pane) == 1 and "等它说空闲的一句" not in hub.terms.capture("s-t")
+
+    hub.report_state("s-t", "waiting")  # a permission dialog is up
+    await _held(hub, "s-t", "确认权限")
+    hub.report_state("s-t", "running")
+    await _held(hub, "s-t", "正在忙")
+    await asyncio.sleep(1.0)
+    assert len(lv.pane) == 1 and "等它说空闲的一句" not in hub.terms.capture("s-t")
+
+    hub.report_state("s-t", "idle")
+    await _until(lambda: not lv.pane)
+    await _until(lambda: "等它说空闲的一句" in hub.terms.capture("s-t"))
+    assert hub.status("s-t")["terminal"]["cliState"] == "idle"
+
+
+@needs_tmux
+async def test_a_cli_that_stays_silent_is_not_guessed_ready_but_the_person_can_say_go(hub):
+    lv = await _reporting_pane(hub)
+    lv.pane_since = time.time() - 60  # long silent: most likely a "trust this folder" menu
+    hub.send("s-t", "越过沉默的一句")
+    await _held(hub, "s-t", "一直没有报告就绪")
+    await asyncio.sleep(1.0)
+    assert len(lv.pane) == 1 and "越过沉默的一句" not in hub.terms.capture("s-t")
+    hub.deliver_now("s-t")
+    await _until(lambda: not lv.pane)
+    await _until(lambda: "越过沉默的一句" in hub.terms.capture("s-t"))
+
+
+@needs_tmux
+async def test_a_report_from_a_pane_that_is_gone_is_ignored_and_a_new_pane_starts_from_silence(hub):
+    lv = await _reporting_pane(hub)
+    hub.report_state("s-t", "idle")
+    assert lv.cli_state == "idle"
+    await asyncio.to_thread(hub.close_terminal, "s-t")
+    assert lv.cli_state is None and not lv.reports
+    hub.report_state("s-t", "idle")  # the late word of the CLI that was there
+    assert lv.cli_state is None
+    with pytest.raises(ValueError):
+        hub.report_state("s-t", "nonsense")
+
+
+@needs_tmux
+async def test_a_cli_that_reports_only_from_its_first_turn_is_up_when_its_screen_says_so(hub, monkeypatch):
+    from server.canvas import pane_state
+
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": lambda screen: "fake agent ready" in screen})  # (Codex's input box, for the fake CLI)
+    lv = await _reporting_pane(hub)
+    lv.pane_since = time.time() - 60  # the screen, not the clock, says it is up
+    hub.send("s-t", "屏幕上看到输入框的一句")
+    await _until(lambda: not lv.pane)
+    await _until(lambda: "屏幕上看到输入框的一句" in hub.terms.capture("s-t"))
+
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": lambda screen: False})  # a menu: no input box
+    await _until(lambda: not lv.state.busy and not lv.awaiting, timeout=30)
+    lv.cli_state = None
+    hub.send("s-t", "菜单里不能粘的一句")
+    await _held(hub, "s-t", "一直没有报告就绪")
+    assert len(lv.pane) == 1
