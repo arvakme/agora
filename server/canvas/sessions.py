@@ -227,6 +227,7 @@ class Live:
     asked: set[str] = field(default_factory=set)  # tool calls put to the person this turn (the CLI lists a denied or interrupted one in permission_denials too: not auto's doing)
     seen_window: bool = False  # a terminal window has been attached to this pane (an unattended pane is not closed)
     detached_at: float | None = None  # since when no window is attached (only while the pane is otherwise idle)
+    window_seen: tuple[int, int, bool] | None = None  # (windows attached, writable ones, takeover) as last pushed to the page
     notes: list[dict[str, Any]] = field(default_factory=list)  # notices to show once the transcript is loaded (a turn a restart ended)
 
     def forget_pane(self) -> None:
@@ -728,8 +729,17 @@ class AgentHub:
                 if new:
                     self.adopt_fork(sid, new)
             if lv.pane_alive:
+                self._push_windows(sid, lv)
                 self._reap_detached(sid, lv)
             self._follow(sid, lv)
+
+    def _push_windows(self, sid: str, lv: Live) -> None:
+        """A terminal window attaching or leaving changes what the page says about the terminal (status ``terminal``): push it when it does, nothing else would."""
+        gate = self.terms.gate(sid)
+        seen = (self.terms.clients(sid), gate.unmanaged_writers, gate.input_right != "host")
+        if seen != lv.window_seen:
+            lv.window_seen = seen
+            self._status(sid)
 
     def _reap_detached(self, sid: str, lv: Live) -> None:
         """The person closed the terminal window (Ctrl-B D, the window's ×): the CLI keeps running in its
