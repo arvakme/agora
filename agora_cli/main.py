@@ -107,17 +107,6 @@ def state_dir() -> Path:
     return sd()
 
 
-def is_serve(pid: int, root: Path | str) -> bool:
-    """``pid`` is an ``agora_cli serve --project <root>`` process (checked before stopping it)."""
-    if not alive(pid):
-        return False
-    try:
-        cmd = subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True, timeout=5).stdout
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return "agora_cli serve" in cmd and f"--project {root}" in cmd
-
-
 class Project:
     def __init__(self, root: str | None) -> None:
         from server.canvas.local import Local
@@ -187,7 +176,14 @@ class Project:
         return None
 
     def is_serve(self, pid: int) -> bool:
-        return is_serve(pid, self.root)
+        """``pid`` is an ``agora_cli serve --project <this root>`` process (checked before stopping it)."""
+        if not alive(pid):
+            return False
+        try:
+            cmd = subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True, timeout=5).stdout
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return "agora_cli serve" in cmd and f"--project {self.root}" in cmd
 
     def reconcile(self) -> dict[str, Any]:
         """Moved, copied or freshly cloned since last time? Settle it before anything is started."""
@@ -519,6 +515,7 @@ def main(argv: list[str] | None = None) -> int:
 
     add_share(sub)
     from agora_cli.doctor import add_parsers as add_doctor
+
     from agora_cli.fleet import add_parsers as add_fleet
 
     add_doctor(sub)

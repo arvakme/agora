@@ -4,11 +4,12 @@ nothing else is kept, so there is no second list to fall out of step."""
 
 from __future__ import annotations
 
+import fcntl
 import json
 from pathlib import Path
 from typing import Any
 
-from agora_cli.main import alive, health, is_serve, state_dir, stop
+from agora_cli.main import alive, health, state_dir
 
 SHORT_SHA = 7
 
@@ -18,7 +19,7 @@ def _records() -> list[tuple[Path, dict[str, Any]]]:
     for path in sorted((state_dir() / "servers").glob("*.json")):
         try:
             rec = json.loads(path.read_text())
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):  # ValueError: bad JSON or bytes that are not UTF-8
             continue  # unreadable: shown by neither command, never deleted
         if isinstance(rec, dict) and rec.get("pid") and rec.get("root"):
             out.append((path, rec))
@@ -36,7 +37,7 @@ def _row(rec: dict[str, Any]) -> dict[str, Any]:
         "mode": rec.get("mode"),
         "startedAt": rec.get("startedAt"),
         "sha": rec.get("sha"),
-        "dirty": bool(rec.get("dirty")),
+        "dirty": rec.get("dirty"),
         "alive": running,
         "answering": answering,
         "rootGone": not Path(rec["root"]).exists(),
@@ -48,28 +49,53 @@ def instances() -> list[dict[str, Any]]:
     return sorted((_row(rec) for _, rec in _records()), key=lambda r: (not r["answering"], not r["alive"], r["root"]))
 
 
+def _unheld(lock: Path):
+    """The instance lock, taken without waiting; None when a server holds it (it runs, or is starting: it takes the
+    lock before it writes its record). Held while the record goes, so a starting server cannot be answered by a
+    record that is about to be deleted. The lock file itself stays: it is what the next server of this instance locks."""
+    try:
+        fd = open(lock, "a+")
+    except OSError:
+        return None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fd.close()
+        return None
+    return fd
+
+
 def gc() -> list[dict[str, Any]]:
-    """Clear what no longer serves, return the rows cleared. A record whose process is gone is removed with its lock.
-    A server still running on a folder that is gone is stopped, once its command line says it is an Agora server for
-    that folder. A running server that does not answer is left alone: ``agora down`` finds it through that record."""
+    """Remove the records of servers that are gone, return the rows removed. Nothing that runs is touched or stopped:
+    a server that does not answer is for ``agora down`` (it finds it through that record), and one whose project
+    folder is gone is shown by ``status`` for the person to stop."""
     cleared = []
     for path, rec in _records():
         row = _row(rec)
         if row["alive"]:
-            if not (row["rootGone"] and is_serve(rec["pid"], rec["root"])):
-                continue
-            stop(rec["pid"])
-        path.unlink(missing_ok=True)
-        path.with_suffix(".lock").unlink(missing_ok=True)
+            continue
+        held = _unheld(path.with_suffix(".lock"))
+        if held is None:
+            continue
+        with held:
+            path.unlink(missing_ok=True)
         cleared.append(row)
     return cleared
 
 
+def _sha(row: dict[str, Any]) -> str:
+    """The commit, with ``+dirty`` for uncommitted changes and ``+?`` when git could not say."""
+    if not row["sha"]:
+        return "unknown"
+    return row["sha"][:SHORT_SHA] + {False: "", True: "+dirty", None: "+?"}[row["dirty"]]
+
+
 def _describe(row: dict[str, Any]) -> str:
     state = "answering" if row["answering"] else "not answering" if row["alive"] else "stopped"
-    sha = (row["sha"] or "unknown")[:SHORT_SHA] + ("+dirty" if row["dirty"] else "")
-    gone = "  (project folder is gone)" if row["rootGone"] else ""
-    return f"{state:<13} {sha:<14} port {row['port']:<6} pid {row['pid']:<7} {row['root']}{gone}"
+    gone = ""
+    if row["rootGone"]:
+        gone = f"  (project folder is gone; `kill {row['pid']}` to stop it)" if row["alive"] else "  (project folder is gone)"
+    return f"{state:<13} {_sha(row):<14} port {row['port']:<6} pid {row['pid']:<7} {row['root']}{gone}"
 
 
 def cmd_status(_p, _a) -> int:

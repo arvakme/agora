@@ -19,10 +19,11 @@ def _git(repo: Path, *args: str) -> str | None:
 
 
 def code_version(repo: Path = REPO) -> dict[str, str | bool | None]:
-    """``sha``: HEAD of ``repo`` (None outside git: unknown, never guessed); ``dirty``: tracked files differ from it."""
+    """``sha``: HEAD of ``repo`` (None outside git: unknown, never guessed); ``dirty``: tracked files differ from it
+    (None when git could not say: not the same as clean)."""
     sha = _git(repo, "rev-parse", "HEAD")
-    dirty = bool(_git(repo, "status", "--porcelain", "--untracked-files=no")) if sha else False
-    return {"sha": sha, "dirty": dirty}
+    status = _git(repo, "status", "--porcelain", "--untracked-files=no") if sha else None
+    return {"sha": sha, "dirty": None if status is None else bool(status)}
 
 
 @lru_cache(maxsize=1)

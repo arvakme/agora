@@ -13,8 +13,15 @@ describe("buildLabel: which code this page's server runs", () => {
     });
   });
 
+  it("marks a checkout whose uncommitted changes git could not tell", () => {
+    expect(buildLabel({ sha: "b1fbb5b0123456789012345678901234567890ab", dirty: null })).toEqual({
+      text: "b1fbb5b?",
+      title: "b1fbb5b0123456789012345678901234567890ab（未确认是否有未提交的改动）",
+    });
+  });
+
   it("says nothing when the server could not tell (an old server, or no git)", () => {
     expect(buildLabel(undefined)).toBeNull();
-    expect(buildLabel({ sha: null, dirty: false })).toBeNull();
+    expect(buildLabel({ sha: null, dirty: null })).toBeNull();
   });
 });
