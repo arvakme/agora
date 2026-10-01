@@ -37,7 +37,7 @@ def _row(rec: dict[str, Any]) -> dict[str, Any]:
         "mode": rec.get("mode"),
         "startedAt": rec.get("startedAt"),
         "sha": rec.get("sha"),
-        "dirty": rec.get("dirty"),
+        "dirty": rec["dirty"] if isinstance(rec.get("dirty"), bool) else None,  # anything else: not known
         "alive": running,
         "answering": answering,
         "rootGone": not Path(rec["root"]).exists(),
