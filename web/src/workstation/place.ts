@@ -162,7 +162,7 @@ export const placeOfSeg = (ctx: Ctx, s: RunSeg): string | null => where(ctx, s)?
 
 /** Where a segment's work happens on this canvas: its file's node (with doors, a file in a node's
  * sub-diagram lies behind that node's door and, on a child canvas, one not on it behind the entrance;
- * without, the 图外 tray); in a comment's turn, without a file, the comment's node; else null — wherever
+ * without, nowhere); in a comment's turn, without a file, the comment's node; else null — wherever
  * the worker already is. */
 function where(ctx: Ctx, s: RunSeg): Here | null {
   let l: Located | null;
@@ -172,8 +172,8 @@ function where(ctx: Ctx, s: RunSeg): Here | null {
   else return null;
   if (l) return ctx.door && l.portal ? { ...l, behind: true } : l;
   if (ctx.door?.entrance) return { place: ctx.door.entrance, behind: true };
-  // a file no node has is at the tray; a node the page does not have (any more) is nowhere: the worker stays where it is
-  return s.path && !isNodePath(s.path) ? { place: OUTSIDE } : null;
+  // a file no node has, or a node the page does not have (any more), is nowhere on the diagram: the worker stays where it is (the 图外 chip says what it did out there)
+  return null;
 }
 
 /** Whether segs[i], at `place`, is a glance: one read of a real, short length (under GLANCE_MS) and nothing else right after it at that

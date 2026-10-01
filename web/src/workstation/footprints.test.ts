@@ -1,6 +1,6 @@
 // Footprints (web/docs/workstation.md「新想法」): per node, how long workers stood there working and how
 // long they wrote there — where the canvas showed them standing (a glance stays put, thinking and
-// waiting happen where they stand), only what happened by the playhead, never the 图外 tray.
+// waiting happen where they stand), only what happened by the playhead; a file off the diagram is not written "at" the node its writer stands on.
 import { describe, expect, it } from "vitest";
 import { footprints } from "./footprints.ts";
 import { OUTSIDE, type Ctx } from "./place.ts";
@@ -41,9 +41,9 @@ describe("footprints", () => {
     expect(byPlace(footprints([r], ctxOf([r]), 0, 60 * S))).toEqual({ api: { stood: 10000, wrote: 9000, density: 1 } });
   });
 
-  it("thinking and waiting count where the worker stands; lingering idle and the 图外 tray leave none", () => {
+  it("thinking and waiting count where the worker stands; a file off the diagram is stood on but not written there; lingering idle leaves none", () => {
     const r = run("r", [seg("write", 0, 3, "server/app.py"), seg("think", 3, 5), seg("wait", 5, 8), seg("write", 8, 10, "docs/notes.md")]);
-    expect(byPlace(footprints([r], ctxOf([r]), 0, 100 * S))).toEqual({ api: { stood: 8000, wrote: 3000, density: 1 } });
+    expect(byPlace(footprints([r], ctxOf([r]), 0, 100 * S))).toEqual({ api: { stood: 10000, wrote: 3000, density: 1 } });
   });
 
   it("a sub-agent's work counts at its own nodes; a worker known only by its receipts leaves none", () => {

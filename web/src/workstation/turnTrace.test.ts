@@ -33,7 +33,7 @@ const ctx = (runs: WorkRun[]): Ctx => ({
 
 // A session with two turns. Turn 1: reads server/app.py (API 服务), writes server/db/models.py (MySQL).
 // Turn 2: runs the tests, sends Codex (which writes on its own and hands back), writes notes.md (no node claims it:
-// the 图外 tray), looks at a scratch file outside the project.
+// it is done where the agent stands), looks at a scratch file outside the project.
 const codex = run("codex", [seg("write", 26, 30, { path: "web/a.ts", itemId: "c-w" })], { parentId: "pi", name: "Codex", task: "补测试", spawnAt: 24 * S, doneAt: 34 * S });
 const pi = run(
   "pi",
@@ -81,14 +81,13 @@ describe("traceAt over one turn: stops and the tool calls at each", () => {
     expect(tr.subs).toEqual([]);
   });
 
-  it("turn 2 has the tests, the dispatch, the hand-back and the 图外 tray as a stop of its own", () => {
+  it("turn 2 has the tests, the dispatch and the hand-back; a file no node claims is a call at the stop the agent stands at, not a stop of its own", () => {
     const tr = traceAt(pi, 50 * S, c, Infinity, win2);
     const all = tr.stops.flatMap((s) => s.calls);
     expect(all.map((x) => x.label)).toEqual(["Bash pytest tests/ -q", "派出 Codex：补测试", "Read /tmp/scratchpad/shot.png", "Edit notes.md", "Codex 交回"].sort((a, b) => all.findIndex((x) => x.label === a) - all.findIndex((x) => x.label === b)));
     expect(all.map((x) => x.kind).filter((k) => k !== "tool")).toEqual(["spawn", "back"]);
-    const tray = tr.stops.filter((s) => s.place === OUTSIDE);
-    expect(tray.length).toBeGreaterThan(0);
-    expect(tray.flatMap((s) => s.calls.map((x) => x.label))).toContain("Edit notes.md");
+    expect(tr.stops.some((s) => s.place === OUTSIDE)).toBe(false);
+    expect(tr.stops.flatMap((s) => s.calls.map((x) => x.label))).toContain("Edit notes.md");
     // a file outside the project moves nobody: the read of the scratch file is at the stop the agent stood at
     const scratch = tr.stops.find((s) => s.calls.some((x) => x.itemId === "r2"))!;
     expect(scratch).toBe(tr.stops.find((s) => s.calls.some((x) => x.itemId === "e1"))); // no stop of its own, and not the tray

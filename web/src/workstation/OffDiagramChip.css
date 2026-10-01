@@ -1,0 +1,8 @@
+/* the 图外 chip (./OffDiagramChip.tsx): fixed to the canvas corner, above the zoom controls / the dock */
+.ws-off { pointer-events: auto; position: absolute; z-index: 6; left: 12px; bottom: 72px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: calc(100% - 24px); }
+.ws-off-chip { height: 26px; padding: 0 10px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--box); color: var(--fg-muted); font-size: var(--text-xs); white-space: nowrap; }
+.ws-off-chip:hover { background: var(--raised-on-surface); color: var(--fg); }
+.ws-off-list { margin: 0; padding: 4px; list-style: none; max-width: 100%; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--box); font-size: var(--text-xs); color: var(--fg); }
+.ws-off-list li { padding: 2px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono, monospace); }
+.ws-off-list .ws-off-more { color: var(--fg-subtle); font-family: inherit; }
+@media (pointer: coarse) { .ws-off-chip { height: 32px; } }

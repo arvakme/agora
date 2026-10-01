@@ -1,5 +1,5 @@
 // Files off the diagram (web/docs/workstation.md「新想法」): the files agents wrote that no node claims
-// (they stand on the 图外 tray while writing them), grouped by their nearest common folder; a folder
+// (a worker writes them where it stands: nothing on the diagram is theirs), grouped by their nearest common folder; a folder
 // with more than two becomes a suggestion to draw it in. Deepest folders first, each file counted
 // once; top-level files, reads and files outside the project (absolute paths) never count (reading docs/ is not a reason to redraw the diagram).
 // Shown by ./TrayHint.tsx, which only copies the words: nothing changes the diagram. Pure.
@@ -11,9 +11,15 @@ export type DrawInHint = { dir: string; files: string[]; text: string };
 /** More than this many files in one folder make a suggestion. */
 const MIN = 2;
 
-export function drawInHints(runs: readonly WorkRun[], locate: Locate): DrawInHint[] {
+/** The project-relative files written that no node claims, each once, sorted: what the 图外 chip counts and lists. */
+export function offDiagramFiles(runs: readonly WorkRun[], locate: Locate): string[] {
   const files = new Set<string>();
-  for (const r of runs) for (const g of r.segs) if (g.kind === "write" && g.path?.includes("/") && !outsideProject(g.path) && !locate(g.path)) files.add(g.path);
+  for (const r of runs) for (const g of r.segs) if (g.kind === "write" && g.path && !outsideProject(g.path) && !locate(g.path)) files.add(g.path);
+  return [...files].sort();
+}
+
+export function drawInHints(runs: readonly WorkRun[], locate: Locate): DrawInHint[] {
+  const files = offDiagramFiles(runs, locate).filter((f) => f.includes("/"));
   // every folder above each file ("a/b/c.py" → "a/", "a/b/"), deepest first
   const under = new Map<string, string[]>();
   for (const f of files) {

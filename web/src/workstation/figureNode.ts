@@ -41,10 +41,9 @@ const DESK = -26.4;
 /** The ! / ? dot sits up and in front of the head (Loom's place for it; the overlay leaves 9 units above the head for it). */
 const MARK_UP = RIG.head + 4.2;
 /** Selecting a figure swaps these three colours for the accent (see `draw`). */
-const INK = "var(--wsf-ink, var(--fig-ink))";
-const PAPER = "var(--wsf-fill, var(--fig-fill))";
-const FAR = "var(--wsf-far, var(--fig-far))";
-const SELECTED = "--wsf-ink: var(--accent); --wsf-fill: var(--fig-sel-fill); --wsf-far: var(--fig-sel-far)";
+const INK = "var(--fig-ink)";
+const PAPER = "var(--fig-fill)";
+const FAR = "var(--fig-far)";
 const outline = (w = LINE) => ({ stroke: INK, "stroke-width": w, "vector-effect": "non-scaling-stroke" });
 
 /** A bone from a to b with round ends of radius r, as one closed path: two sides and two half circles. */
@@ -186,9 +185,8 @@ export class FigureNode {
     // move, not on every sub-pixel step of breathing or of a spring settling.
     const q = (v: number) => Math.round(v * 20) / 20;
     const bone = (n: SVGPathElement, k: string, ax: number, ay: number, bx: number, by: number, r: number) => S(n, k, "d", capsule(q(ax), q(ay), q(bx), q(by), r));
-    // Selected (a figure or its bubble clicked): the outline in the accent, the paper tinted, the skeleton on top.
+    // Selected (a figure or its bubble clicked): the skeleton on top. The figure itself keeps its ink: the bubble is what shows the selection.
     const sel = focus.get().selected === this.id;
-    S(this.body, "b", "style", sel ? SELECTED : "");
     // Turning: the whole body is mirrored through edge-on (−1 → 1) around its root. Landing: it is
     // scaled about its feet and raised.
     const scale = j.scale ?? 1;
@@ -386,12 +384,11 @@ export class PeekNode {
     this.last[`${key}.${attr}`] = v;
     node.setAttribute(attr, v);
   }
-  /** At the hole (x, y), for figures at k world px per unit: the head `rise` of the way out of it (0 hidden … 1 looking out), or just there or not with `still`; dimmed by a trace, selected like a figure. */
-  place(x: number, y: number, k: number, rise: number, still: boolean, dim: boolean, selected: boolean, idle = false) {
+  /** At the hole (x, y), for figures at k world px per unit: the head `rise` of the way out of it (0 hidden … 1 looking out), or just there or not with `still`; dimmed by a trace. */
+  place(x: number, y: number, k: number, rise: number, still: boolean, dim: boolean, idle = false) {
     const shown = rise > 0.001;
     this.set(this.g, "d", "display", shown ? "inline" : "none");
     this.set(this.g, "g", "transform", `translate(${f2(x)} ${f2(y)}) scale(${f2(k)})`);
-    this.set(this.g, "sel", "style", selected ? SELECTED : "");
     this.set(this.g, "dim", "data-dim", dim ? "1" : "0");
     this.set(this.note, "n", "display", idle && rise > 0.9 ? "inline" : "none");
     this.set(this.inner, "i", "transform", `translate(0 ${f2(still ? -PEEK_UP : PEEK_DOWN + (-PEEK_UP - PEEK_DOWN) * rise)})`);
