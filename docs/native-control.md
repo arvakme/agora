@@ -2,11 +2,11 @@
 
 本文描述顺序、权限、事实归属与接缝证据。字段和 schema 只在 [`native_protocol.py`](../native_protocol.py) 定义；非 Python 消费者读取 `python -m native_protocol` 的导出。产品目标见[工作台计划](canvas-workbench-plan.md)，验收状态见 [Issue #18](https://github.com/arvakme/agora/issues/18)。
 
-**契约未冻结，但已是[派发](dispatch.md)唯一在用的状态机。** 已有真实 CLI 证据的：Codex 的接收、完成、中断两回合（§5），以及 Claude 无头双向协议里的中断（见 [claude-headless-duplex.md](claude-headless-duplex.md)）。还缺的：三个 CLI 各一份统一的实测记录（命令、版本、原生记录片段、退出码），Pi 的接收、终态、中断未验；终端 pane 里的一轮没有可验证的中断，只记 `unknown`；合同里还带着旧房间模型的 `room_id` / `participant_id` / `computer_id` 占位字段，派发用固定值填它们（见 §1）。验收见 [Issue #18](https://github.com/arvakme/agora/issues/18) 和 [#23](https://github.com/arvakme/agora/issues/23)。
+**契约未冻结，但已是[派发](dispatch.md)唯一在用的状态机。** 已有真实 CLI 证据的：Codex 的接收、完成、中断两回合（§5），以及 Claude 无头双向协议里的中断（见 [claude-headless-duplex.md](claude-headless-duplex.md)；只有 2026-09-29 Claude Code 2.1.284 的录制样本 `tests/fixtures/agents/claude-duplex/cancel.jsonl`，缺发出的 interrupt、对应回应和退出码的完整链）。还缺的：三个 CLI 各一份统一的实测记录（命令、版本、原生记录片段、退出码），Pi 的接收、终态、中断未验；终端 pane 里的一轮没有可验证的中断，只记 `unknown`；合同里还带着旧房间模型的 `room_id` / `participant_id` / `computer_id` 占位字段，派发用固定值填它们（见 §1）。验收见 [Issue #18](https://github.com/arvakme/agora/issues/18) 和 [#23](https://github.com/arvakme/agora/issues/23)。
 
 ## 1. 事实与授权
 
-Agora 服务拥有派发记录（`.agora/dispatch/<request_id>.json`）、交回的回执和请求是否仍有效；回执说完成只是一句声明，没有“验收通过”这一状态。授权来自服务端对 `$AGORA_SESSION` 与会话的绑定；请求是否仍有效，必须在提交结果时由服务校验。`native_protocol.py` 里的 `room_id`、`participant_id`、`computer_id` 是旧房间模型留下的地址字段，现由派发填稳定占位值，不承载任何权限。
+Agora 服务拥有派发记录（`.agora/dispatch/<request_id>.json`）、交回的回执和请求是否仍有效；回执说完成只是一句声明，没有“验收通过”这一状态。授权来自服务端对 `$AGORA_SESSION` 与会话的绑定；请求是否仍有效，必须在提交结果时由服务校验。`native_protocol.py` 里的 `room_id`、`participant_id`、`computer_id` 是旧房间模型留下的地址字段，现由派发按项目、目标会话派生占位值（`computer_id` 是同一个常量），不承载任何权限。
 
 宿主只拥有本机会话、输入权与尚未确认的传输记录。各 CLI 拥有自己的原生对话记录。所有 ID、序号、工作目录和 tmux target 都是地址，不是凭据；宿主也能生成一个地址，不能用字段非空或序号递增证明授权。
 

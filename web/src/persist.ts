@@ -24,8 +24,8 @@ export const onCanvasRefused = (f: (canvasId: string) => void) => void (onRefuse
 
 export const project = createClient({ onRefusedEmpty: (slot) => slot.startsWith("canvas:") && onRefusedEmpty(slot.slice("canvas:".length)) });
 
-/** The code the server runs (server/canvas/version.py): HEAD of its checkout, and whether tracked files differ from it. */
-export type BuildInfo = { sha: string | null; dirty: boolean };
+/** The code the server runs (server/canvas/version.py): HEAD of its checkout, and whether tracked files differ from it (null: git could not say). */
+export type BuildInfo = { sha: string | null; dirty: boolean | null };
 export type ProjectInfo = { id: string; name: string; root: string; me: Person; build?: BuildInfo };
 type Versioned<T> = { data: T; version: string };
 /** A project file the server could not read (server/canvas/project.py `file_error`, `_read_checked`). */
@@ -90,6 +90,7 @@ let latestSessions: SessionsState = { sessions: {}, turns: {}, batches: {} };
 /** Load the project (importing this browser's old workspace into an empty project once). */
 export async function connect(): Promise<Loaded> {
   let snap = await project.get<Snapshot>("/snapshot");
+  const build = snap.build; // the import below answers with a plain snapshot that does not say it
   let imported = false;
   if (snap.empty) {
     const legacy = await readLegacy();
@@ -135,7 +136,7 @@ export async function connect(): Promise<Loaded> {
   folded.logged.forEach((l, id) => logged.set(id, l));
   latestSessions = folded.state;
   return {
-    project: { id: snap.id, name: snap.name, root: snap.root, me: snap.me, build: snap.build },
+    project: { id: snap.id, name: snap.name, root: snap.root, me: snap.me, build },
     empty: snap.empty,
     errors,
     workspace: snap.workspace?.data,

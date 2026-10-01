@@ -27,8 +27,8 @@ What this module does not own:
   ``$AGORA_SESSION`` to a session. Nothing in this file is a credential or a
   proof: every identifier here is an address the host can also write down for
   itself. ``room_id``, ``participant_id`` and ``computer_id`` are what the old
-  room model called those addresses; dispatch fills them with stable
-  placeholders (Issue #18 removes them).
+  room model called those addresses; dispatch fills them with placeholders
+  derived from the project and the target session (Issue #18 removes them).
 * Each CLI owns its own conversation record. Correlation is expressed in the
   CLI's identifiers, never in text the host wrote.
 """
