@@ -26,9 +26,7 @@ What this module does not own:
 * Authority to control a session comes from the server's own binding of
   ``$AGORA_SESSION`` to a session. Nothing in this file is a credential or a
   proof: every identifier here is an address the host can also write down for
-  itself. ``room_id``, ``participant_id`` and ``computer_id`` are what the old
-  room model called those addresses; dispatch fills them with placeholders
-  derived from the project and the target session (Issue #18 removes them).
+  itself.
 * Each CLI owns its own conversation record. Correlation is expressed in the
   CLI's identifiers, never in text the host wrote.
 """
@@ -137,32 +135,28 @@ class NativeTurn(BaseModel, frozen=True):
 
 
 class NativeSession(BaseModel, frozen=True):
-    """One controlled native CLI session and the Agora identity it maps to.
+    """One controlled native CLI session: where it runs and how to find its own record.
 
-    ``participant_id`` and ``computer_id`` say which Room member and which
-    paired Computer this session stands for. They are the mapping, not the
-    authorisation: permission is decided by the authenticated connection the
-    request arrived on, server side.
+    Nothing here is authorisation: permission is decided by the server's own
+    binding of the calling session, not by these addresses.
     """
 
     deployment: str = Field(min_length=1)
-    participant_id: UUID
-    computer_id: UUID
     adapter: AdapterKind
     tmux_target: str = Field(min_length=1)
     native_locator: str = Field(min_length=1)
 
 
 class RequestOrigin(BaseModel, frozen=True):
-    """Where the request sits in the room's order.
+    """Where the request sits in Agora's order.
 
-    ``request_seq`` is Agora's monotonic sequence, used to order requests and
-    to catch up after a reconnect. It is not proof of anything on its own.
+    ``request_seq`` is Agora's monotonic sequence, used to order requests. It
+    is not proof of anything on its own. Records written before the room model
+    was dropped still carry ``room_id``, ``requested_by``, ``participant_id``
+    and ``computer_id``; they are ignored on read and not written again.
     """
 
-    room_id: UUID
     request_seq: int
-    requested_by: UUID
 
 
 class Usage(BaseModel, frozen=True):

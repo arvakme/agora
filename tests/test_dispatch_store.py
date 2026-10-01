@@ -18,11 +18,10 @@ RID = "0d5f6a1e-7b3c-4c1f-9a52-3e8d2b6c4f10"
 
 
 def make(**kw) -> Dispatch:
-    ns = UUID("6f0b1e52-3a7c-4d1e-9b8a-2c5d7e9f0a13")
     req = DeliveryRequest(
         request_id=UUID(RID),
-        origin=RequestOrigin(room_id=ns, request_seq=1, requested_by=ns),
-        session=NativeSession(deployment="/work/p", participant_id=ns, computer_id=ns, adapter="codex", tmux_target="agora-s-b", native_locator="s-b"),
+        origin=RequestOrigin(request_seq=1),
+        session=NativeSession(deployment="/work/p", adapter="codex", tmux_target="agora-s-b", native_locator="s-b"),
         body="[Agora 派发 0d5f6a1e] 来自 Claude Code 会话 s-a：先读任务文件 /work/p/.agora/dispatch/x/task.md。",
     )
     return Dispatch(
@@ -56,6 +55,15 @@ def test_the_sample_file_is_what_the_code_writes_and_reads(tmp_path):
     assert obj == sample
     back = from_json(json.loads(SAMPLE.read_text()))
     assert derive_state(back) == "done" and back.delivery.turn_state == "completed" and back.delivery.result.summary == "已加一行"
+
+
+def test_a_record_written_with_the_old_room_fields_still_reads_and_is_rewritten_without_them():
+    # Records on disk from before the room model was dropped carry room_id, requested_by, participant_id, computer_id.
+    old = json.loads((SAMPLE.parent / "legacy-room-fields.json").read_text())
+    assert {"room_id", "requested_by"} <= old["delivery"]["request"]["origin"].keys()
+    back = from_json(old)
+    assert derive_state(back) == "done" and back.delivery.request.origin.request_seq == 1
+    assert to_json(back) == json.loads(SAMPLE.read_text())
 
 
 def test_round_trip_through_files_is_atomic_and_complete(tmp_path):
