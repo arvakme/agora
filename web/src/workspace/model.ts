@@ -203,13 +203,13 @@ export function migrateDocs(docs: (Doc | { id: string; kind: "session"; sessionI
   return docs.map((d) => (d.kind === "session" && (!d.title || LEGACY_SESSION.test(d.title)) ? { ...d, title: "" } : (d as Doc)));
 }
 
-/** Whether the person named this session (an automatic name follows the agent and topic). */
+/** Whether the person named this session (an automatic name follows the topic, else the agent). */
 export const isNamed = (d: SessionDoc) => !!d.title && !LEGACY_SESSION.test(d.title);
 
 /**
  * Display names for session docs, in workspace order: the person's name if they gave one,
- * else "<agent>" / "<agent> · <topic>", or "新会话" while no agent is chosen. Automatic names
- * that collide get a suffix ("Claude Code · 加 Kafka 2"); there is no global counter.
+ * else its "<topic>" (the tab's mark already says which agent), "<agent>" before there is one, or "新会话" while no agent
+ * is chosen. Automatic names that collide get a suffix ("加 Kafka 2"); there is no global counter.
  */
 export function sessionTitles(docs: Doc[], info: (sessionId: string, doc: SessionDoc) => { agent?: string } | undefined): Record<string, string> {
   const out: Record<string, string> = {};
@@ -221,7 +221,7 @@ export function sessionTitles(docs: Doc[], info: (sessionId: string, doc: Sessio
       continue;
     }
     const agent = info(d.sessionId, d)?.agent;
-    const base = agent ? (d.topic ? `${agent} · ${d.topic}` : agent) : DRAFT_SESSION;
+    const base = agent ? (d.topic || agent) : DRAFT_SESSION;
     out[d.id] = nextTitle(taken, base, true);
     taken.push(out[d.id]);
   }

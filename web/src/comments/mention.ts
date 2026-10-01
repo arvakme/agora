@@ -35,8 +35,12 @@ export type MentionSources = {
   now: number;
 };
 
-/** One line of the list: a choice, or 「更多」 that opens the whole list. */
-export type MentionRow = { target: MentionTarget; title: string; note: string; badge?: string } | { more: true; title: string };
+/** Which half of the list a choice is in: carrying on with a conversation that exists, or starting a new one (an @agent). */
+export type MentionGroup = "continue" | "new";
+export const GROUP_TITLES: Record<MentionGroup, string> = { continue: "继续已有会话", new: "新开一个" };
+
+/** One line of the list: a choice (`running`: that conversation is at work), or 「更多」 that opens the whole list. */
+export type MentionRow = { target: MentionTarget; title: string; note: string; group: MentionGroup; badge?: string; running?: boolean } | { more: true; title: string };
 
 const RECENT = 2;
 export const MORE_TITLE = "更多… 输入名字搜索";
@@ -81,8 +85,12 @@ function liveSessions(o: MentionSources, only?: readonly string[]) {
   return (only ?? Object.keys(o.bindings))
     .filter((sid) => named.has(sid))
     .sort((a, b) => at(b) - at(a))
-    .map((sid) => ({ sid, agent: o.bindings[sid].agent, name: named.get(sid)!, at: at(sid) }));
+    .map((sid) => ({ sid, agent: o.bindings[sid].agent, name: named.get(sid)!, at: at(sid), running: !!o.status[sid]?.running }));
 }
+
+/** What a conversation's line says besides its name: its agent, and that it is at work or how long ago it last did anything. */
+const sessionNote = (o: MentionSources, s: { agent: string; at: number; running: boolean }) => `${nameOf(o, s.agent)} · ${s.running ? "工作中" : agoText(s.at, o.now)}`;
+const sessionRow = (o: MentionSources, s: ReturnType<typeof liveSessions>[number]): MentionRow => ({ target: { type: "session", sid: s.sid, agent: s.agent, label: s.name }, title: s.name, note: sessionNote(o, s), group: "continue", running: s.running || undefined });
 const nameOf = (o: MentionSources, kind: string) => o.agents.find((a) => a.kind === kind)?.name ?? kind;
 
 /** Everything an @ can name that is worth listing: the session agents, then the conversations that can take a message; `query` filters both. */
@@ -102,17 +110,22 @@ export function mentionOptions(o: MentionSources, query: string): MentionTarget[
  */
 export function mentionRows(o: MentionSources, query: string, expanded: boolean): MentionRow[] {
   if (query.trim() || expanded) {
-    return mentionOptions(o, query).map((t) => ({ target: t, title: t.label, note: t.type === "agent" ? "新对话" : nameOf(o, t.agent) }));
+    const live = new Map(liveSessions(o).map((s) => [s.sid, s]));
+    const found = mentionOptions(o, query);
+    const sessions = found.flatMap((t) => (t.type === "session" ? [sessionRow(o, live.get(t.sid)!)] : []));
+    const agents = found.flatMap((t): MentionRow[] => (t.type === "agent" ? [{ target: t, title: t.label, note: "新对话", group: "new" }] : []));
+    return [...sessions, ...agents];
   }
   const rows: MentionRow[] = [];
   const bound = o.handoff && liveSessions(o, [o.handoff.sessionId])[0];
-  if (bound) rows.push({ target: { type: "session", sid: bound.sid, agent: bound.agent, label: o.handoff!.name }, title: `继续交给 ${o.handoff!.name}`, note: "" });
+  if (bound) rows.push({ target: { type: "session", sid: bound.sid, agent: bound.agent, label: o.handoff!.name }, title: `继续交给 ${o.handoff!.name}`, note: "", group: "continue", running: bound.running || undefined });
+  // the ones at work come first, all of them (two conversations working at once are the ones to tell apart), then the most recent up to two
+  const others = liveSessions(o, o.canvas).filter((s) => s.sid !== bound?.sid).sort((a, b) => Number(b.running) - Number(a.running));
+  const working = others.filter((s) => s.running).length;
+  for (const s of others.slice(0, Math.max(RECENT, working))) rows.push(sessionRow(o, s));
   const kind = recommendAgent({ kinds: o.agents.map((a) => a.kind), bindings: o.bindings, activeAt: o.activeAt, canvas: o.canvas });
   const name = nameOf(o, kind);
-  rows.push({ target: { type: "agent", kind, label: name }, title: `${name} · 新对话`, note: "", badge: RECOMMENDED });
-  for (const s of liveSessions(o, o.canvas).filter((s) => s.sid !== bound?.sid).slice(0, RECENT)) {
-    rows.push({ target: { type: "session", sid: s.sid, agent: s.agent, label: s.name }, title: s.name, note: agoText(s.at, o.now) });
-  }
+  rows.push({ target: { type: "agent", kind, label: name }, title: `${name} · 新对话`, note: "", group: "new", badge: RECOMMENDED });
   rows.push({ more: true, title: MORE_TITLE });
   return rows;
 }

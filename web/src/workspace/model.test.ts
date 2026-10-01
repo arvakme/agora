@@ -88,13 +88,13 @@ describe("migrateDocs", () => {
 describe("session names", () => {
   const s = (id: string, extra: Partial<SessionDoc> = {}): SessionDoc => ({ id: `p-${id}`, kind: "session", sessionId: id, title: "", ...extra });
   const agentOf: Record<string, string> = { a: "Claude Code", b: "Claude Code", c: "Pi", d: "Claude Code" };
-  it("uses the agent name and topic, 新会话 for a draft, and the person's own name when given", () => {
+  it("uses the topic (the tab's mark says the agent), else the agent name, 新会话 for a draft, and the person's own name when given", () => {
     const docs: Doc[] = [{ id: "c1", kind: "canvas", title: "架构图" }, s("a", { topic: "加 Kafka" }), s("c"), s("x"), s("d", { title: "缓存讨论" })];
-    expect(sessionTitles(docs, (id) => ({ agent: agentOf[id] }))).toEqual({ "p-a": "Claude Code · 加 Kafka", "p-c": "Pi", "p-x": "新会话", "p-d": "缓存讨论" });
+    expect(sessionTitles(docs, (id) => ({ agent: agentOf[id] }))).toEqual({ "p-a": "加 Kafka", "p-c": "Pi", "p-x": "新会话", "p-d": "缓存讨论" });
   });
   it("adds a suffix only to names that collide, never a global number", () => {
     const docs: Doc[] = [s("a", { topic: "加 Kafka" }), s("b", { topic: "加 Kafka" }), s("x"), s("y"), s("c")];
-    expect(Object.values(sessionTitles(docs, (id) => ({ agent: agentOf[id] })))).toEqual(["Claude Code · 加 Kafka", "Claude Code · 加 Kafka 2", "新会话", "新会话 2", "Pi"]);
+    expect(Object.values(sessionTitles(docs, (id) => ({ agent: agentOf[id] })))).toEqual(["加 Kafka", "加 Kafka 2", "新会话", "新会话 2", "Pi"]);
     expect(isNamed(s("a", { title: "会话 3" }))).toBe(false);
   });
 });
