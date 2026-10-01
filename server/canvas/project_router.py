@@ -31,6 +31,7 @@ from server.canvas.project import Conflict, EmptyOverwrite, Gone, NotEmpty, Proj
 from server.canvas.share import ShareError, ShareManager, check_max_opens, check_ttl
 from server.canvas.trash import Trash, TrashError, canvas_sessions
 from server.canvas.runner import DEFAULT_BACKEND, DEFAULT_MODEL, EFFORTS, ExecOptions
+from server.canvas.version import running_version
 
 REPO = Path(__file__).resolve().parents[2]
 WEB = REPO / "web"
@@ -148,13 +149,13 @@ def create_project_router(store: ProjectStore, events: Events | None = None, *, 
 
     @router.get("/health")
     def health():
-        return {"ok": True, "root": str(store.root), "pid": os.getpid(), "gone": store.gone()}
+        return {"ok": True, "root": str(store.root), "pid": os.getpid(), "gone": store.gone(), **running_version()}
 
     @router.get("/snapshot")
     def snapshot():
         # ``local``: which copy this is and what changed since the page last looked (moved, copied,
         # a fresh clone); ``origins``: listed sessions that cannot simply be resumed here.
-        return {**store.snapshot(), "local": {"instanceId": local.instance_id(), "change": local.change()}, "origins": session_origins(store, local)}
+        return {**store.snapshot(), "local": {"instanceId": local.instance_id(), "change": local.change()}, "origins": session_origins(store, local), "build": running_version()}
 
     @router.get("/build")
     def build(canvas: str):

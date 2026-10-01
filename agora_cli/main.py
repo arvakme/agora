@@ -432,6 +432,7 @@ def cmd_serve(p: Project, a) -> int:
 
     from server.canvas import shutdown
     from server.canvas.project_router import create_project_app
+    from server.canvas.version import running_version
 
     # One server per copy of the project: the lock lives outside the project, so deleting
     # .agora/run/ does not release it; the kernel does when this process ends, however it ends.
@@ -449,7 +450,15 @@ def cmd_serve(p: Project, a) -> int:
     lock.truncate()
     lock.write(str(os.getpid()))  # `down` finds a hung server by it, even with run/ and the record gone
     lock.flush()
-    record = {"pid": os.getpid(), "port": a.port, "url": f"http://{HOST}:{a.port}/", "root": str(p.root), "mode": "dist", "startedAt": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    record = {
+        "pid": os.getpid(),
+        "port": a.port,
+        "url": f"http://{HOST}:{a.port}/",
+        "root": str(p.root),
+        "mode": "dist",
+        "startedAt": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        **running_version(),
+    }
     tmp = p.record.with_suffix(".tmp")
     tmp.write_text(json.dumps(record, indent=2) + "\n")
     os.replace(tmp, p.record)
@@ -507,9 +516,14 @@ def main(argv: list[str] | None = None) -> int:
     add_share(sub)
     from agora_cli.doctor import add_parsers as add_doctor
 
+    from agora_cli.fleet import add_parsers as add_fleet
+
     add_doctor(sub)
+    add_fleet(sub)
     a = ap.parse_args(argv)
     try:
+        if a.cmd == "dev":  # machine-wide: no project
+            return a.fn(None, a)
         project = Project(str(find_root(a.project))) if a.cmd in ("canvas", "skill", "share", "import", "doctor", "backup", "restore", "history", "dispatch", "reply") else Project(a.project)
         return a.fn(project, a)
     except RuntimeError as e:

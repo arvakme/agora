@@ -2,11 +2,11 @@
 
 本文描述顺序、权限、事实归属与接缝证据。字段和 schema 只在 [`native_protocol.py`](../native_protocol.py) 定义；非 Python 消费者读取 `python -m native_protocol` 的导出。产品目标见[工作台计划](canvas-workbench-plan.md)，验收状态见 [Issue #18](https://github.com/arvakme/agora/issues/18)。
 
-**契约未冻结。** Codex 的独立原生控制实验已通过审查，Claude 的完整接收与终态仍未验收；当前契约也尚未定义中断终态。原生接缝实证不等于 Pi 或产品集成通过，不得据此启动依赖接口冻结的工单。
+**契约未冻结，但已是[派发](dispatch.md)唯一在用的状态机。** 已有真实 CLI 证据的：Codex 的接收、完成、中断两回合（§5），以及 Claude 无头双向协议里的中断（见 [claude-headless-duplex.md](claude-headless-duplex.md)；只有 2026-09-29 Claude Code 2.1.284 的录制样本 `tests/fixtures/agents/claude-duplex/cancel.jsonl`，缺发出的 interrupt、对应回应和退出码的完整链）。还缺的：三个 CLI 各一份统一的实测记录（命令、版本、原生记录片段、退出码），Pi 的接收、终态、中断未验；终端 pane 里的一轮没有可验证的中断，只记 `unknown`；合同里还带着旧房间模型的 `room_id` / `participant_id` / `computer_id` 占位字段，派发按项目、目标会话派生占位值填它们（见 §1）。验收见 [Issue #18](https://github.com/arvakme/agora/issues/18) 和 [#23](https://github.com/arvakme/agora/issues/23)。
 
 ## 1. 事实与授权
 
-Agora/Postgres 拥有房间、成员、请求、公开结果与 Master 验收。授权来自已认证连接及服务端对成员和 Computer 的绑定；请求是否仍有效，必须在提交结果时由后端校验。
+Agora 服务拥有派发记录（`.agora/dispatch/<request_id>.json`）、交回的回执和请求是否仍有效；回执说完成只是一句声明，没有“验收通过”这一状态。授权来自服务端对 `$AGORA_SESSION` 与会话的绑定；请求是否仍有效，必须在提交结果时由服务校验。`native_protocol.py` 里的 `room_id`、`participant_id`、`computer_id` 是旧房间模型留下的地址字段，现由派发按项目、目标会话派生占位值（`computer_id` 是同一个常量），不承载任何权限。
 
 宿主只拥有本机会话、输入权与尚未确认的传输记录。各 CLI 拥有自己的原生对话记录。所有 ID、序号、工作目录和 tmux target 都是地址，不是凭据；宿主也能生成一个地址，不能用字段非空或序号递增证明授权。
 
@@ -34,7 +34,7 @@ tmux 3.7b 的按键必须显式指向本部署自有的可写客户端（`send-k
 
 ## 5. CLI 接缝与验证状态
 
-目标架构中，Pi 的原生 TUI 扩展只调用宿主，不另建 Worker 池。开发团队能够使用某个 CLI，不代表产品已自动纳管它。
+被派的是 Pi、Claude Code、Codex 的会话，由 Agora 服务经 `AgentHub` 与 `terminal.py` 投递，不另建 Worker 池。开发团队能够使用某个 CLI，不代表产品已自动纳管它。
 
 Claude Code 2.1.268 已核对原生 `SessionStart`、PID、会话标识与进程起点。完整输入接收、自然完成、中断及接管仍未验收；现有实验的投递和观测缺陷不能作为 CLI 不支持这些能力的证据。
 
@@ -52,4 +52,4 @@ TUI 未命名时会额外调用模型生成标题。先用 `thread/name/set` 命
 
 共享文件只有一个写者，以 Issue 的实际认领为准。冻结仍需补齐两种非 Pi CLI 的真实控制证据，并验证注入窗口失败、取消后提交、记录补读与输入权交接；代码测试不能替代这些原生行为。
 
-宿主、授权与持久投递、部署、Pi 集成的分工分别以 #19–22 为准。替换旧执行路径时，由集成工单检查所有消费者并删除失效执行入口、测试和文档，不保留另一套推理循环或旧引擎回退。
+派发的实现与接口见 [dispatch.md](dispatch.md)（#45），真实 CLI 的端到端验收是 #23。替换旧执行路径时，由集成工单检查所有消费者并删除失效执行入口、测试和文档，不保留另一套推理循环或旧引擎回退。

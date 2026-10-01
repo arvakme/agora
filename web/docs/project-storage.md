@@ -179,7 +179,7 @@ Excalidraw 的导出格式，可直接拖进 excalidraw.com 打开：
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `` | 项目信息：id、name、root、config、me、empty、instanceId |
-| GET | `/health` | `{ok, root, pid}`，`agora up` 用来确认端口上是不是这个项目 |
+| GET | `/health` | `{ok, root, pid, gone, sha, dirty}`（`dirty` 为 null 表示 git 没能说清），`agora up` 用来确认端口上是不是这个项目；`sha`/`dirty` 是服务启动时所在检出的 HEAD 和是否有未提交改动（不在 git 里时 `sha` 为 null） |
 | GET | `/snapshot` | 全部内容与版本：workspace、canvases（scene + threads）、sessions（折叠后）、bindings、errors、`local`（实例 id 与待提示的变化）、`origins`（不能直接续接的会话） |
 | POST | `/local/ack` | 页面已经提示过移动 / 复制 / 新 clone，清掉 |
 | PUT | `/workspace`、`/canvases/{id}`、`/threads/{id}` | `{data, base, force?}` → `{version}` 或 409。写画布同时往它的施工日志追加一条（副作用，失败不影响保存） |
@@ -206,12 +206,15 @@ path/to/agora/bin/agora open               # up，再打开浏览器（--no-brow
 path/to/agora/bin/agora status             # 在跑就打印 run/server.json，否则退出码 1
 path/to/agora/bin/agora down               # 停掉，确认端口释放
 path/to/agora/bin/agora init               # 只建 .agora/
+path/to/agora/bin/agora dev status         # 本机所有项目服务：是否应答、各自跑的是哪个 git SHA、项目目录是否还在
+path/to/agora/bin/agora dev gc             # 清掉已退出服务的记录（不停任何进程）
 ```
 
 - `bin/agora` 包一层 `uv run --project <agora 仓库>`，当前目录保持为项目目录；也可以 `PYTHONPATH=<仓库> uv run --project <仓库> python -m agora_cli up`。
 - 默认服务构建好的 `web/dist`（先 `cd web && npm run build`）。`--dev` 另起 vite（热更新）代理到本项目后端，页面地址是 vite 的；`--web-port` 指定 vite 端口。
 - 同一项目重复 `up` 复用在跑的实例（按 `run/server.json` 的 pid + `/health` 的项目根确认）；两个 `up` 同时进来由 `run/up.lock` 串行。进程崩溃留下的旧记录会被清掉重启。
 - `up` 先对账（上面的表）：移动、复制、新 clone 各打印一段说明。`run/server.json` 里记的进程只有在命令行确认是 `agora_cli serve --project <这个项目>` 时才会被当作残留停掉：`cp -r` 一个正在跑的项目会把原项目的 `server.json` 一起复制过来，那个服务属于原项目。
+- `dev status` / `dev gc` 读的就是下面这份记录（服务启动时一并写入 `sha`、`dirty`），不另存一份。`gc` 只清进程已退出的记录，而且清之前先拿这个实例的锁：有服务持有它（在跑，或正在启动）就不动；锁文件本身留着，下次启动还要锁它。进程还活着的服务一律不碰：不应答的留给 `agora down`（它靠同一份记录和锁找到进程），项目目录已经没了的由 `status` 标出（只给 pid，不给停止命令：pid 可能已被别的程序复用，先确认它是什么再停），目录可能只是暂时不可达（卷没挂载），不能据此停服。页面顶栏项目名旁显示 SHA 前 7 位（有未提交改动时带 `+`，git 没能说清时带 `?`），同时开着几个 worktree 的服务时用它分辨。
 - 服务进程另在项目外持有一把锁并留一份记录：`$AGORA_STATE_DIR/servers/<实例 id>.{lock,json}`（默认 `~/.local/state/agora`；旧版本按根路径哈希命名的记录照样认）。锁文件里写着服务的 pid。`run/` 丢了（`git clean -fdx`）时，`up` 从这份记录找到还在跑的服务并写回 `run/server.json`，不会起第二个；记录也没了时，第二个 `serve` 拿不到锁直接退出。`down` 同样按这份记录停掉服务；服务卡住不应答、`run/` 和记录都没了时，按锁文件里的 pid 找到它，确认命令行是 `agora_cli serve --project <这个项目>` 再停。`down` 还会关掉这个实例的 tmux 服务器，以及旧版本按路径哈希命名、这个实例在以前的位置用过的 tmux 服务器。
 - 服务运行中项目目录被移走、改名或删除：比较 inode（设备号变了但 inode 相同、`config.toml` 里的项目 id 也相同时算重新挂载，不算移走），所有写入返回 `410 {gone: true}`，不会在旧路径上重新长出 `.agora/`；页面提示在新位置运行 `agora up`，没保存的改动留在页面里，可以「下载为 .excalidraw」。只删了 `.agora/`、项目目录还在时单独说明（「.agora 被删除了」）。`/health` 带着 `gone`：`up` 不会复用这样的服务；项目移走后在新位置 `up`，会先停掉留在旧路径上的那个。其他写入失败（磁盘满、没权限、只读）返回 `{error, file}`（500 / 507），页面显示「保存失败」和原因，保留改动，可以重试或下载；页面只在服务端确认写入之后才记下「这个文件已经是这些内容」。
 - 只监听 `127.0.0.1`。

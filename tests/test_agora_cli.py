@@ -3,8 +3,10 @@
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
@@ -183,3 +185,40 @@ def test_up_in_a_copy_of_a_running_project_leaves_the_original_server_alone(tmp_
         agora("down", cwd=b)
         agora("down", cwd=a)
 
+
+
+def test_dev_status_shows_the_code_a_real_server_runs_and_gc_clears_the_record_of_one_that_died(tmp_path):
+    from agora_cli.main import alive
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True, check=True).stdout.strip()
+
+    def status_line() -> str:
+        shown = agora("dev", "status", cwd=tmp_path)
+        assert shown.returncode == 0
+        lines = [ln for ln in shown.stdout.splitlines() if str(proj.resolve()) in ln]
+        assert len(lines) == 1, lines
+        return lines[0]
+
+    try:
+        assert agora("up", cwd=proj).returncode == 0
+        record = json.loads((proj / ".agora" / "run" / "server.json").read_text())
+        assert get(f"http://127.0.0.1:{record['port']}/api/project/health")["sha"] == head
+
+        assert status_line().startswith("answering") and head[:7] in status_line()
+        gc = agora("dev", "gc", cwd=tmp_path)
+        assert gc.returncode == 0 and "nothing to clear" in gc.stdout  # a live server is not cleared
+
+        os.kill(record["pid"], signal.SIGKILL)  # not `down`: that would remove the record itself
+        for _ in range(100):
+            if not alive(record["pid"]):
+                break
+            time.sleep(0.05)
+        assert status_line().startswith("stopped")
+        gc = agora("dev", "gc", cwd=tmp_path)
+        assert gc.returncode == 0 and "cleared" in gc.stdout and str(proj.resolve()) in gc.stdout
+        after = agora("dev", "status", cwd=tmp_path)
+        assert after.returncode == 0 and "no Agora server records" in after.stdout
+    finally:
+        agora("down", cwd=proj)

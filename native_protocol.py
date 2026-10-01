@@ -1,8 +1,8 @@
 """Shared contract for controlling native Agent CLI sessions.
 
 Single source of truth for the identities, the correlation rule and the
-delivery state machine that the local host, the Agora backend
-(`server/`) and the Pi Master extension depend on. Field lists live here only;
+delivery state machine that the Agora server (`server/canvas/dispatch.py`,
+`terminal.py`) depends on. Field lists live here only;
 documentation states ordering, ownership and reasons. Non-Python consumers read
 ``python -m native_protocol`` instead of re-typing the fields.
 
@@ -20,12 +20,15 @@ a withdrawn request's result to Agora.
 
 What this module does not own:
 
-* Agora/Postgres owns rooms, membership, requests, published results and Master
-  acceptance. ``master_accepted`` is not a state here.
-* Authority to control a session comes from an authenticated Agora connection
-  and the server-side binding of that connection to a Room member and a
-  Computer. Nothing in this file is a credential or a proof: every identifier
-  here is an address the host can also write down for itself.
+* The Agora server owns the dispatch records (``.agora/dispatch/``), the receipts
+  handed back and whether a request still stands. There is no acceptance state
+  here: a receipt that says done is a claim, not a verdict.
+* Authority to control a session comes from the server's own binding of
+  ``$AGORA_SESSION`` to a session. Nothing in this file is a credential or a
+  proof: every identifier here is an address the host can also write down for
+  itself. ``room_id``, ``participant_id`` and ``computer_id`` are what the old
+  room model called those addresses; dispatch fills them with placeholders
+  derived from the project and the target session (Issue #18 removes them).
 * Each CLI owns its own conversation record. Correlation is expressed in the
   CLI's identifiers, never in text the host wrote.
 """
