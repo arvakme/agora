@@ -195,7 +195,9 @@ def test_dev_status_shows_the_code_a_real_server_runs_and_gc_clears_the_record_o
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True, check=True).stdout.strip()
 
     def status_line() -> str:
-        lines = [ln for ln in agora("dev", "status", cwd=tmp_path).stdout.splitlines() if str(proj.resolve()) in ln]
+        shown = agora("dev", "status", cwd=tmp_path)
+        assert shown.returncode == 0
+        lines = [ln for ln in shown.stdout.splitlines() if str(proj.resolve()) in ln]
         assert len(lines) == 1, lines
         return lines[0]
 
@@ -216,6 +218,7 @@ def test_dev_status_shows_the_code_a_real_server_runs_and_gc_clears_the_record_o
         assert status_line().startswith("stopped")
         gc = agora("dev", "gc", cwd=tmp_path)
         assert gc.returncode == 0 and "cleared" in gc.stdout and str(proj.resolve()) in gc.stdout
-        assert "no Agora server records" in agora("dev", "status", cwd=tmp_path).stdout
+        after = agora("dev", "status", cwd=tmp_path)
+        assert after.returncode == 0 and "no Agora server records" in after.stdout
     finally:
         agora("down", cwd=proj)

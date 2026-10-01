@@ -48,7 +48,7 @@ def test_status_tells_a_live_server_from_a_dead_one_and_shows_the_code_it_runs(s
     assert rows[str(dead_root)]["alive"] is False
 
 
-def test_status_names_a_server_whose_project_folder_is_gone_and_how_to_stop_it(state, tmp_path, monkeypatch, capsys):
+def test_status_names_a_server_whose_project_folder_is_gone_without_telling_anyone_to_kill_a_pid(state, tmp_path, monkeypatch, capsys):
     record(state, "iid-gone", tmp_path / "moved-away", pid=4242, port=5242)
     serving(monkeypatch, {4242})
 
@@ -56,7 +56,8 @@ def test_status_names_a_server_whose_project_folder_is_gone_and_how_to_stop_it(s
     fleet.cmd_status(None, None)
 
     assert row["alive"] is True and row["rootGone"] is True
-    assert "kill 4242" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "project folder is gone" in out and "pid 4242" in out and "kill" not in out  # the pid may have been reused by another program
 
 
 def test_gc_removes_the_record_of_a_dead_server_and_leaves_a_live_one(state, tmp_path, monkeypatch):

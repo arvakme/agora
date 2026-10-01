@@ -94,7 +94,8 @@ def _describe(row: dict[str, Any]) -> str:
     state = "answering" if row["answering"] else "not answering" if row["alive"] else "stopped"
     gone = ""
     if row["rootGone"]:
-        gone = f"  (project folder is gone; `kill {row['pid']}` to stop it)" if row["alive"] else "  (project folder is gone)"
+        # Nothing here shows the pid is still that server (pids are reused): no stop command is offered.
+        gone = f"  (project folder is gone; check what pid {row['pid']} is before stopping it)" if row["alive"] else "  (project folder is gone)"
     return f"{state:<13} {_sha(row):<14} port {row['port']:<6} pid {row['pid']:<7} {row['root']}{gone}"
 
 

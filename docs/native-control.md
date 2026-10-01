@@ -2,7 +2,7 @@
 
 本文描述顺序、权限、事实归属与接缝证据。字段和 schema 只在 [`native_protocol.py`](../native_protocol.py) 定义；非 Python 消费者读取 `python -m native_protocol` 的导出。产品目标见[工作台计划](canvas-workbench-plan.md)，验收状态见 [Issue #18](https://github.com/arvakme/agora/issues/18)。
 
-**契约未冻结，但已是[派发](dispatch.md)唯一在用的状态机。** 已有真实 CLI 证据的：Codex 的接收、完成、中断两回合（§5），以及 Claude 无头双向协议里的中断（见 [claude-headless-duplex.md](claude-headless-duplex.md)；只有 2026-09-29 Claude Code 2.1.284 的录制样本 `tests/fixtures/agents/claude-duplex/cancel.jsonl`，缺发出的 interrupt、对应回应和退出码的完整链）。还缺的：三个 CLI 各一份统一的实测记录（命令、版本、原生记录片段、退出码），Pi 的接收、终态、中断未验；终端 pane 里的一轮没有可验证的中断，只记 `unknown`；合同里还带着旧房间模型的 `room_id` / `participant_id` / `computer_id` 占位字段，派发用固定值填它们（见 §1）。验收见 [Issue #18](https://github.com/arvakme/agora/issues/18) 和 [#23](https://github.com/arvakme/agora/issues/23)。
+**契约未冻结，但已是[派发](dispatch.md)唯一在用的状态机。** 已有真实 CLI 证据的：Codex 的接收、完成、中断两回合（§5），以及 Claude 无头双向协议里的中断（见 [claude-headless-duplex.md](claude-headless-duplex.md)；只有 2026-09-29 Claude Code 2.1.284 的录制样本 `tests/fixtures/agents/claude-duplex/cancel.jsonl`，缺发出的 interrupt、对应回应和退出码的完整链）。还缺的：三个 CLI 各一份统一的实测记录（命令、版本、原生记录片段、退出码），Pi 的接收、终态、中断未验；终端 pane 里的一轮没有可验证的中断，只记 `unknown`；合同里还带着旧房间模型的 `room_id` / `participant_id` / `computer_id` 占位字段，派发按项目、目标会话派生占位值填它们（见 §1）。验收见 [Issue #18](https://github.com/arvakme/agora/issues/18) 和 [#23](https://github.com/arvakme/agora/issues/23)。
 
 ## 1. 事实与授权
 
