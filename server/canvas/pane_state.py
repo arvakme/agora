@@ -63,14 +63,19 @@ ARGS: dict[str, Callable[[], list[str]]] = {"claude": _claude, "codex": _codex, 
 # A CLI that says nothing until its first turn (Codex runs ``SessionStart`` with the first prompt) or cannot be told to
 # report at all (Grok, Cursor, Devin: no flag injects a hook, and writing the person's own config is not ours to do) is
 # up when its screen shows the input box: not a menu (trust this folder, review hooks), which has none. The Grok, Cursor
-# and Devin markers are footer text those CLIs print because of the flags Agora starts them with (``agents.interactive_argv``).
-# A screen that does not match is never "ready" (the message waits and the person is told), so a changed screen costs a
-# wait, not a lost message.
+# and Devin markers are text those CLIs print around the box because of the flags Agora starts them with
+# (``agents.interactive_argv``); Cursor's changes once a turn has run, so it has two. The screen is looked at again for
+# every message. A screen that does not match is never "ready" (the message waits and the person is told), so a changed
+# screen costs a wait, not a lost message.
+def _shows(*markers: str) -> Callable[[str], bool]:
+    return lambda screen: any(m in screen for m in markers)
+
+
 SCREEN_READY: dict[str, Callable[[str], bool]] = {
-    "codex": lambda screen: "? for shortcuts" in screen,
-    "grok": lambda screen: "always-approve" in screen,
-    "cursor": lambda screen: "Run Everything" in screen,
-    "devin": lambda screen: "bypass permissions on" in screen,
+    "codex": _shows("? for shortcuts"),
+    "grok": _shows("always-approve"),
+    "cursor": _shows("Run Everything", "Add a follow-up"),
+    "devin": _shows("bypass permissions on"),
 }
 
 

@@ -53,12 +53,14 @@ def sink():
     s.close()
 
 
-def run_hook(state: str, stdin: str = "{}", *, url: str | None, session: str | None = "s-1", event: str | None = None):
+def run_hook(state: str, stdin: str = "{}", *, url: str | None, session: str | None = "s-1", pane: str | None = "p-1", event: str | None = None):
     env = {k: v for k, v in os.environ.items() if not k.startswith("AGORA_")}
     if url:
         env["AGORA_URL"] = url
     if session:
         env["AGORA_SESSION"] = session
+    if pane:
+        env["AGORA_PANE"] = pane
     return subprocess.run([str(SCRIPT), state, *([event] if event else [])], input=stdin, env=env, capture_output=True, text=True, timeout=15)
 
 
@@ -66,7 +68,7 @@ def run_hook(state: str, stdin: str = "{}", *, url: str | None, session: str | N
 def test_the_script_tells_the_server_which_state_which_session(sink):
     r = run_hook("idle", url=sink.url)
     assert (r.returncode, r.stdout, r.stderr) == (0, "", "")
-    assert sink.got == [("/api/agent/sessions/s-1/cli-state", {"state": "idle"})]
+    assert sink.got == [("/api/agent/sessions/s-1/cli-state", {"state": "idle", "pane": "p-1"})]
 
 
 def test_a_sub_agent_does_not_speak_for_the_session(sink):
@@ -77,12 +79,17 @@ def test_a_sub_agent_does_not_speak_for_the_session(sink):
     assert [b["state"] for _, b in sink.got] == ["running"]
 
 
-@pytest.mark.parametrize("url,session", [(None, "s-1"), ("http://127.0.0.1:1", None)])
-def test_without_a_session_or_a_server_it_does_nothing_and_says_nothing(url, session):
+@pytest.mark.parametrize("url,session,pane", [(None, "s-1", "p-1"), ("http://127.0.0.1:1", None, "p-1"), ("http://127.0.0.1:1", "s-1", None)])
+def test_without_a_session_a_pane_or_a_server_it_does_nothing_and_says_nothing(url, session, pane):
     t = time.monotonic()
-    r = run_hook("idle", url=url, session=session)
+    r = run_hook("idle", url=url, session=session, pane=pane)
     assert (r.returncode, r.stdout, r.stderr) == (0, "", "")
     assert time.monotonic() - t < 5  # a CLI waits for its hook: never for long
+
+
+def test_a_hook_that_does_not_know_which_pane_it_runs_in_says_nothing(sink):
+    run_hook("idle", url=sink.url, pane=None)
+    assert sink.got == []
 
 
 def test_a_server_that_is_not_there_never_fails_the_cli():
@@ -130,7 +137,7 @@ def test_pi_gets_an_extension_that_reports_its_lifecycle():
     path = Path(hooked[hooked.index("-e") + 1])
     src = path.read_text()
     assert path.is_absolute() and path.exists()
-    for needle in ("session_start", "agent_start", "agent_settled", "session_shutdown", "/cli-state"):
+    for needle in ("session_start", "agent_start", "agent_settled", "session_shutdown", "/cli-state", "AGORA_PANE"):
         assert needle in src
 
 
@@ -192,6 +199,12 @@ CURSOR_INPUT_BOX = """  Cursor Agent
   → Plan, search, build anything
   Auto                                      Run Everything
   /private/tmp/proj · main"""
+CURSOR_AFTER_A_TURN = """  Cursor Agent
+  只回复两个字：收到。不要使用任何工具。
+  收到。
+  → Add a follow-up
+  Auto · 6.1%
+  /private/tmp/proj · main"""
 DEVIN_INPUT_BOX = """⠀⠛⠿⠟⠻⣶⣾⣶⡄  Devin CLI
 Pro · 100% remaining
 ──────────────────────── (bypass permissions on) ─
@@ -200,7 +213,7 @@ Pro · 100% remaining
 SWE-2 Max"""
 
 
-@pytest.mark.parametrize("kind, box", [("grok", GROK_INPUT_BOX), ("cursor", CURSOR_INPUT_BOX), ("devin", DEVIN_INPUT_BOX)])
+@pytest.mark.parametrize("kind, box", [("grok", GROK_INPUT_BOX), ("cursor", CURSOR_INPUT_BOX), ("cursor", CURSOR_AFTER_A_TURN), ("devin", DEVIN_INPUT_BOX)])
 def test_a_cli_that_cannot_report_is_up_when_its_screen_shows_its_input_box(kind, box):
     ready = pane_state.SCREEN_READY[kind]
     assert ready(box)

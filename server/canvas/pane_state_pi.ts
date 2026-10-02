@@ -2,13 +2,14 @@
 // server when this Pi is idle, running or gone. Pi has no shell hooks, so this does what bin/agora-state does for the others.
 const url = process.env.AGORA_URL;
 const session = process.env.AGORA_SESSION;
+const pane = process.env.AGORA_PANE; // which opening of the pane this Pi runs in: a closed pane's late word is not the new one's
 
 function tell(state: string): void {
-  if (!url || !session) return;
+  if (!url || !session || !pane) return;
   fetch(`${url}/api/agent/sessions/${session}/cli-state`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ state }),
+    body: JSON.stringify({ state, pane }),
     signal: AbortSignal.timeout(2000),
   }).catch(() => {}); // a server that is not there never fails Pi
 }

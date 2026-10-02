@@ -205,7 +205,7 @@ class Live:
     pane_since: float | None = None
     reports: bool = False  # the CLI in the pane was started so that it reports its state (pane_state.py)
     cli_state: str | None = None  # what it last reported: idle / running / waiting / exited; None before it has said anything
-    screen_up: bool = False  # the pane's screen has shown the CLI's input box (pane_state.SCREEN_READY): up, whatever it reports
+    pane_id: str = ""  # which opening of the pane this is: what a CLI's report must carry (``AGORA_PANE``), so the late word of a closed pane is not taken for the new one's
     activity: str | None = None
     last_error: str | None = None
     native: dict[str, Any] | None = None  # the native log is missing / ambiguous / elsewhere (agents.NativeMissing.public)
@@ -698,7 +698,7 @@ class AgentHub:
                 lv.pane_alive = alive
                 if not alive:
                     lv.pane_since = None
-                    lv.reports, lv.cli_state, lv.screen_up = False, None, False
+                    lv.reports, lv.cli_state = False, None
                     self._pane_exited(sid, lv)
                 self._status(sid)
             # A CLI that assigns its own id (Codex) does so when the interactive session starts:
@@ -769,7 +769,9 @@ class AgentHub:
         """Why the CLI in the pane cannot take the message at the head of the queue yet (a paste into a CLI that is still
         loading, or sitting in a dialog, is dropped)."""
         if lv.pane_since is not None and (lv.reports or self._has_screen_probe(sid)):  # no opening time: a pane from before a restart, nothing to wait for
-            state = lv.cli_state or ("idle" if await self._screen_ready(sid, lv) else None)
+            state = lv.cli_state
+            if state is None and await self._screen_ready(sid, lv):
+                state = lv.cli_state or "idle"  # a report that came in while the screen was read counts
             reason = cli_hold(state, lv.pane_since, time.time(), force=head.force)
         elif lv.pane_since and time.time() - lv.pane_since < PANE_BOOT_S:
             reason = "终端刚打开，等 CLI 启动好再投递"
@@ -781,27 +783,24 @@ class AgentHub:
         return (self.store.read_binding(sid) or {}).get("agent", "") in pane_state.SCREEN_READY
 
     async def _screen_ready(self, sid: str, lv: Live) -> bool:
-        """The CLI's screen shows its input box (pane_state.SCREEN_READY): for a CLI that reports only from its first turn
-        on, or not at all. Seen once, it stays up: after that the log says when a turn is over."""
+        """The CLI's screen shows its input box right now (pane_state.SCREEN_READY): for a CLI that reports only from its
+        first turn on, or not at all. Looked at again for every message: a menu that comes up later has no input box."""
         probe = pane_state.SCREEN_READY.get((self.store.read_binding(sid) or {}).get("agent", ""))
-        if lv.screen_up:
-            return True
         if probe is None or not lv.pane_since or time.time() - lv.pane_since < PANE_BOOT_S:
             return False
         try:
-            lv.screen_up = probe(await asyncio.to_thread(self.terms.capture, sid))
+            return probe(await asyncio.to_thread(self.terms.capture, sid))
         except (TerminalError, OSError):
             return False
-        return lv.screen_up
 
-    def report_state(self, sid: str, state: str) -> dict[str, Any]:
+    def report_state(self, sid: str, state: str, pane: str) -> dict[str, Any]:
         """The CLI in the pane says what it is doing (bin/agora-state, the Pi extension). A report from a pane that is no
-        longer there is the late word of one that was: ignored."""
+        longer there, or from an earlier opening of it, is the late word of one that was: ignored."""
         if state not in pane_state.STATES:
             raise ValueError(f"unknown state {state!r}")
         self.binding(sid)
         lv = self._get(sid)
-        if lv.pane_alive and lv.reports and lv.cli_state != state:
+        if lv.pane_alive and lv.reports and pane == lv.pane_id and lv.cli_state != state:
             lv.cli_state = state
             self._status(sid)
         return {"state": lv.cli_state}
@@ -1342,12 +1341,13 @@ class AgentHub:
         if not self.terms.alive(sid):
             self.check_native(sid, b)
         hooks = bool(self.url) and pane_state.reports(b["agent"])
+        pane = secrets.token_hex(8)
         argv = agents.interactive_argv(b["agent"], b.get("nativeId"), b.get("model") or None, b.get("effort") or None, new=not binding_started(b), root=self.store.root, fork=b.get("pendingFork"), hooks=hooks)
-        env = {**self.env_for(sid, canvas_id), "PATH": agents.child_env()["PATH"]}
+        env = {**self.env_for(sid, canvas_id), "PATH": agents.child_env()["PATH"], **({"AGORA_PANE": pane} if hooks else {})}
         created = self.terms.open(sid, argv, cwd=self.store.root, env=env)
         if created:
             lv.pane_since = time.time()
-            lv.reports, lv.cli_state, lv.screen_up = hooks, None, False
+            lv.reports, lv.cli_state, lv.pane_id = hooks, None, pane
         lv.pane_alive = True
         launched = self.terms.launch(sid, f"Agora · {agents.NAMES[b['agent']]}") if launch else None
         self._status(sid)
@@ -1383,7 +1383,7 @@ class AgentHub:
         self.terms.kill(sid)
         lv = self._get(sid)
         lv.pane_alive, lv.pane_since = False, None
-        lv.reports, lv.cli_state, lv.screen_up = False, None, False
+        lv.reports, lv.cli_state, lv.pane_id = False, None, ""
         lv.seen_window, lv.detached_at = False, None
         self._status(sid)
 
