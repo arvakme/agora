@@ -822,3 +822,20 @@ async def test_a_close_that_is_slow_to_return_does_not_undo_the_pane_opened_afte
     await asyncio.to_thread(hub.close_terminal, "s-t")
     reopened[0].join(30)
     assert hub.terms.alive("s-t") and lv.reports and lv.pane_id and lv.pane_since
+
+
+@needs_tmux
+async def test_a_pane_that_exited_by_itself_while_detached_leaves_its_window_history_behind_with_it(hub, monkeypatch):
+    from server.canvas import sessions
+
+    monkeypatch.setattr(sessions, "DETACH_GRACE_S", 0.0)
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    lv = hub._get("s-t")
+    lv.seen_window, lv.detached_at = True, time.time() - 60  # a window was attached and went away, long ago
+    hub.terms.kill("s-t")  # the CLI exits by itself: nothing called close_terminal
+    await asyncio.to_thread(hub._tick_sync)
+    assert not lv.pane_alive
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    await asyncio.to_thread(hub._tick_sync)  # nobody has attached to the new pane: it is not one that was left
+    assert hub.terms.alive("s-t") and lv.pane_alive and not lv.seen_window and lv.detached_at is None
