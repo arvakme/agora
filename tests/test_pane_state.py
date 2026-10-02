@@ -148,7 +148,7 @@ def test_delivery_waits_for_idle_and_silence_is_not_ready():
     assert cli_hold("idle", 0, 1e9) is None
     for state in ("running", "waiting", "exited"):
         assert cli_hold(state, 0, 1e9, force=True)  # a CLI in a dialog or busy is not about who holds the input
-    assert "报告就绪" in cli_hold(None, 100, 100 + SIGNAL_WAIT_S - 1)
+    assert "等 CLI 就绪" in cli_hold(None, 100, 100 + SIGNAL_WAIT_S - 1)
     late = cli_hold(None, 100, 100 + SIGNAL_WAIT_S)
     assert late and "确认" in late  # it tells the person what is probably going on
     assert cli_hold(None, 100, 100 + SIGNAL_WAIT_S, force=True) is None
@@ -178,3 +178,36 @@ def test_codex_is_up_when_its_screen_shows_the_input_box_and_not_in_a_menu():
     ready = pane_state.SCREEN_READY["codex"]
     assert ready(CODEX_INPUT_BOX)
     assert not ready(CODEX_TRUST_MENU) and not ready(CODEX_HOOKS_MENU) and not ready("")
+
+
+# The start screens of the CLIs that cannot be told to report (captured from the real ones, started the way Agora starts them).
+GROK_INPUT_BOX = """ /p/t/proj
+               │  Grok Build  1.0.44
+               │  Resume session                         ctrl+r
+ ╭──────────────────────────────────────────────╮
+ │ ❯                                            │
+ ╰──────────────────────── Grok 4.7 (high) · always-approve ─╯"""
+CURSOR_INPUT_BOX = """  Cursor Agent
+  v2026.09.28-64d2043
+  → Plan, search, build anything
+  Auto                                      Run Everything
+  /private/tmp/proj · main"""
+DEVIN_INPUT_BOX = """⠀⠛⠿⠟⠻⣶⣾⣶⡄  Devin CLI
+Pro · 100% remaining
+──────────────────────── (bypass permissions on) ─
+❭ Ask Devin to build features, fix bugs, or work on your code
+──────────────────────────────────────────────────
+SWE-2 Max"""
+
+
+@pytest.mark.parametrize("kind, box", [("grok", GROK_INPUT_BOX), ("cursor", CURSOR_INPUT_BOX), ("devin", DEVIN_INPUT_BOX)])
+def test_a_cli_that_cannot_report_is_up_when_its_screen_shows_its_input_box(kind, box):
+    ready = pane_state.SCREEN_READY[kind]
+    assert ready(box)
+    assert not ready("") and not ready("Loading…") and not ready(CODEX_TRUST_MENU)
+
+
+def test_every_cli_either_reports_or_has_a_screen_that_says_it_is_up():
+    from server.canvas import agents
+
+    assert all(pane_state.reports(k) or k in pane_state.SCREEN_READY for k in agents.NAMES)

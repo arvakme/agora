@@ -5,8 +5,9 @@ permission dialog or a "trust this folder" menu the text is lost. A guessed boot
 that can say it does: its own hooks (Pi: an extension) report ``idle`` / ``running`` / ``waiting`` (for the person)
 / ``exited`` to the server (``bin/agora-state``, ``pane_state_pi.ts``), and delivery waits for ``idle``.
 
-Only CLIs listed in ``ARGS`` report (Codex only from its first turn on: ``SCREEN_READY``). The others are delivered to on the boot timer and the log's idea of "busy"
-(``sessions.PANE_BOOT_S``), as before.
+Only CLIs listed in ``ARGS`` report (Codex only from its first turn on). The others are delivered to once ``SCREEN_READY``
+sees their input box, and after that on the log's idea of "busy". A CLI with neither is delivered to on the boot timer
+(``sessions.PANE_BOOT_S``).
 """
 
 from __future__ import annotations
@@ -59,10 +60,18 @@ def _pi() -> list[str]:
 ARGS: dict[str, Callable[[], list[str]]] = {"claude": _claude, "codex": _codex, "pi": _pi}
 
 
-# A CLI whose hooks say nothing until its first turn (Codex runs ``SessionStart`` with the first prompt) is up when its screen
-# shows the input box: not a menu (trust this folder, review hooks), which has none. A screen that does not match is
-# never "ready" (the message waits and the person is told), so a changed screen costs a wait, not a lost message.
-SCREEN_READY: dict[str, Callable[[str], bool]] = {"codex": lambda screen: "? for shortcuts" in screen}
+# A CLI that says nothing until its first turn (Codex runs ``SessionStart`` with the first prompt) or cannot be told to
+# report at all (Grok, Cursor, Devin: no flag injects a hook, and writing the person's own config is not ours to do) is
+# up when its screen shows the input box: not a menu (trust this folder, review hooks), which has none. The Grok, Cursor
+# and Devin markers are footer text those CLIs print because of the flags Agora starts them with (``agents.interactive_argv``).
+# A screen that does not match is never "ready" (the message waits and the person is told), so a changed screen costs a
+# wait, not a lost message.
+SCREEN_READY: dict[str, Callable[[str], bool]] = {
+    "codex": lambda screen: "? for shortcuts" in screen,
+    "grok": lambda screen: "always-approve" in screen,
+    "cursor": lambda screen: "Run Everything" in screen,
+    "devin": lambda screen: "bypass permissions on" in screen,
+}
 
 
 def reports(kind: str) -> bool:
