@@ -44,6 +44,9 @@ class FakeTerms:
     def gate(self, sid):
         return make_gate(self.right, self.writers)
 
+    def capture(self, sid, lines=200):
+        return "› Ask Codex to do anything\n  ? for shortcuts"  # the CLI is up at its input box (pane_state.SCREEN_READY)
+
     def paste(self, sid, text, **_):
         self.pastes.append((sid, text))
 

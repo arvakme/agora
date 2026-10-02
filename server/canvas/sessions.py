@@ -205,6 +205,7 @@ class Live:
     pane_since: float | None = None
     reports: bool = False  # the CLI in the pane was started so that it reports its state (pane_state.py)
     cli_state: str | None = None  # what it last reported: idle / running / waiting / exited; None before it has said anything
+    screen_up: bool = False  # the pane's screen has shown the CLI's input box (pane_state.SCREEN_READY): up, whatever it reports
     activity: str | None = None
     last_error: str | None = None
     native: dict[str, Any] | None = None  # the native log is missing / ambiguous / elsewhere (agents.NativeMissing.public)
@@ -268,8 +269,8 @@ def cli_hold(state: str | None, since: float | None, now: float, *, force: bool 
     if state == "exited":
         return "终端里的 CLI 已退出"
     if since is not None and now - since >= SIGNAL_WAIT_S:
-        return None if force else "CLI 一直没有报告就绪：可能在等你在终端里确认（信任目录、审批提示等），确认后会自动投递；已经确认过的话点「现在送出」"
-    return "终端刚打开，等 CLI 报告就绪再投递"
+        return None if force else "CLI 一直没有就绪：可能在等你在终端里确认（信任目录、审批提示等），确认后会自动投递；已经确认过的话点「现在送出」"
+    return "终端刚打开，等 CLI 就绪再投递"
 
 
 class AgentHub:
@@ -697,7 +698,7 @@ class AgentHub:
                 lv.pane_alive = alive
                 if not alive:
                     lv.pane_since = None
-                    lv.reports, lv.cli_state = False, None
+                    lv.reports, lv.cli_state, lv.screen_up = False, None, False
                     self._pane_exited(sid, lv)
                 self._status(sid)
             # A CLI that assigns its own id (Codex) does so when the interactive session starts:
@@ -767,7 +768,7 @@ class AgentHub:
     async def _not_ready(self, sid: str, lv: Live, head: Pending) -> str | None:
         """Why the CLI in the pane cannot take the message at the head of the queue yet (a paste into a CLI that is still
         loading, or sitting in a dialog, is dropped)."""
-        if lv.reports:
+        if lv.pane_since is not None and (lv.reports or self._has_screen_probe(sid)):  # no opening time: a pane from before a restart, nothing to wait for
             state = lv.cli_state or ("idle" if await self._screen_ready(sid, lv) else None)
             reason = cli_hold(state, lv.pane_since, time.time(), force=head.force)
         elif lv.pane_since and time.time() - lv.pane_since < PANE_BOOT_S:
@@ -776,15 +777,22 @@ class AgentHub:
             reason = None
         return reason or ("agent 正在回复，回复完再投递" if lv.state.busy else None)
 
+    def _has_screen_probe(self, sid: str) -> bool:
+        return (self.store.read_binding(sid) or {}).get("agent", "") in pane_state.SCREEN_READY
+
     async def _screen_ready(self, sid: str, lv: Live) -> bool:
-        """For a CLI that reports only from its first turn on: its screen shows the input box (pane_state.SCREEN_READY)."""
+        """The CLI's screen shows its input box (pane_state.SCREEN_READY): for a CLI that reports only from its first turn
+        on, or not at all. Seen once, it stays up: after that the log says when a turn is over."""
         probe = pane_state.SCREEN_READY.get((self.store.read_binding(sid) or {}).get("agent", ""))
+        if lv.screen_up:
+            return True
         if probe is None or not lv.pane_since or time.time() - lv.pane_since < PANE_BOOT_S:
             return False
         try:
-            return probe(await asyncio.to_thread(self.terms.capture, sid))
+            lv.screen_up = probe(await asyncio.to_thread(self.terms.capture, sid))
         except (TerminalError, OSError):
             return False
+        return lv.screen_up
 
     def report_state(self, sid: str, state: str) -> dict[str, Any]:
         """The CLI in the pane says what it is doing (bin/agora-state, the Pi extension). A report from a pane that is no
@@ -1339,7 +1347,7 @@ class AgentHub:
         created = self.terms.open(sid, argv, cwd=self.store.root, env=env)
         if created:
             lv.pane_since = time.time()
-            lv.reports, lv.cli_state = hooks, None
+            lv.reports, lv.cli_state, lv.screen_up = hooks, None, False
         lv.pane_alive = True
         launched = self.terms.launch(sid, f"Agora · {agents.NAMES[b['agent']]}") if launch else None
         self._status(sid)
@@ -1375,7 +1383,7 @@ class AgentHub:
         self.terms.kill(sid)
         lv = self._get(sid)
         lv.pane_alive, lv.pane_since = False, None
-        lv.reports, lv.cli_state = False, None
+        lv.reports, lv.cli_state, lv.screen_up = False, None, False
         lv.seen_window, lv.detached_at = False, None
         self._status(sid)
 

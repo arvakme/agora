@@ -565,7 +565,7 @@ async def test_nothing_is_pasted_until_the_cli_says_it_is_idle_and_never_into_a_
     lv = await _reporting_pane(hub)
     lv.pane_since = time.time() - 5  # past the old boot timer: the report is what counts now
     hub.send("s-t", "等它说空闲的一句")
-    await _held(hub, "s-t", "报告就绪")
+    await _held(hub, "s-t", "等 CLI 就绪")
     await asyncio.sleep(1.0)
     assert len(lv.pane) == 1 and "等它说空闲的一句" not in hub.terms.capture("s-t")
 
@@ -587,7 +587,7 @@ async def test_a_cli_that_stays_silent_is_not_guessed_ready_but_the_person_can_s
     lv = await _reporting_pane(hub)
     lv.pane_since = time.time() - 60  # long silent: most likely a "trust this folder" menu
     hub.send("s-t", "越过沉默的一句")
-    await _held(hub, "s-t", "一直没有报告就绪")
+    await _held(hub, "s-t", "一直没有就绪")
     await asyncio.sleep(1.0)
     assert len(lv.pane) == 1 and "越过沉默的一句" not in hub.terms.capture("s-t")
     hub.deliver_now("s-t")
@@ -621,7 +621,50 @@ async def test_a_cli_that_reports_only_from_its_first_turn_is_up_when_its_screen
 
     monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": lambda screen: False})  # a menu: no input box
     await _until(lambda: not lv.state.busy and not lv.awaiting, timeout=30)
-    lv.cli_state = None
+    lv.cli_state, lv.screen_up = None, False  # as in a pane just opened
     hub.send("s-t", "菜单里不能粘的一句")
-    await _held(hub, "s-t", "一直没有报告就绪")
+    await _held(hub, "s-t", "一直没有就绪")
     assert len(lv.pane) == 1
+
+
+@needs_tmux
+async def test_a_cli_that_cannot_report_is_pasted_into_only_once_its_screen_shows_the_input_box(hub, monkeypatch):
+    from server.canvas import pane_state
+
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": lambda screen: False})  # still loading, or in a dialog
+    hub.ensure_started()
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    lv = hub.live["s-t"]
+    assert not lv.reports  # nothing in this pane tells the hub anything
+    lv.pane_since = time.time() - 5  # past the boot grace: the screen is what counts
+    hub.send("s-t", "屏幕上没有输入框的一句")
+    await _held(hub, "s-t", "等 CLI 就绪")
+    await asyncio.sleep(1.0)
+    assert len(lv.pane) == 1 and "屏幕上没有输入框的一句" not in hub.terms.capture("s-t")
+
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": lambda screen: "fake agent ready" in screen})
+    await _until(lambda: not lv.pane)
+    await _until(lambda: "屏幕上没有输入框的一句" in hub.terms.capture("s-t"))
+
+    # Once it has been seen up, later messages wait only for the turn in the log, not for the screen again.
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": lambda screen: False})
+    await _until(lambda: not lv.state.busy and not lv.awaiting, timeout=30)
+    hub.send("s-t", "第二句")
+    await _until(lambda: not lv.pane)
+    await _until(lambda: "第二句" in hub.terms.capture("s-t"))
+
+
+@needs_tmux
+async def test_a_pane_opened_before_the_server_restarted_is_pasted_into_without_waiting_for_its_screen(hub, monkeypatch):
+    from server.canvas import pane_state
+
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": lambda screen: False})
+    hub.ensure_started()
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    lv = hub.live["s-t"]
+    lv.pane_since, lv.reports, lv.screen_up = None, False, False  # what a restarted server knows of a pane it did not open
+    hub.send("s-t", "重启之前就开着的终端")
+    await _until(lambda: not lv.pane)
+    await _until(lambda: "重启之前就开着的终端" in hub.terms.capture("s-t"))
