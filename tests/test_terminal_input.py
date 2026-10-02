@@ -784,16 +784,41 @@ async def test_the_check_for_an_exited_pane_does_not_undo_the_registration_of_th
     lv = hub._get("s-t")
     lv.pane_alive, lv.pane_since = True, time.time() - 5  # the hub still believes in the pane that has just exited
     real_open = hub.terms.open
+    checks: list[threading.Thread] = []
 
     def the_background_check_runs_while_the_new_pane_is_being_made(sid, argv, **kw):
         t = threading.Thread(target=hub._tick_sync)
         t.start()
-        t.join(1.0)  # (waits for the opening if the two are serialised)
+        t.join(1.0)  # (the check has to wait for the opening if the two are serialised)
+        checks.append(t)
         created = real_open(sid, argv, **kw)
-        t.join(10)
         hub.report_state(sid, "idle", kw["env"]["AGORA_PANE"])
         return created
 
     monkeypatch.setattr(hub.terms, "open", the_background_check_runs_while_the_new_pane_is_being_made)
     await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
-    assert lv.reports and lv.cli_state == "idle"
+    checks[0].join(10)  # the check has run by now, after the opening
+    assert not checks[0].is_alive() and lv.reports and lv.cli_state == "idle"
+
+
+@needs_tmux
+async def test_a_close_that_is_slow_to_return_does_not_undo_the_pane_opened_after_it(hub, monkeypatch):
+    import threading
+
+    hub.url = "http://127.0.0.1:1"  # (the hub's own loop is not started)
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    lv = hub._get("s-t")
+    real_kill = hub.terms.kill
+    reopened: list[threading.Thread] = []
+
+    def kill_and_a_reopen_arrives_before_the_close_is_done(sid):
+        real_kill(sid)
+        t = threading.Thread(target=lambda: hub.open_terminal(sid, launch=False))
+        t.start()
+        t.join(1.0)  # (waits for the close if the two are serialised)
+        reopened.append(t)
+
+    monkeypatch.setattr(hub.terms, "kill", kill_and_a_reopen_arrives_before_the_close_is_done)
+    await asyncio.to_thread(hub.close_terminal, "s-t")
+    reopened[0].join(30)
+    assert hub.terms.alive("s-t") and lv.reports and lv.pane_id and lv.pane_since

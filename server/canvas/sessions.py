@@ -290,7 +290,7 @@ class AgentHub:
         self._loop_task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._follow_lock = threading.Lock()
-        self._pane_lock = threading.RLock()  # opening a pane (registering it, then making it) and noticing that a pane is gone must not interleave
+        self._pane_lock = threading.RLock()  # opening a pane (registering it, then making it), closing it and noticing that it is gone must not interleave
         # Who else needs to know what the hub sees (dispatch.py): every broadcast event (on the loop
         # thread); the moment before a message is injected into a CLI (session id, send id; from a
         # worker thread or the loop, and it must not block); the first time the loop starts.
@@ -1391,11 +1391,12 @@ class AgentHub:
         return {"sendId": lv.pane[0].send_id, "queued": len(lv.pane)}
 
     def close_terminal(self, sid: str) -> None:
-        self.terms.kill(sid)
-        lv = self._get(sid)
-        lv.pane_alive, lv.pane_since = False, None
-        lv.reports, lv.cli_state, lv.pane_id = False, None, ""
-        lv.seen_window, lv.detached_at = False, None
+        with self._pane_lock:  # a pane opened while this close is still returning must not have its state cleared with the old one's
+            self.terms.kill(sid)
+            lv = self._get(sid)
+            lv.pane_alive, lv.pane_since = False, None
+            lv.reports, lv.cli_state, lv.pane_id = False, None, ""
+            lv.seen_window, lv.detached_at = False, None
         self._status(sid)
 
     # ——— identity (registry, forks) ———
