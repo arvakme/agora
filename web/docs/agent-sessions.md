@@ -136,8 +136,8 @@ agora canvas child create --parent c1 --node api   # 节点展开成子画布（
 - **Codex**：`--enable hooks -c hooks.<事件>=…`。Codex 对**新的或改过的钩子**要人审核一次（菜单「Hooks need review」，选「Trust all」后信任写进 Codex 自己的配置，键形如 `/<session-flags>/config.toml:stop:0:0`；钩子文本不变就不再问，Agora 目录挪位置会再问一次）。实测第一轮之前没有收到它的任何回报，所以第一条消息之前改看屏幕：出现输入框（`? for shortcuts`）才算就绪，菜单没有这行。
 - **Pi**：`-e server/canvas/pane_state_pi.ts`，用扩展的 `session_start` / `agent_start` / `agent_settled` / `session_shutdown`。
 - **没说话 ≠ 就绪**：CLI 一直没回报（多半停在某个菜单里）就一直不粘，45 秒后状态行改说「CLI 一直没有就绪：可能在等你在终端里确认」，人看过后可以点「现在送出」放行队首一条（终端窗口连着时出现的那个按钮）。`waiting` 与 `running` 不能被放行越过。人确认权限之后，状态要到这一轮结束（`Stop`）才变回 `idle`（不为每次工具调用多开一个进程），其间排队理由可能还写着「在等确认」。
-- **Grok、Cursor、Devin**：没有办法在不写你自己配置文件的前提下让它们回报（Grok 的 `GROK_CONFIG` 覆盖不收 hook），所以只看屏幕：终端打开满 6 秒后，屏幕上出现输入框底部那行字（Grok `always-approve`、Cursor `Run Everything` 或跑完一轮后的 `Add a follow-up`、Devin `bypass permissions on`；前三条是 Agora 启动它们时的参数带出来的）才算就绪。Grok 在没信任过的目录会弹「Do you trust the contents of this directory?」，屏幕上没有这行字，消息就不粘，状态行说明原因，你在终端里确认后自动投递。每一条消息投递前都重新看一次屏幕，所以之后才冒出来的菜单（更新提示之类）也拦得住；这一轮有没有结束仍看日志。依赖界面文字，CLI 改版后这行字可能变，后果是多等并提示你，不会把消息粘进菜单。
-- 服务重启后，重启前打开的终端不再等待（服务不知道它什么时候打开的），回报状态也记在服务进程里，重启后要等 CLI 下一次回报。每次打开终端都带一个编号（环境变量 `AGORA_PANE`），回报必须带上它：关掉重开之后，旧终端迟到的「已退出」「空闲」会被忽略。
+- **Grok、Cursor、Devin**：没有办法在不写你自己配置文件的前提下让它们回报（Grok 的 `GROK_CONFIG` 覆盖不收 hook），所以只看屏幕：终端打开满 6 秒后，屏幕上出现输入框底部那行字（Grok `always-approve`、Cursor `Run Everything` 或跑完一轮后的 `Add a follow-up`、Devin `bypass permissions on`；前三条是 Agora 启动它们时的参数带出来的）才算就绪。Grok 在没信任过的目录会弹「Do you trust the contents of this directory?」，屏幕上没有这行字，消息就不粘，状态行说明原因，你在终端里确认后自动投递。每一条消息投递前都重新看一次，只看当前屏幕最下面十来行（不看滚动历史），所以之后才冒出来的菜单（更新提示之类）一般也拦得住；这一轮有没有结束仍看日志。依赖界面文字，CLI 改版后这行字可能变：认不出就等并提示你，不会照粘。
+- 服务重启后，重启前打开的终端：服务不再等它就绪（它不知道这个终端什么时候开的），它之后的回报也不再被接受（编号只记在服务进程里），关掉重开才恢复回报。每次**新建**终端都带一个编号（环境变量 `AGORA_PANE`），回报必须带上它：关掉重开之后，旧终端迟到的「已退出」「空闲」会被忽略。
 
 pane 不在时一律无头续接（§2）。两边用的是同一个原生会话 id，所以哪边说的话另一边都接得上。
 

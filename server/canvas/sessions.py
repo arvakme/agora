@@ -770,8 +770,9 @@ class AgentHub:
         loading, or sitting in a dialog, is dropped)."""
         if lv.pane_since is not None and (lv.reports or self._has_screen_probe(sid)):  # no opening time: a pane from before a restart, nothing to wait for
             state = lv.cli_state
-            if state is None and await self._screen_ready(sid, lv):
-                state = lv.cli_state or "idle"  # a report that came in while the screen was read counts
+            if state is None:
+                ready = await self._screen_ready(sid, lv)
+                state = lv.cli_state or ("idle" if ready else None)  # a report that came in while the screen was read counts
             reason = cli_hold(state, lv.pane_since, time.time(), force=head.force)
         elif lv.pane_since and time.time() - lv.pane_since < PANE_BOOT_S:
             reason = "终端刚打开，等 CLI 启动好再投递"
@@ -789,7 +790,7 @@ class AgentHub:
         if probe is None or not lv.pane_since or time.time() - lv.pane_since < PANE_BOOT_S:
             return False
         try:
-            return probe(await asyncio.to_thread(self.terms.capture, sid))
+            return probe(pane_state.bottom(await asyncio.to_thread(self.terms.capture, sid, 0)))
         except (TerminalError, OSError):
             return False
 
@@ -800,7 +801,7 @@ class AgentHub:
             raise ValueError(f"unknown state {state!r}")
         self.binding(sid)
         lv = self._get(sid)
-        if lv.pane_alive and lv.reports and pane == lv.pane_id and lv.cli_state != state:
+        if lv.reports and pane == lv.pane_id and lv.cli_state != state:
             lv.cli_state = state
             self._status(sid)
         return {"state": lv.cli_state}
@@ -1344,10 +1345,17 @@ class AgentHub:
         pane = secrets.token_hex(8)
         argv = agents.interactive_argv(b["agent"], b.get("nativeId"), b.get("model") or None, b.get("effort") or None, new=not binding_started(b), root=self.store.root, fork=b.get("pendingFork"), hooks=hooks)
         env = {**self.env_for(sid, canvas_id), "PATH": agents.child_env()["PATH"], **({"AGORA_PANE": pane} if hooks else {})}
-        created = self.terms.open(sid, argv, cwd=self.store.root, env=env)
+        fresh = not self.terms.alive(sid)
+        if fresh:
+            lv.reports, lv.cli_state, lv.pane_id = hooks, None, pane  # before the CLI is there: its first word may come before open() returns
+        try:
+            created = self.terms.open(sid, argv, cwd=self.store.root, env=env)
+        except Exception:
+            if fresh:
+                lv.reports, lv.cli_state, lv.pane_id = False, None, ""
+            raise
         if created:
             lv.pane_since = time.time()
-            lv.reports, lv.cli_state, lv.pane_id = hooks, None, pane
         lv.pane_alive = True
         launched = self.terms.launch(sid, f"Agora · {agents.NAMES[b['agent']]}") if launch else None
         self._status(sid)

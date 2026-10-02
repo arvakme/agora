@@ -224,3 +224,10 @@ def test_every_cli_either_reports_or_has_a_screen_that_says_it_is_up():
     from server.canvas import agents
 
     assert all(pane_state.reports(k) or k in pane_state.SCREEN_READY for k in agents.NAMES)
+
+
+def test_only_the_bottom_of_the_screen_is_looked_at_for_the_input_box():
+    old_box = "answer: Add a follow-up\n" + "\n".join(f"line {i}" for i in range(40)) + "\nPermission dialog: choose yes/no"
+    assert not pane_state.SCREEN_READY["cursor"](pane_state.bottom(old_box))
+    assert pane_state.SCREEN_READY["cursor"](pane_state.bottom(CURSOR_AFTER_A_TURN))
+    assert pane_state.bottom("a\n\n   \nb\n") == "a\nb"
