@@ -229,6 +229,13 @@ class Live:
     detached_at: float | None = None  # since when no window is attached (only while the pane is otherwise idle)
     notes: list[dict[str, Any]] = field(default_factory=list)  # notices to show once the transcript is loaded (a turn a restart ended)
 
+    def forget_pane(self) -> None:
+        """Everything that belongs to one opening of the pane. When the pane is gone, so is all of it: the next pane
+        starts from nothing, not from what the last one had seen or been told."""
+        self.pane_alive, self.pane_since = False, None
+        self.reports, self.cli_state, self.pane_id = False, None, ""
+        self.seen_window, self.detached_at = False, None
+
 
 class Subscriber:
     def __init__(self) -> None:
@@ -699,8 +706,7 @@ class AgentHub:
                 if alive != lv.pane_alive:
                     lv.pane_alive = alive
                     if not alive:
-                        lv.pane_since = None
-                        lv.reports, lv.cli_state = False, None
+                        lv.forget_pane()
                         self._pane_exited(sid, lv)
                     self._status(sid)
             # A CLI that assigns its own id (Codex) does so when the interactive session starts:
@@ -1350,12 +1356,13 @@ class AgentHub:
         with self._pane_lock:
             fresh = not self.terms.alive(sid)
             if fresh:
-                lv.reports, lv.cli_state, lv.pane_id = hooks, None, pane  # before the CLI is there: its first word may come before open() returns
+                lv.forget_pane()
+                lv.reports, lv.pane_id = hooks, pane  # before the CLI is there: its first word may come before open() returns
             try:
                 created = self.terms.open(sid, argv, cwd=self.store.root, env=env)
             except Exception:
                 if fresh:
-                    lv.reports, lv.cli_state, lv.pane_id = False, None, ""
+                    lv.forget_pane()
                 raise
             if created:
                 lv.pane_since = time.time()
@@ -1393,10 +1400,7 @@ class AgentHub:
     def close_terminal(self, sid: str) -> None:
         with self._pane_lock:  # a pane opened while this close is still returning must not have its state cleared with the old one's
             self.terms.kill(sid)
-            lv = self._get(sid)
-            lv.pane_alive, lv.pane_since = False, None
-            lv.reports, lv.cli_state, lv.pane_id = False, None, ""
-            lv.seen_window, lv.detached_at = False, None
+            self._get(sid).forget_pane()
         self._status(sid)
 
     # ——— identity (registry, forks) ———
