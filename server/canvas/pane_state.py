@@ -6,7 +6,7 @@ that can say it does: its own hooks (Pi: an extension) report ``idle`` / ``runni
 / ``exited`` to the server (``bin/agora-state``, ``pane_state_pi.ts``), and delivery waits for ``idle``.
 
 Only CLIs listed in ``ARGS`` report (Codex only from its first turn on). The others are delivered to once ``SCREEN_READY``
-sees their input box, and after that on the log's idea of "busy". A CLI with neither is delivered to on the boot timer
+sees their input box at the moment a message is to go in; whether a turn is over is the log's to say. A CLI with neither is delivered to on the boot timer
 (``sessions.PANE_BOOT_S``).
 """
 
@@ -65,7 +65,7 @@ ARGS: dict[str, Callable[[], list[str]]] = {"claude": _claude, "codex": _codex, 
 # up when its screen shows the input box: not a menu (trust this folder, review hooks), which has none. The Grok, Cursor
 # and Devin markers are text those CLIs print around the box because of the flags Agora starts them with
 # (``agents.interactive_argv``); Cursor's changes once a turn has run, so it has two. The screen is looked at again for
-# every message. A screen that does not match is never "ready" (the message waits and the person is told), so a changed
+# every message, and only its bottom lines, from the screen as it is now (not the scrollback). A screen that does not match is never "ready" (the message waits and the person is told), so a changed
 # screen costs a wait, not a lost message.
 def _shows(*markers: str) -> Callable[[str], bool]:
     return lambda screen: any(m in screen for m in markers)
@@ -77,6 +77,14 @@ SCREEN_READY: dict[str, Callable[[str], bool]] = {
     "cursor": _shows("Run Everything", "Add a follow-up"),
     "devin": _shows("bypass permissions on"),
 }
+
+
+SCREEN_TAIL_LINES = 10  # the input box and its footer are at the bottom: what is printed above is not the box
+
+
+def bottom(screen: str) -> str:
+    """The last non-blank lines of a screen: where an input box is, if there is one."""
+    return "\n".join([line for line in screen.splitlines() if line.strip()][-SCREEN_TAIL_LINES:])
 
 
 def reports(kind: str) -> bool:

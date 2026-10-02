@@ -711,3 +711,66 @@ async def test_a_report_that_comes_in_while_the_screen_is_being_read_still_count
     monkeypatch.setattr(hub.terms, "capture", capture_then_a_dialog_opens)
     why = await hub._not_ready("s-t", lv, Pending(send_id="m-1", prompt="x", at=time.time()))
     assert why and "确认权限" in why
+
+
+@needs_tmux
+async def test_a_report_that_comes_in_while_the_screen_is_read_beats_the_persons_go_even_when_the_screen_has_no_input_box(hub, monkeypatch):
+    from server.canvas import pane_state
+    from server.canvas.sessions import Pending
+
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": lambda screen: False})  # the dialog that is now up has no input box
+    lv = await _reporting_pane(hub)
+    lv.pane_since = time.time() - 60  # long silent: the person may say go
+    real = hub.terms.capture
+
+    def capture_then_a_dialog_opens(sid, lines=200):
+        screen = real(sid, lines)
+        hub.report_state(sid, "waiting", lv.pane_id)
+        return screen
+
+    monkeypatch.setattr(hub.terms, "capture", capture_then_a_dialog_opens)
+    why = await hub._not_ready("s-t", lv, Pending(send_id="m-1", prompt="x", at=time.time(), force=True))
+    assert why and "确认权限" in why
+
+
+@needs_tmux
+async def test_the_scrollback_is_not_the_screen_an_old_input_box_up_there_does_not_make_a_menu_ready(hub, monkeypatch):
+    from server.canvas import pane_state
+    from server.canvas.sessions import Pending
+
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": pane_state._shows("Add a follow-up")})
+    hub.ensure_started()
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    lv = hub.live["s-t"]
+    lv.pane_since = time.time() - 60
+    history = "→ Add a follow-up\n" + "\n".join(f"line {i}" for i in range(60)) + "\nPermission dialog: choose yes/no"
+    monkeypatch.setattr(hub.terms, "capture", lambda sid, lines=200: history if lines else "Permission dialog: choose yes/no")
+    why = await hub._not_ready("s-t", lv, Pending(send_id="m-1", prompt="x", at=time.time()))
+    assert why and "就绪" in why
+
+
+@needs_tmux
+async def test_a_cli_that_reports_before_the_terminal_is_open_has_its_first_word_kept(hub, monkeypatch):
+    hub.url = "http://127.0.0.1:1"
+    hub.ensure_started()
+    real_open = hub.terms.open
+
+    def open_and_the_cli_is_already_up(sid, argv, **kw):
+        created = real_open(sid, argv, **kw)
+        hub.report_state(sid, "idle", kw["env"]["AGORA_PANE"])  # the CLI is quick: its first word comes before open() returns
+        return created
+
+    monkeypatch.setattr(hub.terms, "open", open_and_the_cli_is_already_up)
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    assert hub.live["s-t"].cli_state == "idle"
+
+
+def test_the_screen_is_captured_without_its_scrollback_when_asked_for_no_lines(terms, tmp_path):
+    terms.open("s-1", ["sh", "-c", "i=1; while [ $i -le 80 ]; do echo row-$i; i=$((i+1)); done; sleep 30"], cwd=tmp_path, env={})
+    deadline = time.time() + 10
+    while "row-80" not in terms.capture("s-1", 0) and time.time() < deadline:
+        time.sleep(0.1)
+    screen, history = terms.capture("s-1", 0), terms.capture("s-1", 200)
+    assert "row-80" in screen and "row-1\n" not in screen
+    assert "row-1\n" in history
