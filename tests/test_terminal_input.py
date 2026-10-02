@@ -774,3 +774,26 @@ def test_the_screen_is_captured_without_its_scrollback_when_asked_for_no_lines(t
     screen, history = terms.capture("s-1", 0), terms.capture("s-1", 200)
     assert "row-80" in screen and "row-1\n" not in screen
     assert "row-1\n" in history
+
+
+@needs_tmux
+async def test_the_check_for_an_exited_pane_does_not_undo_the_registration_of_the_one_being_opened(hub, monkeypatch):
+    import threading
+
+    hub.url = "http://127.0.0.1:1"  # (the hub's own loop is not started: the check runs when this test says)
+    lv = hub._get("s-t")
+    lv.pane_alive, lv.pane_since = True, time.time() - 5  # the hub still believes in the pane that has just exited
+    real_open = hub.terms.open
+
+    def the_background_check_runs_while_the_new_pane_is_being_made(sid, argv, **kw):
+        t = threading.Thread(target=hub._tick_sync)
+        t.start()
+        t.join(1.0)  # (waits for the opening if the two are serialised)
+        created = real_open(sid, argv, **kw)
+        t.join(10)
+        hub.report_state(sid, "idle", kw["env"]["AGORA_PANE"])
+        return created
+
+    monkeypatch.setattr(hub.terms, "open", the_background_check_runs_while_the_new_pane_is_being_made)
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    assert lv.reports and lv.cli_state == "idle"

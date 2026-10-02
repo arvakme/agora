@@ -290,6 +290,7 @@ class AgentHub:
         self._loop_task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._follow_lock = threading.Lock()
+        self._pane_lock = threading.RLock()  # opening a pane (registering it, then making it) and noticing that a pane is gone must not interleave
         # Who else needs to know what the hub sees (dispatch.py): every broadcast event (on the loop
         # thread); the moment before a message is injected into a CLI (session id, send id; from a
         # worker thread or the loop, and it must not block); the first time the loop starts.
@@ -693,14 +694,15 @@ class AgentHub:
         bound = self.store.bindings()
         for sid, b in bound.items():
             lv = self._get(sid)
-            alive = self.terms.alive(sid) if (lv.pane_since or lv.pane_alive or lv.pane) else False
-            if alive != lv.pane_alive:
-                lv.pane_alive = alive
-                if not alive:
-                    lv.pane_since = None
-                    lv.reports, lv.cli_state = False, None
-                    self._pane_exited(sid, lv)
-                self._status(sid)
+            with self._pane_lock:
+                alive = self.terms.alive(sid) if (lv.pane_since or lv.pane_alive or lv.pane) else False
+                if alive != lv.pane_alive:
+                    lv.pane_alive = alive
+                    if not alive:
+                        lv.pane_since = None
+                        lv.reports, lv.cli_state = False, None
+                        self._pane_exited(sid, lv)
+                    self._status(sid)
             # A CLI that assigns its own id (Codex) does so when the interactive session starts:
             # adopt the new native session.
             if adapters.need(b["agent"]).assigns_id == "cli" and not b.get("nativeId") and not b.get("pendingFork") and lv.pane_since:
@@ -1345,18 +1347,19 @@ class AgentHub:
         pane = secrets.token_hex(8)
         argv = agents.interactive_argv(b["agent"], b.get("nativeId"), b.get("model") or None, b.get("effort") or None, new=not binding_started(b), root=self.store.root, fork=b.get("pendingFork"), hooks=hooks)
         env = {**self.env_for(sid, canvas_id), "PATH": agents.child_env()["PATH"], **({"AGORA_PANE": pane} if hooks else {})}
-        fresh = not self.terms.alive(sid)
-        if fresh:
-            lv.reports, lv.cli_state, lv.pane_id = hooks, None, pane  # before the CLI is there: its first word may come before open() returns
-        try:
-            created = self.terms.open(sid, argv, cwd=self.store.root, env=env)
-        except Exception:
+        with self._pane_lock:
+            fresh = not self.terms.alive(sid)
             if fresh:
-                lv.reports, lv.cli_state, lv.pane_id = False, None, ""
-            raise
-        if created:
-            lv.pane_since = time.time()
-        lv.pane_alive = True
+                lv.reports, lv.cli_state, lv.pane_id = hooks, None, pane  # before the CLI is there: its first word may come before open() returns
+            try:
+                created = self.terms.open(sid, argv, cwd=self.store.root, env=env)
+            except Exception:
+                if fresh:
+                    lv.reports, lv.cli_state, lv.pane_id = False, None, ""
+                raise
+            if created:
+                lv.pane_since = time.time()
+            lv.pane_alive = True
         launched = self.terms.launch(sid, f"Agora · {agents.NAMES[b['agent']]}") if launch else None
         self._status(sid)
         return {"created": created, "launched": launched, "attach": self.terms.attach_command(sid), "argv": argv}
