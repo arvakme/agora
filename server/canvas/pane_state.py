@@ -17,8 +17,9 @@ import shlex
 from collections.abc import Callable
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
-SCRIPT = REPO / "bin" / "agora-state"
+from server.paths import BIN
+
+SCRIPT = BIN / "agora-state"
 PI_EXTENSION = Path(__file__).with_name("pane_state_pi.ts")
 
 STATES = ("idle", "running", "waiting", "exited")

@@ -1,9 +1,11 @@
 [project]
-name = "agora"
+name = "agora-canvas"  # "agora" and "agora-cli" are taken on PyPI; the command stays `agora`
 version = "0.1.0"
 description = "One Agora per project: an architecture canvas shared with your own coding agent"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE", "web/libraries/NOTICE.md", "web/libraries/licenses/*"]
 dependencies = [
     "fastapi>=0.115",
     "httpx>=0.27",
@@ -12,14 +14,32 @@ dependencies = [
     "websockets>=14.0",
 ]
 
+[project.scripts]
+agora = "agora_cli.main:main"  # the generated launcher calls sys.exit(main()): exit codes pass through
+
+[project.urls]
+Repository = "https://github.com/arvakme/agora"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["agora_cli", "server", "native_protocol.py"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["agora_cli", "server", "native_protocol.py", "hatch_build.py", "bin", "skills", "web", "README.md", "LICENSE"]
+# web sources stay (a wheel built from the sdist without the page can still build it); test evidence and evals do not
+exclude = ["web/evidence", "web/eval", "web/docs", "web/node_modules"]
+
+# hatch_build.py: puts web/dist, web/libraries, web/generated, skills and bin/ into the wheel under server/_bundle
+[tool.hatch.build.hooks.custom]
+
 [dependency-groups]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
 ]
-
-[tool.uv]
-package = false
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

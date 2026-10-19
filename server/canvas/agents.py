@@ -55,13 +55,13 @@ from server.canvas.adapters.pi import PiStream, pi_usage
 from server.canvas.adapters.pi import dir_name as pi_dir_name
 from server.canvas.adapters.pi import migrate_log as _migrate_pi_log
 from server.canvas.adapters.pi import sessions_dir as _pi_sessions  # noqa: F401
+from server.paths import BIN, SKILLS
 
 
-REPO = Path(__file__).resolve().parents[2]
 SKILL_NAME = "agora"  # the project link's name; must match the skill's `name:`
 LEGACY_SKILL_NAME = "agora-canvas"  # the skill's old name: reinstalling removes its links
-SKILL_DIR = REPO / "skills" / SKILL_NAME
-AGENT_BIN = REPO / "bin"
+SKILL_DIR = SKILLS / SKILL_NAME
+AGENT_BIN = BIN
 
 # Runtime markers of whatever agent or tmux started the Agora server. Inherited, they make a
 # child CLI believe it is nested (Claude Code then stops saving its transcript, which is the

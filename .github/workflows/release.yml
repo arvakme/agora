@@ -1,0 +1,37 @@
+name: release
+
+# Builds the wheel and sdist with the page (web/dist) inside, so installing them needs no Node:
+#   uv tool install https://github.com/arvakme/agora/releases/download/<tag>/agora_canvas-<version>-py3-none-any.whl
+# A tag v* attaches them to a GitHub release; a manual run only keeps them as a workflow artifact. Nothing goes to PyPI.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      # hatch_build.py runs `npm ci` and `npm run build` in web/ when web/dist is missing
+      - run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*
+      - if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
