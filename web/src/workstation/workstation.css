@@ -190,3 +190,12 @@
 
 /* Excalidraw's own 「滚动回到内容」 (bottom centre, when nothing is in view) sits above our 浏览 / 评论 bar, not under it */
 .canvas-view .excalidraw .scroll-back-to-content { bottom: 84px; }
+
+/* 分站揭示 (./RevealLayer.tsx): while an agent's batch is shown station by station, the canvas's picture is ours — under Excalidraw's interactive canvas
+ * and its UI (this layer comes before it), in place of its static canvas, which is hidden (not removed: Excalidraw keeps drawing it). */
+.canvas-layers[data-revealing] canvas.excalidraw__canvas.static { visibility: hidden; }
+.ws-reveal { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.ws-reveal-bg { position: absolute; inset: 0; }
+.ws-reveal[data-dark] .ws-reveal-bg { filter: invert(93%) hue-rotate(180deg); }
+.ws-reveal-snap, .ws-reveal-pic { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform, opacity; }
+.ws-reveal-pic > svg { display: block; width: 100%; height: 100%; }
