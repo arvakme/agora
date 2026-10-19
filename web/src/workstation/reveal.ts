@@ -126,71 +126,128 @@ export function holds(o: { count: number; stations: number; reduced: boolean; fi
 export const stationsOf = (times: ReadonlyMap<string, number>, at: number): number[] => [...new Set([...times.values()].filter((t) => t > at))].sort((a, b) => a - b);
 
 // ——— a station is drawn, not faded ———
-// When the figure gets to a station, what it draws there is drawn in the order a hand would: each box's outline is traced (from its top-left, clockwise:
-// the way Excalidraw's path goes), then its fill fades in, then its text; the boxes one after another, a little apart. Then the lines: each arrow from its
-// start point along its path to its end, its head as the stroke gets there, its label after — only once every box of the station has its outline, so an
-// arrow never reaches a box that is not there yet (the boxes of earlier stations are). What cannot be traced (an image, a frame, a dashed outline, free
-// text) fades in where a box would be traced. The whole station fits in the time the figure stays at its stop: squeezed when that is short, never stretched.
+// When the figure gets to a station, what it draws there is drawn in the order a hand would. A station is a row of units, in scene order: an element on
+// its own, or a group (a library component, an icon of many lines: the outermost group) drawn as one. A unit's strokes are traced (a box from its
+// top-left, clockwise: the way Excalidraw's path goes; a line from its start point to its end; a component's elements one after another, overlapping,
+// in their order), then its fill fades in, then its text is written (wiped on, left to right, line by line). What has no stroke to follow (an image, a
+// shape filled but not outlined) is wiped on in its stroke's time. The units one after another, a little apart; the lines that are units of their own
+// (an arrow between boxes) only once every other unit of the station has its strokes, so an arrow never reaches a box that is not there yet (the boxes
+// of earlier stations are). The whole station fits in the time the figure stays at its stop: squeezed when that is short, never stretched.
 
-/** What a station item is drawn as: a box's outline then fill and text, a line's stroke then head and label, or a fade. */
-export type InkKind = "box" | "line" | "fade";
-/** One item's plan (ms after the station's moment): its stroke (or fade) from `start` for `dur`; its fill (a box) or head (a line) from `fill`; its text from `text`. */
-export type InkStep = { kind: InkKind; start: number; dur: number; fill: number; text: number };
+/** What a unit is drawn as: a box (an element's outline, then fill and text), a group (a component's strokes, then fills and text), a line (its stroke,
+ * head, label), a text (written), or a fade (nothing it holds could be drawn). */
+export type InkKind = "box" | "group" | "line" | "text" | "fade";
+/** One unit's plan (ms after the station's moment): its strokes from `start` for `dur`; its fill (a box, a group) or head (a line) from `fill`; its text written from `text` for `textDur`. */
+export type InkStep = { kind: InkKind; start: number; dur: number; fill: number; text: number; textDur: number };
 
 /** A box's outline, start to end; then its fill, then its text. */
 export const BOX_MS = 400;
+/** A component's strokes, all of them, however many it has (its elements overlap: each is drawn over part of this). */
+export const GROUP_MS = 600;
 export const FILL_FADE_MS = 150;
-export const TEXT_FADE_MS = 150;
+/** A label or a box's text, written. */
+export const TEXT_MS = 200;
+/** A text on its own, written (it is a unit: there is nothing to wait for). */
+export const TEXT_WRITE_MS = 300;
 /** The text starts a moment after the fill does. */
 const TEXT_AFTER_FILL_MS = 60;
 /** A line's stroke, start to end; its head over the last bit of it. */
 export const LINE_MS = 350;
 export const HEAD_FADE_MS = 80;
-/** Between one box (or line) of a station starting and the next; with many the gaps shrink so all have started within the total. */
+/** Between one unit (or line) of a station starting and the next; with many the gaps shrink so all have started within the total. */
 export const BOX_GAP_MS = 120;
 export const BOX_GAP_TOTAL_MS = 300;
 export const LINE_GAP_MS = 100;
 export const LINE_GAP_TOTAL_MS = 250;
-/** A station is never squeezed below this share of its natural length: the strokes would flick. The shortest stop (900 ms of work, the drawing starts 250 ms in) holds a full station (1.45 s) at about this. */
+/** A station is never squeezed below this share of its natural length: the strokes would flick. */
 export const MIN_SQUEEZE = 0.45;
 
-const gapOf = (n: number, gap: number, total: number) => (n > 1 ? Math.min(gap, total / (n - 1)) : 0);
+/** What inkUnits reads of an element. */
+export type InkEl = Pick<RevealEl, "id" | "type" | "containerId" | "groupIds">;
+/** One unit of a station: its elements (in scene order; text bound to one of them goes with it, not here). */
+export type InkUnit = { kind: InkKind; ids: string[] };
 
-/** The plan of a station's items in their order (scene order), fitted into `budget` ms (the rest of the figure's stop) when that is shorter. */
-export function inkPlan(kinds: readonly InkKind[], budget = Infinity): { steps: InkStep[]; length: number } {
-  const boxes = kinds.filter((k) => k !== "line").length;
-  const lines = kinds.length - boxes;
-  const gb = gapOf(boxes, BOX_GAP_MS, BOX_GAP_TOTAL_MS);
-  const gl = gapOf(lines, LINE_GAP_MS, LINE_GAP_TOTAL_MS);
-  const linesFrom = boxes ? (boxes - 1) * gb + BOX_MS : 0;
-  let b = 0;
-  let l = 0;
-  const steps = kinds.map((kind): InkStep => {
-    if (kind === "line") {
-      const start = linesFrom + l++ * gl;
-      return { kind, start, dur: LINE_MS, fill: start + LINE_MS - HEAD_FADE_MS, text: start + LINE_MS };
-    }
-    const start = b++ * gb;
-    return { kind, start, dur: BOX_MS, fill: start + BOX_MS, text: start + BOX_MS + TEXT_AFTER_FILL_MS };
+const BOXY = new Set(["rectangle", "ellipse", "diamond", "frame", "magicframe", "image", "freedraw", "embeddable", "iframe"]);
+
+/** A station's elements (scene order) as the units it is drawn in: each outermost group one unit, every other element one of its own; a text bound to an element of the station goes with that element. */
+export function inkUnits(els: readonly InkEl[]): InkUnit[] {
+  const here = new Set(els.map((e) => e.id));
+  const by = new Map<string, InkUnit>();
+  for (const e of els) {
+    if (e.type === "text" && e.containerId && here.has(e.containerId)) continue;
+    const key = e.groupIds?.length ? `g:${e.groupIds[e.groupIds.length - 1]}` : e.id;
+    const u = by.get(key) ?? by.set(key, { kind: "fade", ids: [] }).get(key)!;
+    u.ids.push(e.id);
+  }
+  const type = new Map(els.map((e) => [e.id, e.type]));
+  for (const u of by.values()) {
+    const t = type.get(u.ids[0])!;
+    u.kind = u.ids.length > 1 ? "group" : t === "line" || t === "arrow" ? "line" : t === "text" ? "text" : BOXY.has(t) ? "box" : "fade";
+  }
+  return [...by.values()];
+}
+
+/**
+ * Where each element of a unit is drawn within the unit's strokes (0 → 1 of them), from how much each has to draw (`lengths`, in order): one after
+ * another by length, overlapping — each over a share of the whole (all of it for one; less the more there are, never under a quarter), so a component of
+ * a hundred lines is drawn in the same time as one of three, every stroke still seen moving.
+ */
+export function unitWindows(lengths: readonly number[]): [number, number][] {
+  const n = lengths.length;
+  if (n <= 1) return n ? [[0, 1]] : [];
+  const w = Math.max(0.25, 1 / Math.sqrt(n));
+  const ls = lengths.map((l) => Math.max(1, l));
+  const total = ls.reduce((a, b) => a + b, 0);
+  let at = 0;
+  return ls.map((l) => {
+    const from = (at / total) * (1 - w);
+    at += l;
+    return [from, from + w];
   });
-  const length = Math.max(0, ...steps.map((s) => s.text + TEXT_FADE_MS));
+}
+
+const gapOf = (n: number, gap: number, total: number) => (n > 1 ? Math.min(gap, total / (n - 1)) : 0);
+const STROKE_MS: Record<InkKind, number> = { box: BOX_MS, group: GROUP_MS, line: LINE_MS, text: TEXT_WRITE_MS, fade: BOX_MS };
+
+/** The plan of a station's units in their order (scene order), fitted into `budget` ms (the rest of the figure's stop) when that is shorter. */
+export function inkPlan(kinds: readonly InkKind[], budget = Infinity): { steps: InkStep[]; length: number } {
+  const units = kinds.filter((k) => k !== "line").length;
+  const lines = kinds.length - units;
+  const gb = gapOf(units, BOX_GAP_MS, BOX_GAP_TOTAL_MS);
+  const gl = gapOf(lines, LINE_GAP_MS, LINE_GAP_TOTAL_MS);
+  let b = 0;
+  const first = kinds.map((kind): InkStep | null => {
+    if (kind === "line") return null;
+    const start = b++ * gb;
+    const dur = STROKE_MS[kind];
+    if (kind === "text") return { kind, start, dur, fill: start + dur, text: start, textDur: dur };
+    return { kind, start, dur, fill: start + dur, text: start + dur + TEXT_AFTER_FILL_MS, textDur: TEXT_MS };
+  });
+  const linesFrom = Math.max(0, ...first.map((s) => (s ? s.start + s.dur : 0)));
+  let l = 0;
+  const steps = kinds.map((kind, i): InkStep => {
+    if (first[i]) return first[i]!;
+    const start = linesFrom + l++ * gl;
+    return { kind, start, dur: LINE_MS, fill: start + LINE_MS - HEAD_FADE_MS, text: start + LINE_MS, textDur: TEXT_MS };
+  });
+  const length = Math.max(0, ...steps.map((s) => Math.max(s.text + s.textDur, s.fill + FILL_FADE_MS)));
   const k = length > budget ? Math.max(MIN_SQUEEZE, budget / length) : 1;
   if (k === 1) return { steps, length };
-  return { steps: steps.map((s) => ({ ...s, start: s.start * k, dur: s.dur * k, fill: s.fill * k, text: s.text * k })), length: length * k };
+  return { steps: steps.map((s) => ({ ...s, start: s.start * k, dur: s.dur * k, fill: s.fill * k, text: s.text * k, textDur: s.textDur * k })), length: length * k };
 }
 
 /** The longest a station takes (a full one, not squeezed): until then it is still being drawn, not part of the still picture. */
-export const REVEAL_SETTLE_MS = Math.max(REVEAL_FADE_MS, BOX_GAP_TOTAL_MS + BOX_MS + LINE_GAP_TOTAL_MS + LINE_MS + TEXT_FADE_MS);
+export const REVEAL_SETTLE_MS = Math.max(REVEAL_FADE_MS, BOX_GAP_TOTAL_MS + GROUP_MS + LINE_GAP_TOTAL_MS + LINE_MS + TEXT_MS);
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
-/** One item `ms` after its station's moment: how much of its stroke is drawn (0 → 1, eased out; a fade's opacity, linear), how visible its fill (or head) and its text are. */
+/** One unit `ms` after its station's moment: how much of its strokes are drawn (0 → 1, eased out; a fade's opacity, linear), how visible its fill (or head) is, how much of its text is written. */
 export function inkAt(s: InkStep, ms: number): { stroke: number; fill: number; text: number } {
   const p = clamp01((ms - s.start) / s.dur);
-  const k = s.dur / (s.kind === "line" ? LINE_MS : BOX_MS);
+  const k = s.dur / STROKE_MS[s.kind];
   return {
     stroke: s.kind === "fade" ? p : 1 - (1 - p) * (1 - p),
     fill: clamp01((ms - s.fill) / ((s.kind === "line" ? HEAD_FADE_MS : FILL_FADE_MS) * k)),
-    text: clamp01((ms - s.text) / (TEXT_FADE_MS * k)),
+    text: clamp01((ms - s.text) / s.textDur),
   };
 }
 
