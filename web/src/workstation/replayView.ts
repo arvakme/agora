@@ -6,6 +6,7 @@
 // picture into the new one (a view transition, ~400 ms with the mount; never through a blank frame); with
 // reduced motion, or where the browser has no view transitions, it is a cut. Imperative, no React: it outlives the canvases it switches.
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import { flushSync } from "react-dom";
 import type { El } from "../canvas/scene";
 import { canvasStep, isBehind, nextPaused, newCanvasMachine, type PauseEvent } from "./liveCamera";
 import { cameraResume, cameraStart, cameraStep, inShot, switchView, ZOOM_MAX, ZOOM_MIN, type CameraGoal, type CameraState } from "./director";
@@ -13,6 +14,7 @@ import { firstView, viewport, type Viewport } from "../canvas/viewport";
 import { nav, nested } from "../nested/store";
 import { canvases } from "../session/ui";
 import { clock, prefersReducedMotion } from "./clock";
+import { frame } from "./frame";
 import { buildGeometry } from "./geometry";
 import { OUTSIDE, stateAt, type Ctx } from "./place";
 import { cameraCanvas } from "./replayCamera";
@@ -138,15 +140,24 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
     return view;
   }
   const setView = (api: ExcalidrawImperativeAPI, v: { scrollX: number; scrollY: number; zoom: number }) => api.updateScene({ appState: { scrollX: v.scrollX, scrollY: v.scrollY, zoom: { value: v.zoom } } as never });
+  /**
+   * The camera's write for this animation frame: committed now (flushSync), not in a React task after the frame. Excalidraw then draws
+   * this view and reports it (./canvas/viewport.ts) before the figures are drawn on it (./frame.ts `lead`), so the canvas, the figures and
+   * the step the camera took are all of this frame. Written later, the view on screen was the step computed one frame earlier, against
+   * this frame's interval: whenever a frame was late, the picture moved a short step over a long interval and a long step over a short one.
+   */
+  const setViewNow = (api: ExcalidrawImperativeAPI, v: { scrollX: number; scrollY: number; zoom: number }) => flushSync(() => setView(api, v));
   /** Whole diagram (the first moment of a replay, the summary, when the person has taken over) or the figure close up. */
   const overviewAt = (w: { start: number; end: number | null }, t: number) => t < w.start + OVERVIEW_MS || (w.end != null && t >= w.end);
   /** A view put on the canvas as a cut: the picture cross-fades into it (a view transition; where there is none, or with reduced motion, it is simply there). */
   const cutTo = (api: ExcalidrawImperativeAPI, v: Fit) => {
     const vt = (document as Document & { startViewTransition?: (f: () => Promise<void>) => unknown }).startViewTransition;
     if (prefersReducedMotion() || !vt) return setView(api, v);
+    // the new picture is ready as soon as the callback returns: the view committed now (Excalidraw draws it in the commit) and the figures
+    // placed on it; rendering is held for as long as the callback runs, so it does not wait for anything else
     vt.call(document, async () => {
-      setView(api, v);
-      await wait(60);
+      setViewNow(api, v);
+      frame.flush();
     });
   };
   /** The follow view on canvas `id` at time `t`: the figure, the node it is going to and its bubble. */
@@ -400,7 +411,7 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
       if (prefersReducedMotion()) {
         // no travelling: the shot is simply there, and the way home too
         cam = null;
-        if (goal?.move) setView(api, goal.view);
+        if (goal?.move) setViewNow(api, goal.view);
         if (live && returning) ((returning = false), (homeView = null));
         return;
       }
@@ -411,7 +422,7 @@ export function createCamera(origin: () => string | null, run: () => WorkRun | n
       const moved = out.state.at.x !== cam.at.x || out.state.at.y !== cam.at.y || out.state.at.zoom !== cam.at.zoom;
       cam = out.state;
       if (out.cut) cutTo(api, out.view);
-      else if (moved) setView(api, out.view);
+      else if (moved) setViewNow(api, out.view);
       // arrived home
       if (live && returning && out.mode === "hold") ((returning = false), (homeView = null));
     },

@@ -400,6 +400,27 @@ mock（`?mock=runs`，两次进出子图）：小人在窗格外 5.7 → 0.2 秒
 
 曲线 `01-real-claude-before-curve.png` / `02-real-claude-after-curve.png`（缩放、视图中心和小人位置、小人到窗格中心的距离、速度）。回家发生在一轮结束后约 3 秒；小人这时还在走回托盘，所以窗格外的最后那一截是它的回程。
 
+### 镜头写视图和画小人同一帧（「还是不够丝滑」）
+
+**根因**：实时跟随和放一轮的镜头（`replayLive.ts` / `replayMode.ts`）各跑自己的 `requestAnimationFrame`，每帧 `api.updateScene` 写视图；这一写是 React 的默认优先级更新，在这一帧之后的任务里才提交，画布和 `viewport` 要到下一帧才是新视图。于是屏幕上第 N 帧的视图是第 N−1 帧按第 N−1 帧的 dt 算出的那一步：只要有一帧晚了（掉帧、120 Hz 下更常见），长间隔里只走了短的一步、短间隔里走了长的一步，画面的速度一帧快一帧慢（逐帧记录里镜头速度 −34 / −175 / −36 / −417 px/s 交替）；放一轮时取景用的「当前视图」也晚一帧，镜头在死区边上来回追。施工回放（`buildreplay/BuildStage.tsx`）本来就是同帧的，这两个镜头没有。
+
+**改法**：`frame.ts` 加 `frame.lead`：每帧先跑镜头、再画小人；镜头每帧的写入用 `flushSync`（`replayView.ts` `setViewNow`），Excalidraw 当场提交并画好，`viewport` 当场更新，同一帧里小人就画在这个视图上。`flush`（可能在 React 提交里）和后台计时器不跑镜头。切镜的 View Transition 回调里不再 `wait(60)`：视图当场提交、小人当场摆好，渲染不再白停 60 ms。
+
+**测得**（`?mock=runs`，Playwright Chromium 1440×900，逐帧：rAF 时间戳、Excalidraw 的 scroll/zoom、叠层世界矩阵、静态画布每次绘制时的视图、每个小人的屏幕位置；指标同 `cameraCurve`：去掉切镜后「这一帧位移与上一帧按时间折算的位移差 > 3 px」算镜头突变，小人减去镜头后 > 2 px 算小人突变）：
+
+| 场景 | 指标 | 改前 | 改后 |
+|---|---|---|---|
+| 放一轮 Pi（dev 版，30 s，两次） | 镜头突变（非切镜） | 44 / 55 | **0 / 0** |
+| | 镜头加速度 p95 | 3077 / 3397 px/s² | **106 / 116 px/s²** |
+| | 镜头在动的帧 | 677 / 608 | 275 / 286（不再来回追） |
+| | 小人突变（去掉镜头） | 249 / 237 | **5 / 2** |
+| 实时跟随（dev 版，36 s） | 镜头突变（非切镜） | 23 | **0** |
+| | 小人突变（屏幕上） | 82 | 12 |
+| 实时跟随（构建版，36 s，两次） | 小人突变（去掉镜头） | 3 / 14 | **0 / 0** |
+| `motion-capture.ts` bubbles-enter 窗口（dev） | snaps | 86 | 2 |
+
+叠层和画布的错位（叠层矩阵 vs 静态画布实际画的视图）改前改后都是 0。没解决的：切镜时 View Transition 截整页，无头 Chromium（软件渲染）里每次切镜停 230–250 ms（关掉 View Transition 就没有，真机 GPU 上要另量）；镜头每帧移动都让 `CanvasView` `setView` 重渲染整层 React 叠层（构建版约 2–2.5 ms/帧，平移同样）；气泡的避让滑动在 scaffold 窗口仍有 2–5 px 的突变。
+
 ### 施工回放也走这套（DR5）
 
 施工回放（`buildreplay/`，`share-build-replay.md` §16）用同一个 `cameraStep` 和同一个切镜：`RunSeg.cut`（调用标了 `cut`：去它那里的一步是切镜，不看距离；减少动效不切）让 `place.ts` 把那一步做成切镜，小人淡出淡入；`cameraStep` 的 `cut` 选项让镜头在同一帧换取景，`zoom` 选项放宽缩放范围（回放放下整张图，最低 0.55）。`trace.ts`：切镜的一步没有长路线，到达在 `CUT_MS` 之后（原来按走完长路算，`traceCut.test.ts`）。`replayFit.ts` 的 `viewShowsContent` 已无人用，删了。
