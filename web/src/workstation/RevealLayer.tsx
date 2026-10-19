@@ -16,7 +16,8 @@ import { useHighlight } from "../session/ui";
 import { clock, prefersReducedMotion, useReplay } from "./clock";
 import { frame } from "./frame";
 import { canvasWhere, stateAt } from "./place";
-import { elementTimes, holds, inkAt, inkPlan, nodeTimes, REVEAL_CAP_MS, REVEAL_MIN, REVEAL_SETTLE_MS, SCHEDULE_WAIT_MS, shownAt, stationsOf, stopsOf, stopTime, type Held, type InkKind, type InkStep, type RevealEl, type RevealStop } from "./reveal";
+import { drawInk, scopeIds, tagged } from "./ink";
+import { elementTimes, holds, nodeTimes, REVEAL_CAP_MS, REVEAL_MIN, REVEAL_SETTLE_MS, SCHEDULE_WAIT_MS, shownAt, stationsOf, stopsOf, stopTime, type Held, type RevealEl, type RevealStop } from "./reveal";
 import { useRuns, type Runs } from "./runs/store";
 
 /** `flat`: decided once the runs have the change — true when it shows at once (one station), as it always did. */
@@ -35,7 +36,11 @@ export function holdReveal(canvas: string, at: number, ids: readonly string[], e
 /** A station: the elements that appear together, and when (figure time). */
 type Station = { t: number; ids: string[]; /** how long the figure stays at the stop after it (ms; Infinity: no stop names it) */ budget: number };
 /** One picture: the scene with everything up to station `i` (0: before the first) but the lines station `i` draws; or (`ink`) just those lines. */
-type Layer = { key: string; i: number; ink: boolean; svg: SceneSvg | null };
+type Layer = { key: string; i: number; /** an element of its station (none for the picture before the first): the station is found by it, so a picture still on the page while the stations move on (a station in and gone) keeps its own moment */ sid: string; ink: boolean; svg: SceneSvg | null; /** the picture's markup, its ids its own */ html: string; /** an ink picture's elements (as exported) */ els: El[] };
+
+/** A frame's name is put on the page by the editor (not on its canvas): while the frame is still to come it is hidden, and written when the frame's outline is drawn. */
+const frameName = (root: Element | null | undefined, id: string) => root?.querySelector<HTMLElement>(`[id$="-frame-name-${CSS.escape(id)}"]`) ?? null;
+const scopeOf = (key: string) => `rv${key.replace(/[^\w-]/g, "_")}-`;
 
 const STATIC = "canvas.excalidraw__canvas.static";
 
@@ -50,7 +55,9 @@ export function RevealLayer({ api, canvasId, version, figuresOn }: { api: Excali
   const dark = useTheme().resolved === "dark";
   const [stations, setStations] = useState<Station[] | null>(null);
   const [layers, setLayers] = useState<Layer[]>([]);
-  const st = useRef({ held: [] as Hold[], seen: new Map<string, number | "walking">(), sig: "", stations: [] as Station[], snapView: null as Viewport | null, runs: runs as Runs, version: 0 });
+  const layersRef = useRef(layers);
+  layersRef.current = layers;
+  const st = useRef({ held: [] as Hold[], seen: new Map<string, number | "walking">(), sig: "", stations: [] as Station[], snapView: null as Viewport | null, runs: runs as Runs, version: 0, names: new Set<string>() });
   st.current.runs = runs;
   const live = useRef({ figuresOn, replay: !!replay });
   live.current = { figuresOn, replay: !!replay };
@@ -64,6 +71,8 @@ export function RevealLayer({ api, canvasId, version, figuresOn }: { api: Excali
     s.seen.clear();
     s.sig = "";
     s.stations = [];
+    for (const id of s.names) frameName(root.current?.parentElement, id)?.style.removeProperty("clip-path");
+    s.names.clear();
     root.current?.parentElement?.removeAttribute("data-revealing");
     setStations(null);
     setLayers([]);
@@ -186,28 +195,42 @@ export function RevealLayer({ api, canvasId, version, figuresOn }: { api: Excali
         snap.current.style.transform = `matrix(${k},0,0,${k},${((v.scrollX - s.snapView.scrollX) * v.zoom).toFixed(2)},${((v.scrollY - s.snapView.scrollY) * v.zoom).toFixed(2)})`;
       }
       const pics = el.querySelectorAll<HTMLDivElement>("[data-layer]");
-      const at = (i: number) => (i === 0 ? -Infinity : (s.stations[i - 1]?.t ?? Infinity));
+      const stationOf = (p: HTMLDivElement) => (p.dataset.sid ? s.stations.find((x) => x.ids.includes(p.dataset.sid!)) : undefined);
+      // a picture's moment: its station's (one that is no longer listed is in and settled)
+      const at = (p: HTMLDivElement) => (p.dataset.sid ? (stationOf(p)?.t ?? -Infinity) : -Infinity);
       // layer i shows everything up to station i (0: none of them) but what station i draws; the topmost one that is fully in covers the ones below
       let top = 0;
       pics.forEach((p) => {
         const i = Number(p.dataset.layer);
-        if (p.dataset.ink == null && p.dataset.ready === "1" && shownAt(at(i), now) >= 1) top = Math.max(top, i);
+        if (p.dataset.ink == null && p.dataset.ready === "1" && shownAt(at(p), now) >= 1) top = Math.max(top, i);
       });
       let any = false;
+      // the names of frames still to come: hidden until their outline is drawn, then written
+      const names = new Map<string, number>();
+      for (const h of s.held) for (const x of s.stations) for (const id of x.ids) if (/frame$/.test(h.els.get(id)?.type ?? "")) names.set(id, x.t > now ? 0 : 1);
       pics.forEach((p) => {
         const i = Number(p.dataset.layer);
         const ink = p.dataset.ink != null;
-        const o = shownAt(at(i), now);
+        const o = shownAt(at(p), now);
         // what a station draws, drawn over its picture until the next picture (which has it) is fully in
         const show = p.dataset.ready === "1" && i >= top && o > 0;
         p.style.display = show ? "" : "none";
         if (!show) return;
-        if (ink) drawInk(p, now - at(i), s.stations[i - 1]?.budget ?? Infinity);
-        else p.style.opacity = String(o);
+        if (ink) {
+          const els = layersRef.current.find((l) => l.key === p.dataset.key)?.els ?? [];
+          for (const [id, q] of drawInk(p, els, now - at(p), stationOf(p)?.budget ?? Infinity)) names.set(id, q);
+        } else p.style.opacity = String(o);
         any = true;
         p.style.transform = placeOf({ x: Number(p.dataset.x), y: Number(p.dataset.y) }, v);
       });
       if (any && snap.current) snap.current.style.display = "none";
+      const host = el.parentElement;
+      for (const id of s.names) if (!names.has(id)) frameName(host, id)?.style.removeProperty("clip-path");
+      for (const [id, q] of names) {
+        const n = frameName(host, id);
+        if (n) n.style.clipPath = q >= 1 ? "" : `inset(0 ${((1 - q) * 100).toFixed(1)}% 0 0)`;
+      }
+      s.names = new Set(names.keys());
     };
     step(performance.timeOrigin + performance.now());
     return frame.add(step);
@@ -222,20 +245,27 @@ export function RevealLayer({ api, canvasId, version, figuresOn }: { api: Excali
     const scene = api.getSceneElements() as readonly El[];
     const pending = new Set(stations.flatMap((x) => x.ids));
     const files = api.getFiles();
-    const sets: { els: El[]; v: number; ink: boolean; i: number }[] = [];
+    const sets: { els: El[]; v: number; ink: boolean; i: number; sid: string }[] = [];
     for (let i = 0; i <= stations.length; i++) {
       const upTo = new Set(stations.slice(0, i).flatMap((x) => x.ids));
       const drawn = new Set(i ? stations[i - 1].ids : []);
       const els = scene.filter((e) => (!pending.has(e.id) || upTo.has(e.id)) && !drawn.has(e.id));
-      sets.push({ els, v: hashElementsVersion(els), ink: false, i });
+      const sid = i ? stations[i - 1].ids[0] : "";
+      sets.push({ els, v: hashElementsVersion(els), ink: false, i, sid });
       const ink = scene.filter((e) => drawn.has(e.id));
-      if (ink.length) sets.push({ els: ink, v: hashElementsVersion(ink), ink: true, i });
+      if (ink.length) sets.push({ els: ink, v: hashElementsVersion(ink), ink: true, i, sid });
     }
     const keys = sets.map((x, k) => `${x.ink ? "ink:" : ""}${x.v}#${sets.slice(0, k).filter((y) => y.v === x.v && y.ink === x.ink).length}`);
-    setLayers((old) => sets.map((x, k) => ({ key: keys[k], i: x.i, ink: x.ink, svg: old.find((o) => o.key === keys[k])?.svg ?? null })));
-    sets.forEach(({ els, v }, k) => {
-      void sceneSvg(`reveal:${canvasId}`, els, v, dark, files).then((svg) => {
-        if (alive) setLayers((ls) => ls.map((l) => (l.key === keys[k] ? { ...l, svg } : l)));
+    setLayers((old) =>
+      sets.map((x, k) => {
+        const o = old.find((y) => y.key === keys[k]);
+        return { key: keys[k], i: x.i, sid: x.sid, ink: x.ink, svg: o?.svg ?? null, html: o?.html ?? "", els: x.ink ? x.els : [] };
+      }),
+    );
+    sets.forEach(({ els, v, ink }, k) => {
+      // an ink picture is exported with each element tagged, so its nodes are known as that element's (./ink.ts)
+      void sceneSvg(`reveal${ink ? "-ink" : ""}:${canvasId}`, ink ? tagged(els) : els, v, dark, files).then((svg) => {
+        if (alive) setLayers((ls) => ls.map((l) => (l.key === keys[k] ?{ ...l, svg, html: svg ? scopeIds(svg.html, scopeOf(l.key)) : "" } : l)));
       });
     });
     return () => void (alive = false);
@@ -253,123 +283,18 @@ export function RevealLayer({ api, canvasId, version, figuresOn }: { api: Excali
           key={l.key}
           className="ws-reveal-pic"
           data-layer={l.i}
+          data-key={l.key}
+          data-sid={l.sid || undefined}
           data-ink={l.ink ? "" : undefined}
           data-ready={l.svg ? "1" : "0"}
           data-x={l.svg?.x ?? 0}
           data-y={l.svg?.y ?? 0}
           style={l.svg ? { width: l.svg.w, height: l.svg.h, display: "none" } : { display: "none" }}
-          dangerouslySetInnerHTML={l.svg ? { __html: l.svg.html } : undefined}
+          dangerouslySetInnerHTML={l.svg ? { __html: l.html } : undefined}
         />
       ))}
     </div>
   );
-}
-
-// ——— drawing a station ———
-// The ink picture is Excalidraw's export of just what the station draws, in scene order, one group per element:
-// - a box (rectangle, ellipse, diamond): its fill path(s) (solid, or a hachure of strokes in the fill colour), then its outline — one path that Rough.js
-//   draws as pieces, each piece twice (two passes, one after the other: the same start and end), going clockwise from the top-left;
-// - a line or arrow: a group per drawable — the first its stroke (two passes of the whole line), the rest its head;
-// - text: a group with a text in it, after the box or line that holds it (a mask for the gap a label leaves in its line sits between them).
-// Each pass of each piece becomes a path of its own; the pieces are drawn in turn, both passes of a piece together, with a dash offset. What is not like
-// that (an image, a frame, a dashed outline, freehand) fades in.
-
-type Pass = { el: SVGPathElement; len: number };
-/** One piece of a stroke: its passes, drawn together; `from`: its place along the whole stroke (0 → 1). */
-type Piece = { passes: Pass[]; from: number; to: number };
-type InkItem = { kind: InkKind; pieces: Piece[]; fills: SVGElement[]; texts: SVGElement[]; whole: SVGElement };
-const inks = new WeakMap<Element, { svg: Element; items: InkItem[]; steps: InkStep[] }>();
-
-const ends = (d: string) => {
-  const n = d.match(/-?\d*\.?\d+(?:e-?\d+)?/g)?.map(Number) ?? [];
-  return n.length >= 4 ? [n[0], n[1], n[n.length - 2], n[n.length - 1]] : null;
-};
-const near = (a: number[] | null, b: number[] | null) => !!a && !!b && a.every((x, i) => Math.abs(x - b[i]) < 2);
-
-/** A stroke path as pieces to draw in turn (a pass that starts and ends where the one before it did is that piece's second pass). Null: not traceable. */
-function trace(path: SVGPathElement): Piece[] | null {
-  if (path.getAttribute("stroke-dasharray") || path.getAttribute("fill") !== "none" || (path.getAttribute("stroke") ?? "none") === "none") return null;
-  const parts = (path.getAttribute("d") ?? "").split(/(?=M)/).filter((x) => x.trim());
-  const pieces: Pass[][] = [];
-  let last: number[] | null = null;
-  for (const part of parts) {
-    const p = path.cloneNode() as SVGPathElement;
-    p.setAttribute("d", part);
-    path.parentNode!.insertBefore(p, path);
-    const len = p.getTotalLength();
-    p.style.strokeDasharray = `${len} ${len + 1}`;
-    p.style.strokeDashoffset = String(len);
-    const e = ends(part);
-    if (pieces.length && near(e, last)) pieces[pieces.length - 1].push({ el: p, len });
-    else pieces.push([{ el: p, len }]);
-    last = e;
-  }
-  path.remove();
-  const lens = pieces.map((ps) => Math.max(...ps.map((x) => x.len)));
-  const total = lens.reduce((a, b) => a + b, 0) || 1;
-  let at = 0;
-  return pieces.map((passes, i) => {
-    const from = at / total;
-    at += lens[i];
-    return { passes, from, to: at / total };
-  });
-}
-
-function prepareInk(svg: SVGSVGElement): InkItem[] {
-  const items: InkItem[] = [];
-  for (const g of [...svg.children] as SVGElement[]) {
-    const tag = g.tagName.toLowerCase();
-    if (tag !== "g" && tag !== "a") continue;
-    const kids = [...g.children];
-    if (g.querySelector("text") && !g.querySelector("path")) {
-      // text: with the box or line that holds it (it comes right after it), or a fade of its own
-      const prev = items[items.length - 1];
-      if (prev) prev.texts.push(g);
-      else items.push({ kind: "fade", pieces: [], fills: [], texts: [], whole: g });
-      continue;
-    }
-    const paths = [...g.querySelectorAll<SVGPathElement>("path")];
-    if (kids.length && kids.every((k) => k.tagName.toLowerCase() === "g") && paths.length) {
-      // a line: its stroke, then its head
-      const [stroke, ...head] = paths;
-      const pieces = trace(stroke);
-      items.push(pieces ? { kind: "line", pieces, fills: head, texts: [], whole: g } : { kind: "fade", pieces: [], fills: [], texts: [], whole: g });
-      continue;
-    }
-    if (kids.length && kids.every((k) => k.tagName.toLowerCase() === "path")) {
-      // a box: its fill, then its outline (the last path)
-      const outline = paths[paths.length - 1];
-      const pieces = trace(outline);
-      items.push(pieces ? { kind: "box", pieces, fills: paths.slice(0, -1), texts: [], whole: g } : { kind: "fade", pieces: [], fills: [], texts: [], whole: g });
-      continue;
-    }
-    items.push({ kind: "fade", pieces: [], fills: [], texts: [], whole: g });
-  }
-  return items;
-}
-
-/** What a station draws, `ms` after its moment, in `budget` ms at most (the rest of the figure's stop): ./reveal.ts `inkPlan`. */
-function drawInk(div: HTMLDivElement, ms: number, budget: number) {
-  const svg = div.querySelector("svg");
-  if (!svg) return;
-  let ink = inks.get(div);
-  if (!ink || ink.svg !== svg) {
-    const items = prepareInk(svg);
-    inks.set(div, (ink = { svg, items, steps: inkPlan(items.map((x) => x.kind), budget).steps }));
-  }
-  ink.items.forEach((it, k) => {
-    const { stroke, fill, text } = inkAt(ink.steps[k], ms);
-    if (it.kind === "fade") it.whole.style.opacity = String(stroke);
-    for (const pc of it.pieces) {
-      const f = Math.min(1, Math.max(0, (stroke - pc.from) / (pc.to - pc.from || 1)));
-      for (const p of pc.passes) {
-        p.el.style.strokeDashoffset = String(p.len * (1 - f));
-        p.el.style.opacity = f > 0 ? "1" : "0";
-      }
-    }
-    for (const x of it.fills) x.style.opacity = String(fill);
-    for (const x of it.texts) x.style.opacity = String(text);
-  });
 }
 
 /** Where the figure is for this stop: arrived (when, figure time), still on its way, or not to be seen on this canvas (undefined: go by the plan). */

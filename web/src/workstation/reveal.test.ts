@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { LAND_LEAD_MS } from "../buildreplay/plan.ts";
 import { BUDGET_MS, mergeTouches, planTouch, type Touch } from "./runs/touch.ts";
 import type { WorkRun } from "./runs/types.ts";
-import { BOX_GAP_MS, BOX_GAP_TOTAL_MS, BOX_MS, elementTimes, FILL_FADE_MS, holds, inkAt, inkPlan, LINE_GAP_MS, LINE_MS, MIN_SQUEEZE, nodeTimes, REVEAL_CAP_MS, REVEAL_FADE_MS, REVEAL_MIN, REVEAL_SETTLE_MS, shownAt, stationsOf, stopsOf, stopTime, TEXT_FADE_MS, type RevealEl } from "./reveal.ts";
+import { BOX_GAP_MS, BOX_GAP_TOTAL_MS, BOX_MS, elementTimes, GROUP_MS, inkUnits, TEXT_WRITE_MS, unitWindows, FILL_FADE_MS, holds, inkAt, inkPlan, LINE_GAP_MS, LINE_MS, MIN_SQUEEZE, nodeTimes, REVEAL_CAP_MS, REVEAL_FADE_MS, REVEAL_MIN, REVEAL_SETTLE_MS, shownAt, stationsOf, stopsOf, stopTime, TEXT_MS, type RevealEl } from "./reveal.ts";
 
 const T0 = 1_800_000_000_000;
 const node = (id: string, x: number, y = 0) => ({ id, x, y });
@@ -146,7 +146,7 @@ describe("inkPlan: a station is drawn as a hand would", () => {
     expect(mid).toBeGreaterThan(0.5); // eased out, the arrows' easing
     expect(mid).toBeLessThan(1);
     expect(inkAt(boxes[0], BOX_MS + FILL_FADE_MS).fill).toBe(1);
-    expect(inkAt(boxes[0], boxes[0].text + TEXT_FADE_MS).text).toBe(1);
+    expect(inkAt(boxes[0], boxes[0].text + TEXT_MS).text).toBe(1);
   });
   it("the boxes one after another, a little apart, in scene order", () => {
     expect(boxes.map((s) => s.start)).toEqual([0, BOX_GAP_MS, 2 * BOX_GAP_MS]);
@@ -160,14 +160,14 @@ describe("inkPlan: a station is drawn as a hand would", () => {
     expect(inkAt(l, l.start + LINE_MS / 2)).toMatchObject({ fill: 0, text: 0 });
     expect(inkAt(l, l.start + LINE_MS).fill).toBe(1);
     expect(inkAt(l, l.start + LINE_MS).text).toBe(0);
-    expect(inkAt(l, l.start + LINE_MS + TEXT_FADE_MS).text).toBe(1);
-    expect(length).toBe(lines[1].text + TEXT_FADE_MS);
+    expect(inkAt(l, l.start + LINE_MS + TEXT_MS).text).toBe(1);
+    expect(length).toBe(lines[1].text + TEXT_MS);
   });
   it("only lines (their ends drawn at earlier stations): drawn from the start", () => {
     expect(inkPlan(["line", "line"]).steps[0].start).toBe(0);
   });
-  it("many boxes and lines: the gaps shrink so a full station stays within REVEAL_SETTLE_MS", () => {
-    const big = inkPlan([...Array(30).fill("box"), ...Array(30).fill("line")]);
+  it("many components and lines: the gaps shrink so a full station stays within REVEAL_SETTLE_MS", () => {
+    const big = inkPlan([...Array(30).fill("group"), ...Array(30).fill("line")]);
     expect(big.length).toBeCloseTo(REVEAL_SETTLE_MS);
     expect(big.steps[29].start).toBeCloseTo(BOX_GAP_TOTAL_MS);
   });
@@ -181,9 +181,66 @@ describe("inkPlan: a station is drawn as a hand would", () => {
     expect(inkAt(fits.steps[0], fits.steps[0].dur).stroke).toBe(1);
     expect(inkPlan(["box"], 60_000).length).toBe(inkPlan(["box"]).length);
   });
-  it("a fade (an image, a frame, a dashed outline) takes a box's place and fades in linearly", () => {
+  it("a fade (nothing it holds could be drawn) takes a box's place and fades in linearly", () => {
     const [f] = inkPlan(["fade"]).steps;
     expect(inkAt(f, BOX_MS / 2).stroke).toBeCloseTo(0.5);
+  });
+  it("a component (a group) is drawn in GROUP_MS however many elements it has, then its fills, then its text; arrows wait for it", () => {
+    const { steps } = inkPlan(["group", "box", "line"]);
+    expect(steps[0]).toMatchObject({ start: 0, dur: GROUP_MS, fill: GROUP_MS });
+    expect(steps[0].text).toBeGreaterThan(steps[0].fill);
+    expect(steps[2].start).toBe(GROUP_MS); // the box started later but finishes sooner: the arrow waits for the longest
+    expect(steps[1].start + steps[1].dur).toBeLessThan(GROUP_MS);
+  });
+  it("a text on its own is written from its moment over TEXT_WRITE_MS (nothing to wait for), in a box's place", () => {
+    const { steps } = inkPlan(["box", "text"]);
+    expect(steps[1]).toMatchObject({ start: BOX_GAP_MS, text: BOX_GAP_MS, textDur: TEXT_WRITE_MS });
+    expect(inkAt(steps[1], BOX_GAP_MS + TEXT_WRITE_MS / 2).text).toBeCloseTo(0.5);
+    expect(inkAt(steps[0], steps[0].text + TEXT_MS / 2).text).toBeCloseTo(0.5); // a box's text: written, not faded
+  });
+});
+
+describe("inkUnits: what is drawn as one", () => {
+  const el = (id: string, type: string, more: Partial<RevealEl> = {}): RevealEl => ({ id, type, x: 0, y: 0, width: 10, height: 10, groupIds: [], ...more });
+  it("an element on its own is a unit of its kind; a text bound to one of them goes with it", () => {
+    const u = inkUnits([el("a", "rectangle"), el("t", "text", { containerId: "a" }), el("b", "arrow"), el("c", "text"), el("d", "freedraw"), el("e", "image"), el("f", "frame")]);
+    expect(u).toEqual([
+      { kind: "box", ids: ["a"] },
+      { kind: "line", ids: ["b"] },
+      { kind: "text", ids: ["c"] },
+      { kind: "box", ids: ["d"] },
+      { kind: "box", ids: ["e"] },
+      { kind: "box", ids: ["f"] },
+    ]);
+  });
+  it("a group (a library component: its root box, its lines, its caption) is one unit, by its outermost group, in scene order", () => {
+    const u = inkUnits([el("root", "rectangle", { groupIds: ["outer"] }), el("x", "rectangle"), el("l1", "line", { groupIds: ["inner", "outer"] }), el("cap", "text", { groupIds: ["outer"] })]);
+    expect(u).toEqual([
+      { kind: "group", ids: ["root", "l1", "cap"] },
+      { kind: "box", ids: ["x"] },
+    ]);
+  });
+  it("a text bound to something not in the station is a text of its own", () => {
+    expect(inkUnits([el("t", "text", { containerId: "elsewhere" })])).toEqual([{ kind: "text", ids: ["t"] }]);
+  });
+});
+
+describe("unitWindows: a component's elements one after another, overlapping", () => {
+  it("one element: all of the unit's time", () => {
+    expect(unitWindows([50])).toEqual([[0, 1]]);
+  });
+  it("in order, by length, each over a share that shrinks with their number (never under a quarter), all within the unit", () => {
+    const w = unitWindows([100, 100, 200, 0]);
+    expect(w.map(([a]) => a)).toEqual([...w.map(([a]) => a)].sort((a, b) => a - b));
+    for (const [a, b] of w) {
+      expect(a).toBeGreaterThanOrEqual(0);
+      expect(b).toBeLessThanOrEqual(1 + 1e-9);
+      expect(b - a).toBeCloseTo(0.5); // 1 / sqrt(4)
+    }
+    expect(w[3][1]).toBeLessThan(1); // an element with nothing to draw still has a place, a short one
+    const many = unitWindows(Array(400).fill(10));
+    expect(many[0][1] - many[0][0]).toBe(0.25);
+    expect(many[399][1]).toBeCloseTo(1, 2);
   });
 });
 
