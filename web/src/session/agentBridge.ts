@@ -21,6 +21,8 @@ import { childOf, wouldCycle } from "../nested/graph";
 import { nav, nested } from "../nested/store";
 import { writeChildLink } from "../nested/writeChild";
 import { touches, touchNodesOf, type TouchEl } from "../workstation/runs/touch";
+import { holdReveal } from "../workstation/RevealLayer";
+import type { RevealEl } from "../workstation/reveal";
 
 const all = (api: ExcalidrawImperativeAPI) => api.getSceneElementsIncludingDeleted() as Scene;
 
@@ -39,11 +41,13 @@ function recordFor(sessionId: string | undefined, canvasId: string, title: strin
 }
 
 /** Tell the 工位视图 the page changed these elements of a canvas for a session, now (`until`: when a change that plays over time is over). */
-function announce(sid: string | undefined, canvas: string, ids: Iterable<string>, map: Map<string, Scene[number]>, say: string, until?: number) {
-  if (!sid) return;
+function announce(sid: string | undefined, canvas: string, ids: Iterable<string>, map: Map<string, Scene[number]>, say: string, until?: number): number | null {
+  if (!sid) return null;
   const nodes = touchNodesOf(ids, map as unknown as Map<string, TouchEl>);
   const at = Date.now();
-  if (nodes.length) touches.record({ session: sid, canvas, at, until: until ?? at, nodes, say });
+  if (!nodes.length) return null;
+  touches.record({ session: sid, canvas, at, until: until ?? at, nodes, say });
+  return at;
 }
 
 const end = (T: string | undefined, status: Turn["status"], reply: Turn["reply"]) =>
@@ -96,8 +100,11 @@ export async function applyFromAgent(req: { canvasId: string; sessionId?: string
 
   const apply = step({ kind: "apply", title: "应用到画布（1 次可撤销修改）" });
   const result = applyPlan(now, plan, library);
-  // the 工位视图 is told before the picture changes: the figure goes to the nodes this drew (./workstation/runs/touch.ts)
-  announce(rec?.sid, req.canvasId, result.batch.after.keys(), byId(result.scene as Scene), note?.slice(0, 24) || "改图");
+  // the 工位视图 is told before the picture changes: the figure goes to the nodes this drew (./workstation/runs/touch.ts), and what the batch adds
+  // appears on the page as it gets to each of them (../workstation/RevealLayer.tsx; the scene, undo and the saved file have it all at once)
+  const afterMap = byId(result.scene as Scene);
+  const at = announce(rec?.sid, req.canvasId, result.batch.after.keys(), afterMap, note?.slice(0, 24) || "改图");
+  if (at != null) holdReveal(req.canvasId, at, [...result.batch.after.keys()].filter((id) => live(afterMap.get(id)) && !live(nowMap.get(id))), afterMap as unknown as Map<string, RevealEl>);
   api.updateScene({ elements: result.scene, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
   await settle();
   const settled = byId(all(api));
