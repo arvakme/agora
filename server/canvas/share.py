@@ -1,5 +1,5 @@
-"""Sharing a canvas: a link on the owner's public domain that lets anyone who has it look at one
-canvas and comment on it, for as long as the owner chose. Design: web/docs/sharing.md.
+"""Sharing a canvas (or the whole project): a link on the owner's public domain that lets anyone who has it
+look at one canvas, or every canvas of the project, and comment on it, for as long as the owner chose. Design: web/docs/sharing.md.
 
 - A share is a record in ``.agora/shares/shares.json`` (ignored by git): canvas, hostname,
   sha256 of the token (the token itself is shown once and never stored), expiry, visit count,
@@ -40,6 +40,10 @@ from server.canvas.local import state_dir
 from server.canvas.project import ID_RE, ProjectStore, dump_json
 
 SHARES_DIR = "shares"
+SCOPE_CANVAS = "canvas"
+SCOPE_PROJECT = "project"
+SCOPES = (SCOPE_CANVAS, SCOPE_PROJECT)
+PROJECT_TITLE = "整个项目"  # what a project share is called in lists (it has no canvas of its own)
 DURATION_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*(s|m|min|h|d|w)$")
 UNITS = {"s": 1, "m": 60, "min": 60, "h": 3600, "d": 86400, "w": 7 * 86400}
 FOREVER = ("forever", "never", "manual", "0")
@@ -143,6 +147,9 @@ class Share:
     admitted: list[str] = field(default_factory=list)
     quick: bool = False  # an account-less trycloudflare.com address; ends with its ``cf`` process
     buildReplay: bool = False  # the owner let guests watch how the canvas was built (chosen when sharing)
+    # What the link covers: one canvas (and what is nested below it), or the whole project — every canvas that
+    # exists when the guest asks, so later ones appear and deleted ones go. Records from before this field are "canvas".
+    scope: str = SCOPE_CANVAS
 
     def active(self, now_ms: int) -> bool:
         return self.endedAt is None and (self.expiresAt is None or now_ms < self.expiresAt)
@@ -300,6 +307,59 @@ def canvas_titles(store: ProjectStore) -> dict[str, str]:
     return {str(d["id"]): str(d.get("title") or "") for d in ((ws or ({}, ""))[0] or {}).get("docs") or [] if isinstance(d, dict) and d.get("kind", "canvas") == "canvas" and d.get("id")}
 
 
+def reach(store: ProjectStore, share: Share) -> set[str]:
+    """The canvases a guest of this share may open, computed from the project files on every call: the
+    authority for what leaves the project. A canvas share reaches its canvas and what is nested below it;
+    a project share reaches every canvas that exists now (a new one is in, a deleted one is out)."""
+    if share.scope == SCOPE_PROJECT:
+        return set(nested.scenes(store))
+    return nested.reachable(store, share.canvasId)
+
+
+def project_tabs(store: ProjectStore, sc: dict[str, list[dict[str, Any]]] | None = None) -> list[str]:
+    """The project's top-level canvases (not nested under another), in the owner's tab order; what the guest's tab row lists."""
+    sc = nested.scenes(store) if sc is None else sc
+    children = nested.parent_index(sc)
+    order = {cid: i for i, cid in enumerate(canvas_titles(store))}
+    return sorted((c for c in sc if c not in children), key=lambda c: (order.get(c, len(order)), c))
+
+
+def project_tree(store: ProjectStore, sc: dict[str, list[dict[str, Any]]] | None = None) -> list[dict[str, Any]]:
+    """``project_tabs`` with what is nested under each, flattened depth-first (``depth`` 1 = its direct children): the guest's tab row folds the latter under the former."""
+    sc = nested.scenes(store) if sc is None else sc
+    owner = {child: parent for child, (parent, _) in nested.parent_index(sc).items()}
+
+    def below(cid: str, depth: int) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for _, child in nested.child_links(sc.get(cid, []), sc.__contains__):
+            if owner.get(child) == cid and not any(o["id"] == child for o in out):
+                out += [{"id": child, "depth": depth}, *below(child, depth + 1)]
+        return out
+
+    return [{"id": cid, "children": below(cid, 1)} for cid in project_tabs(store, sc)]
+
+
+def scope_signature(store: ProjectStore) -> tuple[str, set[str]]:
+    """(a fingerprint of what a project share shows — its tabs, their nesting and titles, no canvas content — and the canvases it reaches now). The gateway tells a guest's page "the scope changed" when it differs."""
+    sc = nested.scenes(store)
+    titles = canvas_titles(store)
+    shown = {"tabs": project_tree(store, sc), "titles": {c: titles.get(c, "") for c in sorted(sc)}}
+    return json.dumps(shown, sort_keys=True, ensure_ascii=False), set(sc)
+
+
+def landing(store: ProjectStore, share: Share) -> str | None:
+    """The canvas a guest opens first (None: a project share whose project has no canvas left)."""
+    if share.scope == SCOPE_PROJECT:
+        return next(iter(project_tabs(store)), None)
+    return share.canvasId
+
+
+def project_summary(store: ProjectStore) -> dict[str, int]:
+    """What a project share would cover now: ``{canvases, children}`` (children counted in canvases)."""
+    sc = nested.scenes(store)
+    return {"canvases": len(sc), "children": len(nested.parent_index(sc))}
+
+
 def guest_canvas(store: ProjectStore, cid: str, allowed: set[str]) -> dict[str, Any]:
     """One canvas as a guest (or a bundle) sees it: elements and comments, sanitized. The only
     place that decides what leaves the project."""
@@ -328,17 +388,19 @@ class BundleError(ValueError):
     """A bundle that cannot leave (unknown canvas) or must not come in (malformed, too big)."""
 
 
-def export_bundle(store: ProjectStore, root: str, title: str = "", *, build: bool = True) -> dict[str, Any]:
-    """The canvas ``root`` and every canvas below it, as a guest would see them, plus a manifest. ``build``: with the construction log of each canvas (how it was built, times counted from the first step), so whoever imports it can replay it."""
+def export_bundle(store: ProjectStore, root: str, title: str = "", *, build: bool = True, whole_project: bool = False) -> dict[str, Any]:
+    """The canvas ``root`` and every canvas below it, as a guest would see them, plus a manifest (``whole_project``: every canvas of the project, ``root`` being the one to open first). ``build``: with the construction log of each canvas (how it was built, times counted from the first step), so whoever imports it can replay it."""
     if store.read("canvas", root) is None:
         raise BundleError(f"no canvas {root!r} in this project")
-    allowed = nested.reachable(store, root)
+    allowed = set(nested.scenes(store)) if whole_project else nested.reachable(store, root)
     titles = canvas_titles(store)
     canvases = {cid: {"title": titles.get(cid) or (title if cid == root else ""), **guest_canvas(store, cid, allowed)} for cid in sorted(allowed) if store.read("canvas", cid) is not None}
     if build:
         from server.canvas import build_log
 
-        logs = build_log.portable_logs(store, root)
+        logs: dict[str, list[dict[str, Any]]] = {}
+        for top in project_tabs(store) if whole_project else [root]:
+            logs.update(build_log.portable_logs(store, top))
         for cid, records in logs.items():
             if cid in canvases and records:
                 canvases[cid]["build"] = records
@@ -804,18 +866,20 @@ class ShareManager:
             self._save()
 
     # ——— create ———
-    def create(self, canvas_id: str, ttl_s: int | None, canvas_title: str = "", max_opens: int | None = None, *, quick: bool = False, build_replay: bool = False) -> tuple[dict[str, Any], str]:
+    def create(self, canvas_id: str, ttl_s: int | None, canvas_title: str = "", max_opens: int | None = None, *, quick: bool = False, build_replay: bool = False, scope: str = SCOPE_CANVAS) -> tuple[dict[str, Any], str]:
         """New share → (public record, full URL with the token). The token is not kept.
         ``quick``: an account-less trycloudflare.com address, one share at a time, gone with its process."""
         check_ttl(ttl_s)
         check_max_opens(max_opens)
+        if scope not in SCOPES:
+            raise ValueError(f"scope must be one of {SCOPES}, got {scope!r}")
         if self.gateway_port is None:
             raise ShareError("the share gateway is not running (start the project with `agora up`)")
         # ``ops`` serializes lifecycle changes (create, end, sweep, resume, shutdown); ``lock`` only guards the
         # share records and is held briefly, so guests are never queued behind a cf call (seconds, up to 45 s).
         with self.ops:
             if quick or any(s.quick for s in self.active()):
-                return self._create_quick(canvas_id, ttl_s, canvas_title, max_opens, quick, build_replay)
+                return self._create_quick(canvas_id, ttl_s, canvas_title, max_opens, quick, build_replay, scope)
             dns, _ = self.providers()
             host = f"{slug(str(self.store.info()['name']))}-{secrets.token_hex(3)}.{self.domain()}".lower()
             token = secrets.token_urlsafe(32)
@@ -830,6 +894,7 @@ class ShareManager:
                 expiresAt=None if ttl_s is None else now + ttl_s * 1000,
                 maxOpens=max_opens,
                 buildReplay=build_replay,
+                scope=scope,
             )
             try:
                 tunnel_id = self._ensure_tunnel()
@@ -848,7 +913,7 @@ class ShareManager:
                 self._save()
             return share.public(now), f"https://{host}/s/{token}"
 
-    def _create_quick(self, canvas_id: str, ttl_s: int | None, canvas_title: str, max_opens: int | None, quick: bool, build_replay: bool = False) -> tuple[dict[str, Any], str]:
+    def _create_quick(self, canvas_id: str, ttl_s: int | None, canvas_title: str, max_opens: int | None, quick: bool, build_replay: bool = False, scope: str = SCOPE_CANVAS) -> tuple[dict[str, Any], str]:
         """Called with ``ops`` held."""
         if self.active():
             raise ShareError("a quick share allows one share at a time: end the current one first (`agora share revoke --all`)" if quick else "a quick share is running and takes the only slot; end it first (`agora share revoke --all`)")
@@ -863,7 +928,7 @@ class ShareManager:
         now = self.now_ms()
         share = Share(
             id=secrets.token_hex(4), canvasId=canvas_id, canvasTitle=canvas_title, host=proc.host.lower(), tokenHash=token_hash(token),
-            createdAt=now, expiresAt=None if ttl_s is None else now + ttl_s * 1000, maxOpens=max_opens, quick=True, buildReplay=build_replay,
+            createdAt=now, expiresAt=None if ttl_s is None else now + ttl_s * 1000, maxOpens=max_opens, quick=True, buildReplay=build_replay, scope=scope,
         )
         with self.lock:
             self.shares.append(share)

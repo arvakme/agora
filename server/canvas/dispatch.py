@@ -207,11 +207,9 @@ class Dispatches:
         body = task.strip() if inline else envelope(rid, name, task_path, scope or [])
         request = DeliveryRequest(
             request_id=UUID(rid),
-            origin=RequestOrigin(room_id=uuid5(NS, self.store.info().get("id") or str(self.store.root)), request_seq=next(self._seq), requested_by=uuid5(NS, f"source:{src_sid or source.get('kind')}")),
+            origin=RequestOrigin(request_seq=next(self._seq)),
             session=NativeSession(
                 deployment=str(self.store.root),
-                participant_id=uuid5(NS, f"session:{sid}"),
-                computer_id=uuid5(NS, "computer:local"),
                 adapter=ADAPTER[agent],
                 tmux_target=self.hub.terms.name(sid),
                 native_locator=locator,

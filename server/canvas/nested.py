@@ -29,7 +29,9 @@ def scenes(store: ProjectStore) -> dict[str, list[dict[str, Any]]]:
         if not ID_RE.match(cid):
             continue
         got = store.read("canvas", cid)
-        out[cid] = [e for e in ((got or ({}, ""))[0].get("elements") or []) if not e.get("isDeleted")]
+        if got is None:  # gone since the listing, or (in a ``contained()`` store) not really a file of this project
+            continue
+        out[cid] = [e for e in got[0].get("elements") or [] if not e.get("isDeleted")]
     return out
 
 
@@ -73,7 +75,8 @@ def descendants(cid: str, sc: dict[str, list[dict[str, Any]]]) -> set[str]:
 
 def reachable(store: ProjectStore, root: str) -> set[str]:
     """A canvas and every canvas below it: what a share of ``root`` lets a guest open."""
-    return {root} | descendants(root, scenes(store))
+    sc = scenes(store)
+    return ({root} & set(sc)) | descendants(root, sc)
 
 
 def annotate(store: ProjectStore, cid: str, view: dict[str, Any], names: dict[str, str]) -> dict[str, Any]:

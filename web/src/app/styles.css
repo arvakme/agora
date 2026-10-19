@@ -79,6 +79,12 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
  * agent's mark centred on it. Mark sizes are optical: Pi's square badge needs more margin than
  * Codex's cloud to sit inside the circle. No shadow, no glow. */
 .agent-avatar { --av: 32px; flex: none; display: inline-grid; place-items: center; width: var(--av); height: var(--av); border-radius: 50%; background: var(--avatar-tile); box-shadow: inset 0 0 0 1px var(--avatar-edge); overflow: hidden; user-select: none; }
+/* the dot on a session tab's mark: at work (the accent, breathing) or waiting for the person (caution, still) */
+.session-mark { position: relative; flex: none; display: inline-flex; }
+.session-mark[data-state]::after { content: ""; position: absolute; right: -3px; bottom: -3px; width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); }
+.session-mark[data-state="working"]::after { background: var(--accent); animation: session-working 1.4s ease-in-out infinite; }
+.session-mark[data-state="waiting"]::after { background: var(--caution-dot); }
+@keyframes session-working { 50% { opacity: 0.35; } }
 .agent-avatar > svg, .agent-avatar > img { display: block; width: calc(var(--av) * var(--mark, 0.6)); height: calc(var(--av) * var(--mark, 0.6)); }
 .agent-avatar[data-agent="pi"] { --mark: 0.46; }
 .agent-avatar[data-agent="claude"] { --mark: 0.62; }
@@ -122,10 +128,12 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 /* icons are ink by default (the facade falls back to the accent); the rules for what is selected,
  * primary or being written set --icon back to the purple */
 .app { position: fixed; inset: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); color: var(--fg); --icon: var(--fg-muted); }
+@media (pointer: coarse) { .app { top: var(--vvt, 0); bottom: auto; height: var(--vvh, 100%); } } /* app/viewport.ts: the part of the page the keyboard leaves */
 
 /* ——— top bar: one 54px column head ——— */
 .topbar { flex: none; height: var(--column-head); display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-5) 0 var(--space-6); background: var(--bg); border-bottom: 1px solid var(--line); min-width: 0; }
 .brand { display: inline-flex; align-items: center; gap: var(--space-4); font-size: var(--text-lg); font-weight: var(--weight-strong); letter-spacing: var(--track-title); flex: none; }
+.build-sha { color: var(--fg-muted); font: var(--text-xs) var(--font-mono); margin-right: var(--space-3); flex: none; }
 .project-name { color: var(--fg-muted); font-size: var(--text-sm); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: var(--space-3); }
 .topbar-gap { flex: 1; min-width: 0; }
 .all-docs { position: relative; flex: none; }
@@ -133,7 +141,7 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .all-docs-btn[aria-expanded="true"] { background: var(--raised); color: var(--fg); }
 .topbar-sep { width: 1px; height: 16px; background: var(--line); flex: none; }
 @media (max-width: 960px) {
-  .project-name, .topbar .iseg, .topbar-sep { display: none; }
+  .project-name, .build-sha, .topbar .iseg, .topbar-sep { display: none; }
 }
 @media (max-width: 640px) {
   .topbar { gap: var(--space-2); padding: 0 var(--space-4); }
@@ -713,6 +721,9 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .dock-count { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border-radius: var(--r-sm); color: var(--fg-muted); font-size: var(--text-sm); --icon: var(--fg-muted); transition: background var(--dur-tap) var(--ease-out), color var(--dur-tap) var(--ease-out); }
 .dock-count:hover { background: var(--raised); color: var(--fg); --icon: var(--fg); }
 .dock-count[data-on="true"] { background: var(--accent-wash); box-shadow: inset 0 0 0 1px var(--accent-ring); color: var(--accent-ink); --icon: var(--accent); }
+.dock[data-tight] .dock-label { display: none; } /* a narrow pane: icons only, the room is kept for the controls either side (canvas/dockPlace.ts roomFor) */
+.dock[data-tight] .dock-seg button { padding: 0 9px; }
+.dock[data-tight] .dock-count { padding: 0 9px; }
 .dock-count em { min-width: 16px; height: 16px; padding: 0 4px; display: inline-grid; place-items: center; border-radius: var(--r-xs); box-shadow: var(--box); color: var(--fg-muted); font: var(--weight-medium) 11px/1 var(--font-mono); font-style: normal; font-variant-numeric: tabular-nums; }
 /* Excalidraw's hint line under the toolbar: only on an empty canvas, or when asked for in ⋯. */
 .canvas-view:not([data-hints]) .excalidraw .HintViewer { display: none; }
@@ -726,3 +737,30 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .empty-cv[data-busy] .empty-cv-box { transform: translateY(132px); }
 .empty-cv[data-busy] .dither-field { display: none; }
 .canvas-view:has(.empty-cv[data-busy]) .excalidraw .HintViewer { display: none; }
+
+/* iOS Safari zooms the whole page when a field under 16px takes focus, and does not zoom back: on a touch screen fields are 16px.
+   !important because the fields set their own sizes in their own sheets; Excalidraw's own text editing is left alone. */
+@media (pointer: coarse) {
+  :is(input, textarea, select):not(.excalidraw *):not([type="checkbox"]):not([type="radio"]):not([type="range"]) { font-size: 16px !important; }
+}
+
+/* A phone plays a turn with the canvas over the session (workspace/narrow.ts): the canvas is only watched, so Excalidraw's tools, the dock and the
+   whole-canvas button give their room to the diagram; the session keeps the play controls and the current step, not the composer. */
+@media (max-width: 640px) {
+  html[data-replay-stack] .excalidraw :is(.App-top-bar, .App-bottom-bar, .mobile-misc-tools-container),
+  html[data-replay-stack] .dock,
+  html[data-replay-stack] .whole,
+  html[data-replay-stack] .sp[data-playing] :is(.sp-composer, .sp-inputright) { display: none; }
+}
+
+/* A phone with the session panel as a bottom bar (workspace/narrow.ts sheetPair): folded, the session keeps its tab bar, what it waits to be answered, its status line and its composer. */
+@media (max-width: 640px) {
+  .wm-slot[data-sheet="folded"] .sp > :not(.sp-composer, .sp-livebar, .sp-requests, .sp-inputright) { display: none; }
+}
+
+/* A phone's divider between the canvas and the session (workspace/Workspace.tsx onStackShare): a finger-sized strip with a grip, since 9px of hit area cannot be found by touch */
+@media (max-width: 640px) {
+  .wm-sash { touch-action: none; }
+  .wm-sash[data-dir="col"]::before { inset: -14px 0; }
+  .wm-sash[data-dir="col"]::after { left: calc(50% - 24px); right: auto; width: 48px; top: -3px; height: 5px; border-radius: 3px; background: var(--fg-muted); opacity: 0.7; }
+}

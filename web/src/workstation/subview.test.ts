@@ -123,10 +123,13 @@ describe("presenceAt: where an agent is below the main canvas at t, and since wh
     const p = at(pi, 13, [pi], "c-users")!;
     expect(hops(p.levels)).toEqual(["c-users/model"]);
     expect(p.entered).toBeNull();
-    expect(at(pi, 21, [pi], "c-users")).toMatchObject({ levels: null, entered: null });
+    // a file this canvas does not have (server/auth is under the other sub-diagram) takes it nowhere: it stays at the model node
+    const off = at(pi, 21, [pi], "c-users")!;
+    expect(hops(off.levels)).toEqual(["c-users/model"]);
+    expect(off.entered).toBeNull();
   });
 
-  it("a sub-agent: sent to where its dispatcher works (below) it stands there; its own file there is its entry; 图外 is outside; reporting back ends it", () => {
+  it("a sub-agent: sent to where its dispatcher works (below) it stands there; its own file there is its entry; a file off the diagram keeps it where it stands; reporting back ends it", () => {
     const boss = run("boss", [seg("write", 0, 10, "server/users.py")]);
     const sub = run("sub", [seg("read", 4, 6, "server/users.py"), seg("write", 6, 8, "tests/test_users.py")], { parentId: "boss", spawnAt: 2 * S, doneAt: 9 * S });
     const all = [boss, sub];
@@ -134,7 +137,8 @@ describe("presenceAt: where an agent is below the main canvas at t, and since wh
     expect(hops(at(sub, 3, all)!.levels)).toEqual(["c1/api", "c-api/users"]);
     expect(at(sub, 3, all)).toMatchObject({ entered: null, ended: false });
     expect(at(sub, 5, all)!.entered).toBe(4 * S);
-    expect(at(sub, 7, all)).toMatchObject({ levels: null, entered: null, ended: false });
+    expect(at(sub, 7, all)).toMatchObject({ entered: 4 * S, ended: false });
+    expect(hops(at(sub, 7, all)!.levels)).toEqual(["c1/api", "c-api/users"]);
     expect(at(sub, 9.2, all)).toMatchObject({ entered: null, ended: true });
   });
 

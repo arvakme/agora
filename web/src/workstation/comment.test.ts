@@ -228,7 +228,7 @@ describe("the dev mock's script (?mock=runs) after 46 s", () => {
       reduced: false,
       run: () => undefined,
     };
-    expect(stateAt(pi, base + 48.1 * S, c)).toMatchObject({ at: "api", from: OUTSIDE, pose: "walk" });
+    expect(stateAt(pi, base + 48.1 * S, c)).toMatchObject({ at: "api", from: "mysql" }); // (the turns before it ended at MySQL: it sets off from there, no longer from the tray)
     expect(stateAt(pi, base + 58.1 * S, c)).toMatchObject({ at: "redis", from: "api", pose: "walk", comment: { n: 3, anchor: ["redis"] } });
     expect(stateAt(pi, base + 62 * S, c)).toMatchObject({ at: "redis", pose: "read", w: 1 });
     expect(stateAt(pi, base + 66.2 * S, c)).toMatchObject({ at: "redis", answered: { n: 3 } });

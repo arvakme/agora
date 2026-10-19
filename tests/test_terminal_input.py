@@ -466,6 +466,36 @@ async def test_closing_the_last_window_gives_the_session_back_to_the_panel(hub, 
 
 
 @needs_tmux
+async def test_a_window_attaching_or_leaving_is_pushed_to_the_page_without_anything_else_happening(hub, monkeypatch):
+    from server.canvas import sessions
+
+    monkeypatch.setattr(sessions, "DETACH_GRACE_S", 60)  # the pane stays: only the window comes and goes
+    hub.ensure_started()
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    hub.live["s-t"].pane_since = time.time() - 60
+    sub = hub.subscribe(False)
+
+    async def pushed(clients: int) -> None:
+        def seen() -> bool:
+            while not sub.q.empty():
+                e = sub.q.get_nowait()
+                if e.get("t") == "status" and e["terminal"]["clients"] == clients:
+                    return True
+            return False
+
+        await _until(seen)
+
+    await pushed(0)
+    viewer = await asyncio.to_thread(_attach, hub.terms, "s-t", readonly=False)
+    try:
+        await pushed(1)
+    finally:
+        _detach(viewer)
+    await pushed(0)
+
+
+@needs_tmux
 async def test_a_busy_cli_is_left_running_and_closed_when_it_is_idle(hub, monkeypatch):
     from server.canvas import sessions
 
@@ -546,3 +576,296 @@ def test_a_pane_has_no_seedmux_variables_even_when_the_tmux_server_already_carri
         time.sleep(0.1)
     got = out.read_text()
     assert "AGORA_SESSION=s-1" in got and "SEEDMUX" not in got
+
+
+# ——— a CLI that reports its own state (server/canvas/pane_state.py) ———
+async def _reporting_pane(hub):
+    """A pane opened by a hub the CLIs can reach, so the CLI in it is started to report (the fake one does not: the test speaks for it)."""
+    hub.url = "http://127.0.0.1:1"
+    hub.ensure_started()
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    lv = hub.live["s-t"]
+    assert lv.reports and lv.cli_state is None and hub.status("s-t")["terminal"]["cliState"] is None
+    return lv
+
+
+@needs_tmux
+async def test_nothing_is_pasted_until_the_cli_says_it_is_idle_and_never_into_a_dialog(hub):
+    lv = await _reporting_pane(hub)
+    lv.pane_since = time.time() - 5  # past the old boot timer: the report is what counts now
+    hub.send("s-t", "等它说空闲的一句")
+    await _held(hub, "s-t", "等 CLI 就绪")
+    await asyncio.sleep(1.0)
+    assert len(lv.pane) == 1 and "等它说空闲的一句" not in hub.terms.capture("s-t")
+
+    hub.report_state("s-t", "waiting", lv.pane_id)  # a permission dialog is up
+    await _held(hub, "s-t", "确认权限")
+    hub.report_state("s-t", "running", lv.pane_id)
+    await _held(hub, "s-t", "正在忙")
+    await asyncio.sleep(1.0)
+    assert len(lv.pane) == 1 and "等它说空闲的一句" not in hub.terms.capture("s-t")
+
+    hub.report_state("s-t", "idle", lv.pane_id)
+    await _until(lambda: not lv.pane)
+    await _until(lambda: "等它说空闲的一句" in hub.terms.capture("s-t"))
+    assert hub.status("s-t")["terminal"]["cliState"] == "idle"
+
+
+@needs_tmux
+async def test_a_cli_that_stays_silent_is_not_guessed_ready_but_the_person_can_say_go(hub):
+    lv = await _reporting_pane(hub)
+    lv.pane_since = time.time() - 60  # long silent: most likely a "trust this folder" menu
+    hub.send("s-t", "越过沉默的一句")
+    await _held(hub, "s-t", "一直没有就绪")
+    await asyncio.sleep(1.0)
+    assert len(lv.pane) == 1 and "越过沉默的一句" not in hub.terms.capture("s-t")
+    hub.deliver_now("s-t")
+    await _until(lambda: not lv.pane)
+    await _until(lambda: "越过沉默的一句" in hub.terms.capture("s-t"))
+
+
+@needs_tmux
+async def test_a_report_from_a_pane_that_is_gone_is_ignored_and_a_new_pane_starts_from_silence(hub):
+    lv = await _reporting_pane(hub)
+    old = lv.pane_id
+    hub.report_state("s-t", "idle", old)
+    assert lv.cli_state == "idle"
+    await asyncio.to_thread(hub.close_terminal, "s-t")
+    assert lv.cli_state is None and not lv.reports
+    hub.report_state("s-t", "idle", old)  # the late word of the CLI that was there
+    assert lv.cli_state is None
+    with pytest.raises(ValueError):
+        hub.report_state("s-t", "nonsense", old)
+
+
+@needs_tmux
+async def test_a_cli_that_reports_only_from_its_first_turn_is_up_when_its_screen_says_so(hub, monkeypatch):
+    from server.canvas import pane_state
+
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": lambda screen: "fake agent ready" in screen})  # (Codex's input box, for the fake CLI)
+    lv = await _reporting_pane(hub)
+    lv.pane_since = time.time() - 60  # the screen, not the clock, says it is up
+    hub.send("s-t", "屏幕上看到输入框的一句")
+    await _until(lambda: not lv.pane)
+    await _until(lambda: "屏幕上看到输入框的一句" in hub.terms.capture("s-t"))
+
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": lambda screen: False})  # a menu: no input box
+    await _until(lambda: not lv.state.busy and not lv.awaiting, timeout=30)
+    lv.cli_state = None
+    hub.send("s-t", "菜单里不能粘的一句")
+    await _held(hub, "s-t", "一直没有就绪")
+    assert len(lv.pane) == 1
+
+
+@needs_tmux
+async def test_a_cli_that_cannot_report_is_pasted_into_only_once_its_screen_shows_the_input_box(hub, monkeypatch):
+    from server.canvas import pane_state
+
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": lambda screen: False})  # still loading, or in a dialog
+    hub.ensure_started()
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    lv = hub.live["s-t"]
+    assert not lv.reports  # nothing in this pane tells the hub anything
+    lv.pane_since = time.time() - 5  # past the boot grace: the screen is what counts
+    hub.send("s-t", "屏幕上没有输入框的一句")
+    await _held(hub, "s-t", "等 CLI 就绪")
+    await asyncio.sleep(1.0)
+    assert len(lv.pane) == 1 and "屏幕上没有输入框的一句" not in hub.terms.capture("s-t")
+
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": lambda screen: "fake agent ready" in screen})
+    await _until(lambda: not lv.pane)
+    await _until(lambda: "屏幕上没有输入框的一句" in hub.terms.capture("s-t"))
+
+    # Every delivery looks at the screen again: a menu that comes up later (an update prompt) is no input box either.
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": lambda screen: False})
+    await _until(lambda: not lv.state.busy and not lv.awaiting, timeout=30)
+    hub.send("s-t", "第二句")
+    await _held(hub, "s-t", "等 CLI 就绪")
+    await asyncio.sleep(1.0)
+    assert len(lv.pane) == 1 and "第二句" not in hub.terms.capture("s-t")
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": lambda screen: "fake agent ready" in screen})
+    await _until(lambda: not lv.pane)
+    await _until(lambda: "第二句" in hub.terms.capture("s-t"))
+
+
+@needs_tmux
+async def test_a_pane_opened_before_the_server_restarted_is_pasted_into_without_waiting_for_its_screen(hub, monkeypatch):
+    from server.canvas import pane_state
+
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": lambda screen: False})
+    hub.ensure_started()
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    lv = hub.live["s-t"]
+    lv.pane_since, lv.reports = None, False  # what a restarted server knows of a pane it did not open
+    hub.send("s-t", "重启之前就开着的终端")
+    await _until(lambda: not lv.pane)
+    await _until(lambda: "重启之前就开着的终端" in hub.terms.capture("s-t"))
+
+
+@needs_tmux
+async def test_a_report_from_the_pane_that_was_closed_does_not_speak_for_the_one_opened_after_it(hub):
+    lv = await _reporting_pane(hub)
+    old = lv.pane_id
+    await asyncio.to_thread(hub.close_terminal, "s-t")
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    assert lv.reports and lv.pane_id and lv.pane_id != old
+    hub.report_state("s-t", "idle", lv.pane_id)
+    hub.report_state("s-t", "exited", old)  # the old CLI's SessionEnd, arriving late
+    assert lv.cli_state == "idle"
+    hub.report_state("s-t", "idle", old)
+    await asyncio.to_thread(hub.close_terminal, "s-t")
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    assert lv.cli_state is None  # nor does the old one's "idle" make the new pane ready
+
+
+@needs_tmux
+async def test_a_report_that_comes_in_while_the_screen_is_being_read_still_counts(hub, monkeypatch):
+    from server.canvas import pane_state
+    from server.canvas.sessions import Pending
+
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": lambda screen: True})
+    lv = await _reporting_pane(hub)
+    lv.pane_since = time.time() - 60
+    real = hub.terms.capture
+
+    def capture_then_a_dialog_opens(sid, lines=200):
+        screen = real(sid, lines)
+        hub.report_state(sid, "waiting", lv.pane_id)  # arrives from the HTTP thread while the screen is read
+        return screen
+
+    monkeypatch.setattr(hub.terms, "capture", capture_then_a_dialog_opens)
+    why = await hub._not_ready("s-t", lv, Pending(send_id="m-1", prompt="x", at=time.time()))
+    assert why and "确认权限" in why
+
+
+@needs_tmux
+async def test_a_report_that_comes_in_while_the_screen_is_read_beats_the_persons_go_even_when_the_screen_has_no_input_box(hub, monkeypatch):
+    from server.canvas import pane_state
+    from server.canvas.sessions import Pending
+
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": lambda screen: False})  # the dialog that is now up has no input box
+    lv = await _reporting_pane(hub)
+    lv.pane_since = time.time() - 60  # long silent: the person may say go
+    real = hub.terms.capture
+
+    def capture_then_a_dialog_opens(sid, lines=200):
+        screen = real(sid, lines)
+        hub.report_state(sid, "waiting", lv.pane_id)
+        return screen
+
+    monkeypatch.setattr(hub.terms, "capture", capture_then_a_dialog_opens)
+    why = await hub._not_ready("s-t", lv, Pending(send_id="m-1", prompt="x", at=time.time(), force=True))
+    assert why and "确认权限" in why
+
+
+@needs_tmux
+async def test_the_scrollback_is_not_the_screen_an_old_input_box_up_there_does_not_make_a_menu_ready(hub, monkeypatch):
+    from server.canvas import pane_state
+    from server.canvas.sessions import Pending
+
+    monkeypatch.setattr(pane_state, "SCREEN_READY", {"pi": pane_state._shows("Add a follow-up")})
+    hub.ensure_started()
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    lv = hub.live["s-t"]
+    lv.pane_since = time.time() - 60
+    history = "→ Add a follow-up\n" + "\n".join(f"line {i}" for i in range(60)) + "\nPermission dialog: choose yes/no"
+    monkeypatch.setattr(hub.terms, "capture", lambda sid, lines=200: history if lines else "Permission dialog: choose yes/no")
+    why = await hub._not_ready("s-t", lv, Pending(send_id="m-1", prompt="x", at=time.time()))
+    assert why and "就绪" in why
+
+
+@needs_tmux
+async def test_a_cli_that_reports_before_the_terminal_is_open_has_its_first_word_kept(hub, monkeypatch):
+    hub.url = "http://127.0.0.1:1"
+    hub.ensure_started()
+    real_open = hub.terms.open
+
+    def open_and_the_cli_is_already_up(sid, argv, **kw):
+        created = real_open(sid, argv, **kw)
+        hub.report_state(sid, "idle", kw["env"]["AGORA_PANE"])  # the CLI is quick: its first word comes before open() returns
+        return created
+
+    monkeypatch.setattr(hub.terms, "open", open_and_the_cli_is_already_up)
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    assert hub.live["s-t"].cli_state == "idle"
+
+
+def test_the_screen_is_captured_without_its_scrollback_when_asked_for_no_lines(terms, tmp_path):
+    terms.open("s-1", ["sh", "-c", "i=1; while [ $i -le 80 ]; do echo row-$i; i=$((i+1)); done; sleep 30"], cwd=tmp_path, env={})
+    deadline = time.time() + 10
+    while "row-80" not in terms.capture("s-1", 0) and time.time() < deadline:
+        time.sleep(0.1)
+    screen, history = terms.capture("s-1", 0), terms.capture("s-1", 200)
+    assert "row-80" in screen and "row-1\n" not in screen
+    assert "row-1\n" in history
+
+
+@needs_tmux
+async def test_the_check_for_an_exited_pane_does_not_undo_the_registration_of_the_one_being_opened(hub, monkeypatch):
+    import threading
+
+    hub.url = "http://127.0.0.1:1"  # (the hub's own loop is not started: the check runs when this test says)
+    lv = hub._get("s-t")
+    lv.pane_alive, lv.pane_since = True, time.time() - 5  # the hub still believes in the pane that has just exited
+    real_open = hub.terms.open
+    checks: list[threading.Thread] = []
+
+    def the_background_check_runs_while_the_new_pane_is_being_made(sid, argv, **kw):
+        t = threading.Thread(target=hub._tick_sync)
+        t.start()
+        t.join(1.0)  # (the check has to wait for the opening if the two are serialised)
+        checks.append(t)
+        created = real_open(sid, argv, **kw)
+        hub.report_state(sid, "idle", kw["env"]["AGORA_PANE"])
+        return created
+
+    monkeypatch.setattr(hub.terms, "open", the_background_check_runs_while_the_new_pane_is_being_made)
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    checks[0].join(10)  # the check has run by now, after the opening
+    assert not checks[0].is_alive() and lv.reports and lv.cli_state == "idle"
+
+
+@needs_tmux
+async def test_a_close_that_is_slow_to_return_does_not_undo_the_pane_opened_after_it(hub, monkeypatch):
+    import threading
+
+    hub.url = "http://127.0.0.1:1"  # (the hub's own loop is not started)
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    lv = hub._get("s-t")
+    real_kill = hub.terms.kill
+    reopened: list[threading.Thread] = []
+
+    def kill_and_a_reopen_arrives_before_the_close_is_done(sid):
+        real_kill(sid)
+        t = threading.Thread(target=lambda: hub.open_terminal(sid, launch=False))
+        t.start()
+        t.join(1.0)  # (waits for the close if the two are serialised)
+        reopened.append(t)
+
+    monkeypatch.setattr(hub.terms, "kill", kill_and_a_reopen_arrives_before_the_close_is_done)
+    await asyncio.to_thread(hub.close_terminal, "s-t")
+    reopened[0].join(30)
+    assert hub.terms.alive("s-t") and lv.reports and lv.pane_id and lv.pane_since
+
+
+@needs_tmux
+async def test_a_pane_that_exited_by_itself_while_detached_leaves_its_window_history_behind_with_it(hub, monkeypatch):
+    from server.canvas import sessions
+
+    monkeypatch.setattr(sessions, "DETACH_GRACE_S", 0.0)
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    lv = hub._get("s-t")
+    lv.seen_window, lv.detached_at = True, time.time() - 60  # a window was attached and went away, long ago
+    hub.terms.kill("s-t")  # the CLI exits by itself: nothing called close_terminal
+    await asyncio.to_thread(hub._tick_sync)
+    assert not lv.pane_alive
+    await asyncio.to_thread(hub.open_terminal, "s-t", launch=False)
+    await _until(lambda: "fake agent ready" in hub.terms.capture("s-t"))
+    await asyncio.to_thread(hub._tick_sync)  # nobody has attached to the new pane: it is not one that was left
+    assert hub.terms.alive("s-t") and lv.pane_alive and not lv.seen_window and lv.detached_at is None

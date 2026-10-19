@@ -20,6 +20,8 @@
 .ws-follow-status .btn { height: 22px; padding: 0 8px; font-size: var(--text-xs); }
 /* the preparing-a-replay line, the same place */
 .ws-live-bar { pointer-events: auto; position: absolute; z-index: 7; top: 66px; left: 50%; transform: translateX(-50%); display: inline-flex; max-width: calc(100% - 24px); }
+/* a phone shows one layer over the canvas: the route's legend is for the desktop (the bar's own 「关闭」 stays) */
+@media (max-width: 640px) { .ws-trace-legend { display: none; } }
 .ws-live-bar .btn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* the nodes it changes (inside .ws-layer): a frame in the accent, +N at the top right */

@@ -1,6 +1,6 @@
 // The dock in a narrow window: in the compact bar's middle, not over the diagram (canvas/dockPlace.ts).
 import { describe, expect, it } from "vitest";
-import { DOCK_H, dockBottom, dockGroup, groupPlace, isCompact, PILL_GAP, PILL_W } from "./dockPlace.ts";
+import { DOCK_H, dockBottom, dockGroup, groupPlace, isCompact, PILL_GAP, PILL_W, roomFor } from "./dockPlace.ts";
 
 describe("isCompact", () => {
   it("Excalidraw's own compact class", () => expect(isCompact(true, 1200)).toBe(true));
@@ -55,6 +55,26 @@ describe("groupPlace", () => {
     const g = groupPlace({ center: 280, dockW: 206.6, limitLeft: null, limitRight: 400, pill: true });
     expect(g.pillW).toBe(DOCK_H);
     expect(span(g).r).toBeLessThan(400);
+  });
+});
+
+describe("roomFor", () => {
+  // a 383 px pane in the compact layout: the bar's menu button ends at 54, its undo starts at 297 and 「整张图」 sits just left of that
+  const pane = { center: 191.5, limitLeft: 54, limitRight: 261 };
+  it("the dock with its words (207) does not fit between them, without its words (112) it does", () => {
+    expect(roomFor({ ...pane, width: 206.6 })).toBe(false);
+    expect(roomFor({ ...pane, width: 112 })).toBe(true);
+  });
+  it("centred means room on both sides: a neighbour close on one side is enough to say no", () => expect(roomFor({ center: 300, limitLeft: 0, limitRight: 340, width: 70 })).toBe(false));
+  it("nothing either side: always", () => expect(roomFor({ center: 10, limitLeft: null, limitRight: null, width: 1000 })).toBe(true));
+});
+
+describe("groupPlace, no pill, in a narrow pane", () => {
+  it("fits: centred", () => expect(groupPlace({ center: 191.5, dockW: 112, pill: false, limitLeft: 54, limitRight: 261 }).dockCx).toBe(191.5));
+  it("no room to be centred but room to fit: slides clear of the controls rather than sit on them", () => {
+    const g = groupPlace({ center: 191.5, dockW: 150, pill: false, limitLeft: 54, limitRight: 261 });
+    expect(g.dockCx + 75).toBeLessThanOrEqual(261 - 8);
+    expect(g.dockCx - 75).toBeGreaterThanOrEqual(54 + 8);
   });
 });
 

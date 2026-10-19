@@ -5,7 +5,9 @@
 .whole-btn { position: absolute; right: 62px; bottom: 16px; z-index: 7; display: inline-flex; align-items: center; gap: var(--space-2); height: 36px; padding: 0 var(--space-4); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--frame); color: var(--fg); font-size: var(--text-sm); white-space: nowrap; --icon: var(--accent); }
 .whole-btn:hover, .whole-btn[data-on="true"] { background: var(--raised); }
 .whole-btn em { font-style: normal; font-variant-numeric: tabular-nums; color: var(--fg-muted); }
-.canvas-layers:has(.excalidraw--mobile) .whole-btn { bottom: 20px; } /* the compact layout's bottom bar is 48 high, 14 off the edge: level with its middle */
+.canvas-layers:has(.excalidraw--mobile) .whole-btn { bottom: 20px; right: 94px; } /* …and left of its bar's undo / redo (14 in from the edge + 8 padding + 2 × 32 = 86, 8 apart) instead of on top of them */
+.whole-btn[data-tight] .whole-label { display: none; }
+.whole-btn[data-tight] { min-width: 32px; padding: 0 var(--space-3); justify-content: center; } /* the compact layout's bottom bar is 48 high, 14 off the edge: level with its middle */
 .canvas-layers:has(.excalidraw--mobile) .whole-panel { bottom: 68px; }
 .whole-panel { position: absolute; right: 12px; bottom: 64px; z-index: 7; width: 300px; max-height: 60vh; display: flex; flex-direction: column; border-radius: 14px; background: var(--surface); box-shadow: var(--frame), 0 12px 32px rgb(0 0 0 / 0.16); color: var(--fg); overflow: hidden; }
 .whole-panel header { flex: none; display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5); }

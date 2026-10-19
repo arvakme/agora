@@ -10,10 +10,13 @@ import { replayText } from "./replayText";
 import { buildSwitch, dnsWait } from "./shareLive";
 import { DomainRow } from "./DomainRow";
 import { createPlan, defaultTarget, domainView, type DomainInfo, type ShareTarget } from "./domainChoice";
+import { projectNote, shareLabel, type ProjectSummary, type ShareScope } from "./scope";
 import "./share.css";
 
 export type ShareRow = {
   id: string;
+  /** One canvas (and what is nested below it) or every canvas of the project. Records from before the field are "canvas". */
+  scope?: ShareScope;
   canvasId: string;
   canvasTitle: string;
   host: string;
@@ -61,8 +64,9 @@ async function api<T>(method: string, path = "", body?: unknown): Promise<T> {
 export function ShareButton({ canvases, current }: { canvases: { id: string; title: string }[]; current?: string }) {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<ShareRow[]>([]);
+  const [summary, setSummary] = useState<ProjectSummary | null>(null);
   const active = rows.filter((r) => r.status === "active").length;
-  const refresh = () => void api<{ shares: ShareRow[] }>("GET").then((j) => setRows(j.shares), () => {});
+  const refresh = () => void api<{ shares: ShareRow[]; project: ProjectSummary }>("GET").then((j) => (setRows(j.shares), setSummary(j.project)), () => {});
   useEffect(() => {
     refresh();
     const on = () => refresh();
@@ -80,7 +84,7 @@ export function ShareButton({ canvases, current }: { canvases: { id: string; tit
   }, [open]);
   return (
     <div className="share" ref={box}>
-      <button className="btn ghost" aria-expanded={open} onClick={() => (setOpen((o) => !o), refresh())} title="把一块画布分享给别人看和评论">
+      <button className="btn ghost" aria-expanded={open} onClick={() => (setOpen((o) => !o), refresh())} title="把一块画布或整个项目分享给别人看和评论">
         <IconShare size={16} /><span className="btn-label">分享</span>{active > 0 && <em className="count">{active}</em>}
       </button>
       <AnimatePresence>
@@ -94,7 +98,7 @@ export function ShareButton({ canvases, current }: { canvases: { id: string; tit
             exit={{ opacity: 0, y: -4, transition: { duration: 0.12 } }}
             transition={SPRING}
           >
-            <CreateShare canvases={canvases} current={current} onCreated={refresh} />
+            <CreateShare canvases={canvases} current={current} summary={summary} onCreated={refresh} />
             <ShareList rows={rows} onChange={refresh} />
           </motion.div>
         )}
@@ -103,7 +107,8 @@ export function ShareButton({ canvases, current }: { canvases: { id: string; tit
   );
 }
 
-function CreateShare({ canvases, current, onCreated }: { canvases: { id: string; title: string }[]; current?: string; onCreated: () => void }) {
+function CreateShare({ canvases, current, summary, onCreated }: { canvases: { id: string; title: string }[]; current?: string; summary: ProjectSummary | null; onCreated: () => void }) {
+  const [scope, setScope] = useState<ShareScope>("canvas");
   const [canvasId, setCanvasId] = useState(current ?? canvases[0]?.id ?? "");
   const [dur, setDur] = useState<(typeof DURATIONS)[number]["key"]>("1d");
   const [n, setN] = useState("30");
@@ -145,7 +150,7 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
     setMade(null);
     try {
       if (!plan.ok) return;
-      const j = await api<{ url: string; share: ShareRow }>("POST", "", { canvasId, ttl: ttl(), maxOpens: limited ? Number(maxOpens) : null, buildReplay, ...plan.body });
+      const j = await api<{ url: string; share: ShareRow }>("POST", "", { scope, canvasId: scope === "canvas" ? canvasId : "", ttl: ttl(), maxOpens: limited ? Number(maxOpens) : null, buildReplay, ...plan.body });
       setMade({ url: j.url, row: j.share });
       setCopied(false);
       onCreated();
@@ -166,15 +171,29 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
   return (
     <section className="share-new">
       <header className="share-head">
-        <h3>分享画布</h3>
-        <p>拿到链接的人只能看这块画布和评论，不能改图，也看不到会话、代码路径或调用 Agent。</p>
+        <h3>{scope === "project" ? "分享整个项目" : "分享画布"}</h3>
+        <p>拿到链接的人只能看{scope === "project" ? "项目里的画布" : "这块画布"}和评论，不能改图，也看不到会话、代码路径或调用 Agent。</p>
       </header>
-      <label className="share-field">
-        <span>画布</span>
-        <select value={canvasId} onChange={(e) => setCanvasId(e.target.value)}>
-          {canvases.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
-        </select>
-      </label>
+      <div className="share-field">
+        <span>分享什么</span>
+        <div className="seg share-seg" data-static role="radiogroup" aria-label="分享什么">
+          <button role="radio" aria-checked={scope === "canvas"} data-on={scope === "canvas"} onClick={() => setScope("canvas")}>这一张画布</button>
+          <button role="radio" aria-checked={scope === "project"} data-on={scope === "project"} onClick={() => setScope("project")}>整个项目</button>
+        </div>
+      </div>
+      {scope === "canvas" ? (
+        <label className="share-field">
+          <span>画布</span>
+          <select value={canvasId} onChange={(e) => setCanvasId(e.target.value)}>
+            {canvases.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+          </select>
+        </label>
+      ) : (
+        <div className="share-field share-custom">
+          <span />
+          <small data-testid="project-note">{summary ? projectNote(summary) : "整个项目：之后新建的画布也自动可见。"}</small>
+        </div>
+      )}
       <div className="share-field">
         <span>地址</span>
         <div className="seg share-seg" data-static role="radiogroup" aria-label="地址">
@@ -246,7 +265,7 @@ function CreateShare({ canvases, current, onCreated }: { canvases: { id: string;
       </p>
       <div className="share-actions">
         {busy && <span className="share-busy">{kind === "quick" ? "正在要一个临时地址，要十来秒…" : "正在建立隧道和域名，第一次要十几秒…"}</span>}
-        <button className="btn primary" disabled={busy || !canvasId || customBad || opensBad || !plan.ok} onClick={() => void create()}>
+        <button className="btn primary" disabled={busy || (scope === "canvas" && !canvasId) || (scope === "project" && summary?.canvases === 0) || customBad || opensBad || !plan.ok} onClick={() => void create()}>
           {busy ? "创建中…" : "创建链接"}
         </button>
       </div>
@@ -300,7 +319,7 @@ function ShareList({ rows, onChange }: { rows: ShareRow[]; onChange: () => void 
         {live.map((r) => (
           <li key={r.id} className="share-row">
             <div className="share-row-main">
-              <b>{r.canvasTitle || r.canvasId}</b>
+              <b>{shareLabel(r)}</b>
               <code title={r.url}>{r.host}</code>
               <span className="share-meta">
                 {r.expiresAt == null ? "直到撤销" : `剩 ${fmtLeft(r.expiresAt - now)}`} · <span title={r.maxOpens ? `已有 ${r.opens ?? 0} 个访客打开，最多 ${r.maxOpens} 个` : "已打开的访客数（不限次数）"} data-full={!!r.maxOpens && (r.opens ?? 0) >= r.maxOpens}>{opensText(r)}</span> · 评论 {r.comments}{r.buildReplay ? ` · ${replayText(r)}` : ""}
@@ -322,7 +341,7 @@ function ShareList({ rows, onChange }: { rows: ShareRow[]; onChange: () => void 
             {ended.map((r) => (
               <li key={r.id} className="share-row" data-ended>
                 <div className="share-row-main">
-                  <b>{r.canvasTitle || r.canvasId}</b>
+                  <b>{shareLabel(r)}</b>
                   <span className="share-meta">
                     {r.status === "revoked" ? "已撤销" : r.status === "canvas-deleted" ? "画布已删除" : "已到期"} · {opensText(r)} · 评论 {r.comments}
                     {r.cleanup.length > 0 && " · DNS 记录待清理"}

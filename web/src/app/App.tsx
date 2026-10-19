@@ -1,5 +1,7 @@
 import { buildReplay } from "../buildreplay/store";
-import { dockBottom, dockGroup, groupPlace, isCompact } from "../canvas/dockPlace";
+import { DOCK_H, PILL_GAP, dockBottom, dockGroup, groupPlace, isCompact, roomFor } from "../canvas/dockPlace";
+import { narrowRoot, sheetPair, useNarrow } from "../workspace/narrow";
+import { usePlay } from "../workstation/replayMode";
 import { MotionConfig, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { resolveAnchor } from "../canvas/anchors";
@@ -19,6 +21,7 @@ import { HistoryPanel } from "../workspace/HistoryPanel";
 import { byId, type El } from "../canvas/scene";
 import { SessionPane } from "../session/SessionPane";
 import { useSessionFloat } from "./useSessionFloat";
+import { prefs, usePrefs } from "./prefs";
 import { sessions, type Session, type Turn } from "../session/store";
 import { agentChoice, canvases, ui } from "../session/ui";
 import { agents, useAgentName, type Binding } from "../session/agents";
@@ -33,7 +36,7 @@ import { canvasFromUrl, nav, nested, urlFor } from "../nested/store";
 import { isEditableTarget, markBackHintSeen, upOnKey } from "../nested/up";
 import { threadSessionTitles } from "../comments/sessionTitles";
 import { sessionNames } from "../multi/writes";
-import { setRunsRoot } from "../workstation/runs/store";
+import { runs, setRunsRoot } from "../workstation/runs/store";
 import { AgentTags } from "../session/AgentTagRow";
 import { WorkerDefs } from "../workstation/RunAvatar";
 import { WaitNotifier } from "../workstation/WaitNotifier";
@@ -82,6 +85,7 @@ const EVAL_RUNS = Number(params.get("runs")) || 3;
 
 export type { Doc } from "../workspace/model";
 import { FIRST_SCENE, type Boot } from "./boot";
+import { buildLabel } from "./build";
 export { prepareBoot, type Boot, type WorkspaceState } from "./boot";
 
 let benched = false;
@@ -106,6 +110,7 @@ type Removed = { title: string; trashId?: string; error?: string };
 export function App({ boot }: { boot: Boot }) {
   // prepareBoot (main.tsx) has settled the workspace; nothing here writes to a store while rendering.
   const firstRun = !!boot.firstRun;
+  const build = buildLabel(boot.project?.build);
   const initial = boot.workspace!;
   const [docs, setDocs] = useState<Doc[]>(initial.docs);
   // Without a ?canvas= link the saved layout opens on each tree's top, not the child level it was left on (workspace-model.md §7).
@@ -210,7 +215,18 @@ export function App({ boot }: { boot: Boot }) {
   const open = new Set(openIds(root));
   // The canvas the dock and keyboard act on: the most recent one on screen (the current tab of
   // some group). With no canvas on screen there is no dock.
-  const shown = new Set(groups(root).map((g) => g.active));
+  const narrow = useNarrow(); // a phone shows one tab at a time (workspace/narrow.ts)
+  // While a turn plays, the phone shows the canvas it plays on over the session that is being replayed.
+  const played = usePlay().play;
+  const playedSession = played && runs.get().byId.get(played.runId)?.sessionId;
+  const playedDoc = playedSession ? docs.find((d) => d.kind === "session" && d.sessionId === playedSession) : undefined;
+  const { floatSession, stackShare } = usePrefs();
+  const playStack = narrow && played?.canvasId && playedDoc ? { top: played.canvasId, bottom: playedDoc.id, ...(stackShare && { bottomShare: stackShare }) } : null;
+  // With the session panel as a bottom bar, a phone shows the canvas with the session folded to a strip under it (or pulled up); the card and the dock are tabs there.
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const stack = playStack ?? (narrow && floatSession === "bar" ? sheetPair(open, focused, lastCanvas, kindOf, (id) => { const d = docOf(id); return d?.kind === "session" ? sessions.get().sessions[d.sessionId]?.canvasId : undefined; }, sheetOpen, stackShare) : null);
+  useEffect(() => void document.documentElement.toggleAttribute("data-replay-stack", !!playStack), [!!playStack]); // styles.css: no drawing tools while a turn plays
+  const shown = new Set(groups(narrow ? narrowRoot(root, focused, stack) : root).map((g) => g.active));
   const canvasDoc = canvasDocs.find((d) => d.id === lastCanvas && shown.has(d.id)) ?? canvasDocs.find((d) => shown.has(d.id));
   const handle = canvasDoc && handles.current.get(canvasDoc.id);
   const sessionCanvas = (d: SessionDoc) => sessions.get().sessions[d.sessionId]?.canvasId ?? "";
@@ -848,10 +864,25 @@ export function App({ boot }: { boot: Boot }) {
       // level with Excalidraw's own bottom controls: the zoom island, or in the compact layout the bottom bar's (whose empty middle it sits in) (canvas/dockPlace.ts)
       const island = el.querySelector<HTMLElement>(compact ? ".App-bottom-bar .Island" : ".zoom-actions")?.getBoundingClientRect();
       const edges = (sel: string) => [...el.querySelectorAll<HTMLElement>(sel)].map((e) => e.getBoundingClientRect()).filter((b) => b.width > 0);
-      const lefts = edges(".whole-btn, .layer-ui__wrapper__footer-right > *").map((b) => b.left);
-      const rights = edges(".zoom-actions, .undo-redo-buttons").map((b) => b.right);
       const center = r.left + r.width / 2;
-      const g = groupPlace({ center, dockW: document.querySelector<HTMLElement>(".dock")?.getBoundingClientRect().width ?? 0, pill, limitLeft: rights.length ? Math.max(...rights) : null, limitRight: lefts.length ? Math.min(...lefts) : null });
+      const dockEl = document.querySelector<HTMLElement>(".dock");
+      const wholeEls = [...el.querySelectorAll<HTMLElement>(".whole-btn")];
+      // the controls on the bottom row either side of the dock: Excalidraw's zoom / undo / help islands (or the compact bar's menu / undo / redo) and 「整张图」
+      const limits = () => {
+        const row = edges(".zoom-actions, .undo-redo-buttons, .App-bottom-bar .Island button, .whole-btn, .layer-ui__wrapper__footer-right > *");
+        const mid = (b: DOMRect) => b.left + b.width / 2;
+        const left = row.filter((b) => mid(b) < center), right = row.filter((b) => mid(b) >= center);
+        return { limitLeft: left.length ? Math.max(...left.map((b) => b.right)) : null, limitRight: right.length ? Math.min(...right.map((b) => b.left)) : null };
+      };
+      // A narrow pane cannot hold the dock with its words between those controls: first the dock drops its words, then 「整张图」 does, before anything slides off centre.
+      let lim = limits();
+      for (const [dockTight, wholeTight] of [[false, false], [true, false], [true, true]]) {
+        dockEl?.toggleAttribute("data-tight", dockTight);
+        wholeEls.forEach((w) => w.toggleAttribute("data-tight", wholeTight));
+        lim = limits();
+        if (roomFor({ center, ...lim, width: (dockEl?.getBoundingClientRect().width ?? 0) + (pill ? PILL_GAP + DOCK_H : 0) })) break; // with the session's pill beside it, at least its round avatar
+      }
+      const g = groupPlace({ center, dockW: dockEl?.getBoundingClientRect().width ?? 0, pill, limitLeft: lim.limitLeft, limitRight: lim.limitRight });
       dockGroup.set({ center, pillW: g.pillW });
       setDockAt((d) => {
         const next = { x: g.dockCx, bottom: dockBottom({ paneBottom: r.bottom, windowHeight: innerHeight, compact, island: island ? { top: island.top, bottom: island.bottom } : null, dockHeight: document.querySelector<HTMLElement>(".dock")?.offsetHeight }) };
@@ -881,6 +912,7 @@ export function App({ boot }: { boot: Boot }) {
         <header className="topbar">
           <span className="brand"><IconWorkspace size={18} />Agora</span>
           {boot.project && <span className="project-name" title={boot.project.root}>{boot.project.name}</span>}
+          {build && <span className="build-sha" title={build.title}>{build.text}</span>}
           <span className="topbar-gap" />
           <AgentTags />
           {PERSIST && <ShareButton canvases={canvasDocs.map((d) => ({ id: d.id, title: d.title }))} current={canvasDoc?.id ?? lastCanvas} />}
@@ -932,6 +964,9 @@ export function App({ boot }: { boot: Boot }) {
         )}
 
         <Workspace
+          stack={stack}
+          sheet={stack && !playStack ? { open: sheetOpen, toggle: () => setSheetOpen((o) => !o) } : undefined}
+          onStackShare={playStack || (stack && sheetOpen) ? (share) => prefs.set({ stackShare: share }) : undefined}
           root={root}
           setRoot={setRoot}
           titles={names}
@@ -963,7 +998,7 @@ export function App({ boot }: { boot: Boot }) {
           renderCanvas={(id) => {
             const doc = docs.find((d) => d.id === id);
             if (!doc || !synced) return null;
-            if (doc.kind === "session") return <SessionPane sessionId={doc.sessionId} canvasTitles={canvasTitles} />;
+            if (doc.kind === "session") return <SessionPane sessionId={doc.sessionId} canvasTitles={canvasTitles} onRename={() => setEditing(id)} />;
             return (
               <CanvasView
                 doc={{ id, title: doc.title, store: storeFor(id) }}
@@ -1077,13 +1112,13 @@ function Dock({ at, mode, setMode, drawerOpen, toggleDrawer, store, evalButton }
           <button key={m} role="radio" aria-checked={mode === m} data-on={mode === m} onClick={() => setMode(m)} title={`${label} · ${key}${m === "comment" ? "（先选中元素再按，评论这组选区）" : ""}`}>
             {mode === m && <motion.span layoutId="dock-on" className="seg-bg" transition={SPRING} />}
             <Icon size={14} />
-            <span>{label}</span>
+            <span className="dock-label">{label}</span>
           </button>
         ))}
       </div>
       <button className="dock-count" data-on={drawerOpen} aria-pressed={drawerOpen} onClick={toggleDrawer} title="评论列表" aria-label={`评论列表 · ${open} 条进行中`}>
         <IconList size={14} />
-        评论
+        <span className="dock-label">评论</span>
         {open > 0 && <em>{open}</em>}
       </button>
       {evalButton}

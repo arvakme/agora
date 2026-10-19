@@ -15,7 +15,7 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -28,9 +28,10 @@ from server.canvas.discover import full_text, session_history
 from server.canvas.events import Events
 from server.canvas.local import Local, session_origins
 from server.canvas.project import Conflict, EmptyOverwrite, Gone, NotEmpty, ProjectStore
-from server.canvas.share import ShareError, ShareManager, check_max_opens, check_ttl
+from server.canvas.share import PROJECT_TITLE, SCOPE_PROJECT, ShareError, ShareManager, check_max_opens, check_ttl, project_summary
 from server.canvas.trash import Trash, TrashError, canvas_sessions
 from server.canvas.runner import DEFAULT_BACKEND, DEFAULT_MODEL, EFFORTS, ExecOptions
+from server.canvas.version import running_version
 
 REPO = Path(__file__).resolve().parents[2]
 WEB = REPO / "web"
@@ -87,7 +88,8 @@ class ToTrash(BaseModel):
 
 
 class NewShare(BaseModel):
-    canvasId: str
+    scope: Literal["canvas", "project"] = "canvas"  # one canvas (``canvasId``) or every canvas of the project
+    canvasId: str = ""
     ttl: int | None = None  # seconds; None = until revoked
     maxOpens: int | None = None  # distinct guests that may open it; None = unlimited
     quick: bool = False  # account-less trycloudflare.com address (one share at a time)
@@ -148,13 +150,13 @@ def create_project_router(store: ProjectStore, events: Events | None = None, *, 
 
     @router.get("/health")
     def health():
-        return {"ok": True, "root": str(store.root), "pid": os.getpid(), "gone": store.gone()}
+        return {"ok": True, "root": str(store.root), "pid": os.getpid(), "gone": store.gone(), **running_version()}
 
     @router.get("/snapshot")
     def snapshot():
         # ``local``: which copy this is and what changed since the page last looked (moved, copied,
         # a fresh clone); ``origins``: listed sessions that cannot simply be resumed here.
-        return {**store.snapshot(), "local": {"instanceId": local.instance_id(), "change": local.change()}, "origins": session_origins(store, local)}
+        return {**store.snapshot(), "local": {"instanceId": local.instance_id(), "change": local.change()}, "origins": session_origins(store, local), "build": running_version()}
 
     @router.get("/build")
     def build(canvas: str):
@@ -172,7 +174,10 @@ def create_project_router(store: ProjectStore, events: Events | None = None, *, 
 
     @router.put("/workspace")
     def put_workspace(body: Write):
-        return guard(lambda: {"version": store.write("workspace", None, body.data, base=body.base, force=body.force)})
+        out = guard(lambda: {"version": store.write("workspace", None, body.data, base=body.base, force=body.force)})
+        if isinstance(out, dict):
+            events.publish({"t": "workspace"})  # canvas titles live here: a project share's tabs may need to follow (share_gateway.py)
+        return out
 
     @router.get("/canvases/{id}")
     def get_canvas(id: str):
@@ -357,7 +362,7 @@ def create_share_router(store: ProjectStore, shares: ShareManager, events: Event
 
     @router.get("")
     def list_shares():
-        return {"shares": shares.list(), "gateway": shares.gateway_port is not None}
+        return {"shares": shares.list(), "gateway": shares.gateway_port is not None, "project": project_summary(store)}
 
     @router.get("/domains")
     def share_domains():
@@ -368,7 +373,10 @@ def create_share_router(store: ProjectStore, shares: ShareManager, events: Event
         try:
             check_ttl(body.ttl)
             check_max_opens(body.maxOpens)
-            if store.read("canvas", body.canvasId) is None:
+            if body.scope == SCOPE_PROJECT:
+                if not project_summary(store)["canvases"]:
+                    raise ValueError("这个项目里还没有画布")
+            elif store.read("canvas", body.canvasId) is None:
                 raise ValueError(f"no canvas {body.canvasId!r} in this project")
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
@@ -377,7 +385,8 @@ def create_share_router(store: ProjectStore, shares: ShareManager, events: Event
         try:
             if body.domain and not body.quick:
                 shares.choose_domain(body.domain)
-            share, url = shares.create(body.canvasId, body.ttl, title_of(body.canvasId), max_opens=body.maxOpens, quick=body.quick, build_replay=body.buildReplay)
+            project = body.scope == SCOPE_PROJECT
+            share, url = shares.create("" if project else body.canvasId, body.ttl, PROJECT_TITLE if project else title_of(body.canvasId), max_opens=body.maxOpens, quick=body.quick, build_replay=body.buildReplay, scope=body.scope)
         except ValueError as e:  # a zone the account does not have
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:  # ShareError, Cloudflare / cf failures: in plain words, with the next step, keep serving
@@ -452,8 +461,29 @@ def host_name(header: str) -> str:
     return h.rsplit(":", 1)[0] if h.count(":") == 1 else h
 
 
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def origin_host(origin: str) -> str | None:
+    """Host name of an ``Origin`` header (``http://localhost:5173`` → ``localhost``); ``None`` for ``null`` or garbage."""
+    from urllib.parse import urlsplit
+
+    try:
+        h = urlsplit(origin.strip()).hostname
+    except ValueError:
+        return None
+    return h.lower() if h else None
+
+
 class LocalHostOnly:
-    """ASGI middleware: 421 for HTTP and WebSocket requests whose Host is not a local name."""
+    """ASGI middleware: 421 for HTTP and WebSocket requests whose Host is not a local name, and 403 for
+    writes (and WebSocket upgrades) a page on another site sends to it.
+
+    The Host check stops DNS rebinding, but a page on any site can still send a "simple" cross-site POST
+    (``text/plain``, no preflight) to ``127.0.0.1:<port>``: its Host is local. So a write is refused when
+    the browser says it came from somewhere else (an ``Origin`` that is not a local name, or
+    ``Sec-Fetch-Site: cross-site``). Requests without an ``Origin`` (the CLI, the agent skill, curl) pass.
+    """
 
     def __init__(self, app) -> None:
         self.app = app
@@ -470,7 +500,25 @@ class LocalHostOnly:
                 await send({"type": "http.response.start", "status": 421, "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
                 await send({"type": "http.response.body", "body": body})
                 return
+            if scope["type"] == "websocket" or scope.get("method", "GET").upper() not in SAFE_METHODS:
+                if self.cross_site(scope):
+                    if scope["type"] == "websocket":
+                        await send({"type": "websocket.close", "code": 1008})
+                        return
+                    body = b'{"error":"cross-site request refused"}'
+                    await send({"type": "http.response.start", "status": 403, "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
+                    await send({"type": "http.response.body", "body": body})
+                    return
         await self.app(scope, receive, send)
+
+    def cross_site(self, scope) -> bool:
+        headers = {k: v.decode("latin-1") for k, v in scope.get("headers") or []}
+        if headers.get(b"sec-fetch-site", "").strip().lower() == "cross-site":
+            return True
+        origin = headers.get(b"origin")
+        if origin is None:
+            return False
+        return origin_host(origin) not in self.allowed
 
 
 def create_project_app(
@@ -499,7 +547,7 @@ def create_project_app(
     # project's Pi logs follow it; a copy gets its own id and read-only sessions).
     probe = Terminals(store.root, store.run_dir, socket=local.socket(), legacy=local.legacy_sockets())
     local.reconcile(alive=probe.alive)
-    hub = hub or AgentHub(store, local=local)
+    hub = hub or AgentHub(store, local=local, url=os.environ.get("AGORA_URL") or None)
     if gateway and hub.opener is None:  # the running app (not a test) may open a page itself when an edit finds none (page_help.py)
         from server.canvas.page_help import default_opener
 

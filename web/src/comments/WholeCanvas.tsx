@@ -5,7 +5,7 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import type { AnchorState } from "../canvas/anchors";
-import { IconClose, IconComment, IconPlus } from "../app/icons";
+import { IconClose, IconPlus, IconWhole } from "../app/icons";
 import { GUEST } from "../guest/mode";
 import { handOff } from "../ops/agent";
 import type { CardPos } from "./cardPlace";
@@ -51,8 +51,8 @@ export function WholeCanvas({ api, store, width, height }: { api: ExcalidrawImpe
   return (
     <div className="whole" onPointerDown={(e) => e.stopPropagation()}>
       <button className="whole-btn" data-on={panel !== null || !!active} aria-expanded={panel !== null} onClick={() => (store.close(), setPanel(panel ? null : "list"))} title="评论整张图：不钉在元素上">
-        <IconComment size={16} />
-        <span>整张图</span>
+        <IconWhole size={16} />
+        <span className="whole-label">整张图</span>
         {open.length > 0 && <em>{open.length}</em>}
       </button>
       <AnimatePresence>

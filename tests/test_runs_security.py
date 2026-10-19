@@ -72,3 +72,40 @@ async def test_websockets_are_checked_too():
     assert reached == [] and sent == [{"type": "websocket.close", "code": 1008}]
     await mw({"type": "websocket", "headers": [(b"host", b"127.0.0.1:1")]}, None, send)
     assert reached == ["websocket"]
+
+
+def test_writes_from_another_site_are_refused(app):
+    """A page on any site can send a simple cross-site POST to 127.0.0.1 (its Host is local):
+    the browser's Origin / Sec-Fetch-Site give it away."""
+    c, _ = app
+    url = "/api/agent/sessions/nope/interrupt"  # no body: a plain <form method=post> could send it
+    for headers in (
+        {"origin": "https://evil.example"},
+        {"origin": "null"},  # sandboxed iframe, file://
+        {"origin": "http://127.0.0.1.nip.io:5181"},
+        {"sec-fetch-site": "cross-site"},
+        {"origin": "http://localhost:5181", "sec-fetch-site": "cross-site"},
+    ):
+        r = c.post(url, headers=headers)
+        assert r.status_code == 403, headers
+    r = c.post("/api/canvas/turns", content=b'{"request":"x"}', headers={"origin": "https://evil.example", "content-type": "text/plain"})
+    assert r.status_code == 403
+    # The page itself (same origin, or the vite dev proxy), the CLI and curl (no Origin) still reach it.
+    for headers in ({"origin": "http://localhost:5181"}, {"origin": "http://127.0.0.1:8000", "sec-fetch-site": "same-origin"}, {"origin": "http://[::1]:5181"}, {}):
+        assert c.post(url, headers=headers).status_code != 403, headers
+    # Reads are not affected (a cross-site page cannot read the answer anyway: no CORS).
+    assert c.get("/api/agent/adapters?versions=0", headers={"origin": "https://evil.example"}).status_code == 200
+
+
+async def test_cross_site_websocket_is_refused():
+    reached, sent = [], []
+
+    async def inner(scope, receive, send):
+        reached.append(scope["type"])
+
+    async def send(msg):
+        sent.append(msg)
+
+    mw = LocalHostOnly(inner)
+    await mw({"type": "websocket", "headers": [(b"host", b"127.0.0.1:1"), (b"origin", b"https://evil.example")]}, None, send)
+    assert reached == [] and sent == [{"type": "websocket.close", "code": 1008}]

@@ -70,25 +70,41 @@ describe("the @ list once something is typed: every agent and every conversation
   });
 });
 
-describe("the @ list with nothing typed yet: at most four choices and 「更多」", () => {
+describe("the @ list with nothing typed yet: the conversations to continue, one to start, and 「更多」", () => {
   const many = {
     bindings: { old: b("pi"), a: b("claude"), c: b("codex"), d: b("claude"), e: b("pi"), other: b("codex") },
     names: { old: "旧的", a: "对话 A", c: "对话 C", d: "对话 D", e: "对话 E", other: "别的画布" },
     activeAt: { old: NOW - 90 * MIN, a: NOW - 5 * MIN, c: NOW - 2 * MIN, d: NOW - 30 * MIN, e: NOW - 60 * MIN, other: NOW - 1 * MIN },
     canvas: ["old", "a", "c", "d", "e"],
   };
-  it("recommended new conversation, the two most recent conversations on this canvas, then 「更多」", () => {
+  it("the two most recent conversations on this canvas to continue, the recommended new one, then 「更多」", () => {
     const rows = mentionRows(src(many), "", false);
-    expect(titles(rows)).toEqual(["Codex · 新对话", "对话 C", "对话 A", "更多… 输入名字搜索"]);
-    expect(picks(rows)[0]).toMatchObject({ badge: "推荐", target: { type: "agent", kind: "codex" } }); // c is the latest on this canvas
-    expect(picks(rows).slice(1).map((r) => r.note)).toEqual(["2 分钟前", "5 分钟前"]);
-    expect(picks(rows).slice(1).map((r) => r.target)).toEqual([{ type: "session", sid: "c", agent: "codex", label: "对话 C" }, { type: "session", sid: "a", agent: "claude", label: "对话 A" }]);
+    expect(titles(rows)).toEqual(["对话 C", "对话 A", "Codex · 新对话", "更多… 输入名字搜索"]);
+    expect(picks(rows)[2]).toMatchObject({ badge: "推荐", target: { type: "agent", kind: "codex" } }); // c is the latest on this canvas
+    expect(picks(rows).slice(0, 2).map((r) => r.note)).toEqual(["Codex · 2 分钟前", "Claude Code · 5 分钟前"]);
+    expect(picks(rows).slice(0, 2).map((r) => r.target)).toEqual([{ type: "session", sid: "c", agent: "codex", label: "对话 C" }, { type: "session", sid: "a", agent: "claude", label: "对话 A" }]);
     expect("more" in rows[3]).toBe(true);
+  });
+  it("every choice says which group it is in: continuing a conversation, or starting a new one", () => {
+    const handoff = { sessionId: "d", agent: "claude", name: "对话 D" };
+    expect(picks(mentionRows(src({ ...many, handoff }), "", false)).map((r) => r.group)).toEqual(["continue", "continue", "continue", "new"]);
+    expect(picks(mentionRows(src(many), "对话", false)).every((r) => r.group === "continue")).toBe(true);
+    expect(picks(mentionRows(src(many), "Cod", false)).map((r) => [r.title, r.group])).toContainEqual(["Codex", "new"]);
+  });
+  it("a conversation at work says so instead of how long ago, and goes before the others (all of them, not only two)", () => {
+    const status = { old: st({ running: true }), d: st({ running: true }), e: st({ running: true }) };
+    const rows = picks(mentionRows(src({ ...many, status }), "", false));
+    expect(rows.slice(0, 3).map((r) => r.title)).toEqual(["对话 D", "对话 E", "旧的"]);
+    expect(rows.slice(0, 3).every((r) => r.running && r.note.endsWith("工作中"))).toBe(true);
+    expect(rows.slice(0, 3).map((r) => r.note)).toEqual(["Claude Code · 工作中", "Pi · 工作中", "Pi · 工作中"]);
+    expect(rows.slice(3).map((r) => r.title)).toEqual(["Codex · 新对话"]); // three at work fill the list: no room left for the merely recent
+    const one = mentionRows(src({ ...many, status: { d: st({ running: true }) } }), "", false);
+    expect(titles(one).slice(0, 3)).toEqual(["对话 D", "对话 C", "Codex · 新对话"]); // one at work takes a place of the two, the most recent the other
   });
   it("only one 推荐 row, and it is a new conversation", () => {
     const rows = picks(mentionRows(src(many), "", false));
     expect(rows.filter((r) => r.badge)).toHaveLength(1);
-    expect(rows[0].target.type).toBe("agent");
+    expect(rows.find((r) => r.badge)?.target.type).toBe("agent");
   });
   it("a conversation on another canvas is not one of the two, however recent", () => {
     expect(titles(mentionRows(src(many), "", false))).not.toContain("别的画布");
@@ -96,14 +112,14 @@ describe("the @ list with nothing typed yet: at most four choices and 「更多�
   it("a thread that is bound to a conversation starts with 「继续交给 …」", () => {
     const handoff = { sessionId: "d", agent: "claude", name: "对话 D" };
     const rows = mentionRows(src({ ...many, handoff }), "", false);
-    expect(titles(rows)).toEqual(["继续交给 对话 D", "Codex · 新对话", "对话 C", "对话 A", "更多… 输入名字搜索"]);
+    expect(titles(rows)).toEqual(["继续交给 对话 D", "对话 C", "对话 A", "Codex · 新对话", "更多… 输入名字搜索"]);
     expect(picks(rows)[0].target).toEqual({ type: "session", sid: "d", agent: "claude", label: "对话 D" });
     expect(picks(rows)).toHaveLength(4); // four choices and 「更多」, never more
   });
   it("the bound conversation is not listed a second time among the recent ones", () => {
     const handoff = { sessionId: "c", agent: "codex", name: "对话 C" };
     const t = titles(mentionRows(src({ ...many, handoff }), "", false));
-    expect(t).toEqual(["继续交给 对话 C", "Codex · 新对话", "对话 A", "对话 D", "更多… 输入名字搜索"]);
+    expect(t).toEqual(["继续交给 对话 C", "对话 A", "对话 D", "Codex · 新对话", "更多… 输入名字搜索"]);
   });
   it("a bound conversation that can no longer take a message is not offered (nor is one that is gone)", () => {
     const handoff = { sessionId: "c", agent: "codex", name: "对话 C" };
@@ -112,7 +128,7 @@ describe("the @ list with nothing typed yet: at most four choices and 「更多�
   });
   it("conversations that cannot take a message are never among the two", () => {
     const rows = mentionRows(src({ ...many, status: { c: gone, a: copy } }), "", false);
-    expect(titles(rows)).toEqual(["Codex · 新对话", "对话 D", "对话 E", "更多… 输入名字搜索"]);
+    expect(titles(rows)).toEqual(["对话 D", "对话 E", "Codex · 新对话", "更多… 输入名字搜索"]);
   });
   it("with no conversation on the canvas, only the recommended one and 「更多」", () => {
     expect(titles(mentionRows(src({ ...many, canvas: [] }), "", false))).toEqual(["Codex · 新对话", "更多… 输入名字搜索"]);
@@ -121,10 +137,10 @@ describe("the @ list with nothing typed yet: at most four choices and 「更多�
     expect(picks(mentionRows(src({ ...many, canvas: [] }), "", false))[0].target).toMatchObject({ kind: "codex" }); // claude ×2, pi ×2, codex ×2: a tie goes to the one that worked last
     expect(picks(mentionRows(src({ bindings: {}, names: {} }), "", false))[0].target).toMatchObject({ kind: "claude" });
   });
-  it("「更多」expands to the whole list: every agent, then every conversation that can take a message", () => {
+  it("「更多」expands to the whole list: every conversation that can take a message, then every agent", () => {
     const rows = mentionRows(src(many), "", true);
     expect(rows.every((r) => "target" in r)).toBe(true);
-    expect(titles(rows)).toEqual(["Claude Code", "Codex", "Pi", "别的画布", "对话 C", "对话 A", "对话 D", "对话 E", "旧的"]);
+    expect(titles(rows)).toEqual(["别的画布", "对话 C", "对话 A", "对话 D", "对话 E", "旧的", "Claude Code", "Codex", "Pi"]);
   });
   it("typing something replaces the short list by the search, with no 「更多」", () => {
     const rows = mentionRows(src(many), "对话", false);
