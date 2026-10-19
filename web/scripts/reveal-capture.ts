@@ -1,11 +1,13 @@
 // Evidence for 分站揭示 (web/docs/workstation.md §2 智能体改图): an agent's one `agora canvas apply` that draws a whole diagram, on a fresh canvas,
 // as the live 工位视图 shows it.
 //
-//   node scripts/reveal-capture.ts <dev page url> <out.mp4> [--dark] [--reduced] [--frames <dir>]
+//   node scripts/reveal-capture.ts <dev page url> <out.mp4> [--dark] [--reduced] [--frames <dir>] [--click <s>]
 //
 // Needs the vite dev server (the page's own modules are imported to stand in for the agent: a Pi session is bound on the first canvas and
 // `applyFromAgent` — the page executor `agora canvas apply` runs through — is called with one batch of 12 nodes and 8 arrows) and a backend on an empty
-// project. Records the page from just before the batch until the figure is done, crops nothing, writes an MP4 (ffmpeg) and, with --frames, a PNG a second.
+// project (each run adds the diagram to the first canvas: start the backend on a fresh project for each). Records the page from just before the batch
+// until the figure is done, crops nothing, writes an MP4 (ffmpeg) and, with --frames, a PNG a second; `--click <s>`: click the canvas that many seconds in.
+// At the end it prints whether the page's own picture is gone and the opacities of the elements in the saved canvas (the agent's: never the page's).
 // The Chromium is Playwright's, or `CHROMIUM=<path>` when the installed Playwright's own build is not there.
 import { chromium } from "playwright";
 import { execFileSync } from "node:child_process";
@@ -22,6 +24,7 @@ if (!url || !out) {
 const dark = args.includes("--dark");
 const reduced = args.includes("--reduced");
 const framesDir = args.includes("--frames") ? args[args.indexOf("--frames") + 1] : null;
+const clickAt = args.includes("--click") ? Number(args[args.indexOf("--click") + 1]) : null;
 const VIEW = { width: 1280, height: 800 };
 const RECORD_MS = 14_000;
 
@@ -86,9 +89,27 @@ if (framesDir) {
     shots.push(page.screenshot({ path: join(framesDir, `t${String(s).padStart(2, "0")}.png`) }));
   }
 }
+if (clickAt != null) {
+  // a person clicks an empty spot of the canvas mid-way: everything shows at once
+  const due = startAt + clickAt * 1000 - Date.now();
+  if (due > 0) await page.waitForTimeout(due);
+  await page.mouse.click(120, 700);
+  await page.waitForTimeout(50);
+  console.log("after click: revealing =", await page.evaluate(() => !!document.querySelector(".canvas-layers[data-revealing]")));
+}
 const left = startAt + RECORD_MS - Date.now();
 if (left > 0) await page.waitForTimeout(left);
 await Promise.all(shots);
+// at the end: the page's own picture is gone (Excalidraw's static canvas is back), and the saved canvas has every element as the agent made it
+const end = await page.evaluate(async () => {
+  const w = window as unknown as { __agora: { handles: Map<string, unknown> } };
+  const id = [...w.__agora.handles.keys()][0];
+  await new Promise((r) => setTimeout(r, 1500)); // the save queue
+  const saved = await (await fetch(`/api/project/canvases/${encodeURIComponent(id)}`)).json();
+  const els = (saved.elements ?? saved.scene?.elements ?? []) as { opacity: number; isDeleted?: boolean }[];
+  return { revealing: !!document.querySelector(".canvas-layers[data-revealing]"), saved: els.filter((e) => !e.isDeleted).length, opacities: [...new Set(els.map((e) => e.opacity))] };
+});
+console.log("end:", JSON.stringify(end));
 await ctx.close();
 await browser.close();
 const [video] = readdirSync(tmp).filter((f) => f.endsWith(".webm"));
