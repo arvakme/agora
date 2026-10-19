@@ -38,34 +38,35 @@ const SCENE: El[] = [
 ];
 const geometry = (els: El[]): Geometry => buildGeometry("c1", els, new Map(els.map((e) => [e.id, e])), new Map(), () => undefined);
 const trip = (g: Geometry, a: string, b: string): Route => g.route({ place: a, at: g.dock(a) }, { place: b, at: g.dock(b) });
-const scaffold = (rt: Route) => rt.legs.some((l) => l.temp) && rt.legs.filter((l) => l.kind !== "walk").every((l) => l.temp);
+/** No arrow leads there: it hops (§5 跳过去), nothing built. */
+const hop = (rt: Route) => rt.legs.some((l) => l.kind === "hop") && rt.legs.every((l) => l.kind === "walk" || l.kind === "hop");
 
 describe("buildGeometry: the walking map (剖面)", () => {
   const g = geometry(SCENE);
 
-  it("an arrow from a node's label to another node is a way between them: a bridge across the gap", () => {
+  it("an arrow from a node's label to another node is a way between them: the figure glides along it", () => {
     const rt = trip(g, "web", "api");
-    expect(rt.legs.some((l) => l.kind === "bridge" && !l.temp && l.a.y === 230)).toBe(true);
-    expect(scaffold(rt)).toBe(false);
+    expect(rt.legs.some((l) => l.kind === "glide" && !l.temp)).toBe(true);
+    expect(hop(rt)).toBe(false);
   });
 
-  it("an arrow to a member of a library icon's group is a way to the icon's linked node: the ladder where it runs upright", () => {
+  it("an arrow to a member of a library icon's group is a way to the icon's linked node: glided along, up where it runs upright", () => {
     const rt = trip(g, "api", "db");
-    expect(rt.legs.some((l) => l.kind === "climb" && !l.temp && l.a.x === 610)).toBe(true);
-    expect(scaffold(rt)).toBe(false);
+    expect(rt.legs.some((l) => l.kind === "glide" && !l.temp && Math.abs(l.a.x - 610) < 1 && l.b.y < l.a.y)).toBe(true);
+    expect(hop(rt)).toBe(false);
   });
 
-  it("arrows with a loose end, or bound to something that is no linked node, are no way: a scaffold goes up instead", () => {
-    expect(scaffold(trip(g, "api", "pay"))).toBe(true);
-    // the same picture without the arrows: web → api is a scaffold too
-    expect(scaffold(trip(geometry(SCENE.filter((e) => e.type !== "arrow")), "web", "api"))).toBe(true);
+  it("arrows with a loose end, or bound to something that is no linked node, are no way: it hops instead", () => {
+    expect(hop(trip(g, "api", "pay"))).toBe(true);
+    // the same picture without the arrows: web → api is a hop too
+    expect(hop(trip(geometry(SCENE.filter((e) => e.type !== "arrow")), "web", "api"))).toBe(true);
   });
 
-  it("the 图外 tray is on the map, reached over a scaffold", () => {
+  it("the 图外 tray is on the map, reached by a hop", () => {
     expect(g.boxOf(OUTSIDE)).toEqual(g.tray);
     const rt = trip(g, "pay", OUTSIDE);
     expect(rt.legs.length).toBeGreaterThan(0);
     expect(rt.legs[rt.legs.length - 1].b).toEqual(g.dock(OUTSIDE));
-    expect(scaffold(rt)).toBe(true);
+    expect(hop(rt)).toBe(true);
   });
 });

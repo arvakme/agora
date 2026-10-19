@@ -1,6 +1,6 @@
 // 姿势体检 (web/docs/workstation.md §小人 · 姿势体检): the rules themselves, and every pose, gesture, pose change, trip and door ladder held to them frame by frame.
 import { describe, expect, it } from "vitest";
-import { ACCEL_MAX, checkJoints, ELBOW_MAX, ELBOW_MAX_WALKING, elbowJumps, frames, gaits, HIP_SHAKE_MAX, jumps, layerJumps, RUNG_OFF_MAX, speedOf, standRange, speeds, SWAP_MAX, sweep, type Expect } from "./poseHealth.ts";
+import { ACCEL_MAX, checkJoints, GLIDE_ACCEL_MAX, HOP_ACCEL_MAX, HOP_V_MAX, ELBOW_MAX, ELBOW_MAX_WALKING, elbowJumps, frames, gaits, HIP_SHAKE_MAX, jumps, layerJumps, RUNG_OFF_MAX, speedOf, standRange, speeds, SWAP_MAX, sweep, type Expect } from "./poseHealth.ts";
 import { REF_K } from "./docks.ts";
 import { ladderShape } from "./hatch.ts";
 import { DOOR_MS, makeSprings, planDoor, RAISED, RIG, RUNG, solve, WALK_SPEED, type Joints } from "./rig.ts";
@@ -72,32 +72,69 @@ describe("the raised hand and the stretch keep clear of the head", () => {
 
 describe("a trip's speed (DR4)", () => {
   const all = speeds();
-  // how long each trip took before DR4 (ms, from set-off to the last foot down): the trips may not get slower than 10 % over it — those with no ladder in them
-  const BEFORE: Record<string, number> = { "web → api (a bridge)": 2048, "a few steps on one floor": 672 };
+  // how long each trip took before DR4 (ms, from set-off to the last foot down): the trips may not get slower than 10 % over it — those that only walk or climb
+  const BEFORE: Record<string, number> = { "a few steps on one floor": 672 };
   // …and before POL3 (梯子档距放大: a ladder is climbed at 0.0625 px/ms, not 0.13, so a pair of hands and feet changes over 3 times a second, not 10–20): those with one climb over most of a ladder's length, at most 75 % longer
-  // (measured: 3076 → 4048, 3076 → 4048, 3740 → 5616, 2668 → 4544, 5648 → 8256 ms; the ladder's own part of a trip about twice as long)
-  const BEFORE_POL3: Record<string, number> = { "api → mysql (ladder up)": 3076, "mysql → api (ladder down)": 3076, "web → pay (bridge, then down beside api)": 3740, "pay → api (up beside api)": 2668, "web → the tray (a scaffold)": 5648 };
-  it("tops out at the walking pace and, on a door's ladder, at the climbing pace (0.0625 px/ms: a pair changes over 3.1 times a second)", () => {
+  // (the scaffolds' ladders are hops now: only the ladders of a trip with no walk map are left, climbed the same)
+  const BEFORE_POL3: Record<string, number> = { "api → mysql with no way map (a ladder up)": 3076, "mysql → api with no way map (a ladder down)": 3076 };
+  // …and before 跳过去 (§5), when the way between nodes not joined by one arrow was a scaffold (bridges and ladders) or a chain of glides through other nodes (ms, the same spots):
+  // a hop is at most 75 % of that (measured 34–70 %)
+  const BEFORE_HOP: Record<string, number> = {
+    "api → mysql, no arrow (hop up)": 5220,
+    "mysql → api, no arrow (hop down)": 5218,
+    "web → api, no arrow (a level hop over the gap)": 3433,
+    "api → pay, no arrow (off api's edge, round its wall, down onto pay)": 5700,
+    "pay → api, no arrow (up round api's wall onto its top)": 5746,
+    "mysql → redis (not one arrow: off mysql's edge down onto redis)": 2927,
+    "web → mysql (not one arrow: a long hop up)": 4579,
+    "web → the tray (a hop over api)": 8285,
+    "the tray → mysql (a hop up past redis)": 7811,
+    "web → pay (not one arrow: a hop down past api)": 3615,
+  };
+  // …and before 沿箭头滑行 (Option B), when an arrow was walked as bridges and ladders (ms, POL3 pace): along an arrow with a rise in it the glide is much quicker; along a level arrow
+  // (web → api: a bridge before) a little slower — it walks to the node's edge, stops, folds into the capsule, goes down to the port and back up at the other end
+  const BEFORE_GLIDE: Record<string, [number, number]> = {
+    "api → mysql (glide along the SQL arrow, up)": [4048, 0.75],
+    "mysql → api (glide along the SQL arrow, down)": [4048, 0.75],
+    "pay → api (glide up the api → pay arrow)": [4544, 0.75],
+    "web → api (glide along the HTTP arrow)": [2016, 1.3],
+  };
+  it("tops out at the walking pace and, on a door's ladder, at the climbing pace (0.0625 px/ms: a pair changes over 3.1 times a second); gliding, under 0.5 px/ms; in a hop's air, under HOP_V_MAX", () => {
     for (const s of all) expect(s.maxV).toBeLessThanOrEqual(WALK_SPEED * 1.02);
+    for (const s of all) expect(s.glideMaxV).toBeLessThan(0.5);
+    for (const s of all) expect(s.hopMaxV, s.name).toBeLessThanOrEqual(HOP_V_MAX);
+    expect(all.filter((s) => s.hops).length).toBeGreaterThanOrEqual(9);
     expect(all.find((s) => s.name.startsWith("door"))!.maxV).toBeCloseTo(0.0625, 3);
   });
-  it("never changes speed faster than 1200 px/s² (0.0012 px/ms²): a start, a stop and the change between walking and climbing all ease", () => {
+  it("never changes speed faster than 1200 px/s² (0.0012 px/ms²) walking or climbing, 3500 px/s² gliding: a start, a stop and the change between walking and climbing all ease", () => {
     expect(all.filter((s) => s.maxAccel > ACCEL_MAX).map((s) => `${s.name} ${(s.maxAccel * 1000).toFixed(0)}`)).toEqual([]);
+    expect(all.filter((s) => s.glideMaxAccel > GLIDE_ACCEL_MAX).map((s) => `${s.name} ${(s.glideMaxAccel * 1e6).toFixed(0)}`)).toEqual([]);
+    expect(all.filter((s) => s.glides).length).toBeGreaterThanOrEqual(5);
   });
-  it("goes from walking to climbing and back without stopping: no dip to rest inside a trip (it stands only before the first step and at the end)", () => {
+  it("in a hop's air the speed changes only as gravity has it (≤ HOP_ACCEL_MAX), once the feet have left the floor and until they meet it", () => {
+    expect(all.filter((s) => s.hopMaxAccel > HOP_ACCEL_MAX).map((s) => `${s.name} ${(s.hopMaxAccel * 1e6).toFixed(0)}`)).toEqual([]);
+    expect(Math.max(...all.map((s) => s.hopMaxAccel))).toBeGreaterThan(HOP_ACCEL_MAX / 2); // it falls
+  });
+  it("goes from walking to climbing and back without stopping: no dip to rest inside a trip (it stands only before the first step, at the end, where a glide starts and ends, and for a hop's crouch and squash)", () => {
     expect(all.filter((s) => s.dips.length).map((s) => `${s.name} ${s.dips}`)).toEqual([]);
     for (const s of all.filter((x) => !x.name.startsWith("door"))) expect(s.setOff).toBeGreaterThanOrEqual(240);
   });
-  it("no frame changes the speed by more than 0.019 px/ms (the 1200 px/s² limit over one 16 ms frame)", () => {
-    for (const s of all) for (let i = 1; i < s.samples.length; i++) expect(Math.abs(s.samples[i].v - s.samples[i - 1].v), `${s.name} @${s.samples[i].t}`).toBeLessThanOrEqual(0.0195);
+  it("no frame changes the speed by more than 0.019 px/ms walking (the 1200 px/s² limit over one 16 ms frame), 0.056 gliding (a hop's takeoff and touchdown aside: its own limits are above)", () => {
+    for (const s of all.filter((x) => !x.hops)) for (let i = 1; i < s.samples.length; i++) expect(Math.abs(s.samples[i].v - s.samples[i - 1].v), `${s.name} @${s.samples[i].t}`).toBeLessThanOrEqual(s.glides ? 0.056 : 0.0195);
   });
-  it("a trip is not slower than before: at most 10 % longer without a ladder, at most 75 % longer with one (POL3)", () => {
+  it("a trip is not slower than before: at most 10 % longer without a ladder, at most 75 % longer with one (POL3); along an arrow, as BEFORE_GLIDE says", () => {
     const took = (s: (typeof all)[number]) => s.samples[s.samples.length - 1].t - s.samples[0].t;
     for (const s of all) {
       if (BEFORE[s.name]) expect(took(s), s.name).toBeLessThanOrEqual(BEFORE[s.name] * 1.1);
       if (BEFORE_POL3[s.name]) expect(took(s), s.name).toBeLessThanOrEqual(BEFORE_POL3[s.name] * 1.75);
+      if (BEFORE_GLIDE[s.name]) expect(took(s), s.name).toBeLessThanOrEqual(BEFORE_GLIDE[s.name][0] * BEFORE_GLIDE[s.name][1]);
+      if (BEFORE_HOP[s.name]) expect(took(s), s.name).toBeLessThanOrEqual(BEFORE_HOP[s.name] * 0.75);
     }
+    expect(Object.keys(BEFORE_GLIDE).every((n) => all.some((s) => s.name === n))).toBe(true);
+    expect(Object.keys(BEFORE_HOP).every((n) => all.some((s) => s.name === n && s.hops))).toBe(true);
+    expect(Object.keys(BEFORE_POL3).every((n) => all.some((s) => s.name === n))).toBe(true);
   });
+
   it("a door's ladder is one steady climb: no dips", () => {
     const s = speedOf("door", planDoor(REF_K, 1, true, 1));
     expect(s.dips).toEqual([]);
