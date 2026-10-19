@@ -222,7 +222,7 @@ export function snapshot(runs: Runs, t: number, ctx: Ctx, conflicts: WriteConfli
     const seen = new Set<Trip>();
     for (const u of [t - TRIP_OUT_MS, t, t + TRIP_AHEAD_MS]) {
       const p = stateAt(x.f.run, u, ctx).trip;
-      if (!p || seen.has(p) || (!p.bridges.length && !p.ladders.length) || t < p.t0 - TRIP_AHEAD_MS || t > p.t1 + TRIP_OUT_MS) continue;
+      if (!p || seen.has(p) || (!p.bridges.length && !p.ladders.length && !p.glides.length) || t < p.t0 - TRIP_AHEAD_MS || t > p.t1 + TRIP_OUT_MS) continue;
       seen.add(p);
       trips.push({ key: `${x.f.run.id}|${p.t0}`, run: x.f.run.id, trip: p, sel: x.f.run.id === selected || x.f.run.id === o.traced });
     }
@@ -273,6 +273,10 @@ function TripShape({ trip: p, sel }: { trip: Trip; sel: boolean }) {
   const half = 2.6 * p.k;
   return (
     <>
+      {p.glides.map((g, i) => (
+        // the arrow it glides along, lit faintly under the capsule (§5 沿箭头滑行)
+        <path key={`g${i}`} d={g.pts.map((q, j) => `${j ? "L" : "M"}${px(q.x)} ${px(q.y)}`).join("")} fill="none" stroke="var(--accent)" strokeOpacity={sel ? 0.55 : 0.3} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      ))}
       {p.bridges.map((b, i) => (
         <g key={`b${i}`} fill="none" stroke={ink(b.temp)} strokeLinecap="round">
           <path d={`M${px(b.a.x)} ${px(b.a.y)}H${px(b.b.x)}`} strokeWidth={1.2} strokeDasharray={b.temp ? "2 4" : "5 3"} vectorEffect="non-scaling-stroke" />

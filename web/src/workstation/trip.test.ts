@@ -28,6 +28,8 @@ const proto = walkMap(new Map(Object.entries(PROTO)), [
   { from: "api", to: "redis", pts: pts(530, 280, 610, 280, 610, 362, 680, 362) },
   { from: "api", to: "pay", pts: pts(430, 302, 430, 450) },
 ]);
+/** The same diagram with no arrows: every way between nodes is a scaffold — bridges and ladders. */
+const bare = walkMap(new Map(Object.entries(PROTO)), []);
 const P = spotOn(PROTO);
 // The demo project's canvas: web's top edge is 6.5 px above api's — a step, not a ladder.
 const DEMO: Record<string, Box> = { web: { x: -18.2, y: 203.5, w: 180, h: 120.8 }, api: { x: 360, y: 210, w: 80, h: 101.3 } };
@@ -53,6 +55,8 @@ const TRIPS: [string, WalkMap, Spot, Spot][] = [
   ["web → api, a bridge across", proto, P("web", 64), P("api", 400)],
   ["web → mysql, the long way", proto, P("web", 64), P("mysql", 704)],
   ["demo web → api, over a 6.5 px step", demo, D("web", 5.8), D("api", 384)],
+  ["api → mysql with no arrow: a scaffold up and down", bare, P("api", 354), P("mysql", 704)],
+  ["pay → api with no arrow: a scaffold ladder up beside api", bare, P("pay", 374), P("api", 354)],
   ["a few steps along one floor", hall, H("hall", 100), H("hall", 126)],
   ["a long way along one floor", hall, H("hall", 100), H("hall", 1300)],
 ];
@@ -92,18 +96,22 @@ describe("planTrip / tripAt (剖面 trips)", () => {
     expect(plan(proto, P("web", 64), P("mysql", 704)).p.t1 - T0).toBeGreaterThan(2400); // the long way round, no longer squeezed into 2.4 s
   });
 
-  it("nothing moves faster than the pace: the body's speed peaks at WALK_SPEED walking (CLIMB_SPEED climbing), about 220 px/s — 3.7 px a frame", () => {
+  it("nothing moves faster than the pace: the body's speed peaks at WALK_SPEED walking (CLIMB_SPEED climbing), about 220 px/s — 3.7 px a frame; a capsule gliding along an arrow under 500 px/s", () => {
     for (const [name, map, from, to] of TRIPS) {
       const { p } = plan(map, from, to);
       let prev = tripAt(p, p.t0).root;
       let peak = 0;
+      let glide = 0;
       for (let t = p.t0 + 1; t <= p.t1; t++) {
         const r = tripAt(p, t).root;
-        peak = Math.max(peak, Math.abs(r.x - prev.x), Math.abs(r.y - prev.y)); // along the way (a step's rise adds a little on top)
+        const d = Math.max(Math.abs(r.x - prev.x), Math.abs(r.y - prev.y)); // along the way (a step's rise adds a little on top)
+        if (p.glides.some((g) => t > g.t0 && t <= g.t1)) glide = Math.max(glide, Math.hypot(r.x - prev.x, r.y - prev.y));
+        else peak = Math.max(peak, d);
         prev = r;
       }
       const limit = Math.max(WALK_SPEED, CLIMB_SPEED) * (K / REF_K);
       expect(peak, `${name}: ${(peak * 1000).toFixed(0)} px/s`).toBeLessThanOrEqual(limit + 1e-6);
+      expect(glide, `${name}: gliding ${(glide * 1000).toFixed(0)} px/s`).toBeLessThan(0.5);
     }
     const long = plan(hall, H("hall", 100), H("hall", 1300)).p;
     let peak = 0;
@@ -174,7 +182,7 @@ describe("planTrip / tripAt (剖面 trips)", () => {
       let swung = 0;
       for (let t = p.t0; t <= p.t1; t += 3) {
         const s = tripAt(p, t);
-        if (s.climb > 0) continue;
+        if (s.climb > 0 || (s.capsule ?? 0) > 0) continue; // on a ladder, or gliding along an arrow (the feet go with the capsule)
         for (const f of s.feet) {
           if (lifted(f)) {
             swung++;
@@ -189,7 +197,10 @@ describe("planTrip / tripAt (剖面 trips)", () => {
     // over the step, the feet come down on both floors: web's (203.5) and api's (210)
     const { p } = plan(demo, D("web", 5.8), D("api", 384));
     const ys = new Set<number>();
-    for (let t = p.t0; t <= p.t1; t += 3) for (const f of tripAt(p, t).feet) if (!lifted(f)) ys.add(f.y);
+    for (let t = p.t0; t <= p.t1; t += 3) {
+      const s = tripAt(p, t);
+      if (!(s.capsule ?? 0)) for (const f of s.feet) if (!lifted(f)) ys.add(f.y); // (along the arrow it glides: the feet go with the capsule)
+    }
     expect([...ys].sort()).toEqual([203.5, 210]);
   });
 
@@ -238,24 +249,33 @@ describe("planTrip / tripAt (剖面 trips)", () => {
     }
   });
 
-  it("draws what is walked: a bridge for each gap crossed, a ladder (rails and rungs at most 8.5 figure units apart, evenly from floor to floor, rails reaching above the upper floor) for each climb; a scaffold's are temporary", () => {
+  it("along an arrow nothing is built: it glides on the arrow's own line (lit while walked) — from api's top edge down round its corner to the port, along the elbow, up into mysql's top edge", () => {
     const up = plan(proto, P("api", 354), P("mysql", 704)).p;
-    expect(up.bridges).toEqual([
-      { a: { x: 530, y: 230 }, b: { x: 610, y: 230 }, temp: false },
-      { a: { x: 610, y: 120 }, b: { x: 680, y: 120 }, temp: false },
-    ]);
-    expect(up.ladders).toHaveLength(1);
-    const l = up.ladders[0];
-    expect(l).toMatchObject({ x: 610, bottom: 230, temp: false });
-    expect(l.top).toBeLessThan(120);
+    expect(up.bridges).toEqual([]);
+    expect(up.ladders).toEqual([]);
+    expect(up.glides).toHaveLength(1);
+    const g = up.glides[0].pts;
+    expect(g[0]).toEqual({ x: 530, y: 230 });
+    expect(g[g.length - 1]).toEqual({ x: 680, y: 120 });
+    // on the arrow's upright stretch at x = 610, and its level ones at y = 252 and 152
+    const off = (q: { x: number; y: number }) => Math.min(...g.slice(1).map((b, i) => { const a = g[i]; const dx = b.x - a.x, dy = b.y - a.y; const u = Math.max(0, Math.min(1, ((q.x - a.x) * dx + (q.y - a.y) * dy) / (dx * dx + dy * dy || 1))); return Math.hypot(a.x + dx * u - q.x, a.y + dy * u - q.y); }));
+    for (const q of [{ x: 610, y: 200 }, { x: 570, y: 252 }, { x: 650, y: 152 }]) expect(off(q)).toBeLessThan(0.5);
+    // the capsule is out over the middle, the figure at the ends
+    const ph = up.glides[0];
+    expect(tripAt(up, (ph.t0 + ph.t1) / 2).capsule).toBe(1);
+    expect(tripAt(up, ph.t0 - 1).capsule ?? 0).toBe(0);
+    expect(tripAt(up, ph.t1 + 1).capsule ?? 0).toBe(0);
+  });
+
+  it("draws what is walked where there is no arrow: a bridge for each gap crossed, a ladder (rails and rungs at most 8.5 figure units apart, evenly from floor to floor) for each climb; a scaffold's are temporary", () => {
     for (const k of [K, K * 0.8]) {
-      const rungs = [...plan(proto, P("api", 354), P("mysql", 704), k).p.ladders[0].rungs].sort((a, b) => b - a);
+      const l = plan(bare, P("pay", 374), P("api", 354), k).p.ladders.reduce((a, b) => (b.bottom - b.top > a.bottom - a.top ? b : a));
+      const rungs = [...l.rungs].sort((a, b) => b - a);
       const gaps = rungs.slice(1).map((y, i) => rungs[i] - y);
       for (const g of gaps) expect(g).toBeCloseTo(gaps[0], 6);
       expect(gaps[0]).toBeLessThanOrEqual(8.5 * k + 1e-9);
       expect(gaps[0]).toBeGreaterThan(7 * k); // as far apart as the reach allows, not a rung a step
-      expect(rungs.some((y) => Math.abs(y - 120) < 1e-6)).toBe(true);
-      expect(rungs.every((y) => y < 230)).toBe(true);
+      expect(rungs.every((y) => y < l.bottom)).toBe(true);
     }
     const tray = plan(proto, P("web", 64), P("tray", 650)).p;
     expect(tray.ladders.length).toBeGreaterThan(0);

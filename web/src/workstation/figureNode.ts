@@ -43,6 +43,8 @@ const MARK_UP = RIG.head + 4.2;
 /** Selecting a figure swaps these three colours for the accent (see `draw`). */
 const INK = "var(--fig-ink)";
 const PAPER = "var(--fig-fill)";
+/** The capsule a worker glides along an arrow as (figure units): a pill this long and tall, centred on the line. */
+const POD = { w: 22, h: 12 };
 const FAR = "var(--fig-far)";
 const outline = (w = LINE) => ({ stroke: INK, "stroke-width": w, "vector-effect": "non-scaling-stroke" });
 
@@ -103,6 +105,10 @@ export class FigureNode {
   private shadow: SVGEllipseElement;
   private glow: SVGRectElement;
   private glyph: SVGPathElement;
+  /** Gliding along an arrow (§5 沿箭头滑行): the capsule — a pill along the line, a short trail behind it, and the avatar riding upright at its front. */
+  private pod: SVGGElement;
+  private pill: SVGGElement;
+  private podMark: SVGGElement;
   /** The head's look: an offset toward what it looks at, on a quick spring of its own. */
   private lookX = new Spring(4, 0.7, 0.6);
   private lookY = new Spring(4, 0.7, 0.6);
@@ -167,6 +173,14 @@ export class FigureNode {
     // selected: the skeleton over the figure — IK chains and joints (Loom's rig view)
     this.rigLines = el("path", { display: "none", fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round", opacity: 0.9, ...outline(1), stroke: "var(--accent)" }, b);
     this.rigJoints = el("path", { display: "none", fill: "var(--fig-fill)", ...outline(1), stroke: "var(--accent)" }, b);
+    // the capsule (hidden unless gliding): over the line at the root, outside the body (the body turns and shrinks; the pill turns with the line)
+    this.pod = el("g", { display: "none" }, this.g);
+    this.pill = el("g", {}, this.pod);
+    for (const [cx, r, o] of [[-POD.w / 2 - 3.2, 2.2, 0.45], [-POD.w / 2 - 8, 1.5, 0.25], [-POD.w / 2 - 12, 1, 0.12]]) el("circle", { cx, r, fill: "var(--accent)", opacity: o }, this.pill);
+    el("rect", { x: -POD.w / 2, y: -POD.h / 2, width: POD.w, height: POD.h, rx: POD.h / 2, fill: PAPER, ...outline(HEAD_LINE), stroke: "var(--accent)" }, this.pill);
+    this.podMark = el("g", {}, this.pod);
+    el("circle", { r: POD.h / 2 - 0.8, fill: PAPER }, this.podMark);
+    mark(agent, POD.h / 2 - 1.2, this.podMark);
   }
 
   private set(node: Element, key: string, attr: string, v: string) {
@@ -191,9 +205,22 @@ export class FigureNode {
     // scaled about its feet and raised.
     const scale = j.scale ?? 1;
     const lift = j.lift ?? 0;
-    S(this.body, "b", "transform", `${lift ? `translate(0 ${f2(-lift)}) ` : ""}${j.turn < 0.999 || scale !== 1 ? `scale(${f2(j.turn * scale)} ${f2(scale)})` : ""}`.trim());
-    // off the ground on a ladder: no shadow under the feet
-    S(this.shadow, "sd", "opacity", 1 - j.climb);
+    // Gliding: the figure shrinks into its feet and fades as the capsule grows out of the same spot (and back) — never a cut
+    const c = j.capsule ?? 0;
+    const shrink = 1 - 0.8 * c;
+    S(this.body, "b", "transform", `${lift ? `translate(0 ${f2(-lift)}) ` : ""}${j.turn < 0.999 || scale * shrink !== 1 ? `scale(${f2(j.turn * scale * shrink)} ${f2(scale * shrink)})` : ""}`.trim());
+    S(this.body, "b", "opacity", c > 0.001 ? f2(Math.max(0, 1 - 1.6 * c)) : "1");
+    S(this.pod, "pd", "display", c > 0.001 ? "inline" : "none");
+    if (c > 0.001) {
+      const h = j.heading ?? 0;
+      const grow = 0.35 + 0.65 * c;
+      S(this.pod, "pd", "opacity", f2(Math.min(1, 1.6 * c)));
+      S(this.pill, "pl", "transform", `rotate(${f2((h * 180) / Math.PI)}) scale(${f2(grow)})`);
+      const front = (POD.w / 2 - POD.h / 2) * grow;
+      S(this.podMark, "pm", "transform", `translate(${f2(Math.cos(h) * front)} ${f2(Math.sin(h) * front)}) scale(${f2(grow)})`);
+    }
+    // off the ground on a ladder (or gliding): no shadow under the feet
+    S(this.shadow, "sd", "opacity", 1 - Math.max(j.climb, c));
     // the avatar mark, the dispatcher's badge and the ! / ? never read mirrored mid-turn
     const un = j.turn < 0 ? " scale(-1 1)" : "";
     const desk = !j.walking && (j.prop === "laptop" || j.prop === "terminal") && j.propAlpha > 0.01;
