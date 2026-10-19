@@ -210,8 +210,8 @@ path/to/agora/bin/agora dev status         # 本机所有项目服务：是否�
 path/to/agora/bin/agora dev gc             # 清掉已退出服务的记录（不停任何进程）
 ```
 
-- `bin/agora` 包一层 `uv run --project <agora 仓库>`，当前目录保持为项目目录；也可以 `PYTHONPATH=<仓库> uv run --project <仓库> python -m agora_cli up`。
-- 默认服务构建好的 `web/dist`（先 `cd web && npm run build`）。`--dev` 另起 vite（热更新）代理到本项目后端，页面地址是 vite 的；`--web-port` 指定 vite 端口。
+- `uv tool install` 装好的 `agora` 与这里的 `path/to/agora/bin/agora` 用法相同。`bin/agora` 包一层 `uv run --project <agora 仓库>`，当前目录保持为项目目录；也可以 `PYTHONPATH=<仓库> uv run --project <仓库> python -m agora_cli up`。
+- 默认服务构建好的 `web/dist`（源码里先 `cd web && npm run build`；安装版的在包内 `server/_bundle/web/dist`，见 `server/paths.py`）。`--dev` 另起 vite（热更新）代理到本项目后端，页面地址是 vite 的；`--web-port` 指定 vite 端口；只有源码仓库能用。
 - 同一项目重复 `up` 复用在跑的实例（按 `run/server.json` 的 pid + `/health` 的项目根确认）；两个 `up` 同时进来由 `run/up.lock` 串行。进程崩溃留下的旧记录会被清掉重启。
 - `up` 先对账（上面的表）：移动、复制、新 clone 各打印一段说明。`run/server.json` 里记的进程只有在命令行确认是 `agora_cli serve --project <这个项目>` 时才会被当作残留停掉：`cp -r` 一个正在跑的项目会把原项目的 `server.json` 一起复制过来，那个服务属于原项目。
 - `dev status` / `dev gc` 读的就是下面这份记录（服务启动时一并写入 `sha`、`dirty`），不另存一份。`gc` 只清进程已退出的记录，而且清之前先拿这个实例的锁：有服务持有它（在跑，或正在启动）就不动；锁文件本身留着，下次启动还要锁它。进程还活着的服务一律不碰：不应答的留给 `agora down`（它靠同一份记录和锁找到进程），项目目录已经没了的由 `status` 标出（只给 pid，不给停止命令：pid 可能已被别的程序复用，先确认它是什么再停），目录可能只是暂时不可达（卷没挂载），不能据此停服。页面顶栏项目名旁显示 SHA 前 7 位（有未提交改动时带 `+`，git 没能说清时带 `?`），同时开着几个 worktree 的服务时用它分辨。

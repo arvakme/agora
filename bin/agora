@@ -1,5 +1,10 @@
 #!/bin/sh
-# agora CLI from any directory: `path/to/agora/bin/agora up` inside a project.
-# Uses the repo's uv environment; the current directory stays the project.
+# agora CLI from any directory: `path/to/agora/bin/agora up` inside a project; the current directory stays the project.
+# In a checkout it uses the repo's uv environment. The same file ships inside an installed copy
+# (<env>/lib/pythonX.Y/site-packages/server/_bundle/bin/, see server/paths.py), where the agents Agora starts
+# find it on PATH: there it runs that environment's own Python.
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" exec uv run --quiet --project "$REPO" python -m agora_cli "$@"
+if [ -f "$REPO/pyproject.toml" ]; then
+    PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" exec uv run --quiet --project "$REPO" python -m agora_cli "$@"
+fi
+exec "$REPO/../../../../../bin/python" -m agora_cli "$@"

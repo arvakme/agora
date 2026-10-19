@@ -15,12 +15,12 @@ import math
 import re
 from collections.abc import Callable, Sequence
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 from server.canvas.model_view import library_meta, version_of
+from server.paths import WEB
 
-RULES_FILE = Path(__file__).resolve().parents[2] / "web" / "generated" / "plan.rules.json"
+RULES_FILE = WEB / "generated" / "plan.rules.json"
 
 
 @lru_cache

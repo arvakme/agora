@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import json
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
-GENERATED = Path(__file__).resolve().parents[2] / "web" / "generated"
+from server.paths import WEB
+
+GENERATED = WEB / "generated"
 
 
 @lru_cache

@@ -17,7 +17,6 @@ This module also doubles as a standalone app for local development::
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -27,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 
 from server.canvas import schemas
 from server.canvas.library import Library
+from server.paths import WEB
 from server.canvas.runner import (
     ANIM_SYSTEM,
     PLAN_SYSTEM,
@@ -141,7 +141,7 @@ def create_app():
     )
     app.include_router(create_router(), prefix="/api/canvas")
     # Serve the vendored libraries statically so /libraries/* works outside vite too.
-    libs = Path(__file__).resolve().parents[2] / "web" / "libraries"
+    libs = WEB / "libraries"
     if libs.is_dir():
         app.mount("/libraries", StaticFiles(directory=str(libs)), name="libraries")
     return app

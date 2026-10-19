@@ -76,7 +76,7 @@ Agora 发出的消息末尾有一行隐藏页脚：`[[agora]] 来自 Agora · �
 
 ## 3. agora skill 与 `agora canvas`
 
-`skills/agora/SKILL.md`（一页路由：什么时候用、各领域的核心步骤）+ `references/`（`canvas-ops.md` 改图操作、`animation.md` 动画脚本、`nested.md` 子图、`link.md` 关联代码、`comments.md` 答复评论、`dispatch.md` 派活）+ `scripts/agora`（PATH 上没有 `agora` 时用，顺着软链接找到 Agora 仓库的 `bin/agora`），三个 CLI 共用一份。命令都输出一个 JSON 对象：
+`skills/agora/SKILL.md`（一页路由：什么时候用、各领域的核心步骤）+ `references/`（`canvas-ops.md` 改图操作、`animation.md` 动画脚本、`nested.md` 子图、`link.md` 关联代码、`comments.md` 答复评论、`dispatch.md` 派活）+ `scripts/agora`（PATH 上没有 `agora` 时用，顺着软链接找到 Agora 仓库或安装包里的 `bin/agora`），三个 CLI 共用一份。命令都输出一个 JSON 对象：
 
 ```bash
 agora canvas list                     # 画布与会话

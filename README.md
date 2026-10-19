@@ -101,11 +101,29 @@ flowchart LR
 
 | 依赖 | 用途 |
 |---|---|
-| [uv](https://docs.astral.sh/uv/)（Python 3.12+） | 服务和 `agora` 命令 |
-| Node 24（写在 `web/mise.toml`，装了 [mise](https://mise.jdx.dev) 会自动选用） | 构建前端 |
+| [uv](https://docs.astral.sh/uv/)（Python 3.12+，没有时 uv 自己装） | 安装和运行 `agora` 命令 |
+| Node 22+ 与 npm（从源码安装或开发时；开发用 Node 24，写在 `web/mise.toml`，装了 [mise](https://mise.jdx.dev) 会自动选用） | 构建前端 |
 | tmux | 「在终端打开」 |
 | 至少一个已登录的 agent CLI：`claude`、`pi` 或 `codex` | 会话 |
 | 可选：`cf`（没装时自动用 `npx cf@1.0.0-beta.5`，`AGORA_CF_VERSION` 可改；先 `npx cf auth login`）+ 自己的 Cloudflare 域名 | 分享 |
+
+安装成全局命令（不需要留着仓库）：
+
+```bash
+uv tool install git+https://github.com/arvakme/agora     # 安装时构建前端，需要 Node 和 npm
+# 或者装 GitHub Release 里带好前端的 wheel，不需要 Node：
+# uv tool install https://github.com/arvakme/agora/releases/download/<tag>/agora_canvas-<版本>-py3-none-any.whl
+
+cd ~/code/my-service                  # 你的项目
+agora open                            # 初始化 .agora/，起本项目服务并打开浏览器
+agora status                          # 在跑就打印地址、端口、pid
+agora down                            # 停掉服务和本项目的 tmux
+agora doctor [--fix]                  # 检查本机数据；--fix 从备份和本机注册表放回丢了的东西
+```
+
+升级用 `uv tool upgrade agora-canvas`，卸载用 `uv tool uninstall agora-canvas`。发行包名是 `agora-canvas`（PyPI 上 `agora`、`agora-cli` 都已被占用），命令名仍是 `agora`；发布到 PyPI 后可以 `uv tool install agora-canvas`，或不安装直接 `uvx --from agora-canvas agora open`（目前还没发布）。
+
+从源码运行（开发 Agora 本身时用；改代码立即生效，还能走 vite 热更新）：
 
 ```bash
 git clone https://github.com/arvakme/agora.git ~/code/agora
@@ -113,11 +131,9 @@ cd ~/code/agora
 uv sync
 cd web && npm ci && npm run build && cd ..      # 用 mise 时：mise exec -- npm ci，以此类推
 
-cd ~/code/my-service                            # 你的项目
-~/code/agora/bin/agora open                     # 初始化 .agora/，起本项目服务并打开浏览器
-~/code/agora/bin/agora status                   # 在跑就打印地址、端口、pid
-~/code/agora/bin/agora down                     # 停掉服务和本项目的 tmux
-~/code/agora/bin/agora doctor [--fix]           # 检查本机数据；--fix 从备份和本机注册表放回丢了的东西
+cd ~/code/my-service
+~/code/agora/bin/agora open                     # 与上面的 agora 相同，跑的是这份仓库的代码
+~/code/agora/bin/agora open --dev               # 前端走 vite 热更新（只有源码仓库能用）
 ```
 
 - 删除的画布和会话进「回收站」，30 天内可恢复（刷新、重启后也行）；「所有画布」底部还有「会话历史」，可以按时间、agent、主题、画布找会话，也能把本机找到的原生会话重新导入。
@@ -125,7 +141,7 @@ cd ~/code/my-service                            # 你的项目
 
 - 首次打开会建一块以项目命名的空画布和一个会话；会话里的「画出这个项目的架构」按钮让推荐的 agent 看一遍项目、把架构画上去（也可以自己选 agent、自己写第一句话）；「看一个示例」会把示例图作为另一张画布打开。
 - 绑定会话时会自动为该 agent 安装 `agora` skill（旧的 `agora-canvas` 链接会被换掉）；也可以手动 `agora skill install --agent claude|codex|pi|all`（Claude Code 链接到 `.claude/skills/`，Codex 链接到 `.agents/skills/`，Pi 每次启动带 `--skill`；链接写进 `.git/info/exclude`，不改全局配置）。
-- 把 `~/code/agora/bin` 加进 `PATH` 后可以直接用 `agora up` / `agora open`。`agora up` 只起服务并打印地址；`agora open --dev` 走 vite 热更新，开发 Agora 本身时用。同时开着几个 worktree 的服务时，`agora dev status` 列出本机所有服务和各自跑的 git SHA，`agora dev gc` 清掉已退出的记录。
+- `agora up` 只起服务并打印地址。从源码运行时把 `~/code/agora/bin` 加进 `PATH` 也能直接用 `agora`。同时开着几个 worktree 的服务时，`agora dev status` 列出本机所有服务和各自跑的 git SHA（安装版显示包版本），`agora dev gc` 清掉已退出的记录。
 
 分享需要 `cf`（Cloudflare CLI；没装就用固定版本的 `npx cf`），并已 `npx cf auth login`（凭据归 `cf` 管，Agora 不存也不读）；`AGORA_SHARE_DOMAIN` 指定分享用的域名（账号里只有一个域名时可省）：
 
@@ -162,8 +178,11 @@ npm run eval:replay          # 离线回放最近一轮的模型输出（validat
 
 ```
 agora_cli/            agora 命令：init / up / open / status / down / canvas / skill / share
-bin/agora             在任意项目目录里调用上面的命令（uv run --project <仓库>）
+bin/agora             从源码在任意项目目录里调用上面的命令（uv run --project <仓库>）
+bin/agora-state       CLI 钩子向服务回报状态的脚本
 server/canvas/        本项目服务：项目存储、三个 agent 后端、会话跟随与终端、画布桥接、分享与网关
+server/paths.py       非 Python 文件（前端、素材库、skill、bin/）的唯一定位：源码里是仓库根，安装后是包内 server/_bundle/
+hatch_build.py        打包钩子：没有 web/dist 时先构建，再把上述文件放进 wheel
 skills/agora/         给 Pi / Claude Code / Codex 的 skill：SKILL.md 是入口路由，references/ 按领域放细节（改图、动画、子图、关联代码、评论、派活）
 web/                  前端（React + Excalidraw）；web/docs/ 是各功能规格，web/eval/ 是评测
 web/libraries/        vendored 素材库（约 6k 个组件，来源与许可见其 NOTICE.md）
@@ -192,6 +211,8 @@ docs/                 开发协作与测试说明
 uv run pytest tests/test_project_store.py tests/test_agent_sessions.py tests/test_share.py   # 画布相关，免外部服务
 cd web && npx tsc -p . && npx vitest run && npm run build && npm run eval:replay
 ```
+
+打包：`uv build` 在 `dist/` 生成 sdist 和 wheel（没有 `web/dist` 时先在 `web/` 里 `npm ci && npm run build`；`AGORA_SKIP_WEB_BUILD=1` 跳过前端）。推 `v*` 标签时 `.github/workflows/release.yml` 构建并附到 GitHub Release，不发布到 PyPI。
 
 CI（`.github/workflows/test.yml`）跑全部 Python 测试（不需要外部服务），以及前端的类型检查、单测、构建、离线评测回放和素材库校验。开发协作见 [docs/development.md](docs/development.md)，测试说明见 [docs/testing.md](docs/testing.md)，后端编排（Agent 生命周期、派发与恢复）见 [docs/orchestration.md](docs/orchestration.md)，一页面试讲法见 [docs/orchestration-interview.md](docs/orchestration-interview.md)。
 

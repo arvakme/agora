@@ -32,9 +32,8 @@ from server.canvas.share import PROJECT_TITLE, SCOPE_PROJECT, ShareError, ShareM
 from server.canvas.trash import Trash, TrashError, canvas_sessions
 from server.canvas.runner import DEFAULT_BACKEND, DEFAULT_MODEL, EFFORTS, ExecOptions
 from server.canvas.version import running_version
+from server.paths import WEB
 
-REPO = Path(__file__).resolve().parents[2]
-WEB = REPO / "web"
 
 
 class Write(BaseModel):
