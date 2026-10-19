@@ -72,6 +72,11 @@ export const useNested = () => {
 export const nav = {
   /** Show `to` in place of `from` (same tab), pushing a history entry. */
   go: (_from: string, _to: string) => {},
+  /**
+   * The person's own way in or up (the entry mark, ⇧↵, 「进入子图」, the breadcrumb, ⌘↑): the same as `go`, as a zoom — the view flies
+   * into the node (`node`: the one clicked) or back out of it (./zoomNav.ts). With reduced motion, or where it cannot, it is `go`.
+   */
+  fly: (from: string, to: string, _node?: string) => nav.go(from, to),
   /** Make a new blank canvas for a node's child (no tab); resolves with its id. */
   createChild: async (_title: string): Promise<string | undefined> => undefined,
   /** Remember that the person checked a child canvas against the code at this time. */

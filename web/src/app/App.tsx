@@ -34,6 +34,9 @@ import { enterOnKey } from "../nested/enter";
 import { selectedNode } from "../canvas/nodes";
 import { canvasFromUrl, nav, nested, urlFor } from "../nested/store";
 import { isEditableTarget, markBackHintSeen, upOnKey } from "../nested/up";
+import { applySim, flyInto, flyUp, installZoomShell } from "../nested/zoomNav";
+import type { Sim } from "../nested/zoom";
+import { firstView } from "../canvas/viewport";
 import { threadSessionTitles } from "../comments/sessionTitles";
 import { sessionNames } from "../multi/writes";
 import { runs, setRunsRoot } from "../workstation/runs/store";
@@ -614,9 +617,13 @@ export function App({ boot }: { boot: Boot }) {
    * Nested canvases: show `to` in the tab where `from` is (entering a child, going back up), and
    * record it in the address bar so the browser's back / forward walk the levels.
    */
-  const go = (from: string, to: string, push = true) => {
+  const go = (from: string, to: string, push: boolean | "replace" = true, arrive?: Sim): boolean => {
     userNav.note(); // the camera's own switches say so themselves (workstation/navOrigin.ts `byCamera`): every other way here is the person's
-    if (!docsRef.current.some((d) => d.id === to && d.kind === "canvas")) return;
+    if (!docsRef.current.some((d) => d.id === to && d.kind === "canvas")) return false;
+    // a zoom's switch (nested/zoomNav.ts): the canvas gone to mounts showing its scene where the one left showed it — unless it is
+    // open in another group already (then it is simply shown there)
+    const inPlace = !!arrive && !isOpen(rootRef.current, to);
+    if (inPlace) firstView.set(to, (api) => applySim(api, arrive));
     // Keep what the leaving canvas holds right now. Its view reports scene changes one frame
     // late (CanvasView onChange → onScene), and it unmounts below: a link just written into a
     // node (新建空白子图) would otherwise never reach the scene store, the nesting index or disk.
@@ -635,12 +642,22 @@ export function App({ boot }: { boot: Boot }) {
     setFocused(to);
     setLastCanvas(to);
     setMode("browse");
-    if (push && canvasFromUrl() !== to) history.pushState({ canvas: to }, "", urlFor(to));
+    if (push === "replace") history.replaceState({ canvas: to }, "", urlFor(to));
+    else if (push && canvasFromUrl() !== to) history.pushState({ canvas: to }, "", urlFor(to));
+    return inPlace;
   };
   const goRef = useRef(go);
   goRef.current = go;
   useEffect(() => {
-    nav.go = (from, to) => goRef.current(from, to);
+    nav.go = (from, to) => void goRef.current(from, to);
+    // the person's ways in and up fly (nested/zoomNav.ts); the camera of a played turn and back / forward still switch at once
+    installZoomShell({ go: (from, to, h, arrive) => goRef.current(from, to, h === "replace" ? "replace" : true, arrive) });
+    nav.fly = (from, to, node) => {
+      const st = nested.get();
+      if (st.index.get(to)?.canvasId === from) void flyInto(from, to, node);
+      else if (ancestry(from, st.index).includes(to)) void flyUp(from, to);
+      else goRef.current(from, to);
+    };
     nav.createChild = async (title) => {
       const id = uid("c");
       const name = nextTitle(titlesOf(docsRef.current, "canvas"), title.trim() || UNTITLED_CANVAS, true);
@@ -680,7 +697,7 @@ export function App({ boot }: { boot: Boot }) {
       if (into) {
         e.preventDefault();
         e.stopPropagation();
-        goRef.current(id, into);
+        nav.fly(id, into, node!.id);
         return;
       }
       const up = upOnKey(keys, id, nested.get().index, selected);
@@ -688,7 +705,7 @@ export function App({ boot }: { boot: Boot }) {
       e.preventDefault();
       e.stopPropagation();
       markBackHintSeen();
-      goRef.current(id, up);
+      nav.fly(id, up);
     };
     addEventListener("keydown", onKey, true);
     // A link like ?canvas=<id> opens that level on load.
