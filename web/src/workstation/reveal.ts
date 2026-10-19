@@ -125,5 +125,39 @@ export function holds(o: { count: number; stations: number; reduced: boolean; fi
 /** The distinct moments a batch's elements appear at after it was applied (its stations, as the page shows them). */
 export const stationsOf = (times: ReadonlyMap<string, number>, at: number): number[] => [...new Set([...times.values()].filter((t) => t > at))].sort((a, b) => a - b);
 
+// ——— lines are drawn, not faded ———
+// An arrow (or a line) of a station is drawn from its start point along its path once the nodes it joins are half in; its head shows as the stroke gets
+// to the end, its label fades in after. The lines of one station are drawn one after another, a little apart, so it reads as drawing them one by one.
+
+/** From a station's moment to its first line starting (its nodes are half faded in by then). */
+export const DRAW_LEAD_MS = REVEAL_FADE_MS / 2;
+/** One line's stroke, start to end. */
+export const DRAW_MS = 420;
+/** Between one line of a station starting and the next; with many lines the gaps shrink so all have started within DRAW_STAGGER_TOTAL_MS. */
+export const DRAW_STAGGER_MS = 140;
+export const DRAW_STAGGER_TOTAL_MS = 700;
+/** The arrowhead comes in over the last bit of the stroke; the label after the stroke is done. */
+export const HEAD_FADE_MS = 80;
+export const LABEL_FADE_MS = 200;
+/** How long after its moment a station is still in motion (its fade-in, its lines being drawn): until then it is not part of the still picture. */
+export const REVEAL_SETTLE_MS = Math.max(REVEAL_FADE_MS, DRAW_LEAD_MS + DRAW_STAGGER_TOTAL_MS + DRAW_MS + LABEL_FADE_MS);
+
+/** Is this element drawn as a stroke (an arrow or a line) rather than faded in. */
+export const isDrawn = (e: Pick<RevealEl, "type">): boolean => e.type === "arrow" || e.type === "line";
+
+/** When line `k` of the `n` drawn at a station starts (ms after the station's moment). */
+export function drawStart(k: number, n: number): number {
+  const gap = n > 1 ? Math.min(DRAW_STAGGER_MS, DRAW_STAGGER_TOTAL_MS / (n - 1)) : 0;
+  return DRAW_LEAD_MS + k * gap;
+}
+
+const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+/** Line `k` of `n`, `ms` after the station's moment: how much of its stroke is drawn (0 → 1, eased), how visible its head and its label are. */
+export function drawAt(ms: number, k: number, n: number): { stroke: number; head: number; label: number } {
+  const s = ms - drawStart(k, n);
+  const p = clamp01(s / DRAW_MS);
+  return { stroke: 1 - (1 - p) * (1 - p), head: clamp01((s - DRAW_MS + HEAD_FADE_MS) / HEAD_FADE_MS), label: clamp01((s - DRAW_MS) / LABEL_FADE_MS) };
+}
+
 /** How visible an element appearing at `t` is at `now`: 0 before, fading in over REVEAL_FADE_MS, 1 after. */
 export const shownAt = (t: number, now: number): number => (now < t ? 0 : Math.min(1, (now - t) / REVEAL_FADE_MS));
