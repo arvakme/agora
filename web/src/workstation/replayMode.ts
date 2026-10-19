@@ -8,6 +8,7 @@
 import { useSyncExternalStore } from "react";
 import { nested } from "../nested/store";
 import { clock, replayTime } from "./clock";
+import { frame } from "./frame";
 import { canvasWhere } from "./place";
 import { summaryOf, type Window } from "./playCounts";
 import { startAt, type StartOpts } from "./replayStart";
@@ -132,13 +133,12 @@ if (typeof window !== "undefined") {
     }
   }, 400);
   window.setInterval(() => camera.tick(), 200);
+  // first in each animation frame (./frame.ts `lead`): the view it writes is the one the figures are drawn on in the same frame
   let lastFrame = 0;
-  const loop = (n: number) => {
+  frame.lead((n) => {
     if (state.play) camera.frame(lastFrame ? n - lastFrame : 16);
     lastFrame = n;
-    requestAnimationFrame(loop);
-  };
-  requestAnimationFrame(loop);
+  });
   // Esc lets go (before the app's own Esc: trace, follow, selection)
   addEventListener(
     "keydown",

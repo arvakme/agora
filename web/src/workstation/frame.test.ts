@@ -30,3 +30,25 @@ it("a flush between two frames never puts the jobs' clock past the next frame", 
   expect(seen).toEqual([...seen].sort((a, b) => a - b));
   expect(seen.at(-1)).toBeCloseTo(1017);
 });
+
+// The camera leads (./replayLive.ts, ./replayMode.ts): it writes the view first in the frame, synchronously, so the figures drawn after
+// it are on the view of this frame. A flush (inside a React commit) does not run it: a synchronous view write cannot happen there.
+it("lead jobs run first in each frame, at the frame's time, and never on flush", async () => {
+  vi.resetModules();
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frames.push(cb));
+  vi.stubGlobal("cancelAnimationFrame", () => {});
+  vi.stubGlobal("document", { visibilityState: "visible", addEventListener: () => {} });
+  vi.stubGlobal("window", { setInterval: () => 0, clearInterval: () => {} });
+  vi.spyOn(performance, "now").mockImplementation(() => 2000);
+  const { frame } = await import("./frame.ts");
+  const order: string[] = [];
+  frame.add((now) => order.push(`draw@${Math.round(now - performance.timeOrigin)}`));
+  const stop = frame.lead((now) => order.push(`camera@${Math.round(now - performance.timeOrigin)}`));
+  frames.shift()!(2000);
+  frame.flush();
+  frames.shift()!(2017);
+  stop();
+  frames.shift()!(2033);
+  expect(order).toEqual(["camera@2000", "draw@2000", "draw@2000", "camera@2017", "draw@2017", "draw@2033"]);
+});

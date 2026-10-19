@@ -11,6 +11,7 @@ import { prefs } from "../app/prefs";
 import { pointerFollow } from "../pointer/follow";
 import { openSessions } from "../session/ui";
 import { clock } from "./clock";
+import { frame } from "./frame";
 import { choose, chosenRun, NONE, type Choice } from "./followChoice";
 import { isWorking, newSpell, pickFollow, spellStep, type Pick, type Spell } from "./liveCamera";
 import { canvasWhere } from "./place";
@@ -131,18 +132,16 @@ if (typeof window !== "undefined") {
     camera.tick();
   };
   const timer = window.setInterval(tick, 200);
+  // first in each animation frame (./frame.ts `lead`): the view it writes is the one the figures are drawn on in the same frame
   let last = 0;
-  let raf = 0;
-  const loop = (n: number) => {
+  const stopLoop = frame.lead((n) => {
     camera.frame(last ? n - last : 16);
     last = n;
-    raf = requestAnimationFrame(loop);
-  };
-  raf = requestAnimationFrame(loop);
+  });
   // a hot update must not leave two cameras running (they would fight over the canvas)
   import.meta.hot?.dispose(() => {
     clearInterval(timer);
-    cancelAnimationFrame(raf);
+    stopLoop();
     camera.stop();
   });
 }
