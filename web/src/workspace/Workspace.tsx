@@ -11,12 +11,13 @@ import { useFloat } from "./useFloat";
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { SPRING } from "../comments/motion";
-import { IconClose, IconFolder, IconLayers, IconMessage, IconPencil, IconPlus, IconTrash } from "../app/icons";
+import { IconChevron, IconClose, IconFolder, IconLayers, IconMessage, IconPencil, IconPlus, IconTrash } from "../app/icons";
 import { activate, equalize, groupOf, groups, layout, resize, type Node, type Rect, type Sash } from "./layout";
 import { dropTab } from "./twoColumns";
 import { groupKind, plusMenu, type NewWhat } from "./model";
 import { nextFront } from "./frontPane";
 import { installPinchRouting } from "./pinchRoute";
+import { NARROW_MIN_PANE, narrowRoot, useNarrow, type Stack } from "./narrow";
 
 // Panes are flush: a 1px gap over the hairline-coloured workspace is the divider (D13).
 const GAP = 1, PAD = 0, HEADER = 36, MIN_PANE = 220;
@@ -32,6 +33,12 @@ const ITEMS: Record<NewWhat, { icon: ReactNode; label: string }> = {
   open: { icon: <IconFolder size={14} />, label: "打开画布" },
 };
 type Props = {
+  /** Phone only: the canvas and the session shown together while a turn plays (./narrow.ts). */
+  stack?: Stack | null;
+  /** Phone, session panel as a bottom bar: the session's strip is folded or pulled up; the button on its tab bar toggles it. */
+  sheet?: { open: boolean; toggle: () => void };
+  /** Phone, canvas over session: given, the divider between them can be dragged, and says the session's share of the height (null: back to the usual). */
+  onStackShare?: (share: number | null) => void;
   root: Node;
   setRoot: (n: Node) => void;
   titles: Record<string, string>;
@@ -61,10 +68,14 @@ type Props = {
   float?: FloatSpec;
 };
 
-export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, marks = {}, focused, onFocus, onNew, canvasCount = 0, onClose, onDelete, renderEmpty, editing, setEditing, onRename, onSettled, renderCanvas, float }: Props) {
+export function Workspace({ root: savedRoot, setRoot: setSavedRoot, titles, subtitles = {}, kinds = {}, marks = {}, focused, onFocus, onNew, canvasCount = 0, onClose, onDelete, renderEmpty, editing, setEditing, onRename, onSettled, renderCanvas, float, stack = null, sheet, onStackShare }: Props) {
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  // A phone shows one pane (./narrow.ts): the layout is drawn collapsed and what would change the saved tree (drops, sashes) is ignored.
+  const narrow = useNarrow();
+  const root = narrow ? narrowRoot(savedRoot, focused, stack, size.h) : savedRoot;
+  const setRoot = (n: Node) => { if (!narrow) setSavedRoot(n); };
   const [menu, setMenu] = useState<{ tab: string; x: number; y: number } | { group: string; x: number; y: number; kind: "canvas" | "mixed" } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ w: 0, h: 0 });
   const [drag, setDrag] = useState<Drag | null>(null);
   const guard = useDragGuard();
   const [resizing, setResizing] = useState(false);
@@ -147,9 +158,10 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
     const end = guard(e, { cursor: s.dir === "row" ? "col-resize" : "row-resize", onEnd: () => (setResizing(false), window.removeEventListener("pointermove", move)) });
     const move = (ev: PointerEvent) => {
       const now = s.dir === "row" ? ev.clientX : ev.clientY;
-      current = resize(current, s.splitId, s.index, (now - last) / s.span, MIN_PANE / s.span);
+      current = resize(current, s.splitId, s.index, (now - last) / s.span, (narrow ? NARROW_MIN_PANE : MIN_PANE) / s.span);
       last = now;
-      setRoot(current);
+      if (narrow) onStackShare?.(current.kind === "split" ? current.sizes[1] : null);
+      else setRoot(current);
       onSettled();
     };
     window.addEventListener("pointermove", move);
@@ -224,6 +236,7 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
                     {g.active === t && <motion.span layoutId={`tab-ind-${g.id}`} className="wm-tab-ind" transition={SPRING} />}
                   </motion.div>
                 ))}
+                {narrow && sheet && g.id === "narrow-bottom" && <button className="wm-add" onClick={sheet.toggle} aria-expanded={sheet.open} aria-label={sheet.open ? "收起会话" : "展开会话"} title={sheet.open ? "收起会话" : "展开会话"}><IconChevron open={sheet.open} /></button>}
                 <button className="wm-add" onClick={(e) => plus(g.id, e.currentTarget)} aria-label={plusLabel(g.tabs)} title={plusLabel(g.tabs)}><IconPlus size={16} /></button>
               </div>
             </section>
@@ -242,20 +255,20 @@ export function Workspace({ root, setRoot, titles, subtitles = {}, kinds = {}, m
         // visible appear in place (gliding from a stale rect would sweep across other panes).
         const entering = shown && !wasShown.current.has(t);
         return (
-          <div key={t} className="wm-slot" data-pane={t} data-hidden={!shown} data-front={t === front.current} data-entering={entering} data-float={isFloat ? flt.mode : undefined} data-float-mode={isFloat ? (flt.mode === "card" ? "card" : F.strip ? "strip" : "half") : undefined} style={box(isFloat ? F.slot! : body(rectOf(g.id)))} onPointerDownCapture={() => t !== focused && onFocus(t)}>
+          <div key={t} className="wm-slot" data-pane={t} data-hidden={!shown} data-front={t === front.current} data-entering={entering} data-sheet={narrow && sheet && g.id === "narrow-bottom" ? (sheet.open ? "open" : "folded") : undefined} data-float={isFloat ? flt.mode : undefined} data-float-mode={isFloat ? (flt.mode === "card" ? "card" : F.strip ? "strip" : "half") : undefined} style={box(isFloat ? F.slot! : body(rectOf(g.id)))} onPointerDownCapture={() => t !== focused && onFocus(t)}>
             {renderCanvas(t)}
           </div>
         );
       })}
       {flt && <FloatExtras flt={flt} F={F} header={HEADER} ws={size} />}
-      {sashes.map((s) => (
+      {(narrow && !(stack && onStackShare) ? [] : sashes).map((s) => (
         <div
           key={`${s.splitId}-${s.index}`}
           className="wm-sash"
           data-dir={s.dir}
           style={box(s.rect)}
           onPointerDown={(e) => onSashDown(e, s)}
-          onDoubleClick={() => setRoot(equalize(root, s.splitId))}
+          onDoubleClick={() => (narrow ? onStackShare?.(null) : setRoot(equalize(root, s.splitId)))}
           role="separator"
           aria-orientation={s.dir === "row" ? "vertical" : "horizontal"}
         />

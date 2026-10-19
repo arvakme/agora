@@ -5,9 +5,15 @@
 //
 // Each frame is measured as a `ws:frame` performance entry when `?perf` (or the bench) is on, so
 // the frame budget (≤ 4 ms for 18 agents on a 500-element scene) can be checked in a trace.
+//
+// Lead jobs (`frame.lead`: the cameras) run first in each animation frame, before anything is drawn:
+// a camera writes the view synchronously (./replayView.ts), so the figures drawn after it in the same
+// frame, the canvas and the view all show one moment. They do not run on `flush` (that can happen inside
+// a React commit, where a synchronous view write cannot) nor on the background timer.
 export type Job = (now: number) => void;
 
 const jobs = new Set<Job>();
+const leads = new Set<Job>();
 let raf = 0;
 let timer = 0;
 let lastPaint = 0;
@@ -39,13 +45,21 @@ function run(at: number) {
 
 function tick(ts: number) {
   raf = 0;
-  if (!jobs.size) return;
-  run(ts);
+  if (!jobs.size && !leads.size) return;
+  const now = performance.timeOrigin + Math.max(last, ts);
+  for (const j of leads) {
+    try {
+      j(now);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  if (jobs.size) run(ts);
   if (document.visibilityState === "visible") raf = requestAnimationFrame(tick);
 }
 
 function ensure() {
-  if (!jobs.size) {
+  if (!jobs.size && !leads.size) {
     cancelAnimationFrame(raf);
     clearInterval(timer);
     raf = 0;
@@ -53,7 +67,7 @@ function ensure() {
     return;
   }
   if (!raf && document.visibilityState === "visible") raf = requestAnimationFrame(tick);
-  if (!timer) timer = window.setInterval(() => performance.now() - lastPaint > 180 && run(performance.now()), 250);
+  if (!timer) timer = window.setInterval(() => jobs.size && performance.now() - lastPaint > 180 && run(performance.now()), 250);
 }
 
 if (typeof document !== "undefined")
@@ -70,6 +84,15 @@ export const frame = {
     ensure();
     return () => {
       jobs.delete(job);
+      ensure();
+    };
+  },
+  /** Run `job` at the start of every animation frame, before the drawing jobs (a camera), until the returned function is called. */
+  lead(job: Job) {
+    leads.add(job);
+    ensure();
+    return () => {
+      leads.delete(job);
       ensure();
     };
   },

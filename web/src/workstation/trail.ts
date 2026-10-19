@@ -4,12 +4,12 @@
 // waiting happen where it stands, a sub-agent walks back to hand over. Pure; memoised per context
 // and run object (the overlay builds a new context when the runs refresh: once a second while
 // anyone works, so the footprints and the summary recompute at most that often).
-import { bursts, OUTSIDE, stateAt, type Ctx } from "./place";
+import { bursts, OUTSIDE, placeOfSeg, stateAt, type Ctx } from "./place";
 import type { Move } from "./rig";
 import type { SegKind, WorkRun } from "./runs/types";
 
-/** One segment of work, at the place the worker stood meanwhile. */
-export type Stay = { place: string; start: number; end: number; kind: SegKind };
+/** One segment of work, at the place the worker stood meanwhile. `off`: its file is not on the diagram (it worked on it where it stood). */
+export type Stay = { place: string; start: number; end: number; kind: SegKind; off: boolean };
 /** Its stays, and its walks from one place to another (time order). */
 export type Trail = { stays: Stay[]; moves: Move[] };
 
@@ -34,7 +34,7 @@ export function trail(run: WorkRun, ctx: Ctx): Trail {
     let i = 0;
     for (const g of b) {
       while (i < st.moves.length && st.moves[i].t <= g.start) at = st.moves[i++].to;
-      stays.push({ place: at, start: g.start, end: g.end, kind: g.kind });
+      stays.push({ place: at, start: g.start, end: g.end, kind: g.kind, off: !!g.path && placeOfSeg(ctx, g) == null });
     }
   }
   // a sub-agent's walk back to the one who sent it
@@ -55,7 +55,7 @@ export function dwell(runs: readonly WorkRun[], ctx: Ctx, from: number, to: numb
       let v = out.get(s.place);
       if (!v) out.set(s.place, (v = { stood: 0, wrote: 0 }));
       v.stood += d;
-      if (s.kind === "write") v.wrote += d;
+      if (s.kind === "write" && !s.off) v.wrote += d;
     }
   return out;
 }

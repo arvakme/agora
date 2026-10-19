@@ -173,6 +173,14 @@ export const IconSelect = drawn(
   </>,
   "IconSelect",
 );
+/** Comment on the whole diagram: the diagram's frame around a small teardrop (the selection's corners, IconSelect, are for elements). */
+export const IconWhole = drawn(
+  <>
+    <rect x="3" y="4.5" width="18" height="15" rx="3" />
+    <path d="M9.5 14.5V12a2.5 2.5 0 1 1 2.5 2.5Z" />
+  </>,
+  "IconWhole",
+);
 /** Layout presets: one pane, side by side, stacked, grid. */
 export const IconSingle = drawn(<rect x="4" y="5" width="16" height="14" rx="2" />, "IconSingle");
 export const IconCols = drawn(<><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M12 5v14" /></>, "IconCols");

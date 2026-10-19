@@ -38,8 +38,8 @@ describe("stateAt: a session's worker", () => {
     expect(stateAt(r, w.t1 + 1, c)).toMatchObject({ at: "db", pose: "write", w: 1 });
     expect(stateAt(r, 10 * S, c)).toMatchObject({ at: "db", pose: "wait" });
   });
-  it("goes to the 图外 tray for files off the diagram", () => {
-    expect(stateAt(r, 23 * S, c).at).toBe(OUTSIDE);
+  it("a file off the diagram does not take it anywhere: it works on it where it stands", () => {
+    expect(stateAt(r, 21 * S, c)).toMatchObject({ at: "db", pose: "write", w: 1 });
   });
   it("a file outside the project (absolute path) does not move it: that work is done where it stands, like thinking", () => {
     const abs = run([seg("write", 0, 4, "server/db/models.py"), seg("write", 5, 7, "/private/tmp/x/scratchpad/a.py"), seg("read", 8, 12, "C:\\Users\\me\\t.txt"), seg("write", 13, 15, "docs/notes.md")]);
@@ -48,7 +48,7 @@ describe("stateAt: a session's worker", () => {
     expect(at).toMatchObject({ at: "db", pose: "write", w: 1, trip: null });
     expect(at.seg?.path).toBe("/private/tmp/x/scratchpad/a.py");
     expect(stateAt(abs, 10 * S, c2)).toMatchObject({ at: "db", pose: "read", w: 1 });
-    expect(stateAt(abs, 14 * S, c2).at).toBe(OUTSIDE); // a relative file no node claims still goes to the tray
+    expect(stateAt(abs, 14 * S, c2)).toMatchObject({ at: "db", pose: "write", w: 1 }); // nor does a relative file no node claims
     expect(stateAt(run([seg("write", 0, 2, "/tmp/only.txt")]), 1 * S, c2)).toMatchObject({ present: true, at: OUTSIDE }); // nowhere yet: it starts at the tray as with a thought
   });
   it("a command that runs on a file (a test, a script) takes it to that file's node, and it stands there while the command runs", () => {
@@ -96,7 +96,7 @@ describe("stateAt: sub-agents (the prototype's scenario)", () => {
   const base = 1_000_000;
   const [pi, cc] = scenario(base, base + 60 * S);
   const all = [pi, ...pi.children, cc, ...cc.children];
-  const c: Ctx = { ...ctx(all), locate: (p) => (p.startsWith("server/") ? { place: "api" } : p.startsWith("web/") ? { place: "web" } : null), dock: (p) => ({ api: { x: 0, y: 0 }, web: { x: -300, y: 0 } })[p] ?? { x: 300, y: 300 } };
+  const c: Ctx = { ...ctx(all), locate: (p) => (p.startsWith("server/") ? { place: "api" } : p.startsWith("web/") ? { place: "web" } : p.startsWith("tests/") ? { place: "tests" } : null), dock: (p) => ({ api: { x: 0, y: 0 }, web: { x: -300, y: 0 } })[p] ?? { x: 300, y: 300 } };
   const codex = pi.children[0];
   const worker = pi.children[1];
   it("a sub-agent appears at its dispatcher's spot when dispatched", () => {

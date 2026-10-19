@@ -99,6 +99,11 @@ class DispatchIn(BaseModel):
     canvasId: str | None = None
 
 
+class CliStateIn(BaseModel):
+    state: str
+    pane: str  # ``AGORA_PANE``: which opening of the pane speaks
+
+
 class ReplyIn(BaseModel):
     status: str
     text: str = ""
@@ -420,6 +425,14 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
     async def give_back(sid: str):
         try:
             return await asyncio.to_thread(hub.give_back, sid)
+        except Exception as e:
+            return fail(e)
+
+    @router.post("/sessions/{sid}/cli-state")
+    async def cli_state(sid: str, body: CliStateIn):
+        """The CLI in the session's pane says what it is doing (bin/agora-state, pane_state.py)."""
+        try:
+            return await asyncio.to_thread(hub.report_state, sid, body.state, body.pane)
         except Exception as e:
             return fail(e)
 

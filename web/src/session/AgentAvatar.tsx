@@ -42,8 +42,19 @@ function InitialMark({ kind }: { kind: AgentKind }) {
   return <b className="agent-initial">{agentName(kind).slice(0, 1).toUpperCase()}</b>;
 }
 
-/** A session tab's mark: its agent once bound (or the agent its entry records, for a session made elsewhere), the plain tab dot before that (a draft). */
+/**
+ * A session tab's mark: its agent once bound (or the agent its entry records, for a session made elsewhere), the plain tab dot before that (a draft).
+ * A small dot on it says the session is at work or waits for an answer, so several tabs can be told apart at a glance.
+ */
 export function SessionMark({ sessionId, fallback }: { sessionId: string; fallback?: AgentKind }) {
-  const kind = useAgents().bindings[sessionId]?.agent ?? fallback;
-  return kind ? <AgentAvatar kind={kind} size={16} label /> : <span className="wm-tab-dot" />;
+  const { bindings, status } = useAgents();
+  const kind = bindings[sessionId]?.agent ?? fallback;
+  const s = status[sessionId];
+  const state = s?.waiting ? "waiting" : s?.running ? "working" : undefined;
+  if (!kind) return <span className="wm-tab-dot" />;
+  return (
+    <span className="session-mark" data-state={state}>
+      <AgentAvatar kind={kind} size={16} label />
+    </span>
+  );
 }

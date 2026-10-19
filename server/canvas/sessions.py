@@ -34,7 +34,7 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
-from server.canvas import adapters, agents, executors as executors_mod, fallback as fallback_mod, graph_hub, nested, page_help, proctree, schemas
+from server.canvas import adapters, agents, executors as executors_mod, fallback as fallback_mod, graph_hub, nested, page_help, pane_state, proctree, schemas
 from server.canvas.adapters import drift
 from server.canvas.local import Local
 from server.canvas.model_view import model_view, versions
@@ -47,7 +47,8 @@ from server.canvas.transcript import MARKER, State, Tail, project, split_agora
 
 TICK_S = 0.4
 RELOCATE_S = 5.0  # how often a followed log is looked up again (it may have moved: Pi migration, a fork)
-PANE_BOOT_S = 6.0  # a freshly opened pane gets this long to start its CLI before the first paste
+PANE_BOOT_S = 6.0  # a freshly opened pane gets this long to start its CLI before the first paste (a CLI that does not report its state, pane_state.py)
+SIGNAL_WAIT_S = 45.0  # a CLI that reports its state has said nothing this long after its pane opened: it is most likely waiting for the person (a trust prompt)
 DELIVERY_CONFIRM_S = 30.0
 BRIDGE_TIMEOUT_S = 25.0
 MAX_ITEMS = 1500
@@ -202,6 +203,9 @@ class Live:
     running: bool = False  # a headless turn is in progress
     pane_alive: bool = False
     pane_since: float | None = None
+    reports: bool = False  # the CLI in the pane was started so that it reports its state (pane_state.py)
+    cli_state: str | None = None  # what it last reported: idle / running / waiting / exited; None before it has said anything
+    pane_id: str = ""  # which opening of the pane this is: what a CLI's report must carry (``AGORA_PANE``), so the late word of a closed pane is not taken for the new one's
     activity: str | None = None
     last_error: str | None = None
     native: dict[str, Any] | None = None  # the native log is missing / ambiguous / elsewhere (agents.NativeMissing.public)
@@ -223,7 +227,15 @@ class Live:
     asked: set[str] = field(default_factory=set)  # tool calls put to the person this turn (the CLI lists a denied or interrupted one in permission_denials too: not auto's doing)
     seen_window: bool = False  # a terminal window has been attached to this pane (an unattended pane is not closed)
     detached_at: float | None = None  # since when no window is attached (only while the pane is otherwise idle)
+    window_seen: tuple[int, int, bool] | None = None  # (windows attached, writable ones, takeover) as last pushed to the page
     notes: list[dict[str, Any]] = field(default_factory=list)  # notices to show once the transcript is loaded (a turn a restart ended)
+
+    def forget_pane(self) -> None:
+        """Everything that belongs to one opening of the pane. When the pane is gone, so is all of it: the next pane
+        starts from nothing, not from what the last one had seen or been told."""
+        self.pane_alive, self.pane_since = False, None
+        self.reports, self.cli_state, self.pane_id = False, None, ""
+        self.seen_window, self.detached_at = False, None
 
 
 class Subscriber:
@@ -253,9 +265,26 @@ def summary_head(found: bool) -> str:
     return "（接着之前的讨论：原来的原生会话记录已经丢失，下面是 Agora 保存的轨迹摘要。）"
 
 
+def cli_hold(state: str | None, since: float | None, now: float, *, force: bool = False) -> str | None:
+    """Why a message is not pasted into a pane whose CLI reports its state (pane_state.py): None when the CLI said it is
+    idle. Silence is not "ready": until the CLI speaks nothing is pasted; after ``SIGNAL_WAIT_S`` the person may say go."""
+    if state == "idle":
+        return None
+    if state == "waiting":
+        return "CLI 在等你在终端里确认权限，确认后再投递"
+    if state == "running":
+        return "CLI 正在忙，空闲后再投递"
+    if state == "exited":
+        return "终端里的 CLI 已退出"
+    if since is not None and now - since >= SIGNAL_WAIT_S:
+        return None if force else "CLI 一直没有就绪：可能在等你在终端里确认（信任目录、审批提示等），确认后会自动投递；已经确认过的话点「现在送出」"
+    return "终端刚打开，等 CLI 就绪再投递"
+
+
 class AgentHub:
-    def __init__(self, store: ProjectStore, *, terminals: Terminals | None = None, backend_factory=make_backend, local: Local | None = None) -> None:
+    def __init__(self, store: ProjectStore, *, terminals: Terminals | None = None, backend_factory=make_backend, local: Local | None = None, url: str | None = None) -> None:
         self.store = store
+        self.url = url  # where a CLI in a pane reaches this server (``AGORA_URL``): without it nothing reports its state
         self.local = local or Local(store)
         self.terms = terminals or Terminals(store.root, store.run_dir, socket=self.local.socket(), legacy=self.local.legacy_sockets())
         self.make_backend = backend_factory
@@ -268,7 +297,10 @@ class AgentHub:
         self.bridge_offers: dict[str, dict[str, Any]] = {}  # rid → which page it is offered to, who claimed it
         self._loop_task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._follow_lock = threading.Lock()
+        # Reentrant: on the loop thread (`items()` at startup) `broadcast` calls the listeners inline while the follower
+        # holds this, and a listener (dispatch.py) reads `live.items` under it too.
+        self._follow_lock = threading.RLock()
+        self._pane_lock = threading.RLock()  # opening a pane (registering it, then making it), closing it and noticing that it is gone must not interleave
         # Who else needs to know what the hub sees (dispatch.py): every broadcast event (on the loop
         # thread); the moment before a message is injected into a CLI (session id, send id; from a
         # worker thread or the loop, and it must not block); the first time the loop starts.
@@ -393,7 +425,7 @@ class AgentHub:
         }
 
     def _terminal(self, sid: str, lv: Live) -> dict[str, Any]:
-        out: dict[str, Any] = {"alive": lv.pane_alive, "attach": self.terms.attach_command(sid), "clients": 0, "app": None}
+        out: dict[str, Any] = {"alive": lv.pane_alive, "attach": self.terms.attach_command(sid), "clients": 0, "app": None, "cliState": lv.cli_state if lv.reports else None}
         if lv.pane_alive:
             gate = self.terms.gate(sid)
             clients = self.terms.clients(sid)
@@ -672,13 +704,14 @@ class AgentHub:
         bound = self.store.bindings()
         for sid, b in bound.items():
             lv = self._get(sid)
-            alive = self.terms.alive(sid) if (lv.pane_since or lv.pane_alive or lv.pane) else False
-            if alive != lv.pane_alive:
-                lv.pane_alive = alive
-                if not alive:
-                    lv.pane_since = None
-                    self._pane_exited(sid, lv)
-                self._status(sid)
+            with self._pane_lock:
+                alive = self.terms.alive(sid) if (lv.pane_since or lv.pane_alive or lv.pane) else False
+                if alive != lv.pane_alive:
+                    lv.pane_alive = alive
+                    if not alive:
+                        lv.forget_pane()
+                        self._pane_exited(sid, lv)
+                    self._status(sid)
             # A CLI that assigns its own id (Codex) does so when the interactive session starts:
             # adopt the new native session.
             if adapters.need(b["agent"]).assigns_id == "cli" and not b.get("nativeId") and not b.get("pendingFork") and lv.pane_since:
@@ -696,8 +729,17 @@ class AgentHub:
                 if new:
                     self.adopt_fork(sid, new)
             if lv.pane_alive:
+                self._push_windows(sid, lv)
                 self._reap_detached(sid, lv)
             self._follow(sid, lv)
+
+    def _push_windows(self, sid: str, lv: Live) -> None:
+        """A terminal window attaching or leaving changes what the page says about the terminal (status ``terminal``): push it when it does, nothing else would."""
+        gate = self.terms.gate(sid)
+        seen = (self.terms.clients(sid), gate.unmanaged_writers, gate.input_right != "host")
+        if seen != lv.window_seen:
+            lv.window_seen = seen
+            self._status(sid)
 
     def _reap_detached(self, sid: str, lv: Live) -> None:
         """The person closed the terminal window (Ctrl-B D, the window's ×): the CLI keeps running in its
@@ -743,6 +785,47 @@ class AgentHub:
         for p, why in lost:
             self.broadcast({"t": "done", "sessionId": sid, "sendId": p.send_id, "text": "", "error": why, "outcome": "unknown", "route": "terminal"})
 
+    async def _not_ready(self, sid: str, lv: Live, head: Pending) -> str | None:
+        """Why the CLI in the pane cannot take the message at the head of the queue yet (a paste into a CLI that is still
+        loading, or sitting in a dialog, is dropped)."""
+        if lv.pane_since is not None and (lv.reports or self._has_screen_probe(sid)):  # no opening time: a pane from before a restart, nothing to wait for
+            state = lv.cli_state
+            if state is None:
+                ready = await self._screen_ready(sid, lv)
+                state = lv.cli_state or ("idle" if ready else None)  # a report that came in while the screen was read counts
+            reason = cli_hold(state, lv.pane_since, time.time(), force=head.force)
+        elif lv.pane_since and time.time() - lv.pane_since < PANE_BOOT_S:
+            reason = "终端刚打开，等 CLI 启动好再投递"
+        else:
+            reason = None
+        return reason or ("agent 正在回复，回复完再投递" if lv.state.busy else None)
+
+    def _has_screen_probe(self, sid: str) -> bool:
+        return (self.store.read_binding(sid) or {}).get("agent", "") in pane_state.SCREEN_READY
+
+    async def _screen_ready(self, sid: str, lv: Live) -> bool:
+        """The CLI's screen shows its input box right now (pane_state.SCREEN_READY): for a CLI that reports only from its
+        first turn on, or not at all. Looked at again for every message: a menu that comes up later has no input box."""
+        probe = pane_state.SCREEN_READY.get((self.store.read_binding(sid) or {}).get("agent", ""))
+        if probe is None or not lv.pane_since or time.time() - lv.pane_since < PANE_BOOT_S:
+            return False
+        try:
+            return probe(pane_state.bottom(await asyncio.to_thread(self.terms.capture, sid, 0)))
+        except (TerminalError, OSError):
+            return False
+
+    def report_state(self, sid: str, state: str, pane: str) -> dict[str, Any]:
+        """The CLI in the pane says what it is doing (bin/agora-state, the Pi extension). A report from a pane that is no
+        longer there, or from an earlier opening of it, is the late word of one that was: ignored."""
+        if state not in pane_state.STATES:
+            raise ValueError(f"unknown state {state!r}")
+        self.binding(sid)
+        lv = self._get(sid)
+        if lv.reports and pane == lv.pane_id and lv.cli_state != state:
+            lv.cli_state = state
+            self._status(sid)
+        return {"state": lv.cli_state}
+
     async def _tick_async(self) -> None:
         for sid, lv in list(self.live.items()):
             if not lv.pane:
@@ -760,11 +843,8 @@ class AgentHub:
             reason = gate_hold(await asyncio.to_thread(self.terms.gate, sid), force=head.force)
             if reason:
                 pass
-            elif lv.pane_since and time.time() - lv.pane_since < PANE_BOOT_S:
-                # A paste into a CLI that is still loading (resume) is dropped.
-                reason = "终端刚打开，等 CLI 启动好再投递"
-            elif lv.state.busy:
-                reason = "agent 正在回复，回复完再投递"
+            else:
+                reason = await self._not_ready(sid, lv, head)
             if reason:
                 if reason != lv.held:
                     lv.held = reason
@@ -908,6 +988,8 @@ class AgentHub:
 
     def env_for(self, sid: str, canvas_id: str | None = None) -> dict[str, str]:
         env = {"AGORA_PROJECT": str(self.store.root), "AGORA_SESSION": sid}
+        if self.url:
+            env["AGORA_URL"] = self.url
         try:
             env["AGORA_CANVAS"] = canvas_id or resolve_canvas(self.store, None, sid)
         except ValueError:
@@ -1279,12 +1361,24 @@ class AgentHub:
             raise Busy("这个会话正在无头运行一轮，结束后再在终端打开")
         if not self.terms.alive(sid):
             self.check_native(sid, b)
-        argv = agents.interactive_argv(b["agent"], b.get("nativeId"), b.get("model") or None, b.get("effort") or None, new=not binding_started(b), root=self.store.root, fork=b.get("pendingFork"))
-        env = {**self.env_for(sid, canvas_id), "PATH": agents.child_env()["PATH"]}
-        created = self.terms.open(sid, argv, cwd=self.store.root, env=env)
-        if created:
-            lv.pane_since = time.time()
-        lv.pane_alive = True
+        hooks = bool(self.url) and pane_state.reports(b["agent"])
+        pane = secrets.token_hex(8)
+        argv = agents.interactive_argv(b["agent"], b.get("nativeId"), b.get("model") or None, b.get("effort") or None, new=not binding_started(b), root=self.store.root, fork=b.get("pendingFork"), hooks=hooks)
+        env = {**self.env_for(sid, canvas_id), "PATH": agents.child_env()["PATH"], **({"AGORA_PANE": pane} if hooks else {})}
+        with self._pane_lock:
+            fresh = not self.terms.alive(sid)
+            if fresh:
+                lv.forget_pane()
+                lv.reports, lv.pane_id = hooks, pane  # before the CLI is there: its first word may come before open() returns
+            try:
+                created = self.terms.open(sid, argv, cwd=self.store.root, env=env)
+            except Exception:
+                if fresh:
+                    lv.forget_pane()
+                raise
+            if created:
+                lv.pane_since = time.time()
+            lv.pane_alive = True
         launched = self.terms.launch(sid, f"Agora · {agents.NAMES[b['agent']]}") if launch else None
         self._status(sid)
         return {"created": created, "launched": launched, "attach": self.terms.attach_command(sid), "argv": argv}
@@ -1316,10 +1410,9 @@ class AgentHub:
         return {"sendId": lv.pane[0].send_id, "queued": len(lv.pane)}
 
     def close_terminal(self, sid: str) -> None:
-        self.terms.kill(sid)
-        lv = self._get(sid)
-        lv.pane_alive, lv.pane_since = False, None
-        lv.seen_window, lv.detached_at = False, None
+        with self._pane_lock:  # a pane opened while this close is still returning must not have its state cleared with the old one's
+            self.terms.kill(sid)
+            self._get(sid).forget_pane()
         self._status(sid)
 
     # ——— identity (registry, forks) ———

@@ -349,7 +349,8 @@ class Terminals:
         return open_files(process_tree(pid)) if pid else []
 
     def capture(self, session_id: str, lines: int = 200) -> str:
-        r = self._where(session_id)._run("capture-pane", "-p", "-J", "-S", f"-{lines}", "-t", self.pane(session_id), check=False)
+        """The pane's last ``lines`` lines, scrollback included; ``0`` is the screen as it is now and nothing else."""
+        r = self._where(session_id)._run("capture-pane", "-p", "-J", *(["-S", f"-{lines}"] if lines else []), "-t", self.pane(session_id), check=False)
         return r.stdout.decode("utf-8", "replace")
 
     # ——— registration and input right (files under .agora/run/) ———

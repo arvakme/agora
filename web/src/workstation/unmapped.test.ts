@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import type { Locate } from "./place.ts";
 import type { RunSeg, WorkRun } from "./runs/types.ts";
-import { drawInHints, shortDir } from "./unmapped.ts";
+import { drawInHints, offDiagramFiles, shortDir } from "./unmapped.ts";
 
 const w = (path: string, kind: RunSeg["kind"] = "write"): RunSeg => ({ kind, start: 0, end: 1, label: kind, path });
 const run = (id: string, segs: RunSeg[], x: Partial<WorkRun> = {}): WorkRun => ({ id, agent: "pi", name: id, segs, receipts: [], running: false, lastAt: 0, children: [], ...x });
@@ -30,6 +30,15 @@ describe("drawInHints", () => {
   it("counts only project-relative files: absolute paths (scratchpad, /tmp, ~/.claude) never make a suggestion", () => {
     const abs = ["/private/tmp/x/scratchpad/a.py", "/private/tmp/x/scratchpad/b.py", "/private/tmp/x/scratchpad/c.py", "C:\\tmp\\d.py", "C:/tmp/e.py", "C:/tmp/f.py"];
     expect(drawInHints([run("pi", abs.map((p) => w(p)))], () => null)).toEqual([]);
+  });
+});
+
+describe("offDiagramFiles", () => {
+  it("the project-relative files written that no node claims, each once, sorted — a worker stays where it stands for them, this is what says so", () => {
+    const codex = run("codex", [w("docs/b.md"), w("server/api/x.py")], { parentId: "pi" });
+    const pi = run("pi", [w("docs/a.md"), w("docs/b.md"), w("README.md"), w("server/app.py"), w("docs/c.md", "read"), w("/tmp/scratch.py")], { children: [codex] });
+    expect(offDiagramFiles([pi, codex], locate)).toEqual(["README.md", "docs/a.md", "docs/b.md"]);
+    expect(offDiagramFiles([], locate)).toEqual([]);
   });
 });
 

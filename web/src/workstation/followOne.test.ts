@@ -38,13 +38,13 @@ describe("whom the camera follows: exactly one", () => {
   });
 });
 
-describe("the one status above the canvas", () => {
+describe("the status above the canvas (only for a paused follow: following is said by the bubble itself)", () => {
   const o = { name: "Devin", paused: false, working: true, drawn: true };
-  it("following: 「跟着 Devin」, nothing to press", () => {
-    expect(followStatus(o)).toEqual({ text: "跟着 Devin", resume: false });
+  it("following: nothing above the canvas, the followed bubble says 「跟随中」", () => {
+    expect(followStatus(o)).toBeNull();
   });
-  it("after the person moved the canvas: 「跟着 Devin · 已暂停」 and 「继续」", () => {
-    expect(followStatus({ ...o, paused: true })).toEqual({ text: "跟着 Devin · 已暂停", resume: true });
+  it("after the person moved the canvas: 「跟着 Devin · 已暂停」, with 「继续」 to press", () => {
+    expect(followStatus({ ...o, paused: true })).toEqual({ text: "跟着 Devin · 已暂停" });
   });
   it("idle or gone, or not to be seen on this canvas: nothing at all", () => {
     expect(followStatus({ ...o, working: false })).toBeNull();

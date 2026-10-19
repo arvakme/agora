@@ -1,0 +1,11 @@
+#!/bin/sh
+# Run by a CLI's own hook (server/canvas/pane_state.py): tells the Agora server what the CLI in this
+# terminal pane is doing now. Usage: agora-state idle|running|waiting|exited
+# A CLI waits for its hooks, and some read what they print: so this is quick, silent and always exits 0.
+case "$1" in idle | running | waiting | exited) ;; *) exit 0 ;; esac
+[ -n "$AGORA_URL" ] && [ -n "$AGORA_SESSION" ] && [ -n "$AGORA_PANE" ] || exit 0
+# Claude Code names the sub-agent a hook event belongs to; what a sub-agent does is not the session's own turn.
+if cat 2>/dev/null | grep -Eq '"agent_id"[[:space:]]*:[[:space:]]*"[^"]'; then exit 0; fi
+curl -s -o /dev/null --noproxy '*' --connect-timeout 1 -m 2 -X POST -H 'content-type: application/json' \
+    -d "{\"state\":\"$1\",\"pane\":\"$AGORA_PANE\"}" "$AGORA_URL/api/agent/sessions/$AGORA_SESSION/cli-state" >/dev/null 2>&1
+exit 0

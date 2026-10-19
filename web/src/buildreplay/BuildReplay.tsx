@@ -64,8 +64,8 @@ function BuildReplay({ canvas, onClose }: { canvas: string; onClose: () => void 
   useEffect(() => {
     const ctl = new AbortController();
     setLoad({ state: "loading" });
-    // a guest gets the share's canvas only, and only when the owner allowed it (the server decides); the owner asks for any canvas
-    void fetch(GUEST ? "/api/guest/build" : `/api/project/build?canvas=${encodeURIComponent(canvas)}`, { signal: ctl.signal, credentials: "same-origin" })
+    // a guest gets what its share reaches, and only when the owner allowed it (the server decides); the owner asks for any canvas
+    void fetch(`/api/${GUEST ? "guest" : "project"}/build?canvas=${encodeURIComponent(canvas)}`, { signal: ctl.signal, credentials: "same-origin" })
       .then(async (r) => (r.ok ? ((await r.json()) as BuildTimeline) : Promise.reject(new Error(((await r.json().catch(() => ({}))) as { detail?: string }).detail ?? r.statusText))))
       .then((tl) => setLoad({ state: "ready", tl }))
       .catch((e: Error) => e.name !== "AbortError" && setLoad({ state: "error", text: e.message }));

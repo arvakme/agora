@@ -2,14 +2,14 @@
 // conversation, the two most recent conversations on this canvas, 「更多」); typing after it searches every agent and every
 // conversation that can take a message. ↑ ↓ choose, Enter or Tab confirms, Esc closes the list. Without an @ it is a plain
 // comment box. A share guest gets a plain box: they cannot reach an agent (comments/mention.ts routeMessage).
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { GUEST } from "../guest/mode";
 import { useSessionNames } from "../multi/writes";
 import { agentName, sessionKinds, useAgents } from "../session/agents";
 import { sessions, useSessions } from "../session/store";
 import "../session/recommend.css";
-import { applyMention, MENTION_LIST_CLASS, mentionQuery, mentionRows, submitMention, type MentionRow, type MentionSources, type MentionTarget } from "./mention";
+import { applyMention, GROUP_TITLES, MENTION_LIST_CLASS, mentionQuery, mentionRows, submitMention, type MentionRow, type MentionSources, type MentionTarget } from "./mention";
 import { topicOf } from "../workspace/model";
 import type { Thread } from "./threads";
 
@@ -109,26 +109,34 @@ export function MentionField({ value, onValue, onSend, placeholder, rows = 1, la
             aria-label="@ 一个 agent 或对话"
             style={{ left: rect.left, width: Math.max(rect.width, 220), maxHeight: ROW_PX * VISIBLE_ROWS + LIST_PAD_PX, ...(rect.top > 240 ? { bottom: window.innerHeight - rect.top + 6 } : { top: rect.bottom + 6 }) }}
           >
-            {options.map((o, i) => (
-              <li
-                key={"more" in o ? "more" : o.target.type === "agent" ? `a:${o.target.kind}` : `s:${o.target.sid}`}
-                ref={i === active ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
-                role="option"
-                aria-selected={i === active}
-                data-type={"more" in o ? "more" : o.target.type}
-                title={o.title}
-                onPointerDown={(e) => (e.preventDefault(), e.stopPropagation(), choose(o))}
-                onPointerEnter={() => setActive(i)}
-              >
-                <span className="mention-label">{o.title}</span>
-                {"more" in o ? null : (
-                  <span className="mention-kind">
-                    {o.badge && <i className="rec-tag">{o.badge}</i>}
-                    {o.note}
-                  </span>
-                )}
-              </li>
-            ))}
+            {options.map((o, i) => {
+              const group = "group" in o ? o.group : undefined;
+              const before = options[i - 1];
+              const heading = group && group !== (before && "group" in before ? before.group : undefined);
+              return (
+                <Fragment key={"more" in o ? "more" : o.target.type === "agent" ? `a:${o.target.kind}` : `s:${o.target.sid}`}>
+                  {heading && <li role="presentation" className="mention-group">{GROUP_TITLES[group]}</li>}
+                  <li
+                    ref={i === active ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
+                    role="option"
+                    aria-selected={i === active}
+                    data-type={"more" in o ? "more" : o.target.type}
+                    data-running={"more" in o ? undefined : o.running}
+                    title={o.title}
+                    onPointerDown={(e) => (e.preventDefault(), e.stopPropagation(), choose(o))}
+                    onPointerEnter={() => setActive(i)}
+                  >
+                    <span className="mention-label">{o.title}</span>
+                    {"more" in o ? null : (
+                      <span className="mention-kind">
+                        {o.badge && <i className="rec-tag">{o.badge}</i>}
+                        {o.note}
+                      </span>
+                    )}
+                  </li>
+                </Fragment>
+              );
+            })}
           </ul>,
           document.body,
         )}

@@ -12,13 +12,13 @@ export const choose = (_c: Choice, run: string, focusedSession: string | null): 
 export const chosenRun = (c: Choice, o: { focusedSession: string | null; exists: (run: string) => boolean }): string | null =>
   c.run && c.session === o.focusedSession && o.exists(c.run) ? c.run : null;
 
-export type FollowStatus = { text: string; resume: boolean };
+export type FollowStatus = { text: string };
 
 /**
- * The one status above the canvas: 「跟着 <name>」; after the person moved the canvas 「跟着 <name> · 已暂停」 with 「继续」.
- * Nothing while the agent is idle or gone, or not to be seen on this canvas — there is nothing to follow then.
+ * The line above the canvas, only once the person moved the canvas away: 「跟着 <name> · 已暂停」 with 「继续」. While the camera follows, the followed
+ * bubble says so itself (「跟随中」). Nothing while the agent is idle or gone, or not to be seen on this canvas — there is nothing to follow then.
  */
 export function followStatus(o: { name: string; paused: boolean; working: boolean; drawn: boolean }): FollowStatus | null {
-  if (!o.working || !o.drawn) return null;
-  return o.paused ? { text: `跟着 ${o.name} · 已暂停`, resume: true } : { text: `跟着 ${o.name}`, resume: false };
+  if (!o.paused || !o.working || !o.drawn) return null;
+  return { text: `跟着 ${o.name} · 已暂停` };
 }
