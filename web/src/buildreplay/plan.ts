@@ -31,7 +31,7 @@ export const REACH_PX = 420;
 const BRIEF_DWELL = 0.6;
 const BRIEF_LEAD_MS = 120;
 /** Brief mode: a walk on one canvas that would take longer than this is cut instead — the same figure fades out where it was while it fades in where the next thing is drawn (the director's cut, ../workstation/director.ts; its time is `CUT_MS`). */
-export const HOP_MS = 8000;
+export const HOP_MS = 5000;
 
 export type Beat = {
   i: number;
