@@ -136,6 +136,18 @@ def test_the_commit_is_shown_with_what_is_known_about_uncommitted_changes():
     assert fleet._sha({**row, "dirty": True}) == "1234567+dirty"
     assert fleet._sha({**row, "dirty": None}) == "1234567+?"  # git could not say
     assert fleet._sha({"sha": None, "dirty": None}) == "unknown"
+    assert fleet._sha({"sha": None, "dirty": None, "version": "0.1.0"}) == "v0.1.0"  # an installed copy
+
+
+def test_an_installed_copy_reports_its_package_version_and_never_asks_git(monkeypatch):
+    monkeypatch.setattr(version, "CHECKOUT", False)
+    monkeypatch.setattr(version, "_git", lambda *a: pytest.fail("git asked outside a checkout"))
+    monkeypatch.setattr(version, "package_version", lambda: "9.9.9")
+    version.running_version.cache_clear()
+    try:
+        assert version.running_version() == {"sha": None, "dirty": None, "version": "9.9.9"}
+    finally:
+        version.running_version.cache_clear()
 
 
 def test_code_version_is_the_checkout_head_and_flags_uncommitted_changes(tmp_path):

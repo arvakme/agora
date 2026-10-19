@@ -181,7 +181,7 @@ def test_install_skill_drops_the_old_agora_canvas_link(tmp_path):
     _git("init", "-q", cwd=tmp_path)
     old = tmp_path / ".claude" / "skills" / "agora-canvas"
     old.parent.mkdir(parents=True)
-    old.symlink_to(agents.REPO / "skills" / "agora-canvas")  # dangling: the skill was renamed
+    old.symlink_to(agents.SKILL_DIR.parent / "agora-canvas")  # dangling: the skill was renamed
     (tmp_path / ".git" / "info" / "exclude").write_text("/.claude/skills/agora-canvas\n")
     mine = tmp_path / ".agents" / "skills" / "agora-canvas"  # a folder the person made is not ours
     mine.mkdir(parents=True)

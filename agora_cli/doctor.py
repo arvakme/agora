@@ -195,7 +195,12 @@ def cmd_doctor_agents(p, a) -> int:
     if a.record:
         import subprocess as sp
 
-        script = Path(__file__).resolve().parents[1] / "scripts" / "record_agent_fixture.py"
+        from server.paths import CHECKOUT, ROOT
+
+        if not CHECKOUT:
+            print("agora: --record re-records a fixture in the agora repo and needs a checkout of it; this copy is installed", file=sys.stderr)
+            return 2
+        script = ROOT / "scripts" / "record_agent_fixture.py"
         if not script.exists():
             print(f"agora: {script} is missing", file=sys.stderr)
             return 2

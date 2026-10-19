@@ -37,6 +37,7 @@ def _row(rec: dict[str, Any]) -> dict[str, Any]:
         "mode": rec.get("mode"),
         "startedAt": rec.get("startedAt"),
         "sha": rec.get("sha"),
+        "version": rec.get("version"),
         "dirty": rec["dirty"] if isinstance(rec.get("dirty"), bool) else None,  # anything else: not known
         "alive": running,
         "answering": answering,
@@ -84,9 +85,10 @@ def gc() -> list[dict[str, Any]]:
 
 
 def _sha(row: dict[str, Any]) -> str:
-    """The commit, with ``+dirty`` for uncommitted changes and ``+?`` when git could not say."""
+    """The commit, with ``+dirty`` for uncommitted changes and ``+?`` when git could not say; an installed copy
+    (no checkout) by its package version."""
     if not row["sha"]:
-        return "unknown"
+        return f"v{row['version']}" if row.get("version") else "unknown"
     return row["sha"][:SHORT_SHA] + {False: "", True: "+dirty", None: "+?"}[row["dirty"]]
 
 

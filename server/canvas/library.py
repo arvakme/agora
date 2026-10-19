@@ -14,7 +14,9 @@ import unicodedata
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[2] / "web" / "libraries"
+from server.paths import WEB
+
+ROOT = WEB / "libraries"
 
 
 def _words(s: str) -> list[str]:
