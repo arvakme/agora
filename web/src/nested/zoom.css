@@ -1,0 +1,17 @@
+/* Semantic zoom (docs/nested-canvas.md §2 缩放进出; ./ZoomLayer.tsx). The layer comes after Excalidraw in the canvas's layers and
+ * shares its stacking: z-index 1 like the static canvas, later in the page, so over the picture and under the interactive canvas
+ * (z 2: selection, the text editor) and Excalidraw's panels (z 4). */
+.sz-layer { position: absolute; inset: 0; z-index: 1; overflow: hidden; pointer-events: none; }
+.sz-layer[hidden] { display: none; }
+.sz-tint { position: absolute; inset: 0; }
+/* the scene's colours, as Excalidraw shows them in dark mode (its canvas filter) */
+.sz-layer[data-dark] .sz-tint { filter: invert(93%) hue-rotate(180deg); }
+.sz-veil { position: absolute; inset: 0; opacity: 0; }
+.sz-patch, .sz-pic { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform, opacity; }
+.sz-patch { border-radius: 4px; }
+.sz-pic > svg { display: block; width: 100%; height: 100%; }
+/* the marks over the canvas (comment pins, entry marks, figures, highlights) go with the rest of the canvas behind the veil */
+.canvas-layers > :is(.comment-layer, .nest-layer, .ws-layer, .hl-layer) { opacity: calc(1 - var(--sz-veil, 0)); }
+.wm-slot[data-entering="true"]:has(.sz-layer[data-arriving]) { animation: none; }
+/* nor does Excalidraw's loading line show while it mounts under the stand-in */
+.canvas-layers:has(> .sz-layer[data-arriving]) .LoadingMessage { display: none; }
