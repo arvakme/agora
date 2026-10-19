@@ -6,7 +6,12 @@
 
 ![Agora 演示：让 Claude Code 改代码和架构图，指针跟着改动在图上移动，轨迹里展开一次工具调用](docs/media/agora-demo.gif)
 
-在项目目录里运行 `agora up`，就得到只属于这个项目的本地服务：架构图、评论、会话记录都存在项目的 `.agora/` 里，跟着代码一起提交、克隆、切分支。
+在项目目录里运行 `agora`，就得到只属于这个项目的本地服务：架构图、评论、会话记录都存在项目的 `.agora/` 里，跟着代码一起提交、克隆、切分支。
+
+```bash
+uv tool install git+https://github.com/arvakme/agora   # 装成全局命令（需要 Node 22+ 构建前端，见「快速开始」）
+cd ~/code/my-service && agora                          # 起本项目服务并打开浏览器
+```
 
 ## 为什么
 
@@ -38,7 +43,7 @@ Agora 把这三件事放到同一张图上：图就在仓库里，agent 能读�
 
 ### 4. 进度指针：AI 正在改架构图的哪一块
 
-给节点关联代码路径（glob，存在元素的 `customData.codePaths` 里，随图提交），可以手动设，也可以让 agent 按目录结构批量关联。agent 读写哪个文件，它的小人就走到这个文件所属的节点上干活（小人就是指针，见[工位视图](web/docs/workstation.md)）；不属于任何节点的文件在图外托盘。终端里发生的改动同样驱动它。映射规则见[进度指针](web/docs/progress-pointer.md)。
+给节点关联代码路径（glob，存在元素的 `customData.codePaths` 里，随图提交），可以手动设，也可以让 agent 按目录结构批量关联。agent 读写哪个文件，它的小人就走到这个文件所属的节点上干活（小人就是指针，见[工位视图](web/docs/workstation.md)；两个节点之间有箭头直接相连时，小人沿箭头滑过去，否则蹲下、沿抛物线跳过去）；不属于任何节点的文件在图外托盘。终端里发生的改动同样驱动它。映射规则见[进度指针](web/docs/progress-pointer.md)。
 
 ![指针停在「浏览器」节点上，点开是这个节点最近改动的文件和所在轮次](docs/media/pointer.png)
 
@@ -111,17 +116,16 @@ flowchart LR
 
 ```bash
 uv tool install git+https://github.com/arvakme/agora     # 安装时构建前端，需要 Node 和 npm
-# 或者装 GitHub Release 里带好前端的 wheel，不需要 Node：
-# uv tool install https://github.com/arvakme/agora/releases/download/<tag>/agora_canvas-<版本>-py3-none-any.whl
 
-cd ~/code/my-service                  # 你的项目
-agora open                            # 初始化 .agora/，起本项目服务并打开浏览器
+cd ~/code/my-service                  # 你的项目（.agora/ 建在当前目录）
+agora                                 # 不带子命令等于 agora open：初始化 .agora/，起本项目服务并打开浏览器
+agora open --no-browser               # 只起服务、打印地址
 agora status                          # 在跑就打印地址、端口、pid
 agora down                            # 停掉服务和本项目的 tmux
 agora doctor [--fix]                  # 检查本机数据；--fix 从备份和本机注册表放回丢了的东西
 ```
 
-升级用 `uv tool upgrade agora-canvas`，卸载用 `uv tool uninstall agora-canvas`。发行包名是 `agora-canvas`（PyPI 上 `agora`、`agora-cli` 都已被占用），命令名仍是 `agora`；发布到 PyPI 后可以 `uv tool install agora-canvas`，或不安装直接 `uvx --from agora-canvas agora open`（目前还没发布）。
+装好后提示找不到 `agora` 时运行一次 `uv tool update-shell` 再重开终端；`which agora` 能看到跑的是哪一份（以前把 `~/code/agora/bin` 加进过 `PATH` 的话，记得删掉）。升级用 `uv tool upgrade agora-canvas`（或重新 `uv tool install --force git+https://github.com/arvakme/agora`），卸载用 `uv tool uninstall agora-canvas`。推 `v*` 标签后，GitHub Release 里会有带好前端的 wheel，装它不需要 Node（目前还没有发布过版本）。发行包名是 `agora-canvas`（PyPI 上 `agora`、`agora-cli` 都已被占用），命令名仍是 `agora`；发布到 PyPI 后可以 `uv tool install agora-canvas`，或不安装直接 `uvx --from agora-canvas agora open`（目前还没发布）。
 
 从源码运行（开发 Agora 本身时用；改代码立即生效，还能走 vite 热更新）：
 
@@ -135,6 +139,8 @@ cd ~/code/my-service
 ~/code/agora/bin/agora open                     # 与上面的 agora 相同，跑的是这份仓库的代码
 ~/code/agora/bin/agora open --dev               # 前端走 vite 热更新（只有源码仓库能用）
 ```
+
+一边改 Agora 一边在别的项目里用：`uv tool install --editable ~/code/agora`。全局的 `agora` 直接跑这份仓库的代码，改完不用重装，`agora open --dev` 也能用。
 
 - 删除的画布和会话进「回收站」，30 天内可恢复（刷新、重启后也行）；「所有画布」底部还有「会话历史」，可以按时间、agent、主题、画布找会话，也能把本机找到的原生会话重新导入。
 - 仓库移动、`cp -r` 复制、重新 clone 都有处理：移动后 Pi 会话的日志跟着挪；副本里的会话只读、可分叉继续；别的机器建的会话显示成只读卡片。`git clean -fdx` 删掉的本机数据（会话绑定、改图记录、回收站）由仓库外的每日备份和本机注册表兜底：`agora doctor --fix`。见[项目存储](web/docs/project-storage.md)。
@@ -178,7 +184,7 @@ npm run eval:replay          # 离线回放最近一轮的模型输出（validat
 
 ```
 agora_cli/            agora 命令：init / up / open / status / down / canvas / skill / share
-bin/agora             从源码在任意项目目录里调用上面的命令（uv run --project <仓库>）
+bin/agora             在任意项目目录里调用上面的命令：源码仓库里经 uv run --project <仓库>，安装版里用安装环境自己的 Python
 bin/agora-state       CLI 钩子向服务回报状态的脚本
 server/canvas/        本项目服务：项目存储、三个 agent 后端、会话跟随与终端、画布桥接、分享与网关
 server/paths.py       非 Python 文件（前端、素材库、skill、bin/）的唯一定位：源码里是仓库根，安装后是包内 server/_bundle/
@@ -214,7 +220,7 @@ cd web && npx tsc -p . && npx vitest run && npm run build && npm run eval:replay
 
 打包：`uv build` 在 `dist/` 生成 sdist 和 wheel（没有 `web/dist` 时先在 `web/` 里 `npm ci && npm run build`；`AGORA_SKIP_WEB_BUILD=1` 跳过前端）。推 `v*` 标签时 `.github/workflows/release.yml` 构建并附到 GitHub Release，不发布到 PyPI。
 
-CI（`.github/workflows/test.yml`）跑全部 Python 测试（不需要外部服务），以及前端的类型检查、单测、构建、离线评测回放和素材库校验。开发协作见 [docs/development.md](docs/development.md)，测试说明见 [docs/testing.md](docs/testing.md)，后端编排（Agent 生命周期、派发与恢复）见 [docs/orchestration.md](docs/orchestration.md)，一页面试讲法见 [docs/orchestration-interview.md](docs/orchestration-interview.md)。
+仓库目前不跑 CI，提交前在本地跑上面的检查；`.github/workflows/test.yml` 还在（全部 Python 测试，以及前端的类型检查、单测、构建、离线评测回放和素材库校验），需要时在 GitHub 上重新启用 Actions 即可。开发协作见 [docs/development.md](docs/development.md)，测试说明见 [docs/testing.md](docs/testing.md)，后端编排（Agent 生命周期、派发与恢复）见 [docs/orchestration.md](docs/orchestration.md)，一页面试讲法见 [docs/orchestration-interview.md](docs/orchestration-interview.md)。
 
 ## 许可与致谢
 

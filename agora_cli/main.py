@@ -486,7 +486,13 @@ def cmd_serve(p: Project, a) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="agora", description="One project, one local Agora server (data in <project>/.agora/).")
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if not argv:
+        argv = ["open"]  # a bare `agora` opens this project's Agora, as a bare `claude` or `codex` starts a session
+    ap = argparse.ArgumentParser(
+        prog="agora",
+        description="One project, one local Agora server (data in <project>/.agora/). With no command: agora open.",
+    )
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name, fn, help in (
         ("init", cmd_init, "create .agora/ in the project"),
