@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { LAND_LEAD_MS } from "../buildreplay/plan.ts";
 import { BUDGET_MS, mergeTouches, planTouch, type Touch } from "./runs/touch.ts";
 import type { WorkRun } from "./runs/types.ts";
-import { DRAW_LEAD_MS, DRAW_MS, DRAW_STAGGER_MS, DRAW_STAGGER_TOTAL_MS, drawAt, drawStart, elementTimes, holds, isDrawn, LABEL_FADE_MS, nodeTimes, REVEAL_CAP_MS, REVEAL_FADE_MS, REVEAL_MIN, REVEAL_SETTLE_MS, shownAt, stationsOf, stopsOf, stopTime, type RevealEl } from "./reveal.ts";
+import { BOX_GAP_MS, BOX_GAP_TOTAL_MS, BOX_MS, elementTimes, FILL_FADE_MS, holds, inkAt, inkPlan, LINE_GAP_MS, LINE_MS, MIN_SQUEEZE, nodeTimes, REVEAL_CAP_MS, REVEAL_FADE_MS, REVEAL_MIN, REVEAL_SETTLE_MS, shownAt, stationsOf, stopsOf, stopTime, TEXT_FADE_MS, type RevealEl } from "./reveal.ts";
 
 const T0 = 1_800_000_000_000;
 const node = (id: string, x: number, y = 0) => ({ id, x, y });
@@ -134,38 +134,56 @@ describe("when a batch is held at all", () => {
   });
 });
 
-describe("drawAt: a station's lines are drawn, one after another", () => {
-  it("a line starts once the nodes it joins are half in, its stroke grows from 0 to 1 over DRAW_MS", () => {
-    expect(drawStart(0, 1)).toBe(DRAW_LEAD_MS);
-    expect(DRAW_LEAD_MS).toBe(REVEAL_FADE_MS / 2);
-    expect(drawAt(DRAW_LEAD_MS - 1, 0, 1).stroke).toBe(0);
-    const mid = drawAt(DRAW_LEAD_MS + DRAW_MS / 2, 0, 1).stroke;
-    expect(mid).toBeGreaterThan(0.5); // eased out: quick off the start node, settling into the end
+describe("inkPlan: a station is drawn as a hand would", () => {
+  const { steps, length } = inkPlan(["box", "box", "line", "box", "line"]);
+  const boxes = steps.filter((s) => s.kind === "box");
+  const lines = steps.filter((s) => s.kind === "line");
+  it("a box: outline over BOX_MS from the station's moment, then its fill, then its text", () => {
+    expect(boxes[0]).toMatchObject({ start: 0, dur: BOX_MS, fill: BOX_MS });
+    expect(boxes[0].text).toBeGreaterThan(boxes[0].fill);
+    expect(inkAt(boxes[0], BOX_MS / 2)).toMatchObject({ fill: 0, text: 0 });
+    const mid = inkAt(boxes[0], BOX_MS / 2).stroke;
+    expect(mid).toBeGreaterThan(0.5); // eased out, the arrows' easing
     expect(mid).toBeLessThan(1);
-    expect(drawAt(DRAW_LEAD_MS + DRAW_MS, 0, 1).stroke).toBe(1);
+    expect(inkAt(boxes[0], BOX_MS + FILL_FADE_MS).fill).toBe(1);
+    expect(inkAt(boxes[0], boxes[0].text + TEXT_FADE_MS).text).toBe(1);
   });
-  it("the head shows as the stroke gets to the end, the label after the stroke is done", () => {
-    const s = DRAW_LEAD_MS;
-    expect(drawAt(s + DRAW_MS / 2, 0, 1).head).toBe(0);
-    expect(drawAt(s + DRAW_MS, 0, 1).head).toBe(1);
-    expect(drawAt(s + DRAW_MS, 0, 1).label).toBe(0);
-    expect(drawAt(s + DRAW_MS + LABEL_FADE_MS, 0, 1).label).toBe(1);
+  it("the boxes one after another, a little apart, in scene order", () => {
+    expect(boxes.map((s) => s.start)).toEqual([0, BOX_GAP_MS, 2 * BOX_GAP_MS]);
   });
-  it("lines of one station start a little apart, in order; many lines are squeezed so they all start within DRAW_STAGGER_TOTAL_MS", () => {
-    expect(drawStart(1, 3) - drawStart(0, 3)).toBe(DRAW_STAGGER_MS);
-    expect(drawStart(19, 20) - drawStart(0, 20)).toBeCloseTo(DRAW_STAGGER_TOTAL_MS);
-    const at = DRAW_LEAD_MS + DRAW_MS / 2;
-    expect(drawAt(at, 0, 3).stroke).toBeGreaterThan(drawAt(at, 1, 3).stroke);
+  it("arrows start only once every box of the station has its outline; then one after another; the head as the stroke ends, the label after", () => {
+    const outlined = Math.max(...boxes.map((s) => s.start + s.dur));
+    expect(Math.min(...lines.map((s) => s.start))).toBe(outlined);
+    expect(lines[1].start - lines[0].start).toBe(LINE_GAP_MS);
+    expect(lines[0].dur).toBe(LINE_MS);
+    const l = lines[0];
+    expect(inkAt(l, l.start + LINE_MS / 2)).toMatchObject({ fill: 0, text: 0 });
+    expect(inkAt(l, l.start + LINE_MS).fill).toBe(1);
+    expect(inkAt(l, l.start + LINE_MS).text).toBe(0);
+    expect(inkAt(l, l.start + LINE_MS + TEXT_FADE_MS).text).toBe(1);
+    expect(length).toBe(lines[1].text + TEXT_FADE_MS);
   });
-  it("a station is in motion until its last line's label is in: only then is it part of the still picture", () => {
-    expect(drawAt(REVEAL_SETTLE_MS, 19, 20)).toEqual({ stroke: 1, head: 1, label: 1 });
-    expect(REVEAL_SETTLE_MS).toBeGreaterThanOrEqual(REVEAL_FADE_MS);
+  it("only lines (their ends drawn at earlier stations): drawn from the start", () => {
+    expect(inkPlan(["line", "line"]).steps[0].start).toBe(0);
   });
-  it("arrows and lines are drawn; nodes and text fade", () => {
-    expect(isDrawn({ type: "arrow" })).toBe(true);
-    expect(isDrawn({ type: "line" })).toBe(true);
-    expect(isDrawn({ type: "rectangle" })).toBe(false);
-    expect(isDrawn({ type: "text" })).toBe(false);
+  it("many boxes and lines: the gaps shrink so a full station stays within REVEAL_SETTLE_MS", () => {
+    const big = inkPlan([...Array(30).fill("box"), ...Array(30).fill("line")]);
+    expect(big.length).toBeCloseTo(REVEAL_SETTLE_MS);
+    expect(big.steps[29].start).toBeCloseTo(BOX_GAP_TOTAL_MS);
+  });
+  it("a short stop squeezes the station into the time the figure stays (never below MIN_SQUEEZE); a long one does not stretch it", () => {
+    const natural = inkPlan(["box", "box", "line"]);
+    const short = inkPlan(["box", "box", "line"], natural.length / 4);
+    expect(short.length).toBeCloseTo(natural.length * MIN_SQUEEZE);
+    const fits = inkPlan(["box", "box", "line"], natural.length * 0.8);
+    expect(fits.length).toBeCloseTo(natural.length * 0.8);
+    expect(fits.steps[2].start / natural.steps[2].start).toBeCloseTo(0.8);
+    expect(inkAt(fits.steps[0], fits.steps[0].dur).stroke).toBe(1);
+    expect(inkPlan(["box"], 60_000).length).toBe(inkPlan(["box"]).length);
+  });
+  it("a fade (an image, a frame, a dashed outline) takes a box's place and fades in linearly", () => {
+    const [f] = inkPlan(["fade"]).steps;
+    expect(inkAt(f, BOX_MS / 2).stroke).toBeCloseTo(0.5);
   });
 });
 

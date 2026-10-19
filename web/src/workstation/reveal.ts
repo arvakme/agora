@@ -125,38 +125,73 @@ export function holds(o: { count: number; stations: number; reduced: boolean; fi
 /** The distinct moments a batch's elements appear at after it was applied (its stations, as the page shows them). */
 export const stationsOf = (times: ReadonlyMap<string, number>, at: number): number[] => [...new Set([...times.values()].filter((t) => t > at))].sort((a, b) => a - b);
 
-// ——— lines are drawn, not faded ———
-// An arrow (or a line) of a station is drawn from its start point along its path once the nodes it joins are half in; its head shows as the stroke gets
-// to the end, its label fades in after. The lines of one station are drawn one after another, a little apart, so it reads as drawing them one by one.
+// ——— a station is drawn, not faded ———
+// When the figure gets to a station, what it draws there is drawn in the order a hand would: each box's outline is traced (from its top-left, clockwise:
+// the way Excalidraw's path goes), then its fill fades in, then its text; the boxes one after another, a little apart. Then the lines: each arrow from its
+// start point along its path to its end, its head as the stroke gets there, its label after — only once every box of the station has its outline, so an
+// arrow never reaches a box that is not there yet (the boxes of earlier stations are). What cannot be traced (an image, a frame, a dashed outline, free
+// text) fades in where a box would be traced. The whole station fits in the time the figure stays at its stop: squeezed when that is short, never stretched.
 
-/** From a station's moment to its first line starting (its nodes are half faded in by then). */
-export const DRAW_LEAD_MS = REVEAL_FADE_MS / 2;
-/** One line's stroke, start to end. */
-export const DRAW_MS = 420;
-/** Between one line of a station starting and the next; with many lines the gaps shrink so all have started within DRAW_STAGGER_TOTAL_MS. */
-export const DRAW_STAGGER_MS = 140;
-export const DRAW_STAGGER_TOTAL_MS = 700;
-/** The arrowhead comes in over the last bit of the stroke; the label after the stroke is done. */
+/** What a station item is drawn as: a box's outline then fill and text, a line's stroke then head and label, or a fade. */
+export type InkKind = "box" | "line" | "fade";
+/** One item's plan (ms after the station's moment): its stroke (or fade) from `start` for `dur`; its fill (a box) or head (a line) from `fill`; its text from `text`. */
+export type InkStep = { kind: InkKind; start: number; dur: number; fill: number; text: number };
+
+/** A box's outline, start to end; then its fill, then its text. */
+export const BOX_MS = 400;
+export const FILL_FADE_MS = 150;
+export const TEXT_FADE_MS = 150;
+/** The text starts a moment after the fill does. */
+const TEXT_AFTER_FILL_MS = 60;
+/** A line's stroke, start to end; its head over the last bit of it. */
+export const LINE_MS = 350;
 export const HEAD_FADE_MS = 80;
-export const LABEL_FADE_MS = 200;
-/** How long after its moment a station is still in motion (its fade-in, its lines being drawn): until then it is not part of the still picture. */
-export const REVEAL_SETTLE_MS = Math.max(REVEAL_FADE_MS, DRAW_LEAD_MS + DRAW_STAGGER_TOTAL_MS + DRAW_MS + LABEL_FADE_MS);
+/** Between one box (or line) of a station starting and the next; with many the gaps shrink so all have started within the total. */
+export const BOX_GAP_MS = 120;
+export const BOX_GAP_TOTAL_MS = 300;
+export const LINE_GAP_MS = 100;
+export const LINE_GAP_TOTAL_MS = 250;
+/** A station is never squeezed below this share of its natural length: the strokes would flick. The shortest stop (900 ms of work, the drawing starts 250 ms in) holds a full station (1.45 s) at about this. */
+export const MIN_SQUEEZE = 0.45;
 
-/** Is this element drawn as a stroke (an arrow or a line) rather than faded in. */
-export const isDrawn = (e: Pick<RevealEl, "type">): boolean => e.type === "arrow" || e.type === "line";
+const gapOf = (n: number, gap: number, total: number) => (n > 1 ? Math.min(gap, total / (n - 1)) : 0);
 
-/** When line `k` of the `n` drawn at a station starts (ms after the station's moment). */
-export function drawStart(k: number, n: number): number {
-  const gap = n > 1 ? Math.min(DRAW_STAGGER_MS, DRAW_STAGGER_TOTAL_MS / (n - 1)) : 0;
-  return DRAW_LEAD_MS + k * gap;
+/** The plan of a station's items in their order (scene order), fitted into `budget` ms (the rest of the figure's stop) when that is shorter. */
+export function inkPlan(kinds: readonly InkKind[], budget = Infinity): { steps: InkStep[]; length: number } {
+  const boxes = kinds.filter((k) => k !== "line").length;
+  const lines = kinds.length - boxes;
+  const gb = gapOf(boxes, BOX_GAP_MS, BOX_GAP_TOTAL_MS);
+  const gl = gapOf(lines, LINE_GAP_MS, LINE_GAP_TOTAL_MS);
+  const linesFrom = boxes ? (boxes - 1) * gb + BOX_MS : 0;
+  let b = 0;
+  let l = 0;
+  const steps = kinds.map((kind): InkStep => {
+    if (kind === "line") {
+      const start = linesFrom + l++ * gl;
+      return { kind, start, dur: LINE_MS, fill: start + LINE_MS - HEAD_FADE_MS, text: start + LINE_MS };
+    }
+    const start = b++ * gb;
+    return { kind, start, dur: BOX_MS, fill: start + BOX_MS, text: start + BOX_MS + TEXT_AFTER_FILL_MS };
+  });
+  const length = Math.max(0, ...steps.map((s) => s.text + TEXT_FADE_MS));
+  const k = length > budget ? Math.max(MIN_SQUEEZE, budget / length) : 1;
+  if (k === 1) return { steps, length };
+  return { steps: steps.map((s) => ({ ...s, start: s.start * k, dur: s.dur * k, fill: s.fill * k, text: s.text * k })), length: length * k };
 }
 
+/** The longest a station takes (a full one, not squeezed): until then it is still being drawn, not part of the still picture. */
+export const REVEAL_SETTLE_MS = Math.max(REVEAL_FADE_MS, BOX_GAP_TOTAL_MS + BOX_MS + LINE_GAP_TOTAL_MS + LINE_MS + TEXT_FADE_MS);
+
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
-/** Line `k` of `n`, `ms` after the station's moment: how much of its stroke is drawn (0 → 1, eased), how visible its head and its label are. */
-export function drawAt(ms: number, k: number, n: number): { stroke: number; head: number; label: number } {
-  const s = ms - drawStart(k, n);
-  const p = clamp01(s / DRAW_MS);
-  return { stroke: 1 - (1 - p) * (1 - p), head: clamp01((s - DRAW_MS + HEAD_FADE_MS) / HEAD_FADE_MS), label: clamp01((s - DRAW_MS) / LABEL_FADE_MS) };
+/** One item `ms` after its station's moment: how much of its stroke is drawn (0 → 1, eased out; a fade's opacity, linear), how visible its fill (or head) and its text are. */
+export function inkAt(s: InkStep, ms: number): { stroke: number; fill: number; text: number } {
+  const p = clamp01((ms - s.start) / s.dur);
+  const k = s.dur / (s.kind === "line" ? LINE_MS : BOX_MS);
+  return {
+    stroke: s.kind === "fade" ? p : 1 - (1 - p) * (1 - p),
+    fill: clamp01((ms - s.fill) / ((s.kind === "line" ? HEAD_FADE_MS : FILL_FADE_MS) * k)),
+    text: clamp01((ms - s.text) / (TEXT_FADE_MS * k)),
+  };
 }
 
 /** How visible an element appearing at `t` is at `now`: 0 before, fading in over REVEAL_FADE_MS, 1 after. */
