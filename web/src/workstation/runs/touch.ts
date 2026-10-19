@@ -2,10 +2,11 @@
 // (session/agentBridge.ts): the page knows which nodes it changed and when, so it says so (`touches.record`) — nothing is read out of a log. Here
 // the change becomes segments of that session's run: a `write` at a node (its path is `nodePath(canvas, id)`, ./nodePath.ts) a slice at a time — what one
 // stance reaches (`REACH_PX`, the build replay's rule) is drawn from where the figure stands, so 30 nodes are a handful of stops, not 30 walks — in
-// the order they were drawn, nearest next. The picture never waits: the whole show is over in BUDGET_MS (or 1.5 × the time the change itself took,
-// an animation), and a change made while the last is still being shown follows it, or, far behind, is shown as one stop at its last node.
+// the order they were drawn, nearest next. The whole show is over in BUDGET_MS (or 1.5 × the time the change itself took, an animation), and a change
+// made while the last is still being shown follows it, or, far behind, is shown as one stop at its last node. Each stop says which nodes appear on the
+// page when the figure gets there (`edit.reveal`, `edit.land`): ../reveal.ts holds an agent's new elements back until then.
 // Pure but for the small store at the bottom (./store.ts feeds `mergeTouches` from it).
-import { REACH_PX } from "../../buildreplay/plan";
+import { LAND_LEAD_MS, REACH_PX } from "../../buildreplay/plan";
 import { nodePath, parseNodePath } from "./nodePath";
 import { setTouched } from "./touched";
 import type { RunSeg, WorkRun } from "./types";
@@ -94,7 +95,7 @@ export function sliceNodes(nodes: readonly TouchNode[]): Slice[] {
 const dwellOf = (count: number) => Math.min(2000, Math.max(900, 700 + 150 * count));
 const walkMs = (a: TouchNode, b: TouchNode) => SETTLE_MS + ((Math.abs(a.x - b.x) + Math.abs(a.y - b.y)) * DETOUR) / WALK_PX_MS;
 
-type Stop = { slice: Slice; cut: boolean; ms: number };
+type Stop = { slice: Slice; cut: boolean; walk: number; ms: number };
 /** The stops for these slices in order, each with what it costs: its walk (or a cut) and its work. */
 function costStops(slices: readonly Slice[], centre: Map<string, TouchNode>, before?: TouchNode): Stop[] {
   return slices.map((slice, i) => {
@@ -102,7 +103,19 @@ function costStops(slices: readonly Slice[], centre: Map<string, TouchNode>, bef
     const prev = i ? centre.get(slices[i - 1].stance)! : before;
     const w = prev ? walkMs(prev, me) : FIRST_WALK_MS;
     const cut = !!prev && w > MAX_WALK_MS;
-    return { slice, cut, ms: Math.round((cut ? CUT_MS : w) + dwellOf(slice.nodes.length)) };
+    const walk = cut ? CUT_MS : w;
+    return { slice, cut, walk, ms: Math.round(walk + dwellOf(slice.nodes.length)) };
+  });
+}
+
+/** What appears at each of these stops (../reveal.ts): its own slice, and the slices before it the budget had no stop for — they come with the next stop the figure makes. */
+function revealOf(slices: readonly Slice[], stops: readonly Stop[]): string[][] {
+  let k = 0;
+  return stops.map((st) => {
+    const upto = slices.indexOf(st.slice);
+    const ids = slices.slice(k, upto + 1).flatMap((s) => s.nodes.map((n) => n.id));
+    k = Math.max(k, upto + 1);
+    return ids;
   });
 }
 
@@ -126,11 +139,13 @@ export function planTouch(t: Touch, from: number, before?: TouchNode, behind = f
       }
     }
   const out: RunSeg[] = [];
+  const reveal = revealOf(slices, stops);
   let at = start;
-  for (const st of stops) {
-    out.push({ kind: "write", start: at, end: at + st.ms, label: t.say, say: t.say, path: nodePath(t.canvas, st.slice.stance), ...(st.cut ? { cut: true as const } : {}), edit: { canvas: t.canvas, ids: st.slice.nodes.map((n) => n.id) } });
+  stops.forEach((st, i) => {
+    const edit = { canvas: t.canvas, ids: st.slice.nodes.map((n) => n.id), reveal: reveal[i], land: Math.round(at + st.walk + LAND_LEAD_MS) };
+    out.push({ kind: "write", start: at, end: at + st.ms, label: t.say, say: t.say, path: nodePath(t.canvas, st.slice.stance), ...(st.cut ? { cut: true as const } : {}), edit });
     at += st.ms;
-  }
+  });
   return out;
 }
 
