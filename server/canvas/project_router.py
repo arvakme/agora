@@ -461,8 +461,29 @@ def host_name(header: str) -> str:
     return h.rsplit(":", 1)[0] if h.count(":") == 1 else h
 
 
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def origin_host(origin: str) -> str | None:
+    """Host name of an ``Origin`` header (``http://localhost:5173`` → ``localhost``); ``None`` for ``null`` or garbage."""
+    from urllib.parse import urlsplit
+
+    try:
+        h = urlsplit(origin.strip()).hostname
+    except ValueError:
+        return None
+    return h.lower() if h else None
+
+
 class LocalHostOnly:
-    """ASGI middleware: 421 for HTTP and WebSocket requests whose Host is not a local name."""
+    """ASGI middleware: 421 for HTTP and WebSocket requests whose Host is not a local name, and 403 for
+    writes (and WebSocket upgrades) a page on another site sends to it.
+
+    The Host check stops DNS rebinding, but a page on any site can still send a "simple" cross-site POST
+    (``text/plain``, no preflight) to ``127.0.0.1:<port>``: its Host is local. So a write is refused when
+    the browser says it came from somewhere else (an ``Origin`` that is not a local name, or
+    ``Sec-Fetch-Site: cross-site``). Requests without an ``Origin`` (the CLI, the agent skill, curl) pass.
+    """
 
     def __init__(self, app) -> None:
         self.app = app
@@ -479,7 +500,25 @@ class LocalHostOnly:
                 await send({"type": "http.response.start", "status": 421, "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
                 await send({"type": "http.response.body", "body": body})
                 return
+            if scope["type"] == "websocket" or scope.get("method", "GET").upper() not in SAFE_METHODS:
+                if self.cross_site(scope):
+                    if scope["type"] == "websocket":
+                        await send({"type": "websocket.close", "code": 1008})
+                        return
+                    body = b'{"error":"cross-site request refused"}'
+                    await send({"type": "http.response.start", "status": 403, "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
+                    await send({"type": "http.response.body", "body": body})
+                    return
         await self.app(scope, receive, send)
+
+    def cross_site(self, scope) -> bool:
+        headers = {k: v.decode("latin-1") for k, v in scope.get("headers") or []}
+        if headers.get(b"sec-fetch-site", "").strip().lower() == "cross-site":
+            return True
+        origin = headers.get(b"origin")
+        if origin is None:
+            return False
+        return origin_host(origin) not in self.allowed
 
 
 def create_project_app(
