@@ -10,7 +10,6 @@ import { pictureBounds, sceneSvg } from "../buildreplay/scenePicture";
 import type { Box } from "../canvas/clearance";
 import { nodeBox } from "../canvas/nodes";
 import { byId, live, type El } from "../canvas/scene";
-import { viewport } from "../canvas/viewport";
 import { theme } from "../app/theme";
 import { canvases } from "../session/ui";
 import { prefersReducedMotion } from "../workstation/clock";
@@ -117,7 +116,10 @@ function watchArrival(id: string) {
     const a = arrivals.get(id);
     if (!a) return off();
     const api = canvases.get(id)?.api;
-    const v = viewport.get(id);
+    // the editor's own view, not the viewport store's: that keeps a canvas's last view after it unmounts, so a canvas mounted again
+    // would seem to have its view already (and its own fit would come after the stand-ins went)
+    const st = api?.getAppState();
+    const v = st && { scrollX: st.scrollX, scrollY: st.scrollY, zoom: st.zoom.value, width: st.width };
     frames++;
     // a new editor zooms about the last pointer position it heard of (document pointermove), (0, 0) until the pointer moves: a pinch that
     // goes on without moving would zoom about the corner. Tell it where the pointer is.
@@ -128,7 +130,8 @@ function watchArrival(id: string) {
     if (api && v && v.width > 0 && !a.matched) {
       const want = camOf(a.sim, originOf(api));
       const same = Math.abs(v.zoom - want.zoom) < 1e-3 * want.zoom && Math.abs(v.scrollX - want.scrollX) * v.zoom < 0.75 && Math.abs(v.scrollY - want.scrollY) * v.zoom < 0.75;
-      if (same) a.matched = true;
+      // and its drawing loaded: an empty editor would be shown in the stand-ins' place
+      if (same && api.getSceneElements().length > 0) a.matched = true;
       else if (frames % 4 === 0) applySim(api, a.sim); // the canvas was mounted already, or fitted itself after all
     }
     // from then on the person's gesture is theirs again (it may move the view at once): a few frames for Excalidraw to draw.
@@ -223,6 +226,8 @@ export async function flyInto(from: string, to: string, nodeId?: string): Promis
   const dest = clampSim(parentSim(simOf(fit, { x: o.x, y: o.y + dh }), n.m), centreOf(api));
   rememberBefore(from, camNow(api));
   const picture = pictureOf(to, isDark());
+  // leaving this level: its selection (and the style panel that comes with it) does not fly along
+  api.updateScene({ appState: { selectedElementIds: {} } });
   const ok = await fly(from, api, dest, flightMs(simOf(camNow(api), o), dest), { node: n.node.id, child: to, dir: "in" }, true);
   if (!ok) return; // the person took over: they are where the flight left them (./ZoomLayer.tsx carries on by the zoom)
   try {
@@ -278,7 +283,9 @@ async function upOne(child: string, parent: string, history: "push" | "replace",
   const pc = contentOf(parent);
   const destCam = keep ?? (pc ? fitCam(pc.box, pane) : camNow(papi));
   const dest = simOf(destCam, originOf(papi));
-  return fly(parent, papi, dest, arr.out!.ms, { node: n.node.id, child, dir: "out" });
+  // the last level out takes as long as its zoom asks (as the way in), the ones on the way through are quick
+  const ms = last ? flightMs(simOf(camNow(papi), originOf(papi)), dest, arr.out!.ms, 700) : arr.out!.ms;
+  return fly(parent, papi, dest, ms, { node: n.node.id, child, dir: "out" });
 }
 
 const isOpenElsewhere = (to: string) => !!canvases.get(to);

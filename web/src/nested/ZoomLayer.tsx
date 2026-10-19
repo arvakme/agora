@@ -12,7 +12,7 @@ import { sceneSvg, sceneSvgNow, type SceneSvg } from "../buildreplay/scenePictur
 import type { Box } from "../canvas/clearance";
 import { nodeBox } from "../canvas/nodes";
 import { byId, live, type El } from "../canvas/scene";
-import { viewport } from "../canvas/viewport";
+import { viewport, type Viewport } from "../canvas/viewport";
 import { frame } from "../workstation/frame";
 import { plays } from "../workstation/replayMode";
 import { childOf } from "./graph";
@@ -39,6 +39,12 @@ function blocked(api: ExcalidrawImperativeAPI | null, pressed: boolean): boolean
   const a = api.getAppState();
   return !!(a.editingTextElement || a.newElement || a.selectedElementsAreBeingDragged || a.isResizing || a.isRotating || a.multiElement);
 }
+
+const viewOf = (api: ExcalidrawImperativeAPI | null): Viewport | undefined => {
+  if (!api) return undefined;
+  const a = api.getAppState();
+  return a.width > 0 ? { scrollX: a.scrollX, scrollY: a.scrollY, zoom: a.zoom.value, width: a.width, height: a.height } : undefined;
+};
 
 export function ZoomLayer({ api, canvasId }: { api: ExcalidrawImperativeAPI | null; canvasId: string }) {
   const root = useRef<HTMLDivElement>(null);
@@ -159,7 +165,9 @@ export function ZoomLayer({ api, canvasId }: { api: ExcalidrawImperativeAPI | nu
       const pending = !!arr && !arr.settled;
       // a click's way out: the node shows its sub-diagram, the rest veiled, until the flight out begins
       const hold = pending || !!arr?.out;
-      const v = viewport.get(canvasId);
+      // the editor's own view: the viewport store keeps a canvas's last view after it unmounts, so a canvas mounted again would read
+      // where it was last time until its first change
+      const v = viewOf(api) ?? viewport.get(canvasId);
       // until the canvas has the view it was given, the stand-in is where that view puts it; then where the canvas is
       const sim: Sim | null = pending && !arr.matched ? arr.sim : v ? simOf(v, origin) : null;
       const fl = flightOn(canvasId);
