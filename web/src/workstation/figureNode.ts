@@ -219,8 +219,8 @@ export class FigureNode {
       const front = (POD.w / 2 - POD.h / 2) * grow;
       S(this.podMark, "pm", "transform", `translate(${f2(Math.cos(h) * front)} ${f2(Math.sin(h) * front)}) scale(${f2(grow)})`);
     }
-    // off the ground on a ladder (or gliding): no shadow under the feet
-    S(this.shadow, "sd", "opacity", 1 - Math.max(j.climb, c));
+    // off the ground on a ladder (gliding, or in a hop's air): no shadow under the feet
+    S(this.shadow, "sd", "opacity", 1 - Math.max(j.climb, c, j.air ?? 0));
     // the avatar mark, the dispatcher's badge and the ! / ? never read mirrored mid-turn
     const un = j.turn < 0 ? " scale(-1 1)" : "";
     const desk = !j.walking && (j.prop === "laptop" || j.prop === "terminal") && j.propAlpha > 0.01;

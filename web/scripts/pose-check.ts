@@ -15,7 +15,7 @@
 // `--match` picks scenarios by a substring of "scenario | label" (e.g. --match "door" or --match "sit down").
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
-import { ACCEL_MAX, GLIDE_ACCEL_MAX, checkJoints, ELBOW_MAX, ELBOW_MAX_WALKING, elbowJumps, frames, gaits, HIP_SHAKE_MAX, jumps, layerJumps, RUNG_OFF_MAX, snaps, speeds, standRange, SWAP_MAX, sweep, type Frame } from "../src/workstation/poseHealth";
+import { ACCEL_MAX, GLIDE_ACCEL_MAX, HOP_ACCEL_MAX, HOP_V_MAX, checkJoints, ELBOW_MAX, ELBOW_MAX_WALKING, elbowJumps, frames, gaits, HIP_SHAKE_MAX, jumps, layerJumps, RUNG_OFF_MAX, snaps, speeds, standRange, SWAP_MAX, sweep, type Frame } from "../src/workstation/poseHealth";
 import { ladderShape } from "../src/workstation/hatch";
 import { RIG } from "../src/workstation/rig";
 
@@ -111,7 +111,7 @@ if (speedOut) {
     const d = sp.samples.map((s, i) => `${i ? "L" : "M"}${X(s.t).toFixed(1)} ${Y(s.v).toFixed(1)}`).join("");
     const stops = sp.dips.map((t) => `<line x1="${X(t).toFixed(1)}" y1="${y + 16}" x2="${X(t).toFixed(1)}" y2="${y + Hh - 14}" stroke="#d9534f" stroke-width="2" opacity="0.7"/>`).join("") + `<rect x="40" y="${y + 16}" width="${(X(t0 + sp.setOff) - 40).toFixed(1)}" height="${Hh - 30}" fill="#f3e3b0" opacity="0.6"/>`;
     rows.push(`<g>${stops}<line x1="40" y1="${Y(0)}" x2="${W2 - 20}" y2="${Y(0)}" stroke="#bbb"/><path d="${d}" fill="none" stroke="#2c3136" stroke-width="1.4"/><text x="40" y="${y + 11}" font-size="11" font-family="monospace" fill="#222">${sp.name} · ${(t1 - t0) | 0} ms · top ${sp.maxV.toFixed(3)} px/ms · steepest ${(sp.maxAccel * 1e6).toFixed(0)} px/s² · stands ${sp.setOff | 0} ms before the first step · ${sp.dips.length} dip${sp.dips.length === 1 ? "" : "s"} to rest${sp.dips.map((t) => ` @${t | 0}`).join("")}</text></g>`);
-    console.log(`${sp.name.padEnd(46)} ${String((t1 - t0) | 0).padStart(6)} ms  top ${sp.maxV.toFixed(3)} px/ms${sp.glides ? ` (gliding ${sp.glideMaxV.toFixed(3)}, steepest ${(sp.glideMaxAccel * 1e6).toFixed(0)} px/s²)` : ""}  steepest change ${(sp.maxAccel * 1e6).toFixed(0).padStart(4)} px/s²  stands ${String(sp.setOff | 0).padStart(4)} ms first  dips to rest ${sp.dips.length}${sp.dips.map((t) => ` @${t | 0}`).join("")}`);
+    console.log(`${sp.name.padEnd(46)} ${String((t1 - t0) | 0).padStart(6)} ms  top ${sp.maxV.toFixed(3)} px/ms${sp.glides ? ` (gliding ${sp.glideMaxV.toFixed(3)}, steepest ${(sp.glideMaxAccel * 1e6).toFixed(0)} px/s²)` : ""}${sp.hops ? ` (${sp.hops} hop${sp.hops > 1 ? "s" : ""}: top ${sp.hopMaxV.toFixed(3)}, in the air ${(sp.hopMaxAccel * 1e6).toFixed(0)} px/s²)` : ""}  steepest change ${(sp.maxAccel * 1e6).toFixed(0).padStart(4)} px/s²  stands ${String(sp.setOff | 0).padStart(4)} ms first  dips to rest ${sp.dips.length}${sp.dips.map((t) => ` @${t | 0}`).join("")}`);
     y += Hh;
   }
   writeFileSync(speedOut, `<svg xmlns="http://www.w3.org/2000/svg" width="${W2}" height="${y}" viewBox="0 0 ${W2} ${y}"><rect width="100%" height="100%" fill="#fff"/>${rows.join("")}</svg>`);
@@ -200,9 +200,11 @@ const range = standRange(all.filter((f) => f.scenario === "stand" && f.label.sta
 const rangeBad = range.hips > 1.5 || range.sway > 2.5 || range.tilt > 10;
 console.log(`standing: hips move ${range.hips.toFixed(2)}, body sways ${range.sway.toFixed(2)}, head tips ${range.tilt.toFixed(1)}°${rangeBad ? "  ← too much" : ""}`);
 const sp = speeds();
-const fast = sp.filter((s) => s.maxAccel > ACCEL_MAX || s.dips.length || s.glideMaxAccel > GLIDE_ACCEL_MAX);
-console.log(`${fast.length} trips change speed faster than ${ACCEL_MAX * 1e6} px/s² walking or climbing (${GLIDE_ACCEL_MAX * 1e6} px/s² gliding along an arrow), or dip to rest inside`);
-for (const s of fast) console.log(`  ${s.name}: steepest ${(s.maxAccel * 1e6).toFixed(0)} px/s² (gliding ${(s.glideMaxAccel * 1e6).toFixed(0)}), dips ${s.dips.join(",") || "none"}`);
+const fast = sp.filter((s) => s.maxAccel > ACCEL_MAX || s.dips.length || s.glideMaxAccel > GLIDE_ACCEL_MAX || s.hopMaxAccel > HOP_ACCEL_MAX || s.hopMaxV > HOP_V_MAX);
+console.log(`${fast.length} trips change speed faster than ${ACCEL_MAX * 1e6} px/s² walking or climbing (${GLIDE_ACCEL_MAX * 1e6} px/s² gliding along an arrow, ${HOP_ACCEL_MAX * 1e6} px/s² in a hop's air), go faster than ${HOP_V_MAX} px/ms in the air, or dip to rest inside`);
+for (const s of fast) console.log(`  ${s.name}: steepest ${(s.maxAccel * 1e6).toFixed(0)} px/s² (gliding ${(s.glideMaxAccel * 1e6).toFixed(0)}, in the air ${(s.hopMaxAccel * 1e6).toFixed(0)}, top there ${s.hopMaxV.toFixed(3)} px/ms), dips ${s.dips.join(",") || "none"}`);
+const hp = sp.filter((s) => s.hops);
+console.log(`${hp.length} trips hop: ${hp.map((s) => `${s.name} ${(s.samples[s.samples.length - 1].t - s.samples[0].t) | 0} ms, top ${(s.hopMaxV * 1000).toFixed(0)} px/s`).join("; ")}`);
 const gl = sp.filter((s) => s.glides);
 console.log(`${gl.length} trips glide along arrows: ${gl.map((s) => `${s.name} ${(s.samples[s.samples.length - 1].t - s.samples[0].t) | 0} ms, top ${(s.glideMaxV * 1000).toFixed(0)} px/s`).join("; ")}`);
 // the ladder: a diagonal pair changes over at most SWAP_MAX times a second; a hand or foot on a rung is within RUNG_OFF_MAX of it; the hips do not shake

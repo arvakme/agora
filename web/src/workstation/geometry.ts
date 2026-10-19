@@ -32,7 +32,7 @@ export type Geometry = {
   boxOf: (place: string) => Box | undefined;
   /** Child canvas a node opens, if any. */
   childOf: Map<string, string>;
-  /** The way from one spot to another (./route.ts): along the arrows between nodes, else over a scaffold. */
+  /** The way from one spot to another (./route.ts): along the one arrow joining two nodes, else a hop. */
   route: (from: Spot, to: Spot) => Route;
 };
 

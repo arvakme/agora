@@ -45,7 +45,8 @@ describe("geometryWalk", () => {
   it("planning with it puts the landing after the walk that really takes this long", () => {
     const p = planBuild(tl, g);
     const [a, b] = p.beats;
-    expect(b.land - b.start).toBe(g.walk("c1", "a", "b") + 250);
+    // a hop's time in the air is a square root: the sum comes out within rounding, not bit for bit
+    expect(b.land - b.start).toBeCloseTo(g.walk("c1", "a", "b") + 250, 6);
     expect(a.land - a.start).toBe(250);
   });
 });

@@ -16,7 +16,7 @@
 import { REF_K } from "./docks";
 import { isStand, layerStep, STAND, standMotion, type Layer } from "./poses";
 import type { Gesture } from "./gestures";
-import type { Leg, Route } from "./route";
+import { arcAt, hopAir, HOP_CROUCH_MS, HOP_G, HOP_LAND_MS, type Arc, type Leg, type Route } from "./route";
 
 export type Pt = { x: number; y: number };
 
@@ -226,7 +226,11 @@ type ClimbPhase = Span & { kind: "climb"; x: number; rungs: Rungs; on: number; o
 /** A glide along `pts` (the arrow's line, the node outlines at its ends; `cum`: the length up to each point, `L` the whole): a capsule over the middle,
  * the figure at the ends, morphing over `morph` ms; facing `f` over the first half and `fOut` over the second (the way the walk after it goes). */
 type GlidePhase = Span & { kind: "glide"; pts: Pt[]; cum: number[]; ts: number[]; vs: number[]; L: number; morph: number; fOut: 1 | -1 };
-type Phase = WalkPhase | ClimbPhase | GlidePhase;
+/** A hop (§5 跳过去) from `a` to `b` along `arc`: crouching over `crouch` ms where it stands (the last of it a push up out of the crouch), in the air for `air` ms, the squash of
+ * the landing over `land` ms; the feet from where the walk before left them (`pre`) to where the walk after takes them up (`post`); `pts` / `cum`: the arc in HOP_STEPS
+ * pieces and the length up to each point (the share of it covered, for the trace). */
+type HopPhase = Span & { kind: "hop"; arc: Arc; crouch: number; air: number; land: number; pre: [Foot, Foot]; post: [Foot, Foot]; pts: Pt[]; cum: number[] };
+type Phase = WalkPhase | ClimbPhase | GlidePhase | HopPhase;
 /** What a trip draws while it is walked: bridges (level, across a gap) and ladders (rails from `bottom`
  * up to `top`, rungs at `rungs`); `temp`: a scaffold's, not a connector's. */
 export type Bridge = { a: Pt; b: Pt; temp: boolean };
@@ -234,11 +238,15 @@ export type Ladder = { x: number; top: number; bottom: number; rungs: number[]; 
 /** A move planned along its route: t0 → t1 (the turn at set-off included), a → b, for a figure drawn at k world px per figure unit. */
 /** A glide's line while it is glided (the arrow lit under the capsule), and when. */
 export type GlideLine = { pts: Pt[]; t0: number; t1: number };
-export type Trip = { t0: number; t1: number; a: Pt; b: Pt; f: 1 | -1; k: number; phases: Phase[]; bridges: Bridge[]; ladders: Ladder[]; glides: GlideLine[] };
+/** A hop's arc (§5 跳过去) and when it is in the air: from takeoff (`t0`) to touchdown (`t1`). */
+export type HopLine = { pts: Pt[]; t0: number; t1: number };
+export type Trip = { t0: number; t1: number; a: Pt; b: Pt; f: 1 | -1; k: number; phases: Phase[]; bridges: Bridge[]; ladders: Ladder[]; glides: GlideLine[]; hops: HopLine[] };
 /** A worker on a trip at t: root and feet (world), its hands' holds while on a ladder, how far into the
  * climbing stance it is (0 walking … 1 on the ladder), its hip height (figure units) and facing. */
 export type TripPose = { root: Pt; feet: [Foot, Foot]; hands: [Foot, Foot] | null; climb: number; hip: number; f: 1 | -1; /** On a ladder the body comes in to (going down one beside a node's wall: `Rungs.snug`). */ snug?: boolean;
-  /** Gliding along an arrow: 0 the figure … 1 the capsule, and the capsule's heading (radians, world: 0 = +x, y down) along the line. */ capsule?: number; heading?: number };
+  /** Gliding along an arrow: 0 the figure … 1 the capsule, and the capsule's heading (radians, world: 0 = +x, y down) along the line. */ capsule?: number; heading?: number;
+  /** Hopping (§5 跳过去): where the hands go (figure units from the shoulder, x along the facing, as `RAISED`) and the lean (°) — swung back in the crouch, up in the air, out for the landing —
+   * and how far off the floor it is (0 on it … 1 in the air, over the first and last AIR_FADE ms of the flight: its shadow goes). */ arms?: { near: [number, number]; far: [number, number]; lean: number }; air?: number };
 
 /** Progress 0 → 1 over time fraction u along `P`: the speed goes evenly from g0 up to the cruise over the first `a` of the time, holds it, and evenly down to g1 over the last `b`;
  * the cruise is what makes the whole come to 1. Continuous in speed, whatever g0 and g1 are. */
@@ -487,32 +495,36 @@ function glideS(x: { cum: number[]; ts: number[]; vs: number[]; L: number }, tau
  * A move's trip along its route (pure). Runs of level legs are walked (a step under STEP_MAX included:
  * the feet come down on the new floor, the body rises or sinks with them); a run of glide legs (an arrow:
  * ./route.ts) is glided — the worker walks to where the glide starts, turns into a capsule as it sets off along
- * the line, and back into itself as it arrives, then walks on; a climb (a scaffold's ladder) is climbed: the worker
+ * the line, and back into itself as it arrives, then walks on; a hop's legs (§5 跳过去, one arc) are hopped — the
+ * worker walks to the takeoff and stops, crouches (HOP_CROUCH_MS, swinging its arms back, then pushing up out of
+ * it), flies the arc under HOP_G (arms up, feet tucked, then reaching down for the floor) and lands into a squash
+ * (HOP_LAND_MS), then walks on; a climb (a ladder: only a way planned with no walk map has one) is climbed: the worker
  * walks up to the ladder and stops GAP off it, facing it from the side it came from, reaches for the rungs
  * and climbs hand over hand (a diagonal pair at a time), then steps off onto the other floor and walks on.
  * The speed is continuous along the whole trip — a walk eases into a climb or a glide at CORNER of the slower
- * pace, never stopping — and only its ends are at rest. Durations from WALK_SPEED and CLIMB_SPEED (× k / REF_K)
+ * pace, never stopping — and only its ends (and a glide's or a hop's) are at rest. Durations from WALK_SPEED and CLIMB_SPEED (× k / REF_K)
  * and ACCEL: a stretch takes its length ÷ the speed plus the time to get up to it, so a long way is walked at
- * the same step as a short one; a glide takes `glideMs` (GLIDE_ACCEL to change speed). The whole trip, set-off
+ * the same step as a short one; a glide takes `glideMs` (GLIDE_ACCEL to change speed), a hop its crouch, its time in the air and its squash. The whole trip, set-off
  * included, takes at least TRIP_MIN_MS (a short one's walks are slowed by one factor: shorter, slower steps) and
  * has no upper limit. `k`: world px per figure unit.
  */
 export function planTrip(m: Move, rt: Route, from: Pt, k = 1): Trip {
   const legs = rt.legs;
   const b = legs.length ? legs[legs.length - 1].b : from;
-  const trip: Trip = { t0: m.t, t1: m.t, a: from, b, f: 1, k, phases: [], bridges: [], ladders: [], glides: [] };
+  const trip: Trip = { t0: m.t, t1: m.t, a: from, b, f: 1, k, phases: [], bridges: [], ladders: [], glides: [], hops: [] };
   // nowhere to go (no legs, or ones that add up to under a pixel: the two docks are the same spot): no steps
   if (!legs.length || legs.reduce((n, l) => n + Math.hypot(l.b.x - l.a.x, l.b.y - l.a.y), 0) < 1) return trip;
-  // runs of legs, walked (level ones and steps), climbed or glided; a ladder or a glide is always walked to and from (a run that may take no time)
-  type Run = { mode: "walk" | "climb" | "glide"; legs: Leg[] };
+  // runs of legs, walked (level ones and steps), climbed, glided or hopped (one run to a hop: its pieces share its arc); a ladder, a glide or a hop is always walked to and from (a run that may take no time)
+  type Run = { mode: "walk" | "climb" | "glide" | "hop"; legs: Leg[] };
   const runs: Run[] = [];
   const walkRun = (): Run => ({ mode: "walk", legs: [] });
   for (let i = 0; i < legs.length; ) {
     let j = i + 1;
     const kind = legs[i].kind;
     if (kind === "climb" || kind === "glide") while (j < legs.length && legs[j].kind === kind) j++;
+    if (kind === "hop") while (j < legs.length && legs[j].kind === "hop" && legs[j].arc === legs[i].arc) j++;
     const part = legs.slice(i, j);
-    const mode: Run["mode"] = kind === "glide" ? "glide" : kind === "climb" && Math.abs(part[part.length - 1].b.y - part[0].a.y) >= STEP_MAX ? "climb" : "walk";
+    const mode: Run["mode"] = kind === "glide" || kind === "hop" ? kind : kind === "climb" && Math.abs(part[part.length - 1].b.y - part[0].a.y) >= STEP_MAX ? "climb" : "walk";
     const last = runs[runs.length - 1];
     if (mode === "walk" && last?.mode === "walk") last.legs.push(...part);
     else {
@@ -539,7 +551,7 @@ export function planTrip(m: Move, rt: Route, from: Pt, k = 1): Trip {
   }
   const lineOf = (r: Run) => [r.legs[0].a, ...r.legs.map((l) => l.b)];
   const steps = (r: Run) => r.legs.reduce((n, l) => n + (l.kind === "climb" ? Math.abs(l.b.y - l.a.y) : 0), 0);
-  const len = runs.map((r, i) => (r.mode === "climb" ? Math.abs(path[i].b.y - path[i].a.y) : r.mode === "glide" ? r.legs.reduce((n, l) => n + Math.hypot(l.b.x - l.a.x, l.b.y - l.a.y), 0) : Math.abs(path[i].b.x - path[i].a.x) + steps(r)));
+  const len = runs.map((r, i) => (r.mode === "climb" ? Math.abs(path[i].b.y - path[i].a.y) : r.mode === "glide" || r.mode === "hop" ? r.legs.reduce((n, l) => n + Math.hypot(l.b.x - l.a.x, l.b.y - l.a.y), 0) : Math.abs(path[i].b.x - path[i].a.x) + steps(r)));
   // How fast the body goes along each stretch, and how fast at each corner between two (a walk and a climb or a glide): the speed is continuous along the trip, so a walk eases
   // down to the ladder (or the arrow) and the next stretch starts from that pace, not from rest; the ends of the trip are at rest. Never changing speed faster than ACCEL
   // (× the figure's scale) walking or climbing, GLIDE_ACCEL gliding.
@@ -549,8 +561,10 @@ export function planTrip(m: Move, rt: Route, from: Pt, k = 1): Trip {
   const want = runs.map((r, i) => (r.mode === "glide" ? glideMs(len[i]) / (m.boost ?? 1) : 0));
   const pace = runs.map((r, i) => (r.mode === "climb" ? climbPace(len[i], k) * (m.boost ?? 1) : r.mode === "glide" ? len[i] / want[i] : WALK_SPEED * sc));
   const v: number[] = [0]; // v[i]: the speed where stretch i starts (v[n]: where the last ends)
-  // (a glide starts and ends at rest: the figure stops at the edge, folds into its capsule as it sets off and unfolds as it comes to rest — no corner to cut at speed, where the body would sink into the node)
-  for (let i = 1; i < runs.length; i++) v.push(len[i - 1] > 0 && len[i] > 0 && runs[i - 1].mode !== "glide" && runs[i].mode !== "glide" ? CORNER * Math.min(pace[i - 1], pace[i]) : 0);
+  // (a glide starts and ends at rest: the figure stops at the edge, folds into its capsule as it sets off and unfolds as it comes to rest — no corner to cut at speed, where the body would sink into the node;
+  // a hop too: it stops at the takeoff to crouch, and lands into a squash)
+  const still = (r: Run) => r.mode === "glide" || r.mode === "hop";
+  for (let i = 1; i < runs.length; i++) v.push(len[i - 1] > 0 && len[i] > 0 && !still(runs[i - 1]) && !still(runs[i]) ? CORNER * Math.min(pace[i - 1], pace[i]) : 0);
   v.push(0);
   for (let i = 0; i < runs.length; i++) v[i + 1] = Math.min(v[i + 1], Math.sqrt(v[i] * v[i] + 2 * acc[i] * len[i])); // reachable from where it starts
   for (let i = runs.length - 1; i >= 0; i--) v[i] = Math.min(v[i], Math.sqrt(v[i + 1] * v[i + 1] + 2 * acc[i] * len[i])); // and stoppable in what is left
@@ -559,11 +573,12 @@ export function planTrip(m: Move, rt: Route, from: Pt, k = 1): Trip {
   const lines = runs.map((r, i) => (r.mode === "glide" ? glideLine(lineOf(r), v[i], v[i + 1], want[i]) : null));
   const nat = runs.map((r, i) => {
     if (r.mode === "glide") return lines[i]!.ts[lines[i]!.ts.length - 1];
+    if (r.mode === "hop") return HOP_CROUCH_MS + hopAir(r.legs[0].arc!) + HOP_LAND_MS;
     const T = natural(len[i], v[i], v[i + 1], pace[i], A);
     return r.mode === "climb" ? T : Math.max(T, runs[i - 1]?.mode === "climb" || runs[i + 1]?.mode === "climb" ? 2 * GRAB_MS : 0);
   });
   const off = m.resume ? 0 : SET_OFF_MS; // a trip taking over has no beat to turn and shift weight
-  const dur = fit(nat, m.resume ? 0 : TRIP_MIN_MS - SET_OFF_MS, runs.map((r) => r.mode === "glide"));
+  const dur = fit(nat, m.resume ? 0 : TRIP_MIN_MS - SET_OFF_MS, runs.map(still));
   const profs = runs.map((_, i) => fitProfile(len[i], dur[i], v[i], v[i + 1], acc[i]));
   const D = dur.reduce((n, x) => n + x, 0);
   const st = RIG.stance * k;
@@ -604,6 +619,31 @@ export function planTrip(m: Move, rt: Route, from: Pt, k = 1): Trip {
       t += T;
       continue;
     }
+    if (r.mode === "hop") {
+      const arc = r.legs[0].arc!;
+      // it faces the way it jumps (straight up or down: the way it was going)
+      const f = (Math.sign(arc.b.x - arc.a.x) || trip.phases[trip.phases.length - 1]?.f || 1) as 1 | -1;
+      const pre: [Foot, Foot] = feet ?? [
+        { x: a.x + st * f, y: a.y, lift: 0 },
+        { x: a.x - st * f, y: a.y, lift: 0 },
+      ];
+      // it lands with its feet set for the walk after it (the way that goes), as it comes out of a glide
+      const after = runs[i + 1];
+      const fOut = (Math.sign((after?.legs.length ? after.legs[after.legs.length - 1].b.x : b.x) - e.x) || f) as 1 | -1;
+      const post: [Foot, Foot] = [
+        { x: e.x + st * fOut, y: e.y, lift: 0 },
+        { x: e.x - st * fOut, y: e.y, lift: 0 },
+      ];
+      const pts = [r.legs[0].a, ...r.legs.map((l) => l.b)];
+      const cum = [0];
+      for (let j = 1; j < pts.length; j++) cum.push(cum[j - 1] + Math.hypot(pts[j].x - pts[j - 1].x, pts[j].y - pts[j - 1].y));
+      const air = hopAir(arc);
+      trip.phases.push({ kind: "hop", t0: t, t1: t + T, a, b: e, f, prof: profs[i], arc, crouch: HOP_CROUCH_MS, air, land: T - HOP_CROUCH_MS - air, pre, post, pts, cum });
+      trip.hops.push({ pts, t0: t + HOP_CROUCH_MS, t1: t + HOP_CROUCH_MS + air });
+      feet = post;
+      t += T;
+      continue;
+    }
     const x = r.legs[0].a.x;
     const rungs = rungsOf(a.y, e.y, k);
     trip.phases.push({ kind: "climb", t0: t, t1: t + T, a, b: e, f: face[i], prof: profs[i], x, rungs, on: 0, off: 0 });
@@ -636,7 +676,8 @@ export function planTrip(m: Move, rt: Route, from: Pt, k = 1): Trip {
     c.off = Math.min(GRAB_MS, 0.45 * (ph[i + 1].t1 - ph[i + 1].t0), 0.45 * (c.t1 - c.t0));
   });
   trip.f = ph[0].f;
-  trip.bridges = legs.filter((l) => l.kind === "bridge").map((l) => ({ a: l.a, b: l.b, temp: l.temp }));
+  // (only a scaffold's are drawn: a level walk off the floors — out from under a node, along under its bottom line — has nothing under it to draw; no route builds a scaffold since 跳过去)
+  trip.bridges = legs.filter((l) => l.kind === "bridge" && l.temp).map((l) => ({ a: l.a, b: l.b, temp: l.temp }));
   return trip;
 }
 
@@ -669,7 +710,7 @@ export function planDoor(k: number, dir: 1 | -1, leaving: boolean, f: 1 | -1 = 1
   const st = RIG.stance * k;
   const home = (foot: 0 | 1): Pt => ({ x: (foot ? -st : st) * f, y: 0 });
   const hold: [Foot, Foot] = [{ ...home(0), lift: 0 }, { ...home(1), lift: 0 }];
-  const trip: Trip = { t0: 0, t1: DOOR_MS, a, b, f, k, phases: [], bridges: [], ladders: [], glides: [] };
+  const trip: Trip = { t0: 0, t1: DOOR_MS, a, b, f, k, phases: [], bridges: [], ladders: [], glides: [], hops: [] };
   const T = DOOR_CLIMB_MS;
   const stand = (t0: number, t1: number, feet: [Foot, Foot], steps: Swing[] = []): WalkPhase => ({ kind: "walk", t0, t1, a: floor, b: floor, f, prof: restProfile(RAMP), feet, steps, bumps: [] });
   if (leaving) {
@@ -688,8 +729,57 @@ export function rungGrid(p: Trip): { bot: number; sp: number; n: number }[] {
   return p.phases.flatMap((x) => (x.kind === "climb" ? [{ bot: x.rungs.bot, sp: x.rungs.sp, n: x.rungs.n }] : []));
 }
 
+/** A hop's crouch takes the hips down to this height (figure units: the knees bent to about 85°), its push up out of it to this (the legs all but straight, as the feet leave). */
+const HOP_LOW = 18;
+const HOP_EXT = 25.9;
+/** In the air the feet come up this far under the body (figure units), and are down again for the landing over the last HOP_REACH of the arc. */
+const HOP_TUCK = 9;
+const HOP_REACH = 0.18;
+/** The push out of the crouch (and the catch of the landing) lasts as long as it takes the hips to go from HOP_LOW to HOP_EXT at the speed the arc leaves (or meets) the floor
+ * — so the body does not change speed as the feet leave or touch down — within these (ms). */
+const PUSH_MIN = 24;
+const PUSH_MAX = 70;
+/** Where the hands go hopping (figure units from the shoulder, x along the facing; [near, far]): swung back in the crouch, up and forward as it goes up, out ahead for the landing, low in the squash. */
+const ARMS_BACK: [number, number][] = [[-5, 14], [-4.2, 14.6]];
+const ARMS_UP: [number, number][] = [[7, -12], [5.8, -12.6]];
+const ARMS_OUT: [number, number][] = [[10, 3], [9, 4]];
+const ARMS_CATCH: [number, number][] = [[9, 8], [8, 9]];
+/** A hop's shadow goes as its feet leave the floor and comes back as they meet it, over this long (ms). */
+const AIR_FADE = 60;
+/** How long the push out of a hop's crouch (or the catch of its landing) takes, for a figure at k world px per unit leaving (or meeting) the floor at vy px/ms. */
+const pushMs = (vy: number, k: number) => clamp((2 * (HOP_EXT - HOP_LOW) * k) / Math.max(1e-6, vy), PUSH_MIN, PUSH_MAX);
+
+/** A hop at t: crouching (and pushing up out of it) where it stands, the feet planted; along the arc, the feet tucked under it and down again for the landing; the squash where it lands. */
+function hopPose(x: HopPhase, t: number, k: number): TripPose {
+  const tau = t - x.t0;
+  const arms = (a: [number, number][], lean: number) => ({ near: a[0], far: a[1], lean });
+  const vy = (h: number) => Math.sqrt(2 * HOP_G * Math.max(0, h));
+  if (tau < x.crouch) {
+    const push = Math.min(pushMs(vy(x.arc.a.y - x.arc.top), k), 0.6 * x.crouch);
+    const down = x.crouch - push;
+    // down into the crouch (eased), then up out of it gathering speed: the hips are going up as fast as the arc starts when the feet leave
+    const hip = tau < down ? mix(RIG.hip, HOP_LOW, smooth(tau / down)) : mix(HOP_LOW, HOP_EXT, ((tau - down) / push) ** 2);
+    return { root: x.a, feet: x.pre, hands: null, climb: 0, hip, f: x.f, arms: tau < down ? arms(ARMS_BACK, 9) : arms(ARMS_UP, 4) };
+  }
+  if (tau < x.crouch + x.air) {
+    const u = (tau - x.crouch) / x.air;
+    const root = arcAt(x.arc, u);
+    const v = smooth(u);
+    const tuck = u < 1 - HOP_REACH ? Math.sin((Math.PI * u) / (1 - HOP_REACH)) : 0;
+    const foot = (n: 0 | 1): Foot => ({ x: root.x + mix(x.pre[n].x - x.a.x, x.post[n].x - x.b.x, v), y: root.y + mix(x.pre[n].y - x.a.y, x.post[n].y - x.b.y, v) - tuck * HOP_TUCK * k, lift: Math.max(1e-3, tuck) });
+    const air = smooth(clamp(Math.min(tau - x.crouch, x.crouch + x.air - tau) / AIR_FADE, 0, 1));
+    return { root, feet: [foot(0), foot(1)], hands: null, climb: 0, hip: mix(HOP_EXT, RIG.hip, Math.sin(Math.PI * u)), f: x.f, arms: u < 0.55 ? arms(ARMS_UP, 2) : arms(ARMS_OUT, 4), air };
+  }
+  // the catch: the hips go on down from where the legs met the floor, slowing to the bottom of the squash, then up to standing
+  const w = tau - x.crouch - x.air;
+  const c = Math.min(pushMs(vy(x.arc.b.y - x.arc.top), k), 0.5 * x.land);
+  const hip = w < c ? mix(HOP_EXT, HOP_LOW, 1 - (1 - w / c) ** 2) : mix(HOP_LOW, RIG.hip, smooth((w - c) / Math.max(1, x.land - c)));
+  return { root: x.b, feet: x.post, hands: null, climb: 0, hip, f: x.f, arms: w < c + 0.4 * (x.land - c) ? arms(ARMS_CATCH, 8) : undefined };
+}
+
 /** Where a walk or a climb has everything at t (hands and feet on the ladder while climbing). */
 function poseIn(x: Phase, t: number, k: number): TripPose {
+  if (x.kind === "hop") return hopPose(x, t, k);
   const u = x.t1 > x.t0 ? clamp((t - x.t0) / (x.t1 - x.t0), 0, 1) : 1;
   if (x.kind === "climb") {
     const root = { x: x.a.x, y: mix(x.a.y, x.b.y, prog(u, x.prof)) };
@@ -729,6 +819,13 @@ function poseIn(x: Phase, t: number, k: number): TripPose {
 /** How much of a stretch of a trip its body has covered at t (0 … 1, by its speed profile): along a glide, the share of the line's length. */
 export function phaseShare(x: Trip["phases"][number], t: number): number {
   if (x.kind === "glide") return x.L ? glideS(x, t - x.t0) / x.L : 1;
+  if (x.kind === "hop") {
+    // along the arc by its length: none while it crouches, all of it once it has landed
+    const u = clamp((t - x.t0 - x.crouch) / x.air, 0, 1) * (x.pts.length - 1);
+    const i = Math.min(x.pts.length - 2, Math.floor(u));
+    const L = x.cum[x.cum.length - 1];
+    return L ? mix(x.cum[i], x.cum[i + 1], u - i) / L : 1;
+  }
   return prog(x.t1 > x.t0 ? clamp((t - x.t0) / (x.t1 - x.t0), 0, 1) : 1, x.prof);
 }
 
@@ -1004,6 +1101,8 @@ export type Joints = {
   /** Gliding along an arrow (§5 沿箭头滑行): 0 the figure … 1 the capsule that carries its avatar along the line, and the line's heading there (radians, world). */
   capsule?: number;
   heading?: number;
+  /** Hopping (§5 跳过去): 0 on the floor … 1 in the air (no shadow under it). */
+  air?: number;
 };
 
 /**
@@ -1037,6 +1136,8 @@ export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolea
     const snug = trip.snug ? climb : 0;
     const over = clamp(((feet[0].x + feet[1].x) / 2) * f - 0.8 - DOWN_BEHIND, 0, DOWN_SWAY_MAX);
     T = { near: [1 - 0.5 * feet[0].x * f, hang], far: [0.2 - 0.5 * feet[1].x * f, hang], lean: mix(3, 5, climb) + DOWN_LEAN * snug, tilt: 0, sway: over * snug, prop: o.readingWhileWalking && climb < 0.5 ? "carry" : null, mark: null, facing: 1 };
+    // hopping (§5 跳过去): the arms swing back in the crouch, up in the air, out for the landing (the springs carry them between); nothing carried
+    if (trip.arms) T = { ...T, near: [...trip.arms.near], far: [...trip.arms.far], lean: trip.arms.lean, prop: null };
   } else {
     T = poseTargets(o.pose, wall, o.since, { still, conflict: o.conflict, bump: o.gest?.bump ?? o.bump, unknownReceipt: o.unknownReceipt, coarse: o.coarse, seed: sp.seed });
     if (T.facing === -1) f = -1;
@@ -1188,5 +1289,6 @@ export function solve(o: { t: number; wall?: number; dt?: number; reset?: boolea
     holdU: G?.holdU,
     capsule: trip?.capsule,
     heading: trip?.heading,
+    air: trip?.air,
   };
 }

@@ -4,7 +4,7 @@
 //     walked to (a glance is not a visit; coming back is a new stop), reached when the figure stops
 //     walking there, and — when it worked on files its node claims through a sub-diagram — that entry;
 //   - each walk between two stops along the route the walk takes: the same legs (floors, glides along
-//     arrows, scaffold bridges and ladders) its trip is planned on and its glide lines, bridges and ladders are drawn from (./route.ts via the
+//     arrows, hops' arcs) its trip is planned on and its glide lines and hop arcs are drawn from (./route.ts via the
 //     context), and how much of it has been walked at t (up to the walker's feet);
 //   - where each of its sub-agents was sent from, the places it went and where it handed back.
 // Only the stretch of work t is in (the figure is on the canvas for that stretch only; a sub-agent's is
@@ -258,8 +258,8 @@ export function walkedAt(w: Way, t: number): number {
   const r = rawRoot(w.trip, t); // along the way as planned, not the body with its corners rounded (rig.ts ROUND_MS)
   const L = Math.abs(x.b.x - x.a.x);
   const H = Math.abs(x.b.y - x.a.y);
-  // along a glide (an arrow: a line that turns) by the share of its length; along a walk or a ladder by how far the body is along it
-  const f = x.kind === "glide" ? phaseShare(x, t) : L > 1e-6 ? Math.abs(r.x - x.a.x) / L : H > 1e-6 ? Math.abs(r.y - x.a.y) / H : 1;
+  // along a glide (an arrow: a line that turns) or a hop (an arc) by the share of its length; along a walk or a ladder by how far the body is along it
+  const f = x.kind === "glide" || x.kind === "hop" ? phaseShare(x, t) : L > 1e-6 ? Math.abs(r.x - x.a.x) / L : H > 1e-6 ? Math.abs(r.y - x.a.y) / H : 1;
   return Math.max(0, Math.min(w.len, s + (e - s) * Math.max(0, Math.min(1, f))));
 }
 
