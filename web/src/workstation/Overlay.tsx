@@ -16,10 +16,10 @@
 // (springs integrated on wall-clock time); bubbles fade + rise in and fade out; node strokes fade
 // and change colour over 300 ms; everything is placed at sub-pixel positions. Springs reset only on
 // a real jump in time (clock.gen: seek, scrub, back to live).
-// Trips (剖面, §2): a figure going to another node keeps to the arrows between them — the bridges and
-// ladders it walks are drawn while it walks them (fading in over 200 ms, out 300 ms after it gets
-// there; a scaffold's fainter and dashed; the selected figure's in purple), built with the snapshot
-// and faded by the frame job. A short read is a glance: a purple dashed line from the head to the node.
+// Trips (剖面, §2): a figure going to another node glides along the arrow between them, or hops (§5 跳过去) —
+// the arrow it glides along is lit and a hop's arc is a faint dotted trail while it goes (fading in over
+// 200 ms, out 300 ms after it gets there; the selected figure's in purple; bridges and ladders only for
+// a way with no walk map), built with the snapshot and faded by the frame job. A short read is a glance: a purple dashed line from the head to the node.
 // Trace (追踪, §11): a played turn (▶ 回放这一轮) traces its agent, and the route stays on the canvas after the play until it is closed — everyone else, and their
 // bubbles, dims to 30% and stops taking clicks; the nodes it went to get numbered circles at their
 // top-left corner (filled once reached, hollow for what comes later in a replay); the way it went is a
@@ -222,7 +222,7 @@ export function snapshot(runs: Runs, t: number, ctx: Ctx, conflicts: WriteConfli
     const seen = new Set<Trip>();
     for (const u of [t - TRIP_OUT_MS, t, t + TRIP_AHEAD_MS]) {
       const p = stateAt(x.f.run, u, ctx).trip;
-      if (!p || seen.has(p) || (!p.bridges.length && !p.ladders.length) || t < p.t0 - TRIP_AHEAD_MS || t > p.t1 + TRIP_OUT_MS) continue;
+      if (!p || seen.has(p) || (!p.bridges.length && !p.ladders.length && !p.glides.length && !p.hops.length) || t < p.t0 - TRIP_AHEAD_MS || t > p.t1 + TRIP_OUT_MS) continue;
       seen.add(p);
       trips.push({ key: `${x.f.run.id}|${p.t0}`, run: x.f.run.id, trip: p, sel: x.f.run.id === selected || x.f.run.id === o.traced });
     }
@@ -266,13 +266,21 @@ function ringsOf(list: FlatRun[], states: Map<string, RunState>, conflicts: Writ
 
 /** A trip's bridges (a dashed line at the leg's height, a small post at each end) and ladders (two
  * rails, rungs where hands and feet hold), world coordinates; a scaffold's fainter and dashed. Graphite,
- * or purple for the selected figure's. */
+ * or purple for the selected figure's. A hop (§5 跳过去) builds nothing: its arc is only a faint dotted trail. */
 function TripShape({ trip: p, sel }: { trip: Trip; sel: boolean }) {
   const ink = (temp: boolean) => (sel ? "var(--accent)" : temp ? "var(--fg-faint)" : "var(--fg-muted)");
   const post = 5 * p.k;
   const half = 2.6 * p.k;
   return (
     <>
+      {p.glides.map((g, i) => (
+        // the arrow it glides along, lit faintly under the capsule (§5 沿箭头滑行)
+        <path key={`g${i}`} d={g.pts.map((q, j) => `${j ? "L" : "M"}${px(q.x)} ${px(q.y)}`).join("")} fill="none" stroke="var(--accent)" strokeOpacity={sel ? 0.55 : 0.3} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      ))}
+      {p.hops.map((h, i) => (
+        // the arc it hops along, a faint dotted trail (nothing is built)
+        <path key={`h${i}`} d={h.pts.map((q, j) => `${j ? "L" : "M"}${px(q.x)} ${px(q.y)}`).join("")} fill="none" stroke={sel ? "var(--accent)" : "var(--fg-faint)"} strokeOpacity={sel ? 0.45 : 0.3} strokeWidth={1.2} strokeDasharray="1 5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      ))}
       {p.bridges.map((b, i) => (
         <g key={`b${i}`} fill="none" stroke={ink(b.temp)} strokeLinecap="round">
           <path d={`M${px(b.a.x)} ${px(b.a.y)}H${px(b.b.x)}`} strokeWidth={1.2} strokeDasharray={b.temp ? "2 4" : "5 3"} vectorEffect="non-scaling-stroke" />

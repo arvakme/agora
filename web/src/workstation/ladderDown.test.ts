@@ -41,14 +41,14 @@ describe("a ladder climbed down", () => {
   });
 });
 
-// A ladder beside a node's wall (a trip through the diagram, not a door): going down it sat on its heels — hips low, both knees folded.
+// A ladder on a trip (not a door; since 跳过去 only a trip planned with no walk map has one): going down it sat on its heels — hips low, both knees folded.
 describe("a ladder climbed down, along a trip", () => {
   const climbing = (label: string) => frames().filter((f) => f.scenario === "trip" && f.label === `${label}, then idle` && f.joints.climb > 0.99);
   const hipOf = (fs: ReturnType<typeof frames>) => fs.reduce((n, f) => n - f.joints.py, 0) / fs.length;
   it("down: the hips stay high", () => {
-    const fs = climbing("mysql → api (ladder down)");
+    const fs = climbing("mysql → api with no way map (a ladder down)");
     expect(fs.length).toBeGreaterThan(20);
-    expect(hipOf(fs)).toBeGreaterThan(hipOf(climbing("api → mysql (ladder up)")) - 0.2); // no lower than going up (POL3: both 17, the reach of 4 rungs a move)
+    expect(hipOf(fs)).toBeGreaterThan(hipOf(climbing("api → mysql with no way map (a ladder up)")) - 0.2); // no lower than going up (POL3: both 17, the reach of 4 rungs a move)
   });
   it("down: the hips are over the feet and the torso leans in; up is as it was, the body a little back of its hands and feet", () => {
     const seat = (fs: ReturnType<typeof frames>) => {
@@ -59,12 +59,12 @@ describe("a ladder climbed down, along a trip", () => {
       }
       return { behind: behind / fs.length, lean: lean / fs.length };
     };
-    const down = seat(climbing("mysql → api (ladder down)"));
+    const down = seat(climbing("mysql → api with no way map (a ladder down)"));
     expect(down.behind).toBeLessThan(1.6);
     expect(down.lean).toBeGreaterThan(8);
-    const up = seat(climbing("api → mysql (ladder up)"));
+    const up = seat(climbing("api → mysql with no way map (a ladder up)"));
     expect(up.behind).toBeGreaterThan(2);
     expect(up.lean).toBeLessThan(6);
-    expect(hipOf(climbing("api → mysql (ladder up)"))).toBeLessThan(20.6);
+    expect(hipOf(climbing("api → mysql with no way map (a ladder up)"))).toBeLessThan(20.6);
   });
 });
