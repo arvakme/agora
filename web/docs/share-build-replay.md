@@ -147,7 +147,7 @@ agora-fresh 的实测（拷贝，只读）：24 个 agent 改图 turn，全在 3
 |---|---|
 | `RunsSource` / `NestedSource` | `useRuns()` / `useNested()` 从一个 React Context 取，默认是页面自己的全局 store；施工回放在自己的子树里提供另一份。页面的画布和会话一点不动 |
 | `RunSeg.say` | 这一段「说的话」（气泡用它，不说文件名） |
-| `BuildStage.tsx` `camera.ts` | 一张画布的画面：Excalidraw 的 `exportToSvg`（按场景版本缓存）加叠层；镜头是导演层的 `cameraStep`，取景 `shotOf` 在 `camera.ts`（§16）；画面只画已经落笔的，走位用全部出现过的元素（小人先走到位再画） |
+| `BuildStage.tsx` `camera.ts` `scenePicture.ts` | 一张画布的画面：Excalidraw 的 `exportToSvg`（`scenePicture.ts`，按场景版本缓存；工位视图的分站揭示也用它，见 workstation.md §2）加叠层；镜头是导演层的 `cameraStep`，取景 `shotOf` 在 `camera.ts`（§16）；画面只画已经落笔的，走位用全部出现过的元素（小人先走到位再画） |
 | `plan.ts`、`geometryWalk.ts`、`sources.ts` | 排时间、按真实几何量走路要多久、造回放自己的世界 |
 | `headMark.ts` 的 `you` / `author` | 头里写「你」（作者自己看）/「作」（访客看） |
 

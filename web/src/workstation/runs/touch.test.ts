@@ -89,7 +89,7 @@ describe("planTouch: the segments of one change", () => {
   it("the work starts when the change was made, not before", () => {
     expect(planTouch(touch({ at: T0 + 5 * S, until: T0 + 5 * S, nodes: [node("a", 0)] }), T0)[0].start).toBe(T0 + 5 * S);
   });
-  it("30 nodes changed at once take no longer than BUDGET_MS in all (the picture never waits for the figure)", () => {
+  it("30 nodes changed at once take no longer than BUDGET_MS in all (the page holds nothing back longer: ../reveal.ts)", () => {
     const segs = planTouch(touch({ nodes: many(30, 400) }), T0);
     expect(segs.length).toBeGreaterThan(2); // a few stops, the rest are on the canvas already
     expect(segs.at(-1)!.end - segs[0].start).toBeLessThanOrEqual(BUDGET_MS);
