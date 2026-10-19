@@ -1,12 +1,12 @@
 // Evidence for 分站揭示 (web/docs/workstation.md §2 智能体改图): an agent's one `agora canvas apply` that draws a whole diagram, on a fresh canvas,
 // as the live 工位视图 shows it.
 //
-//   node scripts/reveal-capture.ts <dev page url> <out.mp4> [--dark] [--reduced] [--frames <dir>] [--click <s>]
+//   node scripts/reveal-capture.ts <dev page url> <out.mp4> [--dark] [--reduced] [--frames <dir> [--every <ms>]] [--click <s>]
 //
 // Needs the vite dev server (the page's own modules are imported to stand in for the agent: a Pi session is bound on the first canvas and
 // `applyFromAgent` — the page executor `agora canvas apply` runs through — is called with one batch of 12 nodes and 8 arrows) and a backend on an empty
 // project (each run adds the diagram to the first canvas: start the backend on a fresh project for each). Records the page from just before the batch
-// until the figure is done, crops nothing, writes an MP4 (ffmpeg) and, with --frames, a PNG a second; `--click <s>`: click the canvas that many seconds in.
+// until the figure is done, crops nothing, writes an MP4 (ffmpeg) and, with --frames, a PNG a second (or every `--every` ms, named by ms after the batch); `--click <s>`: click the canvas that many seconds in.
 // At the end it prints whether the page's own picture is gone and the opacities of the elements in the saved canvas (the agent's: never the page's).
 // The Chromium is Playwright's, or `CHROMIUM=<path>` when the installed Playwright's own build is not there.
 import { chromium } from "playwright";
@@ -25,6 +25,7 @@ const dark = args.includes("--dark");
 const reduced = args.includes("--reduced");
 const framesDir = args.includes("--frames") ? args[args.indexOf("--frames") + 1] : null;
 const clickAt = args.includes("--click") ? Number(args[args.indexOf("--click") + 1]) : null;
+const every = args.includes("--every") ? Number(args[args.indexOf("--every") + 1]) : 1000;
 const VIEW = { width: 1280, height: 800 };
 const RECORD_MS = 14_000;
 
@@ -83,10 +84,10 @@ page.on("console", (m) => console.log("[page]", m.text()));
 const shots: Promise<unknown>[] = [];
 if (framesDir) {
   mkdirSync(framesDir, { recursive: true });
-  for (let s = 0; s * 1000 < RECORD_MS; s++) {
-    const due = startAt + s * 1000 - Date.now();
+  for (let s = 0; s * every < RECORD_MS; s++) {
+    const due = startAt + s * every - Date.now();
     if (due > 0) await page.waitForTimeout(due);
-    shots.push(page.screenshot({ path: join(framesDir, `t${String(s).padStart(2, "0")}.png`) }));
+    shots.push(page.screenshot({ path: join(framesDir, `t${String(s * every).padStart(5, "0")}.png`) }));
   }
 }
 if (clickAt != null) {

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { LAND_LEAD_MS } from "../buildreplay/plan.ts";
 import { BUDGET_MS, mergeTouches, planTouch, type Touch } from "./runs/touch.ts";
 import type { WorkRun } from "./runs/types.ts";
-import { elementTimes, holds, nodeTimes, REVEAL_CAP_MS, REVEAL_FADE_MS, REVEAL_MIN, shownAt, stationsOf, stopsOf, stopTime, type RevealEl } from "./reveal.ts";
+import { DRAW_LEAD_MS, DRAW_MS, DRAW_STAGGER_MS, DRAW_STAGGER_TOTAL_MS, drawAt, drawStart, elementTimes, holds, isDrawn, LABEL_FADE_MS, nodeTimes, REVEAL_CAP_MS, REVEAL_FADE_MS, REVEAL_MIN, REVEAL_SETTLE_MS, shownAt, stationsOf, stopsOf, stopTime, type RevealEl } from "./reveal.ts";
 
 const T0 = 1_800_000_000_000;
 const node = (id: string, x: number, y = 0) => ({ id, x, y });
@@ -131,6 +131,41 @@ describe("when a batch is held at all", () => {
   });
   it("stations are the distinct moments after the batch", () => {
     expect(stationsOf(new Map([["a", T0], ["b", T0 + 10], ["c", T0 + 10], ["d", T0 + 20]]), T0)).toEqual([T0 + 10, T0 + 20]);
+  });
+});
+
+describe("drawAt: a station's lines are drawn, one after another", () => {
+  it("a line starts once the nodes it joins are half in, its stroke grows from 0 to 1 over DRAW_MS", () => {
+    expect(drawStart(0, 1)).toBe(DRAW_LEAD_MS);
+    expect(DRAW_LEAD_MS).toBe(REVEAL_FADE_MS / 2);
+    expect(drawAt(DRAW_LEAD_MS - 1, 0, 1).stroke).toBe(0);
+    const mid = drawAt(DRAW_LEAD_MS + DRAW_MS / 2, 0, 1).stroke;
+    expect(mid).toBeGreaterThan(0.5); // eased out: quick off the start node, settling into the end
+    expect(mid).toBeLessThan(1);
+    expect(drawAt(DRAW_LEAD_MS + DRAW_MS, 0, 1).stroke).toBe(1);
+  });
+  it("the head shows as the stroke gets to the end, the label after the stroke is done", () => {
+    const s = DRAW_LEAD_MS;
+    expect(drawAt(s + DRAW_MS / 2, 0, 1).head).toBe(0);
+    expect(drawAt(s + DRAW_MS, 0, 1).head).toBe(1);
+    expect(drawAt(s + DRAW_MS, 0, 1).label).toBe(0);
+    expect(drawAt(s + DRAW_MS + LABEL_FADE_MS, 0, 1).label).toBe(1);
+  });
+  it("lines of one station start a little apart, in order; many lines are squeezed so they all start within DRAW_STAGGER_TOTAL_MS", () => {
+    expect(drawStart(1, 3) - drawStart(0, 3)).toBe(DRAW_STAGGER_MS);
+    expect(drawStart(19, 20) - drawStart(0, 20)).toBeCloseTo(DRAW_STAGGER_TOTAL_MS);
+    const at = DRAW_LEAD_MS + DRAW_MS / 2;
+    expect(drawAt(at, 0, 3).stroke).toBeGreaterThan(drawAt(at, 1, 3).stroke);
+  });
+  it("a station is in motion until its last line's label is in: only then is it part of the still picture", () => {
+    expect(drawAt(REVEAL_SETTLE_MS, 19, 20)).toEqual({ stroke: 1, head: 1, label: 1 });
+    expect(REVEAL_SETTLE_MS).toBeGreaterThanOrEqual(REVEAL_FADE_MS);
+  });
+  it("arrows and lines are drawn; nodes and text fade", () => {
+    expect(isDrawn({ type: "arrow" })).toBe(true);
+    expect(isDrawn({ type: "line" })).toBe(true);
+    expect(isDrawn({ type: "rectangle" })).toBe(false);
+    expect(isDrawn({ type: "text" })).toBe(false);
   });
 });
 
