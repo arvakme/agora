@@ -44,7 +44,14 @@ export type RunSeg = {
   /** The move to this call's place is a cut (a cross-fade, ./place.ts `isCut`) whatever the distance: the build replay skips a long walk this way (../../buildreplay/plan.ts `hop`). */
   cut?: true;
   /** A canvas edit the page made for the session (./touch.ts): the canvas and the nodes this stop draws from where the figure stands; `path` is that stop's node (./nodePath.ts). */
-  edit?: { canvas: string; ids: string[] };
+  edit?: {
+    canvas: string;
+    ids: string[];
+    /** The nodes that appear on the page at this stop: its own, and those of slices before it the budget had no stop for (../reveal.ts). */
+    reveal?: string[];
+    /** When they appear if nobody sees the figure arrive (wall clock): the planned arrival plus the build replay's LAND_LEAD_MS. */
+    land?: number;
+  };
   /** What the bubble says for this stretch, in words (the build replay, ../../buildreplay/plan.ts: there is no file or command to name). */
   say?: string;
   label: string;

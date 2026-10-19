@@ -21,6 +21,7 @@ import { PointerLayer } from "../pointer/PointerLayer";
 import { OwnerBreadcrumb, OwnerChildMarkers } from "../nested/NestedLayer";
 import { nav } from "../nested/store";
 import { WorkstationOverlay } from "../workstation/Overlay";
+import { RevealLayer } from "../workstation/RevealLayer";
 import { useWorkstation } from "../workstation/clock";
 import { firstView, viewport } from "./viewport";
 import { BENCH_BARE } from "../bench/bench";
@@ -239,6 +240,8 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onGone, o
         className="canvas-layers"
         ref={setLayers}
       >
+      {/* an agent's batch shown station by station: this picture stands in for Excalidraw's static canvas, under the rest (web/docs/workstation.md §2) */}
+      {api && !readOnly && !BENCH_BARE && <RevealLayer api={api} canvasId={doc.id} version={view?.version ?? 0} figuresOn={figuresOn} />}
       <Excalidraw
         excalidrawAPI={setApi}
         initialData={initialData}
