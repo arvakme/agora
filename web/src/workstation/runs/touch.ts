@@ -92,6 +92,7 @@ export function sliceNodes(nodes: readonly TouchNode[]): Slice[] {
   return out.map(({ stance, nodes: ns }) => ({ stance, nodes: ns }));
 }
 
+/** How long the figure works at a stop, a little longer the more it draws there (../reveal.ts `inkPlan` fits the drawing into it). */
 const dwellOf = (count: number) => Math.min(2000, Math.max(900, 700 + 150 * count));
 const walkMs = (a: TouchNode, b: TouchNode) => SETTLE_MS + ((Math.abs(a.x - b.x) + Math.abs(a.y - b.y)) * DETOUR) / WALK_PX_MS;
 

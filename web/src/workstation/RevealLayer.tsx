@@ -3,7 +3,7 @@
 // selection, handles and text editing are on its interactive canvas, above, and keep working) is hidden, and this layer, under it, draws the canvas in its
 // place: Excalidraw's SVG export of the scene without what is still to come (../buildreplay/scenePicture.ts, the build replay's picture), one picture
 // per station — each with everything up to that station, so the order of the layers is the scene's — that fades in when the figure gets there; the
-// station's arrows and lines are not faded but drawn, start to end, over it (`drawInk`). When the
+// station's own boxes and lines are not faded but drawn over it, outlines first, then fills and text, then the arrows (`drawInk`). When the
 // last station is in (or at REVEAL_CAP_MS, or the moment the person touches the canvas) the layer goes and the static canvas is back.
 import { hashElementsVersion } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
@@ -16,7 +16,7 @@ import { useHighlight } from "../session/ui";
 import { clock, prefersReducedMotion, useReplay } from "./clock";
 import { frame } from "./frame";
 import { canvasWhere, stateAt } from "./place";
-import { drawAt, elementTimes, holds, isDrawn, nodeTimes, REVEAL_CAP_MS, REVEAL_MIN, REVEAL_SETTLE_MS, SCHEDULE_WAIT_MS, shownAt, stationsOf, stopsOf, stopTime, type Held, type RevealEl, type RevealStop } from "./reveal";
+import { elementTimes, holds, inkAt, inkPlan, nodeTimes, REVEAL_CAP_MS, REVEAL_MIN, REVEAL_SETTLE_MS, SCHEDULE_WAIT_MS, shownAt, stationsOf, stopsOf, stopTime, type Held, type InkKind, type InkStep, type RevealEl, type RevealStop } from "./reveal";
 import { useRuns, type Runs } from "./runs/store";
 
 /** `flat`: decided once the runs have the change — true when it shows at once (one station), as it always did. */
@@ -33,7 +33,7 @@ export function holdReveal(canvas: string, at: number, ids: readonly string[], e
 }
 
 /** A station: the elements that appear together, and when (figure time). */
-type Station = { t: number; ids: string[] };
+type Station = { t: number; ids: string[]; /** how long the figure stays at the stop after it (ms; Infinity: no stop names it) */ budget: number };
 /** One picture: the scene with everything up to station `i` (0: before the first) but the lines station `i` draws; or (`ink`) just those lines. */
 type Layer = { key: string; i: number; ink: boolean; svg: SceneSvg | null };
 
@@ -138,6 +138,12 @@ export function RevealLayer({ api, canvasId, version, figuresOn }: { api: Excali
         else s.seen.set(stop.key, x);
       }
       const nodeAt = nodeTimes(stops, (x) => stopTime(x, s.seen.get(x.key)));
+      // how long the figure stays at each station's stop: what is drawn there fits in it
+      const endOf = new Map<number, number>();
+      for (const x of stops) {
+        const t = stopTime(x, s.seen.get(x.key));
+        endOf.set(t, Math.max(endOf.get(t) ?? -Infinity, x.end));
+      }
       const times = new Map<string, number>();
       let waiting = false;
       for (const h of s.held) {
@@ -159,7 +165,7 @@ export function RevealLayer({ api, canvasId, version, figuresOn }: { api: Excali
       const by = new Map<number, string[]>();
       for (const [id, t] of times) if (t > now || t === Infinity) (by.get(t) ?? by.set(t, []).get(t)!).push(id);
       for (const [id, t] of times) if (t <= now && now < t + REVEAL_SETTLE_MS) (by.get(t) ?? by.set(t, []).get(t)!).push(id);
-      const list: Station[] = [...by.entries()].sort((a, b) => a[0] - b[0]).map(([t, ids]) => ({ t, ids: ids.sort() }));
+      const list: Station[] = [...by.entries()].sort((a, b) => a[0] - b[0]).map(([t, ids]) => ({ t, ids: ids.sort(), budget: endOf.has(t) ? endOf.get(t)! - t : Infinity }));
       if (!list.length && !waiting) return lift();
       const sig = list.map((x) => x.ids.join(",")).join("|");
       s.stations = list;
@@ -181,7 +187,7 @@ export function RevealLayer({ api, canvasId, version, figuresOn }: { api: Excali
       }
       const pics = el.querySelectorAll<HTMLDivElement>("[data-layer]");
       const at = (i: number) => (i === 0 ? -Infinity : (s.stations[i - 1]?.t ?? Infinity));
-      // layer i shows everything up to station i (0: none of them) but the lines station i draws; the topmost one that is fully in covers the ones below
+      // layer i shows everything up to station i (0: none of them) but what station i draws; the topmost one that is fully in covers the ones below
       let top = 0;
       pics.forEach((p) => {
         const i = Number(p.dataset.layer);
@@ -192,11 +198,11 @@ export function RevealLayer({ api, canvasId, version, figuresOn }: { api: Excali
         const i = Number(p.dataset.layer);
         const ink = p.dataset.ink != null;
         const o = shownAt(at(i), now);
-        // a station's lines, drawn over its picture until the next picture (which has them) is fully in
+        // what a station draws, drawn over its picture until the next picture (which has it) is fully in
         const show = p.dataset.ready === "1" && i >= top && o > 0;
         p.style.display = show ? "" : "none";
         if (!show) return;
-        if (ink) drawInk(p, now - at(i));
+        if (ink) drawInk(p, now - at(i), s.stations[i - 1]?.budget ?? Infinity);
         else p.style.opacity = String(o);
         any = true;
         p.style.transform = placeOf({ x: Number(p.dataset.x), y: Number(p.dataset.y) }, v);
@@ -209,23 +215,17 @@ export function RevealLayer({ api, canvasId, version, figuresOn }: { api: Excali
 
   // the pictures: one per station, with everything up to it (made again when the stations or the scene change)
   // (a picture is known by what is in it, so one that only moves down a place — its station is in and it became the base — stays as it is)
-  // A station's lines (arrows, lines and their labels) are not in its picture: they are a picture of their own over it, drawn stroke by stroke (`drawInk`);
-  // the next station's picture has them as they are.
+  // What a station draws is not in its picture: it is a picture of its own over it, drawn stroke by stroke (`drawInk`); the next station's picture has it as it is.
   useEffect(() => {
     if (!stations?.length) return setLayers([]);
     let alive = true;
     const scene = api.getSceneElements() as readonly El[];
-    const map = new Map(scene.map((e) => [e.id, e as unknown as RevealEl] as const));
     const pending = new Set(stations.flatMap((x) => x.ids));
     const files = api.getFiles();
-    const inkOf = (ids: readonly string[]) => {
-      const lines = new Set(ids.filter((id) => map.get(id) && isDrawn(map.get(id)!)));
-      return new Set(ids.filter((id) => lines.has(id) || (map.get(id)?.containerId && lines.has(map.get(id)!.containerId!))));
-    };
     const sets: { els: El[]; v: number; ink: boolean; i: number }[] = [];
     for (let i = 0; i <= stations.length; i++) {
       const upTo = new Set(stations.slice(0, i).flatMap((x) => x.ids));
-      const drawn = i ? inkOf(stations[i - 1].ids) : new Set<string>();
+      const drawn = new Set(i ? stations[i - 1].ids : []);
       const els = scene.filter((e) => (!pending.has(e.id) || upTo.has(e.id)) && !drawn.has(e.id));
       sets.push({ els, v: hashElementsVersion(els), ink: false, i });
       const ink = scene.filter((e) => drawn.has(e.id));
@@ -265,62 +265,110 @@ export function RevealLayer({ api, canvasId, version, figuresOn }: { api: Excali
   );
 }
 
-// ——— drawing a station's lines ———
-// The ink picture is Excalidraw's export of just those lines and their labels, in scene order: each line is a group whose first path is its stroke (Rough.js
-// draws it as two passes, two subpaths of one path) and whose other paths are its head; a label is a group with text in it, after its line (a mask for
-// the gap the label leaves in the line sits between them). Each pass of a stroke becomes a path of its own, drawn from its start with a dash offset.
+// ——— drawing a station ———
+// The ink picture is Excalidraw's export of just what the station draws, in scene order, one group per element:
+// - a box (rectangle, ellipse, diamond): its fill path(s) (solid, or a hachure of strokes in the fill colour), then its outline — one path that Rough.js
+//   draws as pieces, each piece twice (two passes, one after the other: the same start and end), going clockwise from the top-left;
+// - a line or arrow: a group per drawable — the first its stroke (two passes of the whole line), the rest its head;
+// - text: a group with a text in it, after the box or line that holds it (a mask for the gap a label leaves in its line sits between them).
+// Each pass of each piece becomes a path of its own; the pieces are drawn in turn, both passes of a piece together, with a dash offset. What is not like
+// that (an image, a frame, a dashed outline, freehand) fades in.
 
-type Stroke = { el: SVGPathElement; len: number };
-type InkLine = { strokes: Stroke[]; heads: SVGElement[]; labels: SVGElement[] };
-const inks = new WeakMap<Element, { svg: Element; lines: InkLine[] }>();
+type Pass = { el: SVGPathElement; len: number };
+/** One piece of a stroke: its passes, drawn together; `from`: its place along the whole stroke (0 → 1). */
+type Piece = { passes: Pass[]; from: number; to: number };
+type InkItem = { kind: InkKind; pieces: Piece[]; fills: SVGElement[]; texts: SVGElement[]; whole: SVGElement };
+const inks = new WeakMap<Element, { svg: Element; items: InkItem[]; steps: InkStep[] }>();
 
-function prepareInk(svg: SVGSVGElement): InkLine[] {
-  const lines: InkLine[] = [];
-  for (const g of [...svg.children]) {
+const ends = (d: string) => {
+  const n = d.match(/-?\d*\.?\d+(?:e-?\d+)?/g)?.map(Number) ?? [];
+  return n.length >= 4 ? [n[0], n[1], n[n.length - 2], n[n.length - 1]] : null;
+};
+const near = (a: number[] | null, b: number[] | null) => !!a && !!b && a.every((x, i) => Math.abs(x - b[i]) < 2);
+
+/** A stroke path as pieces to draw in turn (a pass that starts and ends where the one before it did is that piece's second pass). Null: not traceable. */
+function trace(path: SVGPathElement): Piece[] | null {
+  if (path.getAttribute("stroke-dasharray") || path.getAttribute("fill") !== "none" || (path.getAttribute("stroke") ?? "none") === "none") return null;
+  const parts = (path.getAttribute("d") ?? "").split(/(?=M)/).filter((x) => x.trim());
+  const pieces: Pass[][] = [];
+  let last: number[] | null = null;
+  for (const part of parts) {
+    const p = path.cloneNode() as SVGPathElement;
+    p.setAttribute("d", part);
+    path.parentNode!.insertBefore(p, path);
+    const len = p.getTotalLength();
+    p.style.strokeDasharray = `${len} ${len + 1}`;
+    p.style.strokeDashoffset = String(len);
+    const e = ends(part);
+    if (pieces.length && near(e, last)) pieces[pieces.length - 1].push({ el: p, len });
+    else pieces.push([{ el: p, len }]);
+    last = e;
+  }
+  path.remove();
+  const lens = pieces.map((ps) => Math.max(...ps.map((x) => x.len)));
+  const total = lens.reduce((a, b) => a + b, 0) || 1;
+  let at = 0;
+  return pieces.map((passes, i) => {
+    const from = at / total;
+    at += lens[i];
+    return { passes, from, to: at / total };
+  });
+}
+
+function prepareInk(svg: SVGSVGElement): InkItem[] {
+  const items: InkItem[] = [];
+  for (const g of [...svg.children] as SVGElement[]) {
     const tag = g.tagName.toLowerCase();
     if (tag !== "g" && tag !== "a") continue;
-    if (g.querySelector("text")) {
-      // a label: with the line before it
-      lines[lines.length - 1]?.labels.push(g as SVGElement);
+    const kids = [...g.children];
+    if (g.querySelector("text") && !g.querySelector("path")) {
+      // text: with the box or line that holds it (it comes right after it), or a fade of its own
+      const prev = items[items.length - 1];
+      if (prev) prev.texts.push(g);
+      else items.push({ kind: "fade", pieces: [], fills: [], texts: [], whole: g });
       continue;
     }
     const paths = [...g.querySelectorAll<SVGPathElement>("path")];
-    if (!paths.length) continue;
-    const [stroke, ...heads] = paths;
-    const line: InkLine = { strokes: [], heads, labels: [] };
-    const d = stroke.getAttribute("d") ?? "";
-    // a dashed or dotted line keeps its own dashes: it fades in instead
-    if (stroke.getAttribute("stroke-dasharray")) line.heads = paths;
-    else
-      for (const part of d.split(/(?=M)/).filter((x) => x.trim())) {
-        const p = stroke.cloneNode() as SVGPathElement;
-        p.setAttribute("d", part);
-        stroke.parentNode!.insertBefore(p, stroke);
-        const len = p.getTotalLength();
-        p.style.strokeDasharray = `${len} ${len + 1}`;
-        line.strokes.push({ el: p, len });
-      }
-    if (line.strokes.length) stroke.remove();
-    lines.push(line);
+    if (kids.length && kids.every((k) => k.tagName.toLowerCase() === "g") && paths.length) {
+      // a line: its stroke, then its head
+      const [stroke, ...head] = paths;
+      const pieces = trace(stroke);
+      items.push(pieces ? { kind: "line", pieces, fills: head, texts: [], whole: g } : { kind: "fade", pieces: [], fills: [], texts: [], whole: g });
+      continue;
+    }
+    if (kids.length && kids.every((k) => k.tagName.toLowerCase() === "path")) {
+      // a box: its fill, then its outline (the last path)
+      const outline = paths[paths.length - 1];
+      const pieces = trace(outline);
+      items.push(pieces ? { kind: "box", pieces, fills: paths.slice(0, -1), texts: [], whole: g } : { kind: "fade", pieces: [], fills: [], texts: [], whole: g });
+      continue;
+    }
+    items.push({ kind: "fade", pieces: [], fills: [], texts: [], whole: g });
   }
-  return lines;
+  return items;
 }
 
-/** A station's lines `ms` after its moment: each drawn in turn from its start, its head as the stroke gets there, its label after. */
-function drawInk(div: HTMLDivElement, ms: number) {
+/** What a station draws, `ms` after its moment, in `budget` ms at most (the rest of the figure's stop): ./reveal.ts `inkPlan`. */
+function drawInk(div: HTMLDivElement, ms: number, budget: number) {
   const svg = div.querySelector("svg");
   if (!svg) return;
   let ink = inks.get(div);
-  if (!ink || ink.svg !== svg) inks.set(div, (ink = { svg, lines: prepareInk(svg) }));
-  const n = ink.lines.length;
-  ink.lines.forEach((l, k) => {
-    const { stroke, head, label } = drawAt(ms, k, n);
-    for (const s of l.strokes) {
-      s.el.style.strokeDashoffset = String(s.len * (1 - stroke));
-      s.el.style.opacity = stroke > 0 ? "1" : "0";
+  if (!ink || ink.svg !== svg) {
+    const items = prepareInk(svg);
+    inks.set(div, (ink = { svg, items, steps: inkPlan(items.map((x) => x.kind), budget).steps }));
+  }
+  ink.items.forEach((it, k) => {
+    const { stroke, fill, text } = inkAt(ink.steps[k], ms);
+    if (it.kind === "fade") it.whole.style.opacity = String(stroke);
+    for (const pc of it.pieces) {
+      const f = Math.min(1, Math.max(0, (stroke - pc.from) / (pc.to - pc.from || 1)));
+      for (const p of pc.passes) {
+        p.el.style.strokeDashoffset = String(p.len * (1 - f));
+        p.el.style.opacity = f > 0 ? "1" : "0";
+      }
     }
-    for (const h of l.heads) h.style.opacity = String(l.strokes.length ? head : stroke);
-    for (const t of l.labels) t.style.opacity = String(label);
+    for (const x of it.fills) x.style.opacity = String(fill);
+    for (const x of it.texts) x.style.opacity = String(text);
   });
 }
 
