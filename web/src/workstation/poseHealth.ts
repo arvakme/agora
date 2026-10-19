@@ -240,18 +240,32 @@ const MAP: WalkMap = walkMap(new Map(Object.entries(PROTO)), [
   { from: "api", to: "redis", pts: pts(530, 280, 610, 280, 610, 362, 680, 362) },
   { from: "api", to: "pay", pts: pts(430, 302, 430, 450) },
 ]);
-const spot = (place: string, x: number) => ({ place, at: { x, y: PROTO[place].y } });
+/** The same diagram with no arrows: every way between nodes is a scaffold (bridges and ladders), as to the 图外 tray. */
+const BARE: WalkMap = walkMap(new Map(Object.entries(PROTO)), []);
+/** The demo project's slanted arrow (api → cache), glided straight along its slant. */
+const SLANT: Record<string, Box> = { api: { x: 360, y: 210, w: 80, h: 101.3 }, cache: { x: 506.4, y: 445.6, w: 100, h: 79 } };
+const SLANTED: WalkMap = walkMap(new Map(Object.entries(SLANT)), [{ from: "api", to: "cache", pts: pts(439.3, 317.3, 524.6, 439.6) }]);
+const spot = (place: string, x: number, boxes: Record<string, Box> = PROTO) => ({ place, at: { x, y: boxes[place].y } });
 
-/** The trips the sweep walks: name, from (place, x), to (place, x). */
-const TRIPS: [string, string, number, string, number][] = [
-  ["api → mysql (ladder up)", "api", 354, "mysql", 704],
-  ["mysql → api (ladder down)", "mysql", 704, "api", 354],
-  ["web → api (a bridge)", "web", 64, "api", 400],
-  ["web → pay (bridge, then down beside api)", "web", 64, "pay", 374],
-  ["pay → api (up beside api)", "pay", 374, "api", 354],
-  ["web → the tray (a scaffold)", "web", 64, "tray", 650],
-  ["a few steps on one floor", "api", 354, "api", 380],
+/** The trips the sweep walks: name, the map, from (place, x), to (place, x). */
+const TRIPS: [string, WalkMap, string, number, string, number][] = [
+  ["api → mysql (glide along the SQL arrow, up)", MAP, "api", 354, "mysql", 704],
+  ["mysql → api (glide along the SQL arrow, down)", MAP, "mysql", 704, "api", 354],
+  ["web → api (glide along the HTTP arrow)", MAP, "web", 64, "api", 400],
+  ["web → pay (glide along HTTP, on down the api → pay arrow)", MAP, "web", 64, "pay", 374],
+  ["pay → api (glide up the api → pay arrow)", MAP, "pay", 374, "api", 354],
+  ["api → cache (glide along a slanted arrow)", SLANTED, "api", 380, "cache", 530],
+  ["api → mysql, no arrow (scaffold ladder up)", BARE, "api", 354, "mysql", 704],
+  ["mysql → api, no arrow (scaffold ladder down)", BARE, "mysql", 704, "api", 354],
+  ["web → the tray (a scaffold)", MAP, "web", 64, "tray", 650],
+  ["a few steps on one floor", MAP, "api", 354, "api", 380],
 ];
+/** A trip of TRIPS, planned for a figure at k world px per unit, starting at t. */
+function tripOf([, map, a, ax, b, bx]: (typeof TRIPS)[number], k: number, t = 0): Trip {
+  const boxes = map === SLANTED ? SLANT : PROTO;
+  const from = spot(a, ax, boxes);
+  return planTrip({ from: a, to: b, t, slot: 0 }, route(map, from, spot(b, bx, boxes)), from.at, k);
+}
 
 const HALL = walkMap(new Map([["hall", { x: 0, y: 100, w: 3000, h: 40 }]]), []);
 
@@ -294,11 +308,9 @@ function trips(): Frame[] {
   const out: Frame[] = [];
   const k = REF_K;
   const T0 = 0;
-  for (const [name, a, ax, b, bx] of TRIPS) {
-    const from = spot(a, ax);
-    const to = spot(b, bx);
-    const rt = route(MAP, from, to);
-    const trip = planTrip({ from: a, to: b, t: T0, slot: 0 }, rt, from.at, k);
+  for (const tr of TRIPS) {
+    const name = tr[0];
+    const trip = tripOf(tr, k, T0);
     for (const after of ["idle", "read", "wait"] as Pose[]) out.push(...tripFrames(`${name}, then ${after}`, trip, k, after));
   }
   return out;
@@ -404,7 +416,10 @@ export function snaps(fs: readonly Frame[], max = 2.5): { a: Frame; b: Frame; jo
 // ——— the speed of a trip (what the body does along the way, before any pose is put on it) ———
 /** The most a body may speed up or slow down (px/ms², for a figure at the reference scale): 1200 px/s². */
 export const ACCEL_MAX = 0.0012;
-export type Speed = { name: string; samples: { t: number; v: number }[]; maxV: number; maxAccel: number; /** How long it stands before the first step (the turn and the weight shift), ms. */ setOff: number; /** The moments inside the trip where the body all but stops (a leg's end and the next leg's start each go to rest). */ dips: number[] };
+export type Speed = { name: string; samples: { t: number; v: number }[]; maxV: number; maxAccel: number; /** How long it stands before the first step (the turn and the weight shift), ms. */ setOff: number; /** The moments inside the trip where the body all but stops (a leg's end and the next leg's start each go to rest). */ dips: number[];
+  /** Along arrows (as a capsule): the top speed and the steepest change of it, and how many glides. */ glideMaxV: number; glideMaxAccel: number; glides: number };
+/** A capsule gliding along an arrow changes its speed at most this fast (px/ms², rig.ts GLIDE_ACCEL 0.003 and a margin for the sampling). */
+export const GLIDE_ACCEL_MAX = 0.0035;
 /** The root's speed (world px per ms) along a trip every 16 ms, where it stands before setting off, and the dips to rest between legs (walk → ladder → walk). */
 export function speedOf(name: string, trip: Trip): Speed {
   const samples: { t: number; v: number }[] = [];
@@ -414,29 +429,37 @@ export function speedOf(name: string, trip: Trip): Speed {
     samples.push({ t, v: Math.hypot(p.x - prev.x, p.y - prev.y) / STEP });
     prev = p;
   }
-  const maxV = Math.max(0, ...samples.map((s) => s.v));
+  // gliding along an arrow (a capsule, not a body that walks: §5 沿箭头滑行) has its own limits; the walking and climbing ones hold everywhere else
+  const gliding = (t: number) => trip.glides.some((g) => t > g.t0 - STEP && t <= g.t1 + STEP);
+  const walked = samples.filter((s) => !gliding(s.t));
+  const glided = samples.filter((s) => gliding(s.t));
+  const maxV = Math.max(0, ...walked.map((s) => s.v));
+  const glideMaxV = Math.max(0, ...glided.map((s) => s.v));
   let maxAccel = 0;
-  for (let i = 1; i < samples.length; i++) maxAccel = Math.max(maxAccel, Math.abs(samples[i].v - samples[i - 1].v) / STEP);
+  let glideMaxAccel = 0;
+  for (let i = 1; i < samples.length; i++) {
+    const a = Math.abs(samples[i].v - samples[i - 1].v) / STEP;
+    if (gliding(samples[i].t) || gliding(samples[i - 1].t)) glideMaxAccel = Math.max(glideMaxAccel, a);
+    else maxAccel = Math.max(maxAccel, a);
+  }
   const first = samples.findIndex((s) => s.v > 0.04 * maxV);
   const setOff = first < 0 ? trip.t1 - trip.t0 : samples[first].t - trip.t0;
-  // a dip: a local minimum under a fifth of the top speed (of the climbing pace, if that is lower: a walk eases to 0.6 of it at a ladder) after the set-off and before the arrival (a leg ends at rest and the next starts from it)
+  // a dip: a local minimum under a fifth of the top speed (of the climbing pace, if that is lower: a walk eases to 0.6 of it at a ladder) after the set-off and before the arrival (a leg ends at rest and the next starts from it).
+  // A glide starts and ends at rest on purpose (the figure stops at the node's edge and folds into its capsule): those are not dips.
+  const atGlide = (t: number) => trip.glides.some((g) => Math.abs(t - g.t0) <= 3 * STEP || Math.abs(t - g.t1) <= 3 * STEP);
   const dips: number[] = [];
   for (let i = Math.max(1, first + 8); i < samples.length - 8; i++) {
     const s = samples[i];
-    if (s.v < 0.2 * Math.min(maxV, CLIMB_SPEED) && s.v <= samples[i - 1].v && s.v < samples[i + 1].v) dips.push(s.t);
+    if (s.v < 0.2 * Math.min(maxV, CLIMB_SPEED) && s.v <= samples[i - 1].v && s.v < samples[i + 1].v && !atGlide(s.t)) dips.push(s.t);
   }
-  return { name, samples, maxV, maxAccel, setOff, dips };
+  return { name, samples, maxV, maxAccel, setOff, dips, glideMaxV, glideMaxAccel, glides: trip.glides.length };
 }
 
 /** The speed of every trip the sweep walks, and of the doors' ladders. */
 export function speeds(): Speed[] {
   const out: Speed[] = [];
   const k = REF_K;
-  for (const [name, a, ax, b, bx] of TRIPS) {
-    const from = spot(a, ax);
-    const to = spot(b, bx);
-    out.push(speedOf(name, planTrip({ from: a, to: b, t: 0, slot: 0 }, route(MAP, from, to), from.at, k)));
-  }
+  for (const tr of TRIPS) out.push(speedOf(tr[0], tripOf(tr, k)));
   for (const [name, dir, leaving] of [["door down, going in", 1, true], ["door down, coming out", 1, false], ["door up, going in", -1, true], ["door up, coming out", -1, false]] as const) out.push(speedOf(name, planDoor(k, dir, leaving, 1)));
   return out;
 }
@@ -537,10 +560,9 @@ export function gaitOf(name: string, trip: Trip, door: { dir: 1 | -1 } | null = 
 export function gaits(): Gait[] {
   const out: Gait[] = [];
   const k = REF_K;
-  for (const [name, a, ax, b, bx] of TRIPS) {
-    const from = spot(a, ax);
-    const trip = planTrip({ from: a, to: b, t: 0, slot: 0 }, route(MAP, from, spot(b, bx)), from.at, k);
-    if (rungGrid(trip).length) out.push(gaitOf(name, trip));
+  for (const tr of TRIPS) {
+    const trip = tripOf(tr, k);
+    if (rungGrid(trip).length) out.push(gaitOf(tr[0], trip));
   }
   for (const size of [1, 0.8]) {
     for (const [name, dir, leaving] of [["door down, going in", 1, true], ["door down, coming out", 1, false], ["door up, going in", -1, true], ["door up, coming out", -1, false]] as const) out.push(gaitOf(`${name}, k ${(k * size).toFixed(2)}`, planDoor(k * size, dir, leaving, 1), { dir }));

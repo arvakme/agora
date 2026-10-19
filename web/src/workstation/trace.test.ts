@@ -110,17 +110,18 @@ describe("traceAt (追踪)", () => {
       expect(w.legs[0].a, `${from} → ${to}`).toEqual(dock(from));
       expect(w.legs.at(-1)!.b, `${from} → ${to}`).toEqual(dock(to));
       w.legs.slice(1).forEach((l, i) => expect(l.a).toEqual(w.legs[i].b));
-      expect(w.len).toBeCloseTo(w.legs.reduce((n, l) => n + Math.abs(l.b.x - l.a.x) + Math.abs(l.b.y - l.a.y), 0), 6);
+      expect(w.len).toBeCloseTo(w.legs.reduce((n, l) => n + Math.hypot(l.b.x - l.a.x, l.b.y - l.a.y), 0), 6);
       for (const b of w.trip!.bridges) expect(w.legs.some((l) => l.kind === "bridge" && l.a.x === b.a.x && l.b.x === b.b.x && l.a.y === b.a.y)).toBe(true);
       for (const d of w.trip!.ladders) expect(w.legs.some((l) => l.kind === "climb" && l.a.x === d.x && Math.min(l.a.y, l.b.y) >= d.top - 1e-6 && Math.max(l.a.y, l.b.y) <= d.bottom + 1e-6)).toBe(true);
     }
-    // API 服务 → MySQL: up the ladder where the SQL arrow runs upright
-    expect(tr.ways[0].legs.some((l) => l.kind === "climb" && l.a.x === 610)).toBe(true);
-    expect(tr.ways[0].trip!.ladders.map((d) => d.x)).toContain(610);
+    // API 服务 → MySQL: a glide along the SQL arrow, up where it runs upright; nothing built
+    expect(tr.ways[0].legs.some((l) => l.kind === "glide" && Math.abs(l.a.x - 610) < 1 && l.b.y < l.a.y)).toBe(true);
+    expect(tr.ways[0].trip!.glides.length).toBeGreaterThan(0);
+    expect(tr.ways[0].trip!.ladders).toEqual([]);
   });
 
   it("the walked part of a walk grows with the walker: none before it sets off, all once it is there, never shrinking or jumping, its end at the walker's feet", () => {
-    const w = traceAt(pi, END * S, C).ways[0]; // API 服务 → MySQL, up the ladder
+    const w = traceAt(pi, END * S, C).ways[0]; // API 服务 → MySQL, gliding up the SQL arrow
     expect(walkedAt(w, w.t0 - 100)).toBe(0);
     expect(walkedAt(w, w.t1)).toBe(w.len);
     expect(walkedAt(w, w.t1 + 500)).toBe(w.len);

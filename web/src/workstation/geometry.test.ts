@@ -43,15 +43,15 @@ const scaffold = (rt: Route) => rt.legs.some((l) => l.temp) && rt.legs.filter((l
 describe("buildGeometry: the walking map (剖面)", () => {
   const g = geometry(SCENE);
 
-  it("an arrow from a node's label to another node is a way between them: a bridge across the gap", () => {
+  it("an arrow from a node's label to another node is a way between them: the figure glides along it", () => {
     const rt = trip(g, "web", "api");
-    expect(rt.legs.some((l) => l.kind === "bridge" && !l.temp && l.a.y === 230)).toBe(true);
+    expect(rt.legs.some((l) => l.kind === "glide" && !l.temp)).toBe(true);
     expect(scaffold(rt)).toBe(false);
   });
 
-  it("an arrow to a member of a library icon's group is a way to the icon's linked node: the ladder where it runs upright", () => {
+  it("an arrow to a member of a library icon's group is a way to the icon's linked node: glided along, up where it runs upright", () => {
     const rt = trip(g, "api", "db");
-    expect(rt.legs.some((l) => l.kind === "climb" && !l.temp && l.a.x === 610)).toBe(true);
+    expect(rt.legs.some((l) => l.kind === "glide" && !l.temp && Math.abs(l.a.x - 610) < 1 && l.b.y < l.a.y)).toBe(true);
     expect(scaffold(rt)).toBe(false);
   });
 
