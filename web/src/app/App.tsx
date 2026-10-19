@@ -82,6 +82,7 @@ const EVAL_RUNS = Number(params.get("runs")) || 3;
 
 export type { Doc } from "../workspace/model";
 import { FIRST_SCENE, type Boot } from "./boot";
+import { buildLabel } from "./build";
 export { prepareBoot, type Boot, type WorkspaceState } from "./boot";
 
 let benched = false;
@@ -106,6 +107,7 @@ type Removed = { title: string; trashId?: string; error?: string };
 export function App({ boot }: { boot: Boot }) {
   // prepareBoot (main.tsx) has settled the workspace; nothing here writes to a store while rendering.
   const firstRun = !!boot.firstRun;
+  const build = buildLabel(boot.project?.build);
   const initial = boot.workspace!;
   const [docs, setDocs] = useState<Doc[]>(initial.docs);
   // Without a ?canvas= link the saved layout opens on each tree's top, not the child level it was left on (workspace-model.md §7).
@@ -881,6 +883,7 @@ export function App({ boot }: { boot: Boot }) {
         <header className="topbar">
           <span className="brand"><IconWorkspace size={18} />Agora</span>
           {boot.project && <span className="project-name" title={boot.project.root}>{boot.project.name}</span>}
+          {build && <span className="build-sha" title={build.title}>{build.text}</span>}
           <span className="topbar-gap" />
           <AgentTags />
           {PERSIST && <ShareButton canvases={canvasDocs.map((d) => ({ id: d.id, title: d.title }))} current={canvasDoc?.id ?? lastCanvas} />}
