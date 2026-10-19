@@ -27,6 +27,19 @@ cd web && npx tsc -p . && npx vitest run && npm run build && npm run eval:replay
 
 各功能的规格在 `web/docs/`。
 
+## 打包与安装
+
+改到 `pyproject.toml`、`hatch_build.py`、`server/paths.py` 或要进包的文件时，在隔离目录里装一遍再在仓库外的项目里跑，不碰全局工具目录：
+
+```bash
+uv build                                             # dist/ 下的 sdist 与 wheel；wheel 内 server/_bundle/ 应有 web/dist、web/libraries、web/generated、skills、bin
+T=$(mktemp -d)
+UV_TOOL_DIR=$T/tools UV_TOOL_BIN_DIR=$T/bin uv tool install dist/agora_canvas-*.whl
+cd "$(mktemp -d)" && git init -q
+$T/bin/agora up && curl -s "$(python3 -c "import json;print(json.load(open('.agora/run/server.json'))['url'])")" | grep '<title>'
+$T/bin/agora status && $T/bin/agora down
+```
+
 ## CI
 
 `.github/workflows/test.yml`：`test` 作业跑全部 Python 测试；`web` 作业跑前端类型检查、单测、构建、素材库校验与离线评测回放。

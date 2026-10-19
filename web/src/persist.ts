@@ -24,8 +24,8 @@ export const onCanvasRefused = (f: (canvasId: string) => void) => void (onRefuse
 
 export const project = createClient({ onRefusedEmpty: (slot) => slot.startsWith("canvas:") && onRefusedEmpty(slot.slice("canvas:".length)) });
 
-/** The code the server runs (server/canvas/version.py): HEAD of its checkout, and whether tracked files differ from it (null: git could not say). */
-export type BuildInfo = { sha: string | null; dirty: boolean | null };
+/** The code the server runs (server/canvas/version.py): HEAD of its checkout, whether tracked files differ from it (null: git could not say), and the installed package version (null in a bare checkout). */
+export type BuildInfo = { sha: string | null; dirty: boolean | null; version?: string | null };
 export type ProjectInfo = { id: string; name: string; root: string; me: Person; build?: BuildInfo };
 type Versioned<T> = { data: T; version: string };
 /** A project file the server could not read (server/canvas/project.py `file_error`, `_read_checked`). */

@@ -23,8 +23,8 @@ still finds and stops it. ``up`` first settles whether the project was moved, co
 cloned since last time (moved Pi logs follow it) and says so. ``--dev`` serves the frontend through vite
 (hot reload) in front of the project backend instead of the built ``web/dist``.
 
-Run it from anywhere with ``bin/agora`` (wraps ``uv run``), or
-``uv run --project <agora repo> python -m agora_cli ...`` with the repo on PYTHONPATH.
+Installed (``uv tool install``) it is the ``agora`` command; from a checkout, run it from anywhere with ``bin/agora``
+(wraps ``uv run``), or ``uv run --project <agora repo> python -m agora_cli ...`` with the repo on PYTHONPATH.
 """
 
 from __future__ import annotations
@@ -46,8 +46,8 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
-REPO = Path(__file__).resolve().parents[1]
-WEB = REPO / "web"
+from server.paths import CHECKOUT, SOURCE, WEB
+
 HOST = "127.0.0.1"
 
 
@@ -269,13 +269,15 @@ def cmd_init(p: Project, _a) -> int:
 def start(p: Project, dev: bool, web_port: int = 0) -> dict[str, Any]:
     p.store.init()
     cfg = p.store.config()
-    env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(REPO), os.environ.get("PYTHONPATH")]))}
+    env = dict(os.environ)
+    if CHECKOUT:  # an installed copy imports from its own environment; site-packages must not leak into agents' PYTHONPATH
+        env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(SOURCE), os.environ.get("PYTHONPATH")]))
     log = p.run / "server.log"
     proc = None
     port = 0
     for attempt in range(3):
         port = free_port(int(cfg.get("server", {}).get("port") or 0) if attempt == 0 else 0)
-        proc = spawn([sys.executable, "-m", "agora_cli", "serve", "--project", str(p.root), "--port", str(port)], cwd=REPO, log=log, env=env)
+        proc = spawn([sys.executable, "-m", "agora_cli", "serve", "--project", str(p.root), "--port", str(port)], cwd=SOURCE, log=log, env=env)
         if wait_until(lambda: (h := health(port)) is not None and h.get("pid") == proc.pid, 30, proc):
             break
         stop(proc.pid, 2)
@@ -334,6 +336,8 @@ def change_note(change: dict[str, Any], root: Path) -> str | None:
 
 def up(p: Project, dev: bool, web_port: int = 0) -> tuple[dict[str, Any], bool]:
     """Start this project's server, or return the one already running. (state, reused)"""
+    if dev and not CHECKOUT:
+        raise RuntimeError("--dev serves the frontend sources through vite and needs a checkout of the agora repo (run its bin/agora); this copy is installed")
     p.store.init()
     with open(p.run / "up.lock", "a+") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)  # two concurrent `up`s for one project start one server
@@ -372,7 +376,8 @@ def cmd_up(p: Project, a) -> int:
         print(note)
     print(f"{'already running' if reused else 'started'}: {st['url']}  (project {p.root}, pid {st['pid']})")
     if not reused and st["mode"] == "dist" and not (WEB / "dist" / "index.html").exists():
-        print("note: web/dist is not built; run `cd web && npm run build` or use `agora up --dev`", file=sys.stderr)
+        hint = "run `cd web && npm run build` or use `agora up --dev`" if CHECKOUT else "this installed copy was built without it; reinstall from a release wheel"
+        print(f"note: the page ({WEB / 'dist'}) is not built; {hint}", file=sys.stderr)
     return 0
 
 

@@ -20,8 +20,6 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-REPO = Path(__file__).resolve().parents[1]
-
 
 def find_root(explicit: str | None) -> Path:
     """--project, else $AGORA_PROJECT, else the nearest ancestor with .agora/config.toml, else cwd."""

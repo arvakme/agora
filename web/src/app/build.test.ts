@@ -24,4 +24,8 @@ describe("buildLabel: which code this page's server runs", () => {
     expect(buildLabel(undefined)).toBeNull();
     expect(buildLabel({ sha: null, dirty: null })).toBeNull();
   });
+
+  it("is the package version for an installed copy (no checkout)", () => {
+    expect(buildLabel({ sha: null, dirty: null, version: "0.1.0" })).toEqual({ text: "v0.1.0", title: "agora-canvas 0.1.0" });
+  });
 });
