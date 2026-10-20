@@ -2,7 +2,7 @@
 // (no DOM), shared by the browser executor and the dev-server planner; its rules are generated/plan.rules.json.
 
 import RULES from "../../generated/plan.rules.json" with { type: "json" };
-import { tr } from "../i18n";
+import { tr } from "../i18n/index.ts"; // node scripts (scripts/export-schemas.ts) import this file directly
 
 export type ShapeKind = "rectangle" | "ellipse" | "diamond";
 export type Op =

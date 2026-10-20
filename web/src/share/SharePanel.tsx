@@ -47,7 +47,7 @@ const DURATIONS = [
   { key: "1d", label: tr("1 天", "1 day"), s: 86400 },
   { key: "7d", label: tr("7 天", "7 days"), s: 7 * 86400 },
   { key: "custom", label: tr("自定义", "Custom"), s: 0 },
-  { key: "forever", label: tr("直到撤销", "Until revoked"), s: null },
+  { key: "forever", label: tr("直到撤销", "Never"), s: null },
 ] as const;
 const UNITS = [
   { key: "m", label: tr("分钟", "minutes"), s: 60 },
@@ -323,7 +323,7 @@ function ShareList({ rows, onChange }: { rows: ShareRow[]; onChange: () => void 
               <b>{shareLabel(r)}</b>
               <code title={r.url}>{r.host}</code>
               <span className="share-meta">
-                {r.expiresAt == null ? tr("直到撤销", "Until revoked") : tr(`剩 ${fmtLeft(r.expiresAt - now)}`, `${fmtLeft(r.expiresAt - now)} left`)} · <span title={r.maxOpens ? tr(`已有 ${r.opens ?? 0} 个访客打开，最多 ${r.maxOpens} 个`, `${r.opens ?? 0} of at most ${r.maxOpens} guests have opened it`) : tr("已打开的访客数（不限次数）", "Guests who have opened it (unlimited)")} data-full={!!r.maxOpens && (r.opens ?? 0) >= r.maxOpens}>{opensText(r)}</span> · {tr(`评论 ${r.comments}`, `${r.comments} ${r.comments === 1 ? "comment" : "comments"}`)}{r.buildReplay ? ` · ${replayText(r)}` : ""}
+                {r.expiresAt == null ? tr("直到撤销", "No expiry") : tr(`剩 ${fmtLeft(r.expiresAt - now)}`, `${fmtLeft(r.expiresAt - now)} left`)} · <span title={r.maxOpens ? tr(`已有 ${r.opens ?? 0} 个访客打开，最多 ${r.maxOpens} 个`, `${r.opens ?? 0} of at most ${r.maxOpens} guests have opened it`) : tr("已打开的访客数（不限次数）", "Guests who have opened it (unlimited)")} data-full={!!r.maxOpens && (r.opens ?? 0) >= r.maxOpens}>{opensText(r)}</span> · {tr(`评论 ${r.comments}`, `${r.comments} ${r.comments === 1 ? "comment" : "comments"}`)}{r.buildReplay ? ` · ${replayText(r)}` : ""}
               </span>
               {dnsWait(r, now).waiting && <span className="share-wait" role="status">{dnsWait(r, now).text}</span>}
               <label className="share-check share-flip" title={tr("随时可改，访客那边马上按新的来", "Change it any time; guests get the new setting right away")}>

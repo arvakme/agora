@@ -126,7 +126,7 @@ export function mentionRows(o: MentionSources, query: string, expanded: boolean)
   for (const s of others.slice(0, Math.max(RECENT, working))) rows.push(sessionRow(o, s));
   const kind = recommendAgent({ kinds: o.agents.map((a) => a.kind), bindings: o.bindings, activeAt: o.activeAt, canvas: o.canvas });
   const name = nameOf(o, kind);
-  rows.push({ target: { type: "agent", kind, label: name }, title: tr(`${name} · 新对话`, `${name} · New conversation`), note: "", group: "new", badge: RECOMMENDED });
+  rows.push({ target: { type: "agent", kind, label: name }, title: tr(`${name} · 新对话`, `${name} · new`), note: "", group: "new", badge: RECOMMENDED });
   rows.push({ more: true, title: MORE_TITLE });
   return rows;
 }
