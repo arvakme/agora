@@ -31,7 +31,7 @@ prep() {
   mkdir -p "$BUILD/tools" "$BUILD/assets/clips" "$BUILD/assets/stills" "$BUILD/assets/sfx"
   cp "$HERE/film/treatment.md" "$BUILD/tools/treatment.md"
 
-  # 实录片段（VP9 WebM：Playwright 的 Chromium 不带 H.264 解码）：统一成 30 fps、无声、1440×900（1.6:1，与卡片同比例）；glide / hop 的录像顶上有一行说明文字，裁掉。
+  # 实录片段（VP9 WebM：Playwright 的 Chromium 不带 H.264 解码）：统一成 30 fps、无声、1440×900（1.6:1，与卡片同比例）；hop 的录像顶上有一行说明文字，裁掉。只用 #53 之后的实录（小人沿箭头滑行或跳过去）：glide/after.mp4 和 agora-motion.mp4 里还有已删掉的脚手架爬梯，不用。
   clip() { # name src crop
     ffmpeg -v error -y -i "$FOOTAGE/$2" -an -vf "$3,scale=1440:900:flags=lanczos,fps=30,format=yuv420p" \
       -c:v libvpx-vp9 -crf 24 -b:v 0 -deadline good -cpu-used 4 -row-mt 1 -g 15 "$BUILD/assets/clips/$1.webm"
@@ -41,11 +41,9 @@ prep() {
   clip wheel   semantic-zoom/wheel.mp4 "crop=1280:800:0:0"
   clip fly     semantic-zoom/fly.mp4   "crop=1280:800:0:0"
   clip hop     hop/after.mp4           "crop=1488:930:56:90"
-  clip glide   glide/after.mp4         "crop=1488:930:56:90"
-  clip motion  agora-motion.mp4        "crop=1440:900:0:0"
 
   # README 里的截图（docs/media/），蒙太奇用
-  for s in trajectory terminal pointer share guest choose-agent; do cp "$REPO/docs/media/$s.png" "$BUILD/assets/stills/"; done
+  for s in trajectory terminal share guest choose-agent; do cp "$REPO/docs/media/$s.png" "$BUILD/assets/stills/"; done
   cp "$REPO/docs/assets/banner.png" "$BUILD/assets/stills/banner.png"
   # README 示意图的上半部分（数据流），只改 viewBox 裁出来
   sed -e '1s/width="1600" height="1130" viewBox="0 0 1600 1130"/width="1520" height="410" viewBox="40 80 1520 410"/' \
