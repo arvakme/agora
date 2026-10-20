@@ -230,3 +230,19 @@ describe("conversations that look the same are told apart", () => {
     expect(shown.filter((t) => t.startsWith("Claude Code ·")).length).toBe(3); // the recommended new one, and the two twins
   });
 });
+
+describe("naming in an English interface", () => {
+  it("says who has the thread and how far, and how long ago, in English", async () => {
+    const { setLangForTest } = await import("../i18n");
+    setLangForTest("en");
+    try {
+      const h = { sessionId: "s1", agent: "claude", name: "Comment #1 · Browser" };
+      expect(handoffLine(h, "Claude Code", "running", false)).toBe("Being handled by Claude Code · Comment #1 · Browser");
+      expect(handoffLine(h, "Claude Code", "answered", false)).toBe("Answered by Claude Code · Comment #1 · Browser");
+      expect(threadSessionName(3, "")).toBe("Comment #3 · Canvas");
+      expect(agoText(0, 5 * 60_000)).toBe("5m ago");
+    } finally {
+      setLangForTest("zh");
+    }
+  });
+});

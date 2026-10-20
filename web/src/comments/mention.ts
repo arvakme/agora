@@ -5,6 +5,7 @@ import { sendable } from "../session/pickSession";
 import { lastActive, recommendAgent } from "../session/recommend";
 import type { Binding, Status } from "../session/agents";
 import type { Thread } from "./threads";
+import { tr, lang } from "../i18n";
 
 /** Who an @ names: a kind of agent (a new conversation for this thread) or an existing conversation. */
 export type MentionTarget =
@@ -37,22 +38,22 @@ export type MentionSources = {
 
 /** Which half of the list a choice is in: carrying on with a conversation that exists, or starting a new one (an @agent). */
 export type MentionGroup = "continue" | "new";
-export const GROUP_TITLES: Record<MentionGroup, string> = { continue: "继续已有会话", new: "新开一个" };
+export const GROUP_TITLES: Record<MentionGroup, string> = { continue: tr("继续已有会话", "Continue a session"), new: tr("新开一个", "Start a new one") };
 
 /** One line of the list: a choice (`running`: that conversation is at work), or 「更多」 that opens the whole list. */
 export type MentionRow = { target: MentionTarget; title: string; note: string; group: MentionGroup; badge?: string; running?: boolean } | { more: true; title: string };
 
 const RECENT = 2;
-export const MORE_TITLE = "更多… 输入名字搜索";
-export const RECOMMENDED = "推荐";
+export const MORE_TITLE = tr("更多… 输入名字搜索", "More… type a name to search");
+export const RECOMMENDED = tr("推荐", "Recommended");
 
 /** "刚刚" / "N 分钟前" / "N 小时前" / "N 天前". */
 export function agoText(at: number, now: number): string {
   const s = Math.max(0, (now - at) / 1000);
-  if (s < 45) return "刚刚";
-  if (s < 3600) return `${Math.round(s / 60)} 分钟前`;
-  if (s < 86400) return `${Math.round(s / 3600)} 小时前`;
-  return `${Math.round(s / 86400)} 天前`;
+  if (s < 45) return tr("刚刚", "just now");
+  if (s < 3600) return tr(`${Math.round(s / 60)} 分钟前`, `${Math.round(s / 60)}m ago`);
+  if (s < 86400) return tr(`${Math.round(s / 3600)} 小时前`, `${Math.round(s / 3600)}h ago`);
+  return tr(`${Math.round(s / 86400)} 天前`, `${Math.round(s / 86400)}d ago`);
 }
 
 /**
@@ -63,7 +64,7 @@ export function agoText(at: number, now: number): string {
 function labels(o: MentionSources): Map<string, string> {
   const live = Object.keys(o.bindings).filter((sid) => sendable(o.bindings[sid], o.status[sid]));
   const at = (sid: string) => lastActive(o.bindings[sid], o.activeAt[sid]);
-  const base = (sid: string) => o.names[sid] || `${nameOf(o, o.bindings[sid].agent)} 会话`;
+  const base = (sid: string) => o.names[sid] || tr(`${nameOf(o, o.bindings[sid].agent)} 会话`, `${nameOf(o, o.bindings[sid].agent)} session`);
   const agentNames = new Set(o.agents.map((a) => a.name));
   const count = new Map<string, number>();
   for (const sid of live) count.set(base(sid), (count.get(base(sid)) ?? 0) + 1);
@@ -89,7 +90,7 @@ function liveSessions(o: MentionSources, only?: readonly string[]) {
 }
 
 /** What a conversation's line says besides its name: its agent, and that it is at work or how long ago it last did anything. */
-const sessionNote = (o: MentionSources, s: { agent: string; at: number; running: boolean }) => `${nameOf(o, s.agent)} · ${s.running ? "工作中" : agoText(s.at, o.now)}`;
+const sessionNote = (o: MentionSources, s: { agent: string; at: number; running: boolean }) => `${nameOf(o, s.agent)} · ${s.running ? tr("工作中", "working") : agoText(s.at, o.now)}`;
 const sessionRow = (o: MentionSources, s: ReturnType<typeof liveSessions>[number]): MentionRow => ({ target: { type: "session", sid: s.sid, agent: s.agent, label: s.name }, title: s.name, note: sessionNote(o, s), group: "continue", running: s.running || undefined });
 const nameOf = (o: MentionSources, kind: string) => o.agents.find((a) => a.kind === kind)?.name ?? kind;
 
@@ -113,19 +114,19 @@ export function mentionRows(o: MentionSources, query: string, expanded: boolean)
     const live = new Map(liveSessions(o).map((s) => [s.sid, s]));
     const found = mentionOptions(o, query);
     const sessions = found.flatMap((t) => (t.type === "session" ? [sessionRow(o, live.get(t.sid)!)] : []));
-    const agents = found.flatMap((t): MentionRow[] => (t.type === "agent" ? [{ target: t, title: t.label, note: "新对话", group: "new" }] : []));
+    const agents = found.flatMap((t): MentionRow[] => (t.type === "agent" ? [{ target: t, title: t.label, note: tr("新对话", "New conversation"), group: "new" }] : []));
     return [...sessions, ...agents];
   }
   const rows: MentionRow[] = [];
   const bound = o.handoff && liveSessions(o, [o.handoff.sessionId])[0];
-  if (bound) rows.push({ target: { type: "session", sid: bound.sid, agent: bound.agent, label: o.handoff!.name }, title: `继续交给 ${o.handoff!.name}`, note: "", group: "continue", running: bound.running || undefined });
+  if (bound) rows.push({ target: { type: "session", sid: bound.sid, agent: bound.agent, label: o.handoff!.name }, title: tr(`继续交给 ${o.handoff!.name}`, `Keep handing to ${o.handoff!.name}`), note: "", group: "continue", running: bound.running || undefined });
   // the ones at work come first, all of them (two conversations working at once are the ones to tell apart), then the most recent up to two
   const others = liveSessions(o, o.canvas).filter((s) => s.sid !== bound?.sid).sort((a, b) => Number(b.running) - Number(a.running));
   const working = others.filter((s) => s.running).length;
   for (const s of others.slice(0, Math.max(RECENT, working))) rows.push(sessionRow(o, s));
   const kind = recommendAgent({ kinds: o.agents.map((a) => a.kind), bindings: o.bindings, activeAt: o.activeAt, canvas: o.canvas });
   const name = nameOf(o, kind);
-  rows.push({ target: { type: "agent", kind, label: name }, title: `${name} · 新对话`, note: "", group: "new", badge: RECOMMENDED });
+  rows.push({ target: { type: "agent", kind, label: name }, title: tr(`${name} · 新对话`, `${name} · New conversation`), note: "", group: "new", badge: RECOMMENDED });
   rows.push({ more: true, title: MORE_TITLE });
   return rows;
 }
@@ -159,11 +160,12 @@ export function routeMessage(o: { guest: boolean; mention: MentionTarget | null;
 }
 
 /** The name of the conversation a thread opens the first time an agent is mentioned in it. */
-export const threadSessionName = (n: number, anchorName: string) => `评论 #${n} · ${anchorName || "画布"}`;
+export const threadSessionName = (n: number, anchorName: string) => tr(`评论 #${n} · ${anchorName || "画布"}`, `Comment #${n} · ${anchorName || "Canvas"}`);
 
 /** The line above a bound thread: who has it and how far it is. */
 export function handoffLine(h: NonNullable<Thread["handoff"]>, agentName: string, state: "pending" | "running" | "answered" | "resolved", gone: boolean): string {
-  if (gone) return `${agentName} · ${h.name} 已不在了，重新 @ 一个对话`;
+  if (gone) return tr(`${agentName} · ${h.name} 已不在了，重新 @ 一个对话`, `${agentName} · ${h.name} is gone; @ another conversation`);
+  if (lang() === "en") return `${state === "running" ? "Being handled" : state === "answered" ? "Answered" : "Handed"} by ${agentName} · ${h.name}`;
   const what = state === "running" ? "处理中" : state === "answered" ? "已答复" : "已交接";
   return `由 ${agentName} · ${h.name} ${what}`;
 }

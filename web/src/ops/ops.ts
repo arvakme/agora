@@ -2,6 +2,7 @@
 // (no DOM), shared by the browser executor and the dev-server planner; its rules are generated/plan.rules.json.
 
 import RULES from "../../generated/plan.rules.json" with { type: "json" };
+import { tr } from "../i18n";
 
 export type ShapeKind = "rectangle" | "ellipse" | "diamond";
 export type Op =
@@ -116,39 +117,39 @@ export type SceneIndex = { kind(id: string): Kind | undefined; libraryItem?(id: 
 /** Schema + referential validation. Returns a list of problems (empty = valid). */
 export function validatePlan(raw: unknown, scene: SceneIndex): { plan?: Plan; errors: string[] } {
   const errors: string[] = [];
-  if (!raw || typeof raw !== "object" || !Array.isArray((raw as Plan).ops)) return { errors: ["缺少 ops 数组"] };
+  if (!raw || typeof raw !== "object" || !Array.isArray((raw as Plan).ops)) return { errors: [tr("缺少 ops 数组", "missing ops array")] };
   const ops = (raw as Plan).ops as unknown[];
-  if (ops.length === 0) errors.push("ops 为空");
+  if (ops.length === 0) errors.push(tr("ops 为空", "ops is empty"));
   const created = new Map<string, Kind>();
   const deleted = new Set<string>();
   const kind = (id: string) => (deleted.has(id) ? undefined : created.get(id) ?? scene.kind(id));
 
   ops.forEach((o, i) => {
     const at = `ops[${i}]`;
-    if (!o || typeof o !== "object") return void errors.push(`${at} 不是对象`);
+    if (!o || typeof o !== "object") return void errors.push(tr(`${at} 不是对象`, `${at} is not an object`));
     const op = o as Record<string, unknown>;
     const spec = OPS[op.op as string];
-    if (!spec) return void errors.push(`${at}.op 未知：${String(op.op)}`);
-    for (const k of Object.keys(op)) if (k !== "op" && !spec.req.includes(k) && !spec.opt.includes(k)) errors.push(`${at} 多余字段 ${k}`);
-    for (const k of spec.req) if (op[k] === undefined) errors.push(`${at} 缺少 ${k}`);
+    if (!spec) return void errors.push(tr(`${at}.op 未知：${String(op.op)}`, `${at}.op unknown: ${String(op.op)}`));
+    for (const k of Object.keys(op)) if (k !== "op" && !spec.req.includes(k) && !spec.opt.includes(k)) errors.push(tr(`${at} 多余字段 ${k}`, `${at} has extra field ${k}`));
+    for (const k of spec.req) if (op[k] === undefined) errors.push(tr(`${at} 缺少 ${k}`, `${at} is missing ${k}`));
     for (const [k, v] of Object.entries(op)) {
       if (k === "op" || v === undefined || k === "near" || k === "at") continue;
       if (NUMERIC.has(k)) {
-        if (typeof v !== "number" || !Number.isFinite(v)) errors.push(`${at}.${k} 不是有限数字`);
-        else if ((k === "width" || k === "height") && (v < RULES.size.min || v > RULES.size.max)) errors.push(`${at}.${k} 超出 ${RULES.size.min}–${RULES.size.max}`);
-        else if (Math.abs(v) > RULES.coordinateMax) errors.push(`${at}.${k} 超出画布范围`);
+        if (typeof v !== "number" || !Number.isFinite(v)) errors.push(tr(`${at}.${k} 不是有限数字`, `${at}.${k} is not a finite number`));
+        else if ((k === "width" || k === "height") && (v < RULES.size.min || v > RULES.size.max)) errors.push(tr(`${at}.${k} 超出 ${RULES.size.min}–${RULES.size.max}`, `${at}.${k} is outside ${RULES.size.min}–${RULES.size.max}`));
+        else if (Math.abs(v) > RULES.coordinateMax) errors.push(tr(`${at}.${k} 超出画布范围`, `${at}.${k} is outside the canvas`));
       } else if (BOOLEANS.has(k)) {
-        if (typeof v !== "boolean") errors.push(`${at}.${k} 不是布尔值`);
+        if (typeof v !== "boolean") errors.push(tr(`${at}.${k} 不是布尔值`, `${at}.${k} is not a boolean`));
       } else if (k === "path") {
         if (v === null && op.op === "route") continue; // back to the plain straight arrow
-        if (!Array.isArray(v) || v.length < RULES.path.min || v.length > RULES.path.max || !v.every((p) => Array.isArray(p) && p.length === 2)) errors.push(`${at}.path 需要 ${RULES.path.min}–${RULES.path.max} 个 [x, y] 点`);
-        else if (!v.every((p) => p.every((n: unknown) => typeof n === "number" && Number.isFinite(n) && Math.abs(n) <= RULES.coordinateMax))) errors.push(`${at}.path 的坐标要是有限数字，绝对值不超过 ${RULES.coordinateMax}`);
-      } else if (typeof v !== "string" || !v.trim() || v.length > RULES.stringMax) errors.push(`${at}.${k} 不是非空字符串`);
+        if (!Array.isArray(v) || v.length < RULES.path.min || v.length > RULES.path.max || !v.every((p) => Array.isArray(p) && p.length === 2)) errors.push(tr(`${at}.path 需要 ${RULES.path.min}–${RULES.path.max} 个 [x, y] 点`, `${at}.path needs ${RULES.path.min}–${RULES.path.max} [x, y] points`));
+        else if (!v.every((p) => p.every((n: unknown) => typeof n === "number" && Number.isFinite(n) && Math.abs(n) <= RULES.coordinateMax))) errors.push(tr(`${at}.path 的坐标要是有限数字，绝对值不超过 ${RULES.coordinateMax}`, `${at}.path coordinates must be finite numbers with absolute value at most ${RULES.coordinateMax}`));
+      } else if (typeof v !== "string" || !v.trim() || v.length > RULES.stringMax) errors.push(tr(`${at}.${k} 不是非空字符串`, `${at}.${k} is not a non-empty string`));
     }
     const need = (id: unknown, allowed: string[], field = "id") => {
       const k = typeof id === "string" ? kind(id) : undefined;
-      if (!k) errors.push(`${at}.${field} 指向不存在的元素 ${String(id)}`);
-      else if (!allowed.includes(k)) errors.push(`${at}.${field} 类型 ${k} 不支持 ${String(op.op)}`);
+      if (!k) errors.push(tr(`${at}.${field} 指向不存在的元素 ${String(id)}`, `${at}.${field} points to a missing element ${String(id)}`));
+      else if (!allowed.includes(k)) errors.push(tr(`${at}.${field} 类型 ${k} 不支持 ${String(op.op)}`, `${at}.${field} of type ${k} does not support ${String(op.op)}`));
     };
     switch (op.op) {
       case "update_text":
@@ -165,14 +166,14 @@ export function validatePlan(raw: unknown, scene: SceneIndex): { plan?: Plan; er
         if (typeof op.id === "string") deleted.add(op.id);
         break;
       case "add_shape":
-        if (!RULES.shapes.includes(op.shape as string)) errors.push(`${at}.shape 非法`);
+        if (!RULES.shapes.includes(op.shape as string)) errors.push(tr(`${at}.shape 非法`, `${at}.shape is invalid`));
         if (op.frameId !== undefined) need(op.frameId, targets("add_shape", "frameId"), "frameId");
         addRef(op.ref, OPS.add_shape.creates!);
         break;
       case "add_arrow":
         need(op.from, targets("add_arrow", "from"), "from");
         need(op.to, targets("add_arrow", "to"), "to");
-        if (op.from === op.to) errors.push(`${at} 起止相同`);
+        if (op.from === op.to) errors.push(tr(`${at} 起止相同`, `${at} starts and ends at the same element`));
         if (op.ref !== undefined) addRef(op.ref, OPS.add_arrow.creates!);
         break;
       case "add_junction":
@@ -182,24 +183,24 @@ export function validatePlan(raw: unknown, scene: SceneIndex): { plan?: Plan; er
         need(op.id, targets("route", "id"));
         break;
       case "insert_library_item": {
-        if (typeof op.item !== "string" || !scene.libraryItem?.(op.item)) errors.push(`${at}.item 不是素材库里的组件 id：${String(op.item)}（先用 search_library 查）`);
+        if (typeof op.item !== "string" || !scene.libraryItem?.(op.item)) errors.push(tr(`${at}.item 不是素材库里的组件 id：${String(op.item)}（先用 search_library 查）`, `${at}.item is not a library component id: ${String(op.item)} (look it up with search_library first)`));
         const near = op.near as { id?: unknown; side?: unknown; gap?: unknown } | undefined;
         const pos = op.at as { x?: unknown; y?: unknown } | undefined;
-        if (!near === !pos) errors.push(`${at} 需要 near 或 at 其中之一`);
+        if (!near === !pos) errors.push(tr(`${at} 需要 near 或 at 其中之一`, `${at} needs exactly one of near or at`));
         if (near) {
           need(near.id, targets("insert_library_item", "near.id"), "near.id");
-          if (!RULES.sides.includes(near.side as string)) errors.push(`${at}.near.side 非法`);
-          if (near.gap !== undefined && (typeof near.gap !== "number" || near.gap < 0 || near.gap > RULES.gapMax)) errors.push(`${at}.near.gap 超出 0–${RULES.gapMax}`);
+          if (!RULES.sides.includes(near.side as string)) errors.push(tr(`${at}.near.side 非法`, `${at}.near.side is invalid`));
+          if (near.gap !== undefined && (typeof near.gap !== "number" || near.gap < 0 || near.gap > RULES.gapMax)) errors.push(tr(`${at}.near.gap 超出 0–${RULES.gapMax}`, `${at}.near.gap is outside 0–${RULES.gapMax}`));
         }
-        if (pos && (typeof pos.x !== "number" || typeof pos.y !== "number" || !Number.isFinite(pos.x) || !Number.isFinite(pos.y))) errors.push(`${at}.at 需要有限的 x/y`);
+        if (pos && (typeof pos.x !== "number" || typeof pos.y !== "number" || !Number.isFinite(pos.x) || !Number.isFinite(pos.y))) errors.push(tr(`${at}.at 需要有限的 x/y`, `${at}.at needs finite x/y`));
         if (op.frameId !== undefined) need(op.frameId, targets("insert_library_item", "frameId"), "frameId");
         addRef(op.ref, OPS.insert_library_item.creates!);
         break;
       }
     }
     function addRef(ref: unknown, k: Kind) {
-      if (typeof ref !== "string" || !REF.test(ref)) return void errors.push(`${at}.ref 需匹配 ${REF_TEXT}`);
-      if (kind(ref) || created.has(ref)) return void errors.push(`${at}.ref ${ref} 与已有元素重名`);
+      if (typeof ref !== "string" || !REF.test(ref)) return void errors.push(tr(`${at}.ref 需匹配 ${REF_TEXT}`, `${at}.ref must match ${REF_TEXT}`));
+      if (kind(ref) || created.has(ref)) return void errors.push(tr(`${at}.ref ${ref} 与已有元素重名`, `${at}.ref ${ref} clashes with an existing element`));
       created.set(ref, k);
     }
   });
