@@ -3,6 +3,7 @@
 // walking map (./route.ts: floors, and the arrows between nodes as ways). Built once per scene version
 // (./Overlay.tsx), never per frame. Pure (type-only imports from scene.ts, which pulls in Excalidraw),
 // so it runs under vitest in node.
+import { tr } from "../i18n";
 import { footprint, type Box } from "../canvas/clearance";
 import type { El } from "../canvas/scene";
 import { childOf as childOfNode, effectiveLinks, labelOf, type Scenes } from "../nested/graph";
@@ -94,7 +95,7 @@ export function buildGeometry(canvasId: string, elements: readonly El[], map: Ma
           return null;
         };
         const w = way(canvasId, new Set());
-        if (w && boxes.has(w.node)) nout = { place: w.node, portal: { canvasId: w.child, label: childTitle(w.child) ?? "子图" } };
+        if (w && boxes.has(w.node)) nout = { place: w.node, portal: { canvasId: w.child, label: childTitle(w.child) ?? tr("子图", "sub-diagram") } };
       }
       cache.set(path, nout);
       return nout;
@@ -108,7 +109,7 @@ export function buildGeometry(canvasId: string, elements: readonly El[], map: Ma
       if (link.child && !link.own.includes(hit.glob)) {
         if (!below.has(link.child)) below.set(link.child, effectiveLinks(link.child, everything));
         const inner = elementFor(path, below.get(link.child)!);
-        out.portal = { canvasId: link.child, label: inner?.link.label ?? childTitle(link.child) ?? "子图" };
+        out.portal = { canvasId: link.child, label: inner?.link.label ?? childTitle(link.child) ?? tr("子图", "sub-diagram") };
       }
     }
     cache.set(path, out);

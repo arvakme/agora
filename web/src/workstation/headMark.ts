@@ -1,6 +1,7 @@
 // What a figure's head shows for an agent (./figureNode.ts `mark`): the six CLIs' own marks — the same ones as everywhere else
 // (app/agents/marks.tsx, drawn through session/AgentAvatar.tsx) — sized to the head; any other kind, its initial. Pure.
 // Vector marks are <symbol>s (./RunAvatar.tsx `WorkerDefs`, ids from `symbolId`), Codex's and Grok's are their bundled images.
+import { tr } from "../i18n";
 import { markFor } from "../session/agentMarks";
 
 export type HeadMark =
@@ -16,7 +17,7 @@ export const symbolId = (agent: string) => `ws-m-${agent}`;
 const SCALE = { pi: 1, claude: 1.4, codex: 1.44, grok: 1.3, cursor: 1.3, devin: 1.15 } as const;
 
 /** The letters kinds that are not CLIs draw: a sub-agent known by its receipts, the person in the build replay (「你」 to the owner, 「作」 for the author to a guest). */
-export const LETTERS: Record<string, string> = { worker: "W", you: "你", author: "作" };
+export const LETTERS: Record<string, string> = { worker: "W", you: tr("你", "Y"), author: tr("作", "A") };
 
 /** The mark inside a head disc for a disc-sized `r`, centred on the origin. */
 export function headMark(agent: string, r: number): HeadMark {

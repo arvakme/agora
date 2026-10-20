@@ -2,6 +2,7 @@
 // hidden — a worker that began waiting on them after `since` (when the page was last in view) and
 // still waits at `now`, not told before (`told` holds the keys already announced: one per wait
 // segment, `run|start`). ./WaitNotifier.tsx raises the system notification. Pure.
+import { tr } from "../i18n";
 import type { FlatRun } from "./runs/types";
 
 export type WaitNote = { key: string; runId: string; sessionId?: string; title: string; body: string };
@@ -14,8 +15,11 @@ export function waitsToTell(flat: readonly FlatRun[], since: number, now: number
       const key = `${f.run.id}|${g.start}`;
       if (told.has(key)) continue;
       // a space between a Latin name and the Chinese, none after the full-width bracket
-      const who = f.parent ? `${f.run.name}（${f.parent.name} 派）` : `${f.run.name} `;
-      out.push({ key, runId: f.run.id, sessionId: f.root.sessionId, title: "Agora", body: g.question ? `${who}在等你：${g.question}` : `${who}在等你回复` });
+      const body = tr(
+        `${f.parent ? `${f.run.name}（${f.parent.name} 派）` : `${f.run.name} `}${g.question ? `在等你：${g.question}` : "在等你回复"}`,
+        `${f.parent ? `${f.run.name} (from ${f.parent.name})` : f.run.name} ${g.question ? `is waiting for you: ${g.question}` : "is waiting for your reply"}`,
+      );
+      out.push({ key, runId: f.run.id, sessionId: f.root.sessionId, title: "Agora", body });
     }
   return out;
 }

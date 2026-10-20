@@ -2,6 +2,8 @@
 // By default that is the agent of the session the person is talking to; the person can choose another (「跟随」 in a
 // figure's bubble, the avatar on a sub-diagram's entrance), and a new choice replaces the old. A choice belongs to the
 // conversation it was made in: turning to another session, or the run going away, ends it. Pure.
+import { tr } from "../i18n";
+
 export type Choice = { run: string | null; session: string | null };
 export const NONE: Choice = { run: null, session: null };
 
@@ -20,5 +22,5 @@ export type FollowStatus = { text: string };
  */
 export function followStatus(o: { name: string; paused: boolean; working: boolean; drawn: boolean }): FollowStatus | null {
   if (!o.paused || !o.working || !o.drawn) return null;
-  return { text: `跟着 ${o.name} · 已暂停` };
+  return { text: tr(`跟着 ${o.name} · 已暂停`, `Following ${o.name} · paused`) };
 }

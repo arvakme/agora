@@ -9,6 +9,7 @@
 //   - where each of its sub-agents was sent from, the places it went and where it handed back.
 // Only the stretch of work t is in (the figure is on the canvas for that stretch only; a sub-agent's is
 // its whole errand). In replay what comes after t in that stretch is listed too, not yet reached.
+import { tr } from "../i18n";
 import { arrivalOf, bursts, isCut, outsideProject, OUTSIDE, planFor, stateAt, type Ctx } from "./place";
 import { phaseShare, rawRoot, type Move, type Pt, type Trip } from "./rig";
 import type { Leg } from "./route";
@@ -107,10 +108,10 @@ function callLabel(run: WorkRun, g: RunSeg): string | null {
     case "exec":
       return `Bash ${clip(g.cmd ?? "")}`.trim();
     case "wait":
-      return `问你：${clip(g.question ?? "")}`;
+      return tr(`问你：${clip(g.question ?? "")}`, `Asked you: ${clip(g.question ?? "")}`);
     case "delegate": {
       const c = run.children.find((x) => x.id === g.child);
-      return `派出 ${c?.name ?? "子代理"}${c?.task ? `：${clip(c.task, 48)}` : ""}`;
+      return tr(`派出 ${c?.name ?? "子代理"}${c?.task ? `：${clip(c.task, 48)}` : ""}`, `Dispatched ${c?.name ?? "sub-agent"}${c?.task ? `: ${clip(c.task, 48)}` : ""}`);
     }
     default:
       return null;
@@ -155,8 +156,8 @@ function attachCalls(run: WorkRun, span: { start: number; end: number }, stops: 
   }
   for (const c of run.children) {
     if (c.spawnAt == null || c.spawnAt < span.start || c.spawnAt > span.end) continue;
-    if (!dispatched.has(c.id)) standing(c.spawnAt).calls.push({ kind: "spawn", label: `派出 ${c.name}${c.task ? `：${clip(c.task, 48)}` : ""}`, at: c.spawnAt, run: run.id, child: c.id });
-    if (c.doneAt != null && c.doneAt <= span.end) standing(c.doneAt).calls.push({ kind: "back", label: `${c.name} 交回`, at: c.doneAt, run: run.id, child: c.id });
+    if (!dispatched.has(c.id)) standing(c.spawnAt).calls.push({ kind: "spawn", label: tr(`派出 ${c.name}${c.task ? `：${clip(c.task, 48)}` : ""}`, `Dispatched ${c.name}${c.task ? `: ${clip(c.task, 48)}` : ""}`), at: c.spawnAt, run: run.id, child: c.id });
+    if (c.doneAt != null && c.doneAt <= span.end) standing(c.doneAt).calls.push({ kind: "back", label: tr(`${c.name} 交回`, `${c.name} handed back`), at: c.doneAt, run: run.id, child: c.id });
   }
   for (const s of stops) s.calls.sort((a, b) => a.at - b.at);
 }

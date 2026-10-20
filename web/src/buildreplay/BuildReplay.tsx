@@ -7,6 +7,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalS
 import { createPortal } from "react-dom";
 import { IconClose, IconSend } from "../app/icons";
 import { GUEST } from "../guest/mode";
+import { tr } from "../i18n";
 import { NestedSource } from "../nested/store";
 import { clock, useTick } from "../workstation/clock";
 import { canvasWhere } from "../workstation/place";
@@ -77,15 +78,15 @@ function BuildReplay({ canvas, onClose }: { canvas: string; onClose: () => void 
     return () => removeEventListener("keydown", key, true);
   }, [onClose]);
   return (
-    <div className="br-root" role="dialog" aria-label="这张图是怎么搭起来的">
+    <div className="br-root" role="dialog" aria-label={tr("这张图是怎么搭起来的", "How this diagram was built")}>
       {load.state === "ready" && load.tl.steps.length ? (
         <Player key={start.mode} tl={load.tl} start={start} onMode={setMode} onClose={onClose} />
       ) : (
         <div className="br-empty">
-          <button className="icon-btn br-x" onClick={onClose} aria-label="关闭">
+          <button className="icon-btn br-x" onClick={onClose} aria-label={tr("关闭", "Close")}>
             <IconClose size={16} />
           </button>
-          <p>{load.state === "loading" ? "正在整理这张图的搭建过程…" : load.state === "error" ? `读不到：${load.text}` : "这张图还没有记录下搭建过程，没有可回放的内容。"}</p>
+          <p>{load.state === "loading" ? tr("正在整理这张图的搭建过程…", "Putting together how this diagram was built…") : load.state === "error" ? tr(`读不到：${load.text}`, `Couldn't load: ${load.text}`) : tr("这张图还没有记录下搭建过程，没有可回放的内容。", "No build history was recorded for this diagram yet, so there is nothing to replay.")}</p>
         </div>
       )}
     </div>
@@ -176,11 +177,11 @@ function Player({ tl, start, onMode, onClose }: { tl: BuildTimeline; start: Star
       <NestedSource.Provider value={world.nested}>
         <header className="br-head">
           <div className="br-ttl">
-            <b>这张图是怎么搭起来的</b>
+            <b>{tr("这张图是怎么搭起来的", "How this diagram was built")}</b>
             <span>{nst.titles[main]}</span>
             {crumbs.length > 1 && <span className="br-crumbs">{crumbs.join(" › ")}</span>}
           </div>
-          <button className="icon-btn br-x" onClick={onClose} aria-label="关闭（Esc）" title="关闭（Esc）">
+          <button className="icon-btn br-x" onClick={onClose} aria-label={tr("关闭（Esc）", "Close (Esc)")} title={tr("关闭（Esc）", "Close (Esc)")}>
             <IconClose size={16} />
           </button>
         </header>
@@ -204,24 +205,24 @@ function Player({ tl, start, onMode, onClose }: { tl: BuildTimeline; start: Star
           </div>
         </div>
         <footer className="br-bar">
-          <button className="btn sm primary" onClick={toggle} aria-label={playing ? "暂停" : "播放"}>
-            {playing ? "暂停" : t >= plan.length ? "重看" : "播放"}
+          <button className="btn sm primary" onClick={toggle} aria-label={playing ? tr("暂停", "Pause") : tr("播放", "Play")}>
+            {playing ? tr("暂停", "Pause") : t >= plan.length ? tr("重看", "Replay") : tr("播放", "Play")}
           </button>
-          <div className="seg br-mode" role="radiogroup" aria-label="演法" title="精简：小人在一片区域只走一次，够得着的就站着画，太远的直接换位置；逐步：每一件事都走到那里再画">
+          <div className="seg br-mode" role="radiogroup" aria-label={tr("演法", "Mode")} title={tr("精简：小人在一片区域只走一次，够得着的就站着画，太远的直接换位置；逐步：每一件事都走到那里再画", "Brief: the avatar visits each area once, draws what it can reach from where it stands, and jumps when it's far; Step by step: it walks to every single thing before drawing it")}>
             {(["brief", "steps"] as const).map((m) => (
               <button key={m} role="radio" aria-checked={start.mode === m} data-on={start.mode === m} onClick={() => start.mode !== m && onMode(m, beat?.step ?? 0, playing)}>
-                {m === "brief" ? "精简" : "逐步"}
+                {m === "brief" ? tr("精简", "Brief") : tr("逐步", "Step by step")}
               </button>
             ))}
           </div>
-          <div className="seg br-speed" role="radiogroup" aria-label="倍速">
+          <div className="seg br-speed" role="radiogroup" aria-label={tr("倍速", "Speed")}>
             {SPEEDS.map((s) => (
               <button key={s} role="radio" aria-checked={speed === s} data-on={speed === s} onClick={() => faster(s)}>
                 {s}×
               </button>
             ))}
           </div>
-          <input className="br-scrub" type="range" min={0} max={plan.length} step={50} value={t} onChange={(e) => seek(Number(e.target.value))} aria-label="进度" />
+          <input className="br-scrub" type="range" min={0} max={plan.length} step={50} value={t} onChange={(e) => seek(Number(e.target.value))} aria-label={tr("进度", "Progress")} />
           <span className="br-time">
             {fmt(t / speed)} / {fmt(plan.length / speed)}
           </span>
@@ -239,10 +240,10 @@ function Beats({ plan, t, onSeek, names }: { plan: Plan; t: number; onSeek: (b: 
     list.current?.querySelector<HTMLElement>("[data-cur]")?.scrollIntoView({ block: "nearest" });
   }, [cur]);
   return (
-    <ol className="br-list" ref={list} aria-label="搭建过程">
+    <ol className="br-list" ref={list} aria-label={tr("搭建过程", "Build steps")}>
       {plan.beats.map((b) => (
         <li key={b.i} data-cur={b.i === cur || undefined} data-done={b.land <= t || undefined} data-you={b.actor === "you" || undefined}>
-          <button onClick={() => onSeek(b)} title={`${names[b.actor] ?? b.actor}：${b.say}`}>
+          <button onClick={() => onSeek(b)} title={`${names[b.actor] ?? b.actor}${tr("：", ": ")}${b.say}`}>
             <span className="br-who">{names[b.actor] ?? b.actor}</span>
             {b.say}
           </button>
@@ -268,12 +269,12 @@ function MomentComment({ step, say }: { step: number; say: string }) {
   return (
     <form className="br-comment" onSubmit={(e) => (e.preventDefault(), send())}>
       <label>
-        <span>评论这一刻{say ? <em>「{say}」</em> : null}</span>
-        <textarea rows={2} value={text} maxLength={4000} placeholder="对整张图或这一步说点什么…" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && (e.preventDefault(), send())} />
+        <span>{tr("评论这一刻", "Comment on this moment")}{say ? <em>{tr(`「${say}」`, ` “${say}”`)}</em> : null}</span>
+        <textarea rows={2} value={text} maxLength={4000} placeholder={tr("对整张图或这一步说点什么…", "Say something about the diagram or this step…")} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && (e.preventDefault(), send())} />
       </label>
       <div className="br-comment-row">
-        <span role="status">{sent ? "已发出，关掉回放后在评论列表里看" : ""}</span>
-        <button type="submit" className="btn sm primary" disabled={!text.trim()} aria-label="发表评论"><IconSend size={14} />发送</button>
+        <span role="status">{sent ? tr("已发出，关掉回放后在评论列表里看", "Sent — close the replay to see it in the comment list") : ""}</span>
+        <button type="submit" className="btn sm primary" disabled={!text.trim()} aria-label={tr("发表评论", "Post comment")}><IconSend size={14} />{tr("发送", "Send")}</button>
       </div>
     </form>
   );
