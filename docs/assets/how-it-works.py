@@ -1,11 +1,17 @@
 """生成 README 的「怎么工作」示意图 docs/assets/how-it-works.svg。
 
-运行：python3 docs/assets/how-it-works.py（只用标准库）。PNG 备用图用 docs/promo/render.cjs 截出来。
+运行：python3 docs/assets/how-it-works.py（只用标准库）。PNG 备用图是 t=0 的静态帧（在 Chromium 里打开 SVG、把动画停在 0 秒截图）。
 图里每一格都对着代码核对过：
 - 六个会话 agent 都是 T1（server/canvas/adapters/registry.py::session_kinds）。
 - 运行中插话：adapter.steer 为 True 的只有 pi / claude / codex；grok、cursor、devin 的 no_steer 写明 -p 不能插话。
 - 原生子代理：adapter 有 children() 的是 claude、codex、grok、cursor。
 - 服务每 0.4 s 跟随 CLI 的原生会话日志（README「架构」），页面经 HTTP + SSE 连服务。
+
+图是活的（GitHub 在 <img> 里会播 SVG 内联 <style> 的 CSS 动画，不能用脚本），一圈 8 秒：
+虚线车道慢慢往前走，紫色「实时画布」车道呼吸；一个包沿 JSONL 箭头进服务、再经 SSE 到画布，
+接着改图结果沿下面两条回程箭头回来；服务的紫色核心在包到达时亮一下；终端光标闪；
+画布上的小人在两个节点之间跳一次再跳回来；下半部分每一列的圆点按车道顺序依次亮起。
+系统设了「减少动态效果」时全部停下，只剩静态图。PNG 备用图是 t=0 的静态帧。
 """
 
 from __future__ import annotations
@@ -76,6 +82,25 @@ add("<defs>"
     f'<marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M1,1 L9,5 L1,9" fill="none" stroke="{LINE}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></marker>'
     f'<marker id="arrA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M1,1 L9,5 L1,9" fill="none" stroke="{ACC}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker>'
     "</defs>")
+LOOP = 8  # 秒
+add("<style>"
+    f".march{{animation:march 1.6s linear infinite}}"
+    f"@keyframes march{{to{{stroke-dashoffset:-19}}}}"
+    f".march2{{animation:march2 1.6s linear infinite}}"
+    f"@keyframes march2{{to{{stroke-dashoffset:-21}}}}"
+    f".march13{{animation:march13 1.4s linear infinite}}"
+    f"@keyframes march13{{to{{stroke-dashoffset:-13}}}}"
+    f".breathe{{animation:breathe 4s ease-in-out infinite}}"
+    f"@keyframes breathe{{0%,100%{{opacity:.16}}50%{{opacity:.42}}}}"
+    f".blink{{animation:blink 1.1s steps(1) infinite}}"
+    f"@keyframes blink{{50%{{opacity:0}}}}"
+    f".pkt{{opacity:0;animation:{LOOP}s linear infinite}}"
+    f".halo{{opacity:0;animation:ping {LOOP}s ease-out infinite}}"
+    f"@keyframes ping{{0%{{opacity:0}}2%{{opacity:.5}}12%{{opacity:0}}100%{{opacity:0}}}}"
+    f".core{{animation:core {LOOP}s ease-out infinite;transform-box:fill-box;transform-origin:center}}"
+    f".hop{{animation:hop {LOOP}s ease-in-out infinite}}"
+    "@media (prefers-reduced-motion:reduce){*{animation:none!important}}"
+    "</style>")
 add(f'<rect x="1" y="1" width="{W-2}" height="{H-2}" rx="26" fill="{PAPER}" stroke="#e4ded2" stroke-width="2"/>')
 add(f'<rect x="24" y="24" width="{W-48}" height="{H-48}" rx="14" fill="url(#dots)"/>')
 for cx, cy in [(64, 64), (W - 64, 64), (64, H - 64), (W - 64, H - 64)]:
@@ -114,7 +139,7 @@ for k, (u, v) in enumerate([(26, 100), (26, 128), (26, 84)]):
     line(*q(u, z), *q(v, z), stroke=MUTE, sw=1.4)
     gx, gy = q(12, z)
     add(f'<path d="M{gx-3:.1f},{gy-5:.1f} l5,4 l-5,4" stroke="{LINE}" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>')
-line(*q(26, 22), *q(36, 22), stroke=ACC, sw=7)  # 光标：唯一的强调色
+line(*q(26, 22), *q(36, 22), stroke=ACC, sw=7, extra='class="blink"')  # 光标：唯一的强调色
 text(330, 430, "你的 coding agent", 21, INK, SANS, "middle", 700)
 text(330, 457, "claude · codex · pi · grok · cursor · devin", 13, MUTE, MONO, "middle")
 
@@ -131,7 +156,7 @@ for k in range(3):
 cx, cy = iso(ox, oy - 68, 55, 55, 26)
 add(f'<ellipse cx="{cx:.1f}" cy="{cy:.1f}" rx="34" ry="19" fill="none" stroke="{LINE}" stroke-width="1.3"/>')
 add(f'<ellipse cx="{cx:.1f}" cy="{cy:.1f}" rx="18" ry="10" fill="none" stroke="{LINE}" stroke-width="1.2"/>')
-add(f'<ellipse cx="{cx:.1f}" cy="{cy:.1f}" rx="8" ry="4.5" fill="{ACC}"/>')
+add(f'<ellipse cx="{cx:.1f}" cy="{cy:.1f}" rx="8" ry="4.5" fill="{ACC}" class="core"/>')
 text(800, 430, "本项目的 agora 服务", 21, INK, SANS, "middle", 700)
 text(800, 457, "&lt;project&gt;/.agora/ · 随代码进 git", 13, MUTE, MONO, "middle")
 
@@ -151,29 +176,59 @@ flat_rect(110, 22, 54, 34, stroke=ACC, sw=2, fill=ACC_SOFT)
 flat_rect(64, 96, 56, 34)
 add(f'<path d="M{P(68,35)[0]:.1f},{P(68,35)[1]:.1f} L{P(108,39)[0]:.1f},{P(108,39)[1]:.1f}" stroke="{LINE}" stroke-width="1.2" fill="none" marker-end="url(#arr)"/>')
 add(f'<path d="M{P(43,52)[0]:.1f},{P(43,52)[1]:.1f} L{P(80,94)[0]:.1f},{P(80,94)[1]:.1f}" stroke="{LINE}" stroke-width="1.2" fill="none" marker-end="url(#arr)"/>')
-# 站在紫色节点上的小人（竖直画，不做投影）
+# 站在紫色节点上的小人（竖直画，不做投影）；动画里跳到下面那个节点再跳回来
 fx, fy = P(137, 22)
+hx, hy = P(92, 96)
+hdx, hdy = hx - fx, hy - fy
+add("<style>@keyframes hop{"
+    "0%,38%{transform:translate(0,0)}"
+    f"44%{{transform:translate({hdx * 0.5:.1f}px,{hdy * 0.5 - 46:.1f}px)}}"
+    f"50%,88%{{transform:translate({hdx:.1f}px,{hdy:.1f}px)}}"
+    f"94%{{transform:translate({hdx * 0.5:.1f}px,{hdy * 0.5 - 46:.1f}px)}}"
+    "100%{transform:translate(0,0)}}</style>")
+add('<g class="hop">')
 fy -= 2
 add(f'<g stroke="{INK}" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round">'
     f'<path d="M{fx-4},{fy} L{fx-1},{fy-10} L{fx},{fy-17} M{fx+4},{fy} L{fx+2},{fy-10} L{fx},{fy-17} M{fx},{fy-17} L{fx},{fy-29} M{fx},{fy-26} L{fx+6},{fy-21} L{fx+11},{fy-21} M{fx},{fy-26} L{fx-5},{fy-20}"/>'
     f'<circle cx="{fx}" cy="{fy-34}" r="5" fill="#ffffff"/></g>')
 add(f'<rect x="{fx+9}" y="{fy-28}" width="10" height="7" rx="1" fill="{ACC}"/>')
+add("</g>")
 text(1300, 430, "浏览器里的画布", 21, INK, SANS, "middle", 700)
 text(1300, 457, "excalidraw · 小人 · 子图", 13, MUTE, MONO, "middle")
 
 # 流向箭头
-def flow(x1, x2, y, top_label, top_mono, back_label, accent=False):
+PKT: list[str] = []
+
+
+def packet(name, xa, xb, y, t0, t1, fill):
+    """一个包在 [t0, t1] 秒内从 xa 走到 xb，其余时间藏起来。"""
+    a, b = t0 / LOOP * 100, t1 / LOOP * 100
+    PKT.append(f"@keyframes {name}{{0%,{max(a - 0.01, 0):.2f}%{{opacity:0;transform:translateX(0)}}"
+               f"{a:.2f}%{{opacity:1;transform:translateX(0)}}{b:.2f}%{{opacity:1;transform:translateX({xb - xa}px)}}"
+               f"{b + 1.5:.2f}%,100%{{opacity:0;transform:translateX({xb - xa}px)}}}}")
+    add(f'<rect class="pkt" style="animation-name:{name}" x="{xa - 7}" y="{y - 4.5}" width="14" height="9" rx="4.5" fill="{fill}"/>')
+
+
+def flow(x1, x2, y, top_label, top_mono, back_label, accent=False, fwd=(0, 1), back=(0, 1), tag="f"):
     col = ACC if accent else LINE
     mk = "arrA" if accent else "arr"
-    add(f'<path d="M{x1},{y} L{x2},{y}" stroke="{col}" stroke-width="1.6" stroke-dasharray="7 6" fill="none" marker-end="url(#{mk})"/>')
+    add(f'<path d="M{x1},{y} L{x2},{y}" stroke="{col}" stroke-width="1.6" stroke-dasharray="7 6" fill="none" marker-end="url(#{mk})" class="march13"/>')
+    packet(tag + "a", x1 + 8, x2 - 14, y, *fwd, ACC if accent else INK)
+    packet(tag + "b", x2 - 8, x1 + 14, y + 18, *back, MUTE)
     add(f'<path d="M{x2},{y+18} L{x1},{y+18}" stroke="{MUTE}" stroke-width="1.2" fill="none" marker-end="url(#arr)"/>')
     text((x1 + x2) / 2, y - 30, top_label, 16, col if accent else INK, SANS, "middle", 600)
     text((x1 + x2) / 2, y - 11, top_mono, 12.5, MUTE, MONO, "middle")
     text((x1 + x2) / 2, y + 42, back_label, 12.5, MUTE, MONO, "middle")
 
 
-flow(445, 660, 300, "原生会话日志", "JSONL · 每 0.4 s 跟随", "agora canvas apply · 面板发消息", accent=True)
-flow(905, 1110, 300, "改动实时推到页面", "HTTP + SSE", "页面执行改图，写回 .agora/")
+flow(445, 660, 300, "原生会话日志", "JSONL · 每 0.4 s 跟随", "agora canvas apply · 面板发消息", accent=True,
+     fwd=(0.3, 1.7), back=(5.7, 7.1), tag="l")
+flow(905, 1110, 300, "改动实时推到页面", "HTTP + SSE", "页面执行改图，写回 .agora/", fwd=(2.0, 3.4), back=(4.2, 5.6), tag="r")
+# 服务核心在包到达（1.7 s）和回程包到达（5.6 s）时亮一下
+k1, k2 = 1.7 / LOOP * 100, 5.6 / LOOP * 100
+PKT.append(f"@keyframes core{{0%,{k1:.1f}%{{transform:scale(1);opacity:1}}{k1 + 2:.1f}%{{transform:scale(1.9);opacity:.75}}"
+           f"{k1 + 9:.1f}%,{k2:.1f}%{{transform:scale(1);opacity:1}}{k2 + 2:.1f}%{{transform:scale(1.9);opacity:.75}}{k2 + 9:.1f}%,100%{{transform:scale(1);opacity:1}}}}")
+add("<style>" + "".join(PKT) + "</style>")
 
 # ---------- 分隔 ----------
 add(f'<line x1="92" y1="510" x2="{W-92}" y2="510" stroke="{DOT}" stroke-width="1.4" stroke-dasharray="2 6"/>')
@@ -225,11 +280,11 @@ for i, (label, mono, missing, hot) in enumerate(lanes):
     text(LX0, y - 18, label, 18, INK, SANS, weight=650)
     text(LX0, y + 26, mono, 12.5, MUTE, MONO)
     if hot:
-        add(f'<line x1="{LX0}" y1="{y}" x2="{LX1}" y2="{y}" stroke="{ACC}" stroke-width="9" opacity="0.28" filter="url(#glow)"/>')
+        add(f'<line x1="{LX0}" y1="{y}" x2="{LX1}" y2="{y}" stroke="{ACC}" stroke-width="9" opacity="0.28" filter="url(#glow)" class="breathe"/>')
         add(f'<line x1="{LX0}" y1="{y}" x2="{LX1}" y2="{y}" stroke="{ACC}" stroke-width="5" opacity="0.14"/>')
-        add(f'<line x1="{LX0}" y1="{y}" x2="{LX1}" y2="{y}" stroke="{ACC}" stroke-width="2.2" stroke-dasharray="12 9"/>')
+        add(f'<line x1="{LX0}" y1="{y}" x2="{LX1}" y2="{y}" stroke="{ACC}" stroke-width="2.2" stroke-dasharray="12 9" class="march2"/>')
     else:
-        line(LX0, y, LX1, y, stroke=LINE, sw=1.4, extra='stroke-dasharray="10 9"')
+        line(LX0, y, LX1, y, stroke=LINE, sw=1.4, extra='stroke-dasharray="10 9" class="march"')
     col = ACC if hot else LINE
     add(f'<circle cx="{LX0}" cy="{y}" r="5" fill="{PAPER}" stroke="{col}" stroke-width="1.6"/>')
     line(LX1, y - 8, LX1, y + 8, stroke=col, sw=1.6)
@@ -239,6 +294,10 @@ for i, (label, mono, missing, hot) in enumerate(lanes):
             line(x - 6, y - 6, x + 6, y + 6, stroke=MUTE, sw=1.6)
             line(x - 6, y + 6, x + 6, y - 6, stroke=MUTE, sw=1.6)
         else:
+            # 一圈里先第一条车道从左到右依次亮，再第二条……；用负的 delay 让 t=0 时相位就对
+            ci = [n for n, _ in cols].index(name)
+            delay = 0.6 + i * 1.6 + ci * 0.18
+            add(f'<circle cx="{x}" cy="{y}" r="15" fill="{ACC if hot else ACC_SOFT}" stroke="{ACC}" stroke-width="1.2" class="halo" style="animation-delay:{delay - LOOP:.2f}s"/>')
             add(f'<circle cx="{x}" cy="{y}" r="9" fill="{PAPER}" stroke="{col}" stroke-width="1.8"/>')
             add(f'<circle cx="{x}" cy="{y}" r="3.4" fill="{col}"/>')
 
