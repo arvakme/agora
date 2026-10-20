@@ -40,7 +40,7 @@ const poster = await getImage({ src: posterSrc, format: "webp", width: 1600, qua
 					<>
 						<img src={poster.src} alt={t.videoLabel} width="1920" height="1080" loading="lazy" />
 						<figcaption class="missing">
-							{t.missing} <a href={blob("docs/media/agora-promo.mp4")}>{t.watch}</a>
+							{t.missing} <a href={blob(`docs/media/agora-promo.${lang}.mp4`)}>{t.watch}</a>
 						</figcaption>
 					</>
 				)
