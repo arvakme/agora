@@ -20,6 +20,7 @@ import { highlightBoxes } from "./highlightBoxes";
 import { PointerLayer } from "../pointer/PointerLayer";
 import { OwnerBreadcrumb, OwnerChildMarkers } from "../nested/NestedLayer";
 import { nav } from "../nested/store";
+import { ZoomLayer } from "../nested/ZoomLayer";
 import { WorkstationOverlay } from "../workstation/Overlay";
 import { RevealLayer } from "../workstation/RevealLayer";
 import { useWorkstation } from "../workstation/clock";
@@ -276,6 +277,8 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onGone, o
           </DefaultSidebar>
         )}
       </Excalidraw>
+      {/* zooming into a sub-diagram and back out: over the picture, under the editor's own layers (docs/nested-canvas.md §2) */}
+      {!readOnly && !BENCH_BARE && <ZoomLayer api={api} canvasId={doc.id} />}
       {api && !readOnly && <AnimLayer api={api} />}
       {api && view && !readOnly && !view.elements.some((e) => !e.isDeleted) && <EmptyCanvas />}
       {hasParked && !draft && <div className="parked-hint">有一条未发送的评论 · 按 C 恢复</div>}

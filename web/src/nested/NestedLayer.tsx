@@ -41,7 +41,7 @@ function useOpenBelow(ids: string[]): Record<string, number> {
 export type ChildInfo = { title: string; open: number; stale?: Staleness };
 
 /** Marker per node with a child canvas; `info` says which children exist (owner page or share guest). */
-export function ChildMarkers({ view, canvasId, info, onEnter, chrome = [] }: { view: CanvasViewState; canvasId: string; info: (child: string) => ChildInfo | null; onEnter: (child: string) => void; chrome?: Box[] }) {
+export function ChildMarkers({ view, canvasId, info, onEnter, chrome = [] }: { view: CanvasViewState; canvasId: string; info: (child: string) => ChildInfo | null; onEnter: (child: string, node: string) => void; chrome?: Box[] }) {
   const a = view.appState;
   const z = a.zoom.value;
   const nodes = view.elements.filter((e) => live(e) && childOf(e) && (isShape(e) || e.type === "frame") && childOf(e) !== canvasId);
@@ -63,7 +63,7 @@ export function ChildMarkers({ view, canvasId, info, onEnter, chrome = [] }: { v
             className="nest-mark"
             data-stale={stale || undefined}
             style={{ transform: `translate(${Math.round(x - MARK_SIZE / 2 - 2)}px, ${Math.round(y - MARK_SIZE / 2)}px)`, minWidth: MARK_SIZE, height: MARK_SIZE }}
-            onClick={() => onEnter(child)}
+            onClick={() => onEnter(child, e.id)}
             title={`进入子图「${i.title}」${i.open ? ` · ${i.open} 条未解决评论` : ""}${stale ? ` · 可能过时：${i.stale!.files.length} 次改动发生在子图画好之后` : ""}（选中节点后 ${ENTER_KEY_LABEL}）`}
             aria-label={`进入子图 ${i.title}`}
           >
@@ -99,7 +99,7 @@ export function OwnerChildMarkers({ view, canvasId, chrome }: { view: CanvasView
       canvasId={canvasId}
       chrome={chrome}
       info={(k) => (st.scenes.has(k) ? { title: st.titles[k] ?? k, open: (below[k] ?? [k]).reduce((n, id) => n + (counts[id] ?? 0), 0), stale: stale[k] } : null)}
-      onEnter={(k) => nav.go(canvasId, k)}
+      onEnter={(k, node) => nav.fly(canvasId, k, node)}
     />
   );
 }
@@ -187,7 +187,7 @@ export function OwnerBreadcrumb({ canvasId }: { canvasId: string }) {
     <Breadcrumb
       path={chain.map((id) => ({ id, title: st.titles[id] ?? id }))}
       current={canvasId}
-      onGo={(id) => (markBackHintSeen(), nav.go(canvasId, id))}
+      onGo={(id) => (markBackHintSeen(), nav.fly(canvasId, id))}
       keyLabel={keyLabel}
       hint={<BackHint keyLabel={keyLabel} />}
       mark={
@@ -282,7 +282,7 @@ export function ChildMenu({ api, view, canvasId, target, onAct }: { api: Excalid
     <div className="nest-pop" role="menu">
       {has ? (
         <>
-          <button role="menuitem" onClick={() => act("enter", () => nav.go(canvasId, child!))}>
+          <button role="menuitem" onClick={() => act("enter", () => nav.fly(canvasId, child!, target.id))}>
             <IconEnter size={14} />进入子图<kbd>{ENTER_KEY_LABEL}</kbd>
           </button>
           {st.scenes.get(child!)?.some((e) => live(e)) ? (
