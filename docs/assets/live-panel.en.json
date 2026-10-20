@@ -1,0 +1,679 @@
+{
+ "meta": {
+  "title": "AGORA · ONE PER PROJECT",
+  "lang": "en",
+  "source": "English version of the README's 'Agora in action' animation (Chinese: live-panel.json; same layout, only the labels differ). Rendered with live-panel (MIT, https://github.com/ythx-101/live-panel-skill; motion idea from @thedelost https://x.com/thedelost/status/2105398038026195279): python3 scripts/render.py --config <this file> --out live-panel.en.mp4, then ffmpeg to a 12 fps, 720 px wide animated WebP. Its Smiley Sans font and Lucide icons are not used. Turn counts, turn ids and times are illustrative; the state names pending / in_flight / accepted / completed come from native_protocol.py::TurnState."
+ },
+ "canvas": {
+  "preset": "1:1",
+  "duration": 30,
+  "fps": 30,
+  "preroll": 12
+ },
+ "theme": {
+  "preset": "terminal-dark",
+  "fontSize": 19,
+  "lineHeight": 28,
+  "colors": {
+   "mute": "#aab1c0",
+   "rd": "#f07178"
+  }
+ },
+ "machines": {
+  "turns": {
+   "type": "counter",
+   "start": 128,
+   "rate": 0.4,
+   "format": "comma"
+  },
+  "claudecode_l": {
+   "type": "lane",
+   "period": 7.0,
+   "run": 4.8,
+   "off": 0.0,
+   "busy": "turn running",
+   "done": [
+    "completed"
+   ],
+   "phase": 0,
+   "log": {
+    "who": "claude code",
+    "c": "bl",
+    "msgs": [
+     [
+      "turn t-7c2e · in_flight → accepted",
+      ""
+     ],
+     [
+      "turn t-7c2e · completed",
+      ""
+     ],
+     [
+      "sub-agents drawn as avatars",
+      ""
+     ]
+    ]
+   }
+  },
+  "codex_l": {
+   "type": "lane",
+   "period": 8.0,
+   "run": 5.4,
+   "off": 0.7,
+   "busy": "turn running",
+   "done": [
+    "completed"
+   ],
+   "phase": 1,
+   "log": {
+    "who": "codex",
+    "c": "gr",
+    "msgs": [
+     [
+      "canvas apply · edit batch landed",
+      ""
+     ],
+     [
+      "turn t-91ab · pending → in_flight",
+      ""
+     ],
+     [
+      "turn t-91ab · completed",
+      ""
+     ]
+    ]
+   }
+  },
+  "pi_l": {
+   "type": "lane",
+   "period": 9.0,
+   "run": 6.1,
+   "off": 1.4,
+   "busy": "turn running",
+   "done": [
+    "completed"
+   ],
+   "phase": 2,
+   "log": {
+    "who": "pi",
+    "c": "pu",
+    "msgs": [
+     [
+      "avatar slides to “API service”",
+      ""
+     ],
+     [
+      "steered mid-turn · accepted",
+      ""
+     ],
+     [
+      "turn t-0d4f · completed",
+      ""
+     ]
+    ]
+   }
+  },
+  "rail": {
+   "type": "triggers",
+   "color": "pu",
+   "period": 4.5,
+   "on": 3.0,
+   "t0": -1.6,
+   "callsStart": 1,
+   "tokens": {
+    "start": 129,
+    "step": 93,
+    "unit": "k"
+   },
+   "items": [
+    {
+     "name": "open in terminal",
+     "adv": [
+      "» same native session id",
+      "» keep talking in tmux"
+     ]
+    },
+    {
+     "name": "scroll-zoom a node",
+     "adv": [
+      "» subgraph appears inside",
+      "» step in seamlessly"
+     ]
+    },
+    {
+     "name": "share a link",
+     "adv": [
+      "» guests see it read-only",
+      "» and can comment"
+     ]
+    }
+   ],
+   "onText": "active",
+   "offText": "standby",
+   "log": {
+    "who": "on demand",
+    "c": "pu",
+    "start": {
+     "m": "{name} · triggered"
+    },
+    "end": {
+     "m": "{name} · done"
+    }
+   }
+  }
+ },
+ "elements": [
+  {
+   "type": "box",
+   "x": 727,
+   "y": 146,
+   "w": 313,
+   "h": 651,
+   "color": "pu",
+   "pad": [
+    13,
+    7,
+    7
+   ],
+   "lines": [
+    {
+     "t": "on demand",
+     "c": "pu",
+     "b": 1
+    },
+    {
+     "t": "only when you click",
+     "c": "pu"
+    },
+    {
+     "trigger": [
+      "rail",
+      0
+     ]
+    },
+    "",
+    {
+     "t": "what happens:",
+     "c": "dim",
+     "align": "left",
+     "indent": 8
+    },
+    {
+     "runs": [
+      {
+       "v": "rail.adv0",
+       "c": "pu",
+       "b": 1
+      }
+     ],
+     "align": "left",
+     "indent": 8
+    },
+    {
+     "runs": [
+      {
+       "v": "rail.adv1",
+       "c": "pu",
+       "b": 1
+      }
+     ],
+     "align": "left",
+     "indent": 8
+    },
+    {
+     "items": [
+      {
+       "w": 175,
+       "runs": [
+        {
+         "t": "count (demo)",
+         "c": "dim"
+        }
+       ]
+      },
+      {
+       "w": 87,
+       "align": "right",
+       "runs": [
+        {
+         "v": "rail.calls",
+         "c": "pu",
+         "b": 1
+        }
+       ]
+      }
+     ],
+     "indent": 8
+    },
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    {
+     "trigger": [
+      "rail",
+      1
+     ]
+    },
+    {
+     "trigger": [
+      "rail",
+      2
+     ]
+    }
+   ]
+  },
+  {
+   "type": "text",
+   "x": 0,
+   "w": 1080,
+   "y": 84,
+   "align": "center",
+   "size": 22,
+   "c": "wh",
+   "b": 1,
+   "t": "AGORA · ONE PER PROJECT"
+  },
+  {
+   "type": "rule",
+   "x": 34,
+   "y": 112,
+   "w": 1012
+  },
+  {
+   "type": "text",
+   "x": 0,
+   "w": 1080,
+   "y": 1036,
+   "align": "center",
+   "size": 13,
+   "c": "dim",
+   "t": "turn counts, turn ids and times are illustrative"
+  },
+  {
+   "type": "text",
+   "x": 34,
+   "w": 1012,
+   "y": 1004,
+   "runs": [
+    {
+     "t": "turns ",
+     "c": "dim"
+    },
+    {
+     "t": "[",
+     "c": "gr",
+     "b": 1
+    },
+    {
+     "v": "turns",
+     "c": "gr",
+     "b": 1
+    },
+    {
+     "t": "]",
+     "c": "gr",
+     "b": 1
+    }
+   ]
+  },
+  {
+   "type": "path",
+   "points": [
+    [
+     140,
+     255
+    ],
+    [
+     140,
+     329
+    ],
+    [
+     362,
+     329
+    ],
+    [
+     362,
+     401
+    ]
+   ],
+   "color": "line",
+   "r": 0,
+   "width": 2,
+   "flow": {
+    "period": 1.8,
+    "offsets": [
+     0,
+     0.9
+    ],
+    "color": "bl"
+   }
+  },
+  {
+   "type": "path",
+   "points": [
+    [
+     361,
+     255
+    ],
+    [
+     361,
+     329
+    ],
+    [
+     362,
+     329
+    ],
+    [
+     362,
+     401
+    ]
+   ],
+   "color": "line",
+   "r": 0,
+   "width": 2,
+   "flow": {
+    "period": 2.1,
+    "offsets": [
+     0,
+     0.9
+    ],
+    "color": "bl"
+   }
+  },
+  {
+   "type": "path",
+   "points": [
+    [
+     583,
+     255
+    ],
+    [
+     583,
+     329
+    ],
+    [
+     362,
+     329
+    ],
+    [
+     362,
+     401
+    ]
+   ],
+   "color": "line",
+   "r": 0,
+   "width": 2,
+   "flow": {
+    "period": 2.4,
+    "offsets": [
+     0,
+     0.9
+    ],
+    "color": "bl"
+   }
+  },
+  {
+   "type": "path",
+   "points": [
+    [
+     362,
+     540
+    ],
+    [
+     362,
+     686
+    ]
+   ],
+   "color": "line",
+   "r": 0,
+   "width": 2,
+   "flow": {
+    "period": 2.7,
+    "offsets": [
+     0,
+     0.9
+    ],
+    "color": "bl"
+   }
+  },
+  {
+   "type": "box",
+   "x": 40,
+   "y": 146,
+   "w": 200,
+   "h": 109,
+   "color": "bl",
+   "pad": [
+    13,
+    14
+   ],
+   "lines": [
+    {
+     "t": "Claude Code",
+     "c": "fg",
+     "b": 1
+    },
+    {
+     "t": "draws subagents",
+     "c": "mute"
+    },
+    {
+     "runs": [
+      {
+       "v": "claudecode_l"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "box",
+   "x": 262,
+   "y": 146,
+   "w": 200,
+   "h": 109,
+   "color": "gr",
+   "pad": [
+    13,
+    14
+   ],
+   "lines": [
+    {
+     "t": "Codex",
+     "c": "fg",
+     "b": 1
+    },
+    {
+     "t": "resume in shell",
+     "c": "mute"
+    },
+    {
+     "runs": [
+      {
+       "v": "codex_l"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "box",
+   "x": 483,
+   "y": 146,
+   "w": 200,
+   "h": 109,
+   "color": "pu",
+   "pad": [
+    13,
+    14
+   ],
+   "lines": [
+    {
+     "t": "Pi",
+     "c": "fg",
+     "b": 1
+    },
+    {
+     "t": "steer mid-turn",
+     "c": "mute"
+    },
+    {
+     "runs": [
+      {
+       "v": "pi_l"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "box",
+   "x": 177,
+   "y": 403,
+   "w": 369,
+   "h": 137,
+   "color": "ye",
+   "pad": [
+    13,
+    14
+   ],
+   "lines": [
+    {
+     "t": "this project's agora service",
+     "c": "ye",
+     "b": 1
+    },
+    {
+     "t": "127.0.0.1 · <project>/.agora/",
+     "c": "mute"
+    },
+    {
+     "t": "tails native JSONL every 0.4s",
+     "c": "mute"
+    },
+    {
+     "t": "{turns} turns followed (demo)",
+     "c": "mute"
+    }
+   ]
+  },
+  {
+   "type": "box",
+   "x": 183,
+   "y": 688,
+   "w": 357,
+   "h": 109,
+   "color": "cy",
+   "pad": [
+    13,
+    14
+   ],
+   "lines": [
+    {
+     "t": "canvas in your browser",
+     "c": "cy",
+     "b": 1
+    },
+    {
+     "t": "HTTP+SSE · avatars · progress",
+     "c": "mute"
+    },
+    {
+     "t": "edits drawn live · undoable",
+     "c": "mute"
+    }
+   ]
+  },
+  {
+   "type": "tarrow",
+   "machine": "rail",
+   "i": 0,
+   "from": [
+    687,
+    229
+   ],
+   "to": [
+    723,
+    229
+   ]
+  },
+  {
+   "type": "tarrow",
+   "machine": "rail",
+   "i": 1,
+   "from": [
+    544,
+    733
+   ],
+   "to": [
+    723,
+    733
+   ]
+  },
+  {
+   "type": "tarrow",
+   "machine": "rail",
+   "i": 2,
+   "from": [
+    544,
+    761
+   ],
+   "to": [
+    723,
+    761
+   ]
+  },
+  {
+   "type": "log",
+   "x": 40,
+   "y": 831,
+   "w": 1000,
+   "rows": 4,
+   "padTop": 16,
+   "padBottom": 29,
+   "padLeft": 20,
+   "title": "session log",
+   "titleX": 38,
+   "titleW": 170,
+   "cols": [
+    {
+     "key": "time",
+     "x": 0
+    },
+    {
+     "key": "who",
+     "x": 112
+    },
+    {
+     "key": "m",
+     "x": 261
+    },
+    {
+     "key": "g",
+     "x": 700
+    }
+   ]
+  }
+ ],
+ "clock": {
+  "start": "23:48:04",
+  "rate": 3
+ },
+ "titlebar": {
+  "text": "~/code/my-service — agora"
+ },
+ "credit": {
+  "text": "made with live-panel (MIT, github.com/ythx-101/live-panel-skill) · motion idea from @thedelost",
+  "y": 1064,
+  "size": 12
+ }
+}

@@ -12,6 +12,7 @@ import { AssetBrowser } from "../library/AssetBrowser";
 import { IconFolder, IconTrash } from "../app/icons";
 import { usePrefs } from "../app/prefs";
 import { useTheme } from "../app/theme";
+import { tr, langTag } from "../i18n";
 import { bbox, byId, live, type El } from "./scene";
 import type { ThreadStore } from "../comments/threads";
 import { useHighlight } from "../session/ui";
@@ -248,7 +249,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onGone, o
         initialData={initialData}
         onChange={onChange as never}
         theme={resolved}
-        langCode="zh-CN"
+        langCode={langTag()}
         viewModeEnabled={readOnly}
         onLinkOpen={(el, ev) => {
           // A link written as `?canvas=<id>` (or `#canvas=<id>`) opens that canvas in place.
@@ -261,7 +262,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onGone, o
       >
         {!readOnly && (
           <MainMenu>
-            <MainMenu.Item icon={<IconTrash size={16} />} onSelect={() => handleRef.current?.reset()}>清空画布（⌘Z 可撤销）</MainMenu.Item>
+            <MainMenu.Item icon={<IconTrash size={16} />} onSelect={() => handleRef.current?.reset()}>{tr("清空画布（⌘Z 可撤销）", "Clear canvas (⌘Z to undo)")}</MainMenu.Item>
             <MainMenu.DefaultItems.SearchMenu />
             <MainMenu.DefaultItems.ChangeCanvasBackground />
             <MainMenu.Separator />
@@ -271,7 +272,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onGone, o
         {!readOnly && (
           <DefaultSidebar>
             <DefaultSidebar.TabTriggers>
-              <Sidebar.TabTrigger tab="agora-assets" title="内置素材库"><IconFolder size={16} /></Sidebar.TabTrigger>
+              <Sidebar.TabTrigger tab="agora-assets" title={tr("内置素材库", "Built-in library")}><IconFolder size={16} /></Sidebar.TabTrigger>
             </DefaultSidebar.TabTriggers>
             <Sidebar.Tab tab="agora-assets">{api && <AssetBrowser api={api} />}</Sidebar.Tab>
           </DefaultSidebar>
@@ -281,7 +282,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onGone, o
       {!readOnly && !BENCH_BARE && <ZoomLayer api={api} canvasId={doc.id} />}
       {api && !readOnly && <AnimLayer api={api} />}
       {api && view && !readOnly && !view.elements.some((e) => !e.isDeleted) && <EmptyCanvas />}
-      {hasParked && !draft && <div className="parked-hint">有一条未发送的评论 · 按 C 恢复</div>}
+      {hasParked && !draft && <div className="parked-hint">{tr("有一条未发送的评论 · 按 C 恢复", "Unsent comment · press C to restore")}</div>}
       {api && view && (
         <>
           <CommentLayer
@@ -322,11 +323,11 @@ function EmptyCanvas() {
   const run = follow.run ? runs.byId.get(follow.run) : undefined;
   const busy = run && isWorking(run, Date.now()) ? follow.name : null;
   return (
-    <div className="empty-cv" aria-label="空白画布" data-busy={busy ? "" : undefined}>
+    <div className="empty-cv" aria-label={tr("空白画布", "Blank canvas")} data-busy={busy ? "" : undefined}>
       <div className="empty-cv-box">
         <span className="dither-field" aria-hidden />
         <p>{busy ? busyHint(busy) : EMPTY_HINT}</p>
-        <button className="btn ghost sm" onClick={() => sampleRequests.request()}>看一个示例</button>
+        <button className="btn ghost sm" onClick={() => sampleRequests.request()}>{tr("看一个示例", "See an example")}</button>
       </div>
     </div>
   );

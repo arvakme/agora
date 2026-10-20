@@ -44,6 +44,7 @@ from typing import Literal
 from native_protocol import SessionGate
 from server.canvas.agents import _NESTED, child_env, leaked
 from server.canvas.terminal_apps import Probe, candidates
+from server.i18n import tr
 
 CONF = """\
 # Agora's tmux server for this project (not the user's ~/.tmux.conf).
@@ -94,11 +95,11 @@ def gate_hold(gate: SessionGate, *, force: bool = False) -> str | None:
     if force:
         return None
     if gate.input_right != "host":
-        return "终端已被人接管，归还输入权后再投递"
+        return tr("终端已被人接管，归还输入权后再投递", "Someone took over the terminal; delivering after input is handed back")
     if gate.paused:
-        return "自动投递已暂停"
+        return tr("自动投递已暂停", "Automatic delivery is paused")
     if gate.unmanaged_writers:
-        return "终端里有可写的窗口连着，关掉它或改成只读后再投递"
+        return tr("终端里有可写的窗口连着，关掉它或改成只读后再投递", "A writable window is attached to the terminal; close it or make it read-only, then it delivers")
     return None
 
 

@@ -24,6 +24,7 @@ import { routeMessage } from "./mention";
 import { GUEST } from "../guest/mode";
 import { WholeCanvas } from "./WholeCanvas";
 import { placeCard, type CardPos } from "./cardPlace";
+import { tr } from "../i18n";
 
 /** An unsent comment: where it is pinned and what has been typed so far. */
 export type Draft = { anchor: Anchor; text: string };
@@ -99,10 +100,10 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
           }}
         />
       )}
-      {repin && <div className="repin-hint">点一个元素，把 #{store.thread(repin)?.n} 钉到它上面 · Esc 取消</div>}
+      {repin && <div className="repin-hint">{tr(`点一个元素，把 #${store.thread(repin)?.n} 钉到它上面 · Esc 取消`, `Click an element to pin #${store.thread(repin)?.n} to it · Esc to cancel`)}</div>}
       {miss && (
         <div key={miss.k} className="miss" style={{ left: miss.x, top: miss.y }} onAnimationEnd={() => setMiss(null)}>
-          点在一个元素上
+          {tr("点在一个元素上", "Click on an element")}
         </div>
       )}
       {resolved.map(({ t, st, p }) => {
@@ -123,7 +124,7 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
             onPointerEnter={() => !fake && hover(t.id)}
             onPointerLeave={() => hover(null)}
             onClick={() => (fake ? undefined : t.resolved ? onOpenResolved?.(t.id) : store.open(t.id))}
-            aria-label={`线程 ${t.n}（${PIN_LABEL[pinState(t)]}）· ${threadAuthorName(t)}`}
+            aria-label={tr(`线程 ${t.n}（${PIN_LABEL[pinState(t)]}）· ${threadAuthorName(t)}`, `Thread ${t.n} (${PIN_LABEL[pinState(t)]}) · ${threadAuthorName(t)}`)}
           >
             <span className="pin-body">
               {t.resolved ? (
@@ -185,12 +186,12 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
 
 /** Hovering a resolved pin: its first line, and who resolved it when. */
 function ResolvedTip({ t, at }: { t: Thread; at: { x: number; y: number } }) {
-  const who = t.resolvedBy ? (t.resolvedBy.id === identity()?.id ? "你" : t.resolvedBy.name) : "你";
+  const who = t.resolvedBy ? (t.resolvedBy.id === identity()?.id ? tr("你", "you") : t.resolvedBy.name) : tr("你", "you");
   const when = t.resolvedAt ?? t.updatedAt;
   return (
     <motion.div className="resolved-tip" role="tooltip" style={{ left: at.x + 30, top: at.y - 6 }} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, transition: { duration: 0.12 } }} transition={{ duration: 0.18 }}>
       <p>{t.messages[0]?.text.split("\n")[0]}</p>
-      <span>已解决 · {who}{when ? ` · ${ago(when)}` : ""} · 点开在评论列表里看</span>
+      <span>{tr("已解决 · ", "Resolved by ")}{who}{when ? ` · ${ago(when)}` : ""} · {tr("点开在评论列表里看", "click to view in the comment list")}</span>
     </motion.div>
   );
 }
@@ -211,8 +212,8 @@ function UndoToast({ canvasId }: { canvasId: string }) {
       {u && u.canvasId === canvasId && (
         <motion.div key={u.key} className="toast undo-toast" role="status" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4, transition: { duration: 0.12 } }} transition={SPRING}>
           <span>{u.label}</span>
-          <button className="btn sm ghost" onClick={runUndo}>撤销</button>
-          <button className="icon-btn sm muted" aria-label="关闭提示" onClick={dismissUndo}><IconClose size={14} /></button>
+          <button className="btn sm ghost" onClick={runUndo}>{tr("撤销", "Undo")}</button>
+          <button className="icon-btn sm muted" aria-label={tr("关闭提示", "Dismiss")} onClick={dismissUndo}><IconClose size={14} /></button>
         </motion.div>
       )}
     </AnimatePresence>

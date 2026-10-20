@@ -1,0 +1,622 @@
+<!doctype html>
+<!--
+  Agora 宣传片（huashu-motion 合成稿）。docs/promo/build.sh 把它拷进 om 项目再渲染；节奏单见 treatment.md。
+  一张拍子网格：120 BPM，B(n) = 第 n 拍的秒数；画面切点、文字、音效和配乐的 !mark! 都落在这张网格上。
+  语言是一个变量（lang = zh | en）：上屏文案都在下面的 <script id="copy"> 里按语言各写一份，同一条时间线、同一套
+  揭示动作，只换字和字体。`om set lang=en <dir>` 切换；build.sh 两种语言各渲染一遍。
+-->
+<html lang="zh-CN" data-composition-variables='[
+  {"id":"lang","type":"string","label":"语言（zh / en）","default":"zh"},
+  {"id":"repo","type":"string","label":"仓库地址","default":"github.com/arvakme/agora"},
+  {"id":"install","type":"string","label":"安装命令","default":"uv tool install git+https://github.com/arvakme/agora"},
+  {"id":"open","type":"string","label":"打开命令","default":"cd my-service && agora"},
+  {"id":"accent","type":"color","label":"强调色（Agora 界面的紫）","default":"#7048b4"},
+  {"id":"paper","type":"color","label":"纸色（README 示意图）","default":"#f7f4ee"},
+  {"id":"ink","type":"color","label":"墨色","default":"#2b2926"}
+]'>
+<head>
+<meta charset="utf-8">
+<title>Agora · promo</title>
+<script src="vendor/gsap.min.js"></script>
+<script src="vendor/om.js"></script>
+<style id="om-fonts">
+@font-face { font-family: "Noto Sans SC"; src: url("assets/fonts/NotoSansSC-500.woff") format("woff"); font-weight: 500; font-style: normal; }
+@font-face { font-family: "Noto Sans SC"; src: url("assets/fonts/NotoSansSC-700.woff") format("woff"); font-weight: 700; font-style: normal; }
+@font-face { font-family: "Noto Sans SC"; src: url("assets/fonts/NotoSansSC-900.woff") format("woff"); font-weight: 900; font-style: normal; }
+@font-face { font-family: "Inter"; src: url("assets/fonts/Inter-var.woff") format("woff"); font-weight: 100 900; font-style: normal; }
+@font-face { font-family: "Agora Mono"; src: url("assets/fonts/DejaVuSansMono.ttf") format("truetype"); font-weight: 400; font-style: normal; }
+/* 展示字体：build 时由 docs/promo/webfonts.py 从 Google Fonts 取（OFL），中文按文案取子集 */
+@font-face { font-family: "Instrument Serif"; src: url("assets/fonts/InstrumentSerif-400.woff2") format("woff2"); font-weight: 400; font-style: normal; }
+@font-face { font-family: "Instrument Serif"; src: url("assets/fonts/InstrumentSerif-400i.woff2") format("woff2"); font-weight: 400; font-style: italic; }
+@font-face { font-family: "Noto Serif SC"; src: url("assets/fonts/NotoSerifSC-var.woff2") format("woff2"); font-weight: 200 900; font-style: normal; }
+</style>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+  /* 字体按语言分角色：--disp 标题和字幕（衬线，和画布里节点的衬线字同一气质），--ui 胶囊和标签（无衬线） */
+  #film { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: var(--paper); color: var(--ink);
+    --disp: "Noto Serif SC", serif; --ui: "Noto Sans SC", "Inter", sans-serif;
+    font-family: var(--ui); font-weight: 500; font-kerning: normal; text-rendering: geometricPrecision; }
+  #film.en { --disp: "Instrument Serif", "Noto Serif SC", serif; --ui: "Inter", "Noto Sans SC", sans-serif; }
+  .dots { position: absolute; inset: 0; background-image: radial-gradient(circle at 2px 2px, #d6cfc2 1.2px, transparent 1.6px); background-size: 28px 28px; }
+  .corner { position: absolute; width: 22px; height: 22px; }
+  .corner::before, .corner::after { content: ""; position: absolute; background: #8b857a; }
+  .corner::before { left: 10px; top: 0; width: 1.5px; height: 22px; }
+  .corner::after { top: 10px; left: 0; height: 1.5px; width: 22px; }
+  .layer { position: absolute; inset: 0; }
+  svg { overflow: visible; }
+  #nestBox * { vector-effect: non-scaling-stroke; }   /* 放大成卡片时线不跟着变粗 */
+
+  /* 文字。一个角色一套字号、字距、揭示；数字是 1080p 下的像素 */
+  .big { position: absolute; left: 0; right: 0; text-align: center; font-family: var(--disp); white-space: nowrap; line-height: 1.04; }
+  .zh .big { font-weight: 900; letter-spacing: .01em; }
+  .en .big { font-weight: 400; letter-spacing: -.012em; line-height: .96; }
+  /* 遮罩：每个词（中文每个字）一个，从下沿升上来。不用 overflow 硬裁：上面留 .42em（升部、回弹）、左右 .3em（意大利体右悬）、
+     下面 .62em（降部），只在最下面 .5em 用渐变软边，字从软边里浮上来，任何一帧都不会被切出一道硬边；负外边距抵掉，字距不变 */
+  .m { display: inline-block; vertical-align: top; padding: .42em .3em .62em; margin: -.42em -.3em -.62em;
+    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - .5em), transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - .5em), transparent 100%); }
+  .m > .w { display: inline-block; transform-origin: 0 100%; }
+  .em { position: relative; display: inline-block; color: var(--accent); }
+  .en .em { font-style: italic; }
+  /* 中文行里的拉丁词（agent、CLI、Agora）：去掉手打的整格空格，换成 .2em 的字间空 */
+  .lat { display: inline-block; margin: 0 .2em; letter-spacing: 0; }
+  /* 强调词下面一道手绘下划线（和画布上的手绘线一个笔性），揭示完的下一拍画出来 */
+  .ul { position: absolute; left: -3%; width: 106%; bottom: -.1em; height: .2em; overflow: visible; pointer-events: none; }
+  .zh .ul { bottom: -.2em; }   /* 宋体粗体的字身几乎贴着底，线再往下一点 */
+  .ul path { fill: none; stroke: var(--accent); stroke-width: 5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .cap { position: absolute; left: 0; right: 0; top: 950px; height: 100px; text-align: center; font-family: var(--disp);
+    line-height: 100px; color: var(--ink); white-space: nowrap; visibility: hidden; }
+  .zh .cap { font-weight: 700; font-size: 48px; letter-spacing: .04em; }
+  .en .cap { font-weight: 400; font-size: 64px; letter-spacing: -.005em; }
+  .chip { display: inline-flex; align-items: center; gap: 14px; height: 64px; padding: 0 28px; margin: 0 10px; border-radius: 32px; background: #fff;
+    border: 1.5px solid #d9d2c5; font-family: "Inter", sans-serif; font-weight: 650; font-size: 34px; letter-spacing: -.01em; vertical-align: middle; line-height: 64px; }
+  .chip i { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); display: inline-block; }
+  .label { display: inline-flex; align-items: center; gap: 14px; height: 70px; padding: 0 30px; border-radius: 14px; background: var(--ink); color: #fff;
+    font-family: var(--ui); font-weight: 700; font-size: 38px; line-height: 70px; }
+  .en .label { font-weight: 600; font-size: 36px; letter-spacing: -.012em; }
+  .label b { width: 14px; height: 14px; border-radius: 3px; background: #bea5f5; display: inline-block; }
+  /* 打字的那一句是“你说的话”：比 agent 的回答轻一档，英文用意大利体、墨色淡一点 */
+  #f1, #f2 { top: 250px; }
+  .zh #f1, .zh #f2 { font-size: 100px; }
+  .en #f1, .en #f2 { font-size: 124px; }
+  #f6 { top: 196px; }
+  .zh #f6 { font-size: 168px; letter-spacing: .02em; }
+  .en #f6 { top: 150px; font-size: 156px; line-height: .98; }
+  #f1 { color: #5d574e; }
+  .zh #f1 { font-weight: 500; }
+  .en #f1 { font-style: italic; }
+  #f1 .caret { display: inline-block; width: .06em; height: .9em; background: var(--accent); vertical-align: -.1em; margin-left: .08em; }
+
+  /* 实录卡片：与录屏同为 1.6:1 */
+  .shot { position: absolute; left: 240px; top: 36px; width: 1440px; height: 900px; border-radius: 18px; overflow: hidden; background: #fff;
+    box-shadow: 0 0 0 1.5px #e2dbcf, 0 30px 60px -30px rgba(43, 41, 38, .35); visibility: hidden; }
+  .shot video, .shot img { position: absolute; left: 0; top: 0; width: 1440px; height: 900px; object-fit: cover; }
+  .shot img.contain { object-fit: contain; background: var(--paper); }
+  .shot .inner { position: absolute; inset: 0; transform-origin: 50% 50%; }
+
+  /* 终端 */
+  #term { position: absolute; left: 300px; top: 330px; width: 1320px; height: 360px; border-radius: 20px; background: #1f1d1a; color: #f3efe7;
+    box-shadow: 0 40px 80px -40px rgba(0,0,0,.6); font-family: "Agora Mono", "Noto Sans SC", monospace; font-size: 34px; }
+  #term .bar { height: 54px; border-bottom: 1px solid #3a3733; }
+  #term .bar i { position: absolute; top: 20px; width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid #6d685f; }
+  #term .ln { position: absolute; left: 48px; white-space: pre; }
+  #term .ln .p { color: #bea5f5; }
+  #term .ln .c { color: #8b857a; }
+  #term .caret { display: inline-block; width: 18px; height: 38px; background: #bea5f5; vertical-align: -6px; margin-left: 2px; }
+
+  /* 结尾 */
+  #end { background: var(--paper); }
+  #banner { position: absolute; left: -579px; top: 0; width: 3240px; height: 1080px; transform-origin: 1539px 729px; }
+  #endShade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(8,6,20,0) 45%, rgba(8,6,20,.62) 78%, rgba(8,6,20,.78) 100%); }
+  /* 字标：Instrument Serif，古典的衬线和横幅里的柱廊一个时代；落日光上叠一层暖色辉光，底下压一层暗影保证读得清 */
+  .wordmark { position: absolute; left: 0; right: 0; top: 560px; text-align: center; color: #fff; font-family: "Instrument Serif", serif; font-weight: 400;
+    font-size: 250px; letter-spacing: -.01em; line-height: 1; text-shadow: 0 0 60px rgba(255, 196, 150, .35), 0 6px 40px rgba(8, 6, 20, .55); }
+  .endsub { position: absolute; left: 0; right: 0; top: 846px; text-align: center; color: #f6ead8; font-family: var(--disp);
+    text-shadow: 0 2px 18px rgba(8, 6, 20, .7); white-space: nowrap; }
+  .zh .endsub { font-size: 42px; font-weight: 600; letter-spacing: .14em; text-indent: .14em; }
+  .en .endsub { font-size: 56px; font-style: italic; letter-spacing: 0; }
+  .endurl { position: absolute; left: 0; right: 0; top: 930px; text-align: center; color: #d9cbfb; font-family: "Agora Mono", monospace; font-size: 32px;
+    letter-spacing: .02em; text-shadow: 0 2px 14px rgba(8, 6, 20, .8); }
+  #fade { position: absolute; inset: 0; background: #000; opacity: 0; }
+</style>
+</head>
+<body>
+<div id="film" data-composition-id="film" data-width="1920" data-height="1080">
+  <div class="dots" data-om-id="paper"></div>
+  <div class="corner" style="left:44px;top:44px"></div><div class="corner" style="right:44px;top:44px"></div>
+  <div class="corner" style="left:44px;bottom:44px"></div><div class="corner" style="right:44px;bottom:44px"></div>
+
+  <!-- ===== hook：纸面上长出一张图 ===== -->
+  <section id="hook" class="layer" data-om-id="hook">
+    <div class="big" id="f1"></div>
+    <div class="big" id="f2" data-copy="draws" data-ul></div>
+    <svg id="hookSvg" class="layer" width="1920" height="1080" viewBox="0 0 1920 1080">
+      <g transform="translate(960 640) scale(1.4) translate(-968 -622)">
+      <g fill="none" stroke="var(--ink)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+        <path id="nA" d="M760 560 C 820 557, 1100 562, 1160 560 C 1172 560, 1176 566, 1176 578 L 1176 668 C 1176 680, 1170 684, 1158 684 L 776 684 C 764 684, 760 678, 760 666 L 760 578 C 760 566, 764 560, 776 560" />
+        <path id="nB" d="M330 600 L 560 600 C 572 600, 576 606, 576 618 L 576 692 C 576 704, 570 708, 558 708 L 342 708 C 330 708, 326 702, 326 690 L 326 616 C 326 606, 330 600, 342 600 Z" />
+        <path id="nC" d="M1360 600 L 1580 600 C 1592 600, 1596 606, 1596 618 L 1596 692 C 1596 704, 1590 708, 1578 708 L 1372 708 C 1360 708, 1356 702, 1356 690 L 1356 616 C 1356 606, 1360 600, 1372 600 Z" />
+        <path id="aB" d="M582 654 C 640 650, 700 626, 748 622" /><path id="aBh" d="M732 610 L 750 622 L 734 636" />
+        <path id="aC" d="M1188 622 C 1240 626, 1300 650, 1350 654" /><path id="aCh" d="M1334 640 L 1352 654 L 1336 668" />
+      </g>
+      <g id="fig" transform="translate(640 560)">
+        <g id="figBody" fill="none" stroke="var(--ink)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+          <path id="legL" d="M0 -40 L -7 -20 L -9 0" /><path id="legR" d="M0 -40 L 7 -20 L 9 0" />
+          <path d="M0 -40 L 0 -70" /><path id="armL" d="M0 -64 L -11 -50 L -6 -40" /><path id="armR" d="M0 -64 L 11 -50 L 20 -48" />
+          <circle cx="0" cy="-84" r="13" fill="#fff" />
+          <circle cx="0" cy="-84" r="5" fill="var(--accent)" stroke="none" />
+        </g>
+        <rect id="figLaptop" x="20" y="-62" width="22" height="16" rx="2" fill="var(--accent)" opacity="0" />
+      </g>
+      </g>
+    </svg>
+  </section>
+
+  <!-- ===== 实录 ===== -->
+  <div class="shot" id="sReveal" data-om-id="reveal"><div class="inner" id="iReveal">
+    <video id="vReveal" src="assets/clips/reveal.zh.webm" data-start="4" data-duration="6" data-media-start="1.0" data-playback-rate="1.6" data-track-index="1" muted playsinline></video></div></div>
+  <div class="shot" id="sHop" data-om-id="hop"><div class="inner" id="iHop">
+    <video id="vHop" src="assets/clips/hop.zh.webm" data-start="10" data-duration="4" data-media-start="0.2" data-playback-rate="1.3" data-track-index="1" muted playsinline></video></div></div>
+  <div class="shot" id="sWheel" data-om-id="wheel"><div class="inner">
+    <video id="vWheel" src="assets/clips/zoom.zh.webm" data-start="16" data-duration="4" data-media-start="0.15" data-track-index="1" muted playsinline></video></div></div>
+
+  <!-- 蒙太奇：一拍一个镜头 -->
+  <div class="shot m" id="m0" data-om-id="m-library"><div class="inner"><video id="vLib" src="assets/clips/library.zh.webm" data-start="20" data-duration="0.5" data-media-start="9" data-playback-rate="2" data-track-index="1" muted playsinline></video></div></div>
+  <div class="shot m" id="m1" data-om-id="m-agents"><div class="inner"><video id="vAgents2" src="assets/clips/hop.zh.webm" data-start="20.5" data-duration="0.5" data-media-start="13.1" data-track-index="1" muted playsinline></video></div></div>
+  <div class="shot m" id="m2" data-om-id="m-pointer"><div class="inner"><video id="vPointer" src="assets/clips/hop.zh.webm" data-start="21" data-duration="0.5" data-media-start="6.3" data-track-index="1" muted playsinline style="transform:scale(1.35);transform-origin:62% 45%"></video></div></div>
+  <div class="shot m" id="m3" data-om-id="m-trajectory"><div class="inner"><img src="assets/stills/trajectory.zh.png" alt=""></div></div>
+  <div class="shot m" id="m4" data-om-id="m-terminal"><div class="inner"><img class="contain" src="assets/stills/terminal.zh.png" alt=""></div></div>
+  <div class="shot m" id="m5" data-om-id="m-share"><div class="inner"><img src="assets/stills/share.zh.png" alt=""></div></div>
+  <div class="shot m" id="m6" data-om-id="m-guest"><div class="inner"><img src="assets/stills/guest.zh.png" alt=""></div></div>
+  <div class="shot m" id="m7" data-om-id="m-glide"><div class="inner"><video id="vGlide" src="assets/clips/hop.zh.webm" data-start="23.5" data-duration="0.5" data-media-start="8.4" data-playback-rate="1.6" data-track-index="1" muted playsinline style="transform:scale(2);transform-origin:55% 24%"></video></div></div>
+
+  <!-- 字幕带（卡片下方） -->
+  <div class="cap" id="c3" data-om-id="cap-draw" data-copy="byStation"></div>
+  <div class="cap" id="c4" data-om-id="cap-agents"><span class="chip"><i></i>Claude Code</span><span class="chip"><i></i>Codex</span><span class="chip"><i></i>Pi</span></div>
+  <div class="cap" id="c5" data-om-id="cap-where" data-copy="whoWhere"></div>
+  <div class="cap" id="c7" data-om-id="cap-zoom" data-copy="zoomIn"></div>
+  <div class="cap" id="cM" data-om-id="cap-montage" style="top:962px"><span class="label"><b></b><span id="mText"></span></span></div>
+
+  <!-- ===== build / stop：图里还有图 ===== -->
+  <section id="nest" class="layer" data-om-id="nest" style="visibility:hidden">
+    <div class="big" id="f6" data-copy="nested" data-ul></div>
+    <svg class="layer" width="1920" height="1080" viewBox="0 0 1920 1080">
+      <g id="nestBox" fill="none" stroke="var(--ink)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+        <rect id="outerBox" x="700" y="520" width="520" height="240" rx="22" fill="#fff" fill-opacity="0" vector-effect="non-scaling-stroke" />
+        <g id="innerBoxes" stroke-width="2.2">
+          <rect x="760" y="560" width="130" height="58" rx="10" /><rect x="1030" y="560" width="130" height="58" rx="10" />
+          <rect x="895" y="672" width="130" height="58" rx="10" />
+          <path d="M890 589 L 1024 589 M 842 618 L 912 668 M 1078 618 L 1008 668" stroke="#8b857a" />
+        </g>
+      </g>
+    </svg>
+  </section>
+
+  <!-- ===== mech：README 示意图的上半部分 ===== -->
+  <section id="mech" class="layer" data-om-id="mech" style="visibility:hidden">
+    <img id="flow" src="assets/stills/flow.zh.svg" alt="" style="position:absolute;left:100px;top:180px;width:1720px;height:auto;border-radius:22px;box-shadow:0 0 0 1.5px #e2dbcf" data-om-id="flow">
+    <div id="packet" style="position:absolute;left:0;top:0;width:26px;height:26px;border-radius:13px;background:var(--accent);box-shadow:0 0 0 6px rgba(112,72,180,.18)"></div>
+    <div class="cap" id="c8" data-om-id="cap-native" style="top:800px" data-copy="native"></div>
+  </section>
+
+  <!-- ===== install：终端 ===== -->
+  <section id="inst" class="layer" data-om-id="install" style="visibility:hidden">
+    <div id="term" data-om-id="terminal">
+      <div class="bar"><i style="left:24px"></i><i style="left:48px"></i><i style="left:72px"></i></div>
+      <div class="ln" id="t1" style="top:96px"></div>
+      <div class="ln" id="t2" style="top:170px"></div>
+      <div class="ln" id="t3" style="top:244px"><span class="c" id="t3c"></span></div>
+    </div>
+    <svg class="layer" width="1920" height="1080" viewBox="0 0 1920 1080">
+      <g id="fig2" transform="translate(1440 330)" fill="none" stroke="var(--ink)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M0 -40 L -7 -20 L -9 0 M0 -40 L 7 -20 L 9 0 M0 -40 L 0 -70 M0 -64 L -11 -50 L -6 -40" />
+        <path id="fig2Arm" d="M0 -64 L 12 -52 L 26 -52" />
+        <circle cx="0" cy="-84" r="13" fill="#fff" /><circle cx="0" cy="-84" r="5" fill="var(--accent)" stroke="none" />
+        <rect x="24" y="-66" width="24" height="17" rx="2" fill="var(--accent)" stroke="none" />
+      </g>
+    </svg>
+  </section>
+
+  <!-- ===== logo：横幅 ===== -->
+  <section id="end" class="layer" data-om-id="end" style="visibility:hidden">
+    <!-- 和 README 的 docs/assets/banner-ink.svg 同一个做法：白色圆形遮罩经 turbulence + displacement 洇开，
+         从地平线的落日光（横幅里 1140,540 → 这里放大 1.35 倍后 1539,729）开始；揭示完后天上的架构图再亮一下。
+         半径由下面的 GSAP 时间线按拍子驱动。 -->
+    <svg id="banner" viewBox="0 0 3240 1080" width="3240" height="1080" data-om-id="banner">
+      <defs>
+        <filter id="inkF" x="-20%" y="-20%" width="140%" height="140%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.009" numOctaves="3" seed="11" result="n"/>
+          <feDisplacementMap in="SourceGraphic" in2="n" scale="160" xChannelSelector="R" yChannelSelector="G"/>
+        </filter>
+        <mask id="inkM" maskUnits="userSpaceOnUse" x="0" y="0" width="3240" height="1080">
+          <rect width="3240" height="1080" fill="black"/>
+          <circle id="inkC" cx="1539" cy="729" r="0" fill="white" filter="url(#inkF)"/>
+        </mask>
+        <filter id="linesF" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+          <feColorMatrix type="matrix" values="1.25 0 0 0 0.05  0 1.2 0 0 0.04  0 0 1.1 0 0  4.2 3.6 -4.8 0 -3.15" result="k"/>
+          <feGaussianBlur in="k" stdDeviation="3" result="s"/>
+          <feMerge><feMergeNode in="s"/><feMergeNode in="k"/></feMerge>
+        </filter>
+        <linearGradient id="skyG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="white"/><stop offset=".42" stop-color="white"/><stop offset=".5" stop-color="black"/></linearGradient>
+        <mask id="skyM" maskUnits="userSpaceOnUse" x="0" y="0" width="3240" height="1080"><rect width="3240" height="1080" fill="url(#skyG)"/></mask>
+      </defs>
+      <image id="bannerImg" href="assets/stills/banner.png" width="3240" height="1080" mask="url(#inkM)" preserveAspectRatio="none"/>
+      <g id="bannerLines" mask="url(#skyM)" style="mix-blend-mode:screen" opacity="0"><use href="#bannerImg" filter="url(#linesF)"/></g>
+    </svg>
+    <div id="endShade"></div>
+    <div class="wordmark" id="wm" data-om-id="wordmark"></div>
+    <div class="endsub" id="es" data-om-id="endsub" data-copy="endLine"></div>
+    <div class="endurl" id="eu" data-om-id="url" data-var-text="repo">github.com/arvakme/agora</div>
+  </section>
+  <div id="fade"></div>
+
+  <!-- earshot 音效：data-start = 命中时刻 − 这一条的峰值时刻 -->
+  <audio id="esWhoosh" src="assets/sfx/whoosh-in.wav" data-start="3.5" data-volume="0.55" data-track-index="3"></audio>
+  <audio id="esSwipe" src="assets/sfx/swipe.wav" data-start="7.7" data-volume="0.45" data-track-index="3"></audio>
+  <audio id="esSuck" src="assets/sfx/suck.wav" data-start="15.05" data-volume="0.5" data-track-index="3"></audio>
+  <audio id="esPop0" src="assets/sfx/pop0.wav" data-start="10" data-volume="0.5" data-track-index="4"></audio>
+  <audio id="esPop1" src="assets/sfx/pop1.wav" data-start="10.5" data-volume="0.5" data-track-index="4"></audio>
+  <audio id="esPop2" src="assets/sfx/pop2.wav" data-start="11" data-volume="0.5" data-track-index="4"></audio>
+  <audio id="esPop3" src="assets/sfx/pop0.wav" data-start="24" data-volume="0.4" data-track-index="4"></audio>
+  <audio id="esPop4" src="assets/sfx/pop1.wav" data-start="24.5" data-volume="0.4" data-track-index="4"></audio>
+  <audio id="esPop5" src="assets/sfx/pop2.wav" data-start="25" data-volume="0.4" data-track-index="4"></audio>
+  <audio id="esEnter1" src="assets/sfx/enter.wav" data-start="29.73" data-volume="0.6" data-track-index="5"></audio>
+  <audio id="esEnter2" src="assets/sfx/enter.wav" data-start="30.98" data-volume="0.6" data-track-index="5"></audio>
+  <audio id="esSting" src="assets/sfx/sting.wav" data-start="32.7" data-volume="0.5" data-track-index="5"></audio>
+</div>
+
+<!-- 上屏文案，按语言各一份（不是逐字翻译：各自按那门语言的说法写，长度都卡在各自的拍子里）。
+     *…* 是强调（中文换强调色，英文换意大利体 + 强调色；标题上的强调词下一拍画一道手绘下划线），| 是换行。
+     webfonts.py 从这里取中文字体的子集，改字后重新 prep。 -->
+<script type="application/json" id="copy">
+{
+  "zh": {
+    "prompt": "说一句话",
+    "draws": "agent 把架构*画出来*",
+    "byStation": "一站一站*画出来*",
+    "whoWhere": "谁在改哪块，*一眼看到*",
+    "nested": "图里*还有图*",
+    "zoomIn": "放大节点，就*进到子图*",
+    "burst": ["素材库：约 6k 个组件", "几个 agent 同时干活", "进度指针", "轨迹逐步可查", "一键回到终端", "分享给别人看", "访客只读，可以评论", "沿箭头滑过去"],
+    "native": "会话还是 *CLI 自己的*",
+    "termNote": "# 起本项目服务并打开浏览器",
+    "endLine": "一个项目一个 Agora"
+  },
+  "en": {
+    "prompt": "Map this repo.",
+    "draws": "Your agent draws the *architecture.*",
+    "byStation": "Drawn live, *node by node.*",
+    "whoWhere": "Who’s on what, *at a glance.*",
+    "nested": "Diagrams|*all the way down.*",
+    "zoomIn": "Zoom into a node. *Step inside.*",
+    "burst": ["6k-part component library", "Agents in parallel", "Live progress pointer", "Every step on record", "Back to the terminal", "Share a link", "Read-only, with comments", "Glide along the arrows"],
+    "native": "Sessions stay *your CLI’s own.*",
+    "termNote": "# serves this project, opens your browser",
+    "endLine": "One project. One Agora."
+  }
+}
+</script>
+
+<!-- 配乐：自己写的谱子（huashu-motion composer mode）。A 小调 i–VI，120 BPM；!mark! 落在同名 scene 标签上。 -->
+<script type="text/vnd.abc" id="om-score">
+X:1
+T:Agora · promo cue
+M:4/4
+L:1/8
+Q:1/4=120
+K:Am
+V:PLK inst=synpluck gain=0.55
+!mark:hook! !mp! A,CEC A,CEC | F,A,CA, F,A,CA, |
+!mark:draw! A,CEC A,CEC | F,A,CA, F,A,CA, | CEGE CEGE |
+!mark:agents! !mf! A,CEC A,CEC | F,A,CA, F,A,CA, |
+[M:2/4] !mark:build! !crescendo(! CEGE !crescendo)! | [M:2/4] !mark:stop! z4 |
+[M:4/4] !mark:drop! !ff! A,CEC A,CEC | F,A,CA, F,A,CA, |
+!mark:burst! CEGE CEGE | G,B,DB, G,B,DB, |
+!mark:mech! !mp! A,CEC A,CEC | F,A,CA, F,A,CA, |
+!mark:install! !mf! CEGE CEGE | G,B,DB, G,B,DB, |
+!mark:logo! !f! A,CEC A,CEC | F,A,CA, F,A,CA, | [A,CE]z z2 z4 | z8 |
+V:MEL inst=bell role=melody gain=0.6
+!mp! e2c2d2A2 | z8 |
+z8 | z8 | z8 |
+z8 | z8 |
+[M:2/4] z4 | [M:2/4] z4 |
+[M:4/4] !f! e2c2d2A2 | c2A2B2G2 |
+e2c2d2e2 | d4 B4 |
+z8 | z8 |
+z8 | z8 |
+!f! e2c2d2A2 | A8 | z8 | z8 |
+V:PAD inst=warmpad gain=0.3
+z8 | z8 |
+z8 | z8 | z8 |
+z8 | z8 |
+[M:2/4] z4 | [M:2/4] z4 |
+[M:4/4] !mf! [A,CE]8 | [F,A,C]8 |
+[CEG]8 | [G,B,D]8 |
+!mp! [A,CE]8 | [F,A,C]8 |
+[CEG]8 | [G,B,D]8 |
+!mf! [A,CE]8 | [F,A,C]8 | [A,CE]8 | z8 |
+V:BAS inst=synbass gain=0.5
+!mf! A,,2 z2 A,,2 z2 | F,,2 z2 F,,2 z2 |
+A,,3 A,,3 A,,2 | F,,3 F,,3 F,,2 | C,,3 C,,3 C,,2 |
+A,,A,,A,,A,, A,,A,,A,,A,, | F,,F,,F,,F,, F,,F,,F,,F,, |
+[M:2/4] C,,C,,C,,C,, | [M:2/4] z4 |
+[M:4/4] !ff! A,,A,A,,A, A,,A,A,,A, | F,,F,F,,F, F,,F,F,,F, |
+C,,C,C,,C, C,,C,C,,C, | G,,G,G,,G, G,,G,G,,G, |
+!mp! A,,4 A,,4 | F,,4 F,,4 |
+!mf! C,,C,,C,,C,, C,,C,,C,,C,, | G,,G,,G,,G,, G,,G,,G,,G,, |
+!f! A,,A,A,,A, A,,A,A,,A, | F,,F,F,,F, F,,F,F,,F, | A,,z z2 z4 | z8 |
+V:DR inst=drums kit=808 gain=0.95
+!mf! [C,,^C,]^F,, ^F,,^F,, C,,^F,, ^F,,^F,, | C,,^F,, ^F,,^F,, C,,^F,, ^F,,[^F,,A,,] |
+C,,^F,, ^F,,^F,, [D,,^F,,]^F,, ^F,,C,, | C,,^F,, ^F,,^F,, [D,,^F,,]^F,, ^F,,C,, | C,,^F,, ^F,,^F,, [D,,^F,,]^F,, ^F,,/^F,,/^F,,/^F,,/ |
+C,,^F,, [C,,^D,,]^F,, C,,^F,, [C,,^D,,]^F,, | C,,^F,, [C,,^D,,]^F,, C,,^F,, [C,,^D,,]^F,,/^F,,/ |
+[M:2/4] !crescendo(! D,,/D,,/D,,/D,,/ D,,/D,,/D,,/D,,/ !crescendo)! | [M:2/4] !rise(! z4 |
+[M:4/4] !rise)! !hit! !ff! [C,,^C,]^F,, [C,,^D,,]^A,, C,,^F,, [C,,^D,,]^A,, | C,,^F,, [C,,^D,,]^A,, C,,^F,, [C,,^D,,]^A,, |
+[C,,^C,]^F,, [C,,^D,,]^A,, C,,^F,, [C,,^D,,]^A,, | C,,^F,, [C,,^D,,]^F,, A,,A,, A,,/A,,/D,,/D,,/ |
+!mp! C,,^F,, ^F,,^F,, [^C,,^F,,]^F,, ^F,,^F,, | C,,^F,, ^F,,^F,, [^C,,^F,,]^F,, ^F,,C,, |
+!mf! C,,^F,, [C,,D,,]^F,, C,,^F,, [C,,D,,]^F,, | C,,^F,, [C,,D,,]^F,, D,,/D,,/D,,/D,,/ D,,/D,,/D,,/D,,/ |
+!f! [C,,^C,]^F,, [C,,^D,,]^F,, C,,^F,, [C,,^D,,]^F,, | C,,^F,, [C,,^D,,]^F,, C,,^F,, [C,,^D,,]^F,, | [C,,^C,]z z2 z4 | z8 |
+</script>
+
+<script>
+  window.__timelines = window.__timelines || {};
+  const V = OM.vars();
+  OM.music({ bpm: 120 });
+  const B = (n) => OM.beat(n);          // 第 n 拍（从 0 起）的秒数：B(2) = 1.0 s
+  const tl = gsap.timeline({ paused: true, defaults: { ease: 'power3.out' } });
+  const $ = (s) => document.querySelector(s);
+  const show = (el, at) => tl.set(el, { visibility: 'visible' }, at);
+  const hide = (el, at) => tl.set(el, { visibility: 'hidden' }, at);
+
+  // ---------- 语言和文案 ----------
+  const LANG = V.lang === 'en' ? 'en' : 'zh';
+  const COPY = JSON.parse($('#copy').textContent)[LANG];
+  document.documentElement.lang = LANG === 'en' ? 'en' : 'zh-CN';   // 让浏览器按语言选字形和断行
+  $('#film').classList.add(LANG);
+  const SUB = B(1) / 8;   // 三十二分音符 0.0625 s：逐词、逐字揭示的错开量都取它的整数倍或一半，落在拍子网格上
+
+  // 一行文案 → 每个词（中文每个字、每个拉丁词）一个遮罩。*…* 强调，| 换行；data-ul 的标题给强调词加手绘下划线
+  const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const unit = (t) => `<span class="m"><span class="w">${esc(t)}</span></span>`;
+  function units(txt) {
+    if (LANG === 'en') return txt.split(' ').filter(Boolean).map(unit).join(' ');
+    // 中文：拉丁词整体一格，前后的空格换成 .lat 的字间空；其余一个字一格
+    return (txt.match(/[A-Za-z0-9][A-Za-z0-9.'’+-]*|\S/g) || []).map((t) => /^[A-Za-z0-9]/.test(t) ? `<span class="lat">${unit(t)}</span>` : unit(t)).join('');
+  }
+  const UL = '<svg class="ul" viewBox="0 0 100 10" preserveAspectRatio="none"><path d="M1 6.5 C 18 3.8, 42 7.6, 62 5.2 S 90 3.6, 99 5.6"/></svg>';
+  function lineHTML(txt, ul) {
+    return txt.split('|').map((ln) => ln.split('*').map((seg, i) => {
+      if (!seg.trim()) return seg.includes(' ') ? ' ' : '';
+      const lead = LANG === 'en' && seg.startsWith(' ') ? ' ' : '', tail = LANG === 'en' && seg.endsWith(' ') ? ' ' : '';
+      return lead + (i % 2 ? `<span class="em">${units(seg)}${ul ? UL : ''}</span>` : units(seg)) + tail;
+    }).join('')).join('<br>');
+  }
+  document.querySelectorAll('[data-copy]').forEach((el) => { el.innerHTML = lineHTML(COPY[el.dataset.copy], el.hasAttribute('data-ul')); });
+  $('#wm').innerHTML = [...'Agora'].map(unit).join('');
+  $('#t3c').textContent = COPY.termNote;
+  $('#flow').src = `assets/stills/flow.${LANG}.svg`;
+  // 实录按语言各一份（build.sh 的 prep 出 assets/clips/<名>.<lang>.webm；某种语言还没录时用中文那份顶上）
+  for (const [sel, name] of [['#vReveal', 'reveal'], ['#vHop', 'hop'], ['#vWheel', 'zoom'], ['#vLib', 'library'], ['#vAgents2', 'hop'], ['#vPointer', 'hop'], ['#vGlide', 'hop']])
+    $(sel).setAttribute('src', `assets/clips/${name}.${LANG}.webm`);
+  for (const [i, s] of [[3, 'trajectory'], [4, 'terminal'], [5, 'share'], [6, 'guest']]) $(`#m${i} img`).src = `assets/stills/${s}.${LANG}.png`;   // 截图同样按语言
+  gsap.set('.w', { yPercent: 140, opacity: 0 });
+  gsap.set('.ul', { clipPath: 'inset(-50% 100% -50% 0%)' });
+  gsap.set(['#c4 .chip', '#cM .label', '#eu'], { opacity: 0 });
+
+  // 字体到位后量一遍，超宽的行按比例缩到安全宽度里（换语言、改文案都不会出画）
+  OM.ready(Promise.all(['400 100px "Instrument Serif"', 'italic 400 100px "Instrument Serif"', '900 100px "Noto Serif SC"', '700 100px "Noto Serif SC"']
+    .map((f) => document.fonts.load(f, '图 Ag'))).then(() => {
+    document.querySelectorAll('#film .big, #film .cap, #film .endsub').forEach((el) => {
+      const r = document.createRange(); r.selectNodeContents(el);
+      const w = r.getBoundingClientRect().width, max = el.classList.contains('big') ? 1700 : 1640;
+      if (w > max) el.style.fontSize = parseFloat(getComputedStyle(el).fontSize) * max / w + 'px';
+    });
+  }));
+
+  // 揭示：一套动作给所有标题和字幕。词从遮罩下沿升上来，按三十二分音符错开，轻微回弹；标题的强调词随后画下划线
+  function reveal(el, at, o = {}) {
+    const ws = [...el.querySelectorAll('.w')];
+    const st = o.stagger ?? (LANG === 'en' ? SUB : SUB / 2), dur = o.dur ?? 0.62;
+    tl.fromTo(ws, { yPercent: 140, rotation: o.rot ?? 0 }, { yPercent: 0, rotation: 0, duration: dur, ease: o.ease ?? 'back.out(1.3)', stagger: st, immediateRender: false }, at);
+    tl.fromTo(ws, { opacity: 0 }, { opacity: 1, duration: dur * 0.4, ease: 'power1.out', stagger: st, immediateRender: false }, at);
+    const end = at + st * (ws.length - 1) + dur * 0.6;
+    el.querySelectorAll('.ul').forEach((u) => tl.fromTo(u, { clipPath: 'inset(-50% 100% -50% 0%)' }, { clipPath: 'inset(-50% 0% -50% 0%)', duration: 0.4, ease: 'power2.inOut', immediateRender: false }, o.ulAt ?? end));
+    return end;
+  }
+  // 离场：整行一起往上飘走、淡掉（读的时候是一眼，走的时候也是一个整体）
+  function leave(el, at, dur = 0.3) {
+    tl.to(el.querySelectorAll('.w'), { yPercent: -30, opacity: 0, duration: dur, ease: 'power2.in' }, at);
+    const ul = el.querySelectorAll('.ul'); if (ul.length) tl.to(ul, { opacity: 0, duration: dur * 0.8 }, at);
+  }
+  const cap = (sel, inAt, outAt) => { const el = $(sel); show(el, inAt); reveal(el, inAt, { dur: 0.55, ease: 'back.out(1.15)' }); leave(el, outAt - 0.3); hide(el, outAt); };
+
+  // 一个字一个 span，按时间点亮（打字；纯时间函数，跳到哪一帧都一样）
+  function typeInto(el, text, at, cps, cls) {
+    const chars = [...text];
+    el.insertAdjacentHTML('beforeend', chars.map((c) => `<span class="${cls || ''}" style="visibility:hidden">${c === ' ' ? ' ' : c.replace('&', '&amp;')}</span>`).join(''));
+    const spans = [...el.querySelectorAll('span')].slice(-chars.length);
+    spans.forEach((s, i) => tl.set(s, { visibility: 'visible' }, at + i / cps));
+    return at + chars.length / cps;
+  }
+  function stroke(sel, at, dur, ease = 'power2.inOut') {
+    document.querySelectorAll(sel).forEach((p) => {
+      const L = p.getTotalLength();
+      gsap.set(p, { strokeDasharray: L, strokeDashoffset: L });
+      tl.to(p, { strokeDashoffset: 0, duration: dur, ease }, at);
+    });
+  }
+  // 小人走路：腿和身体随步子摆（重复的补间也是时间的函数）
+  function walk(target, legs, from, to, at, dur) {
+    tl.fromTo(target, { x: from[0], y: from[1] }, { x: to[0], y: to[1], duration: dur, ease: 'power1.inOut', immediateRender: false }, at);
+    const steps = Math.round(dur / 0.25);
+    tl.to(legs[0], { rotation: 16, svgOrigin: '0 -40', duration: 0.125, yoyo: true, repeat: steps * 2 - 1, ease: 'sine.inOut' }, at);
+    tl.to(legs[1], { rotation: -16, svgOrigin: '0 -40', duration: 0.125, yoyo: true, repeat: steps * 2 - 1, ease: 'sine.inOut' }, at);
+  }
+
+  // ---------- hook 0–4 s ----------
+  tl.addLabel('scene:hook', 0);
+  const f1 = $('#f1');
+  f1.innerHTML = '<span class="caret"></span>';
+  const f1t = document.createElement('span'); f1.prepend(f1t);
+  gsap.set('#nA', { strokeDasharray: $('#nA').getTotalLength(), strokeDashoffset: $('#nA').getTotalLength() });
+  // 小人从左边走上来，站到一条线上（线 = 未来节点的上沿）
+  walk('#fig', ['#legL', '#legR'], [520, 560], [880, 560], 0, 1.5);
+  tl.fromTo('#hook', { scale: 1.08 }, { scale: 1, duration: 3.55, ease: 'power1.out', immediateRender: false }, 0);
+  tl.fromTo('#nA', { strokeDashoffset: $('#nA').getTotalLength() }, { strokeDashoffset: $('#nA').getTotalLength() * 0.72, duration: 1.5, ease: 'power1.inOut', immediateRender: false }, 0);
+  // 打字在第 7 拍前（1.7 s）打完：中文 4 个字仍是每秒 9 个，英文按长度提速
+  const cps = Math.max(9, [...COPY.prompt].length / (B(3.4) - B(1)));
+  const typed = typeInto(f1t, COPY.prompt, B(1), cps);
+  OM.sfx('type', B(1), { dur: typed - B(1), gain: 0.5 });
+  tl.set('#figLaptop', { opacity: 1 }, B(3));
+  tl.to('#armR', { rotation: -8, svgOrigin: '0 -64', duration: 0.12, yoyo: true, repeat: 7 }, B(3));
+  // 第 2 小节：句子换成第二句，节点框画完，左右又长出两个节点和箭头
+  tl.to('#f1', { yPercent: -60, opacity: 0, duration: 0.3, ease: 'power3.in' }, B(4) - 0.3);
+  reveal($('#f2'), B(4), { rot: 4 });
+  tl.to('#nA', { strokeDashoffset: 0, duration: 0.5, ease: 'power2.out' }, B(4));
+  OM.sfx('draw', B(4), { dur: 0.5, gain: 0.5 });
+  stroke('#nB', B(5), 0.4, 'power2.out'); stroke('#aB, #aBh', B(5) + 0.2, 0.25, 'power2.out');
+  stroke('#nC', B(6), 0.4, 'power2.out'); stroke('#aC, #aCh', B(6) + 0.2, 0.25, 'power2.out');
+  OM.sfx('pop', B(5), { note: 1, gain: 0.4, pan: -0.4 }); OM.sfx('pop', B(6), { note: 3, gain: 0.4, pan: 0.4 });
+  // 4.0 s 切点前：中间的节点冲向镜头，变成录屏窗口
+  tl.to('#hookSvg', { scale: 3.2, transformOrigin: '960px 640px', duration: 0.45, ease: 'power3.in' }, B(8) - 0.45);
+  tl.to('#f2', { opacity: 0, duration: 0.2 }, B(8) - 0.3);
+  hide('#hook', B(8));
+
+  // ---------- draw 4–10 s ----------
+  tl.addLabel('scene:draw', B(8));
+  show('#sReveal', B(8));
+  tl.fromTo('#sReveal', { scale: 0.86 }, { scale: 1, duration: 0.6, ease: 'expo.out', immediateRender: false }, B(8));
+  tl.fromTo('#iReveal', { scale: 1 }, { scale: 1.12, duration: 3.7, ease: 'none', immediateRender: false }, B(8));
+  cap('#c3', B(10), B(19));
+  // 8.0 s 推近到小人画画的地方（录屏右下角）
+  tl.fromTo('#iReveal', { scale: 1.12, xPercent: 0, yPercent: 0 }, { scale: 1.7, xPercent: -18, yPercent: -16, duration: 0.6, ease: 'expo.inOut', immediateRender: false }, B(16) - 0.3);
+  hide('#sReveal', B(20));
+
+  // ---------- agents 10–14 s ----------
+  tl.addLabel('scene:agents', B(20));
+  show('#sHop', B(20));
+  tl.fromTo('#iHop', { scale: 1.08 }, { scale: 1, duration: 4, ease: 'power1.out', immediateRender: false }, B(20));
+  show('#c4', B(20)); hide('#c4', B(24));
+  document.querySelectorAll('#c4 .chip').forEach((c, i) => {
+    tl.fromTo(c, { opacity: 0, y: 26, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: 'back.out(1.6)', immediateRender: false }, B(20 + i));
+  });
+  tl.to('#c4 .chip', { opacity: 0, y: -20, duration: 0.25, stagger: 0.04, ease: 'power2.in' }, B(24) - 0.3);
+  cap('#c5', B(24), B(28));
+  hide('#sHop', B(28));
+
+  // ---------- build / stop 14–16 s ----------
+  tl.addLabel('scene:build', B(28));
+  show('#nest', B(28));
+  // 砸下来：错开量减半，回弹大一点；下划线在第二拍（盒子出现的同一拍）画
+  reveal($('#f6'), B(28), { stagger: SUB / 2, dur: 0.4, ease: 'back.out(1.7)', rot: 3, ulAt: B(29) });
+  OM.sfx('thud', B(28) + 0.12, { gain: 0.6 });
+  gsap.set('#nestBox', { opacity: 0 });
+  tl.fromTo('#nestBox', { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, svgOrigin: '960 640', duration: 0.4, ease: 'expo.out', immediateRender: false }, B(29));
+  tl.fromTo('#innerBoxes', { opacity: 0 }, { opacity: 1, duration: 0.3, immediateRender: false }, B(29) + 0.2);
+  tl.addLabel('scene:stop', B(30));
+  // 停住一拍，再被吸进节点里
+  tl.to('#f6', { opacity: 0, y: -40, duration: 0.3, ease: 'power2.in' }, B(31));
+  // 匹配剪辑：节点框一路放大到正好是录屏卡片的宽度（1440 = 520 × 2.77），同一帧换成卡片，
+  // 卡片从这个框的形状（上下各裁掉 118 px、圆角 61 px）继续张开到整张，镜头的运动不断、也没有空帧
+  const K = 1440 / 520, boxCy = 486 - 640;   // 卡片中心 y = 36 + 450 = 486；框的中心 y = 640
+  tl.to('#nestBox', { scale: K, y: boxCy, svgOrigin: '960 640', duration: 0.5, ease: 'power3.in' }, B(32) - 0.5);
+  tl.to('#innerBoxes', { opacity: 0.25, duration: 0.5, ease: 'power2.in' }, B(32) - 0.5);
+  tl.to('#outerBox', { attr: { 'fill-opacity': 1 }, duration: 0.5, ease: 'power2.in' }, B(32) - 0.5);   // 框里渐渐变成卡片的白底，切过去不跳色
+  hide('#nest', B(32));
+
+  // ---------- drop 16–20 s ----------
+  tl.addLabel('scene:drop', B(32));
+  // 一个镜头，两轮进子图：从总架构放大进「后端 API」，子图接过画面后不停，再放大进「订单服务」，落在第三层的整张图上。
+  // 实录是 web/scripts/promo-capture.ts 逐帧步进录的真 60 fps，原速播放（片子也按 60 fps 渲染），画面里只有画布
+  show('#sWheel', B(32));
+  const inset = (a, r) => `inset(${a}px 0px ${a}px 0px round ${r}px)`;
+  tl.fromTo('#sWheel', { clipPath: inset(118, 61) }, { clipPath: inset(0, 18), duration: 0.6, ease: 'power3.out', immediateRender: false }, B(32));
+  tl.set('#sWheel', { clipPath: 'none' }, B(32) + 0.6);
+  cap('#c7', B(34), B(40));
+  hide('#sWheel', B(40));
+
+  // ---------- burst 20–24 s：一拍一刀，标签钉在原处换字 ----------
+  tl.addLabel('scene:burst', B(40));
+  const labels = COPY.burst;
+  const mText = $('#mText');
+  show('#cM', B(40)); tl.set('#cM .label', { opacity: 1 }, B(40));
+  labels.forEach((txt, i) => {
+    const t = B(40 + i);
+    show('#m' + i, t);
+    if (i) hide('#m' + (i - 1), t);
+    tl.fromTo('#m' + i + ' .inner', { scale: 1.14 }, { scale: 1.02, duration: B(1), ease: 'none', immediateRender: false }, t);
+    tl.set(mText, { textContent: txt }, t);
+    tl.fromTo('#cM .label', { scale: 1.06 }, { scale: 1, duration: 0.2, ease: 'power2.out', immediateRender: false }, t);
+    OM.sfx('hit', t, { gain: 0.42, pitch: 1 + i * 0.05, pan: (i % 2 ? 0.25 : -0.25) });
+  });
+  hide('#m7', B(48));
+  hide('#cM', B(48));
+
+  // ---------- mech 24–28 s ----------
+  tl.addLabel('scene:mech', B(48));
+  show('#mech', B(48));
+  tl.set('#flow', { clipPath: 'inset(0% 66% 0% 0% round 22px)' }, B(48));
+  tl.set('#flow', { clipPath: 'inset(0% 34% 0% 0% round 22px)' }, B(49));
+  tl.set('#flow', { clipPath: 'inset(0% 0% 0% 0% round 22px)' }, B(50));
+  tl.fromTo('#flow', { scale: 0.97 }, { scale: 1, duration: 0.8, ease: 'expo.out', immediateRender: false }, B(48));
+  tl.fromTo('#mech', { scale: 1, y: 0 }, { scale: 1.1, y: -30, duration: 4, ease: 'power1.inOut', immediateRender: false }, B(48));
+  // 数据包：终端 → 服务 → 画布，沿两段虚线跑（坐标 = 示意图坐标 × 1720/1520，再加偏移）
+  const k = 1720 / 1520, fx = (x) => 100 + (x - 40) * k - 13, fy = (y) => 180 + (y - 80) * k - 13;
+  gsap.set('#packet', { x: fx(445), y: fy(300), opacity: 0 });
+  tl.set('#packet', { opacity: 1 }, B(51));
+  tl.fromTo('#packet', { x: fx(445) }, { x: fx(655), duration: 0.5, ease: 'power2.inOut', immediateRender: false }, B(51));
+  tl.to('#packet', { x: fx(905), duration: 0.3, ease: 'none' }, B(52));
+  tl.to('#packet', { x: fx(1105), duration: 0.5, ease: 'power2.inOut' }, B(52) + 0.3);
+  tl.to('#packet', { opacity: 0, duration: 0.15 }, B(53) + 0.4);
+  tl.set('#packet', { x: fx(445), opacity: 1 }, B(54));
+  tl.to('#packet', { x: fx(1105), duration: 1.2, ease: 'power1.inOut' }, B(54));
+  tl.to('#packet', { opacity: 0, duration: 0.15 }, B(54) + 1.2);
+  OM.sfx('tick', B(51), { gain: 0.35 }); OM.sfx('tick', B(53), { gain: 0.35 });
+  show('#c8', B(52)); reveal($('#c8'), B(52), { dur: 0.55, ease: 'back.out(1.15)' }); leave($('#c8'), B(56) - 0.3);
+  hide('#mech', B(56));
+
+  // ---------- install 28–32 s ----------
+  tl.addLabel('scene:install', B(56));
+  show('#inst', B(56));
+  tl.fromTo('#term', { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.45, ease: 'expo.out', immediateRender: false }, B(56));
+  tl.fromTo('#inst', { scale: 1 }, { scale: 1.07, duration: 4, ease: 'power1.inOut', immediateRender: false }, B(56));
+  tl.fromTo('#fig2', { opacity: 0 }, { opacity: 1, duration: 0.3, immediateRender: false }, B(56) + 0.1);
+  $('#t1').innerHTML = '<span class="p">$ </span>';
+  $('#t2').innerHTML = '<span class="p">$ </span>';
+  gsap.set('#t2, #t3', { opacity: 0 });
+  const e1 = typeInto($('#t1'), V.install, B(56) + 0.1, 33);
+  OM.sfx('type', B(56) + 0.1, { dur: e1 - B(56) - 0.1, gain: 0.45 });
+  tl.set('#t2', { opacity: 1 }, B(60));
+  const e2 = typeInto($('#t2'), V.open, B(60), 30);
+  OM.sfx('type', B(60), { dur: e2 - B(60), gain: 0.45 });
+  tl.fromTo('#t3', { opacity: 0 }, { opacity: 1, duration: 0.3, immediateRender: false }, B(62));
+  tl.to('#fig2Arm', { rotation: -10, svgOrigin: '0 -64', duration: 0.1, yoyo: true, repeat: 29 }, B(56) + 0.1);
+  hide('#inst', B(64));
+
+  // ---------- logo 32–40 s ----------
+  tl.addLabel('scene:logo', B(64));
+  show('#end', B(64));
+  OM.sfx('hit', B(64), { gain: 0.5 });
+  // 墨迹：32 s 的强拍起，36 s（两小节后）盖满；同时镜头极慢地推近一点
+  // 画面里离落日光最远的角约 1205 px，加上位移 160，r 用 sine.out 到 1260，大约 35.5–36 s 盖满
+  tl.set('#endShade', { opacity: 0 }, B(64));
+  tl.fromTo('#inkC', { attr: { r: 0 } }, { attr: { r: 1260 }, duration: B(8), ease: 'sine.out', immediateRender: false }, B(64));
+  tl.fromTo('#banner', { scale: 1 }, { scale: 1.05, duration: 8, ease: 'none', immediateRender: false }, B(64));
+  tl.fromTo('#endShade', { opacity: 0 }, { opacity: 1, duration: 1.5, immediateRender: false }, B(69));
+  // 揭示完：天上的架构图亮一下，再停在略亮
+  tl.fromTo('#bannerLines', { opacity: 0 }, { opacity: 0.85, duration: 0.8, ease: 'power2.out', immediateRender: false }, B(72));
+  tl.to('#bannerLines', { opacity: 0.35, duration: 1.6, ease: 'power2.inOut' }, B(72) + 0.8);
+  OM.sfx('tick', B(72), { gain: 0.25 });
+  // 字标逐个字母升起（全片唯一逐字母的地方），辉光随后亮到顶再落回
+  reveal($('#wm'), B(72), { stagger: SUB, dur: 0.9, ease: 'back.out(1.2)' });
+  tl.fromTo('#wm', { textShadow: '0 0 0px rgba(255,196,150,0), 0 6px 40px rgba(8,6,20,.55)' }, { textShadow: '0 0 90px rgba(255,196,150,.6), 0 6px 40px rgba(8,6,20,.55)', duration: 0.8, ease: 'power2.out', immediateRender: false }, B(73));
+  tl.to('#wm', { textShadow: '0 0 60px rgba(255,196,150,.35), 0 6px 40px rgba(8,6,20,.55)', duration: 1.2, ease: 'power2.inOut' }, B(73) + 0.8);
+  reveal($('#es'), B(74), { dur: 0.6, ease: 'power3.out' });
+  tl.fromTo('#eu', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.6, immediateRender: false }, B(75));
+  OM.sfx('tick', B(75), { gain: 0.3 });
+  tl.to('#fade', { opacity: 1, duration: 1.0, ease: 'power1.in' }, B(78));
+  tl.to({}, { duration: 0 }, B(80));
+
+  window.__timelines['film'] = tl;
+</script>
+</body>
+</html>

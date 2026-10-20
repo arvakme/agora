@@ -2,6 +2,7 @@
 // which options exist and how they group (from the server's catalog), fuzzy filtering,
 // the visible rows, and keyboard movement. Picker.tsx renders it.
 import type { CatalogEntry } from "./agents";
+import { tr } from "../i18n";
 
 export type PickOption = { value: string; label: string; detail?: string; note?: string };
 export type PickGroup = { id: string; label: string; options: PickOption[] };
@@ -27,28 +28,28 @@ export function modelGroups(entry: CatalogEntry | undefined): PickGroup[] {
   const providers = entry.providers ?? {};
   const opt = (m: string): PickOption => {
     const label = names[m] || m;
-    return { value: m, label, detail: label !== m ? m : undefined, note: m === entry.default ? "默认" : undefined };
+    return { value: m, label, detail: label !== m ? m : undefined, note: m === entry.default ? tr("默认", "default") : undefined };
   };
   const featured = entry.featured.filter((m) => entry.models.includes(m) || m === entry.default);
-  const first: PickOption[] = [...(entry.default ? [] : [{ value: "", label: "CLI 默认", detail: "不指定模型，用 CLI 自己的默认" }]), ...featured.map(opt)];
+  const first: PickOption[] = [...(entry.default ? [] : [{ value: "", label: tr("CLI 默认", "CLI default"), detail: tr("不指定模型，用 CLI 自己的默认", "No model given; the CLI uses its own default") }]), ...featured.map(opt)];
   const groups: PickGroup[] = [];
-  if (first.length) groups.push({ id: "featured", label: entry.scope?.kind === "enabledModels" ? "已启用" : "常用", options: first });
+  if (first.length) groups.push({ id: "featured", label: entry.scope?.kind === "enabledModels" ? tr("已启用", "Enabled") : tr("常用", "Common"), options: first });
   const rest = new Map<string, string[]>();
   for (const m of entry.models) {
     if (featured.includes(m)) continue;
     const p = providers[m] ?? "";
     rest.set(p, [...(rest.get(p) ?? []), m]);
   }
-  for (const [p, ms] of rest) groups.push({ id: `p:${p}`, label: p || "其他模型", options: ms.map(opt) });
+  for (const [p, ms] of rest) groups.push({ id: `p:${p}`, label: p || tr("其他模型", "Other models"), options: ms.map(opt) });
   return groups;
 }
 
 /** The effort picker's one group: the levels this model takes, "CLI 默认" when Agora knows no default. */
 export function effortGroups(eff: { levels: string[]; initial: string; cliDefault: boolean }): PickGroup[] {
   const options: PickOption[] = [];
-  if (eff.cliDefault || !eff.levels.length) options.push({ value: "", label: eff.levels.length ? "CLI 默认" : "这个 CLI 不分强度", detail: eff.levels.length ? "不传强度参数" : "没有强度可选，不传强度参数" });
-  for (const x of eff.levels) options.push({ value: x, label: x, note: x === eff.initial ? "默认" : undefined });
-  return [{ id: "effort", label: "强度", options }];
+  if (eff.cliDefault || !eff.levels.length) options.push({ value: "", label: eff.levels.length ? tr("CLI 默认", "CLI default") : tr("这个 CLI 不分强度", "No effort levels"), detail: eff.levels.length ? tr("不传强度参数", "No effort flag is passed") : tr("没有强度可选，不传强度参数", "No levels to pick; no effort flag is passed") });
+  for (const x of eff.levels) options.push({ value: x, label: x, note: x === eff.initial ? tr("默认", "default") : undefined });
+  return [{ id: "effort", label: tr("强度", "Effort"), options }];
 }
 
 const compact = (s: string) => s.toLowerCase().replace(/[^a-z0-9一-鿿]+/g, "");

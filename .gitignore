@@ -13,3 +13,19 @@ build/
 .env
 .DS_Store
 *.log
+node_modules/
+.coverage
+coverage/
+
+# local state and tooling
+.agora/
+.claude/
+.agents/
+.seedmux/
+.vscode/
+.idea/
+
+# test evidence and recordings stay local (scripts under web/scripts write here)
+web/evidence/
+evidence/
+*.webm

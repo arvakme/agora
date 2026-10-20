@@ -51,6 +51,7 @@ from server.canvas.adapters.base import Adapter, VersionRange, tool_facts, valid
 from server.canvas.adapters.common import MAX_TEXT, LogLookup, Out, State, StreamMapper, _clip, _end, _full, _ms, _start, _summary, _usage, rel_path, text_of, user_item
 from server.canvas.adapters.shell_files import shell_tool
 from server.canvas.adapters.tools import activity_of
+from server.i18n import tr
 
 DB = "sessions.db"
 WRAPPER = Path(__file__).with_name("devin_run.py")
@@ -278,12 +279,13 @@ class DevinTail:
 class DevinAdapter(Adapter):
     kind = "devin"
     no_steer = "Devin 的 `-p` 只收命令行上的一条提示，这一轮开始后没有输入口"
+    no_steer_en = "Devin's `-p` takes a single prompt on the command line; once the turn begins there is no way in"
     name = "Devin"
     binaries = ("devin",)
     tested = VersionRange(">=3000.10.21,<3000.11")
     max_tier = "T1"
     icon = "devin"
-    log_hint = "~/.local/share/devin/cli/sessions.db（SQLite，只读查询）"
+    log_hint = "~/.local/share/devin/cli/sessions.db (SQLite, read-only queries)"
     log_dir = "~/.local/share/devin/cli/sessions.db"
     delete_hint = "devin rm --force {id}"
     has_cost = False
@@ -387,7 +389,7 @@ class DevinAdapter(Adapter):
     def headless_args(self, cmd: list[str], req: Any, *, log_exists: Any = False, skill_dir: Path | None = None) -> list[str]:
         o = req.options
         if o.fork_from:
-            raise ValueError("Devin 不支持分叉会话")
+            raise ValueError(tr("Devin 不支持分叉会话", "Devin does not support forking a session"))
         args = [sys.executable, str(WRAPPER), *cmd, "-p", *NO_BOUNDARY]
         if o.session:
             args += ["-r", o.session]

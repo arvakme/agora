@@ -53,23 +53,24 @@ import { RunAvatar } from "../workstation/RunAvatar";
 import { useRuns } from "../workstation/runs/store";
 import { receiptView, RECEIPT_NAMES, type WorkRun } from "../workstation/runs/types";
 import "./trajectory.css";
+import { tr, langTag } from "../i18n";
 
-const clock = (at: number) => new Date(at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-const KIND: Record<TrajRecord["kind"], string> = { user: "用户", message: "消息", tool: "工具" };
+const clock = (at: number) => new Date(at).toLocaleTimeString(langTag(), { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const KIND: Record<TrajRecord["kind"], string> = { user: tr("用户", "User"), message: tr("消息", "Message"), tool: tr("工具", "Tool") };
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-const OP: Record<string, string> = { edit: "改", write: "写", add: "新建", delete: "删" };
+const OP: Record<string, string> = { edit: tr("改", "edit"), write: tr("写", "write"), add: tr("新建", "new"), delete: tr("删", "delete") };
 
 /** Model · effort · tokens · time · cost, only the parts that are known (nothing is made up). */
 export function UsageMeta({ model, effort, usage, durationMs, compact = false }: { model?: string | null; effort?: string | null; usage: UsageSum; durationMs?: number | null; compact?: boolean }) {
   const parts: { k: string; v: string; title: string }[] = [];
-  if (model) parts.push({ k: "model", v: model, title: "模型" });
-  if (effort) parts.push({ k: "effort", v: effort, title: "强度" });
-  if (usage.input != null) parts.push({ k: "in", v: `输入 ${fmtTokens(usage.input)}`, title: `输入 tokens（不含缓存）：${usage.input}` });
-  if (usage.output != null) parts.push({ k: "out", v: `输出 ${fmtTokens(usage.output)}`, title: `输出 tokens：${usage.output}` });
+  if (model) parts.push({ k: "model", v: model, title: tr("模型", "Model") });
+  if (effort) parts.push({ k: "effort", v: effort, title: tr("强度", "Effort") });
+  if (usage.input != null) parts.push({ k: "in", v: tr(`输入 ${fmtTokens(usage.input)}`, `In ${fmtTokens(usage.input)}`), title: tr(`输入 tokens（不含缓存）：${usage.input}`, `Input tokens (excluding cache): ${usage.input}`) });
+  if (usage.output != null) parts.push({ k: "out", v: tr(`输出 ${fmtTokens(usage.output)}`, `Out ${fmtTokens(usage.output)}`), title: tr(`输出 tokens：${usage.output}`, `Output tokens: ${usage.output}`) });
   if (usage.cacheRead != null || usage.cacheWrite != null)
-    parts.push({ k: "cache", v: `缓存 ${fmtTokens(usage.cacheRead ?? 0)}${usage.cacheWrite ? ` / 写 ${fmtTokens(usage.cacheWrite)}` : ""}`, title: `缓存读 ${usage.cacheRead ?? 0} · 缓存写 ${usage.cacheWrite ?? 0}` });
-  if (durationMs != null) parts.push({ k: "time", v: fmtDuration(durationMs), title: "耗时" });
-  if (usage.cost != null) parts.push({ k: "cost", v: fmtCost(usage.cost), title: "花费（美元）" });
+    parts.push({ k: "cache", v: tr(`缓存 ${fmtTokens(usage.cacheRead ?? 0)}${usage.cacheWrite ? ` / 写 ${fmtTokens(usage.cacheWrite)}` : ""}`, `Cache ${fmtTokens(usage.cacheRead ?? 0)}${usage.cacheWrite ? ` / write ${fmtTokens(usage.cacheWrite)}` : ""}`), title: tr(`缓存读 ${usage.cacheRead ?? 0} · 缓存写 ${usage.cacheWrite ?? 0}`, `Cache read ${usage.cacheRead ?? 0} · cache write ${usage.cacheWrite ?? 0}`) });
+  if (durationMs != null) parts.push({ k: "time", v: fmtDuration(durationMs), title: tr("耗时", "Time") });
+  if (usage.cost != null) parts.push({ k: "cost", v: fmtCost(usage.cost), title: tr("花费（美元）", "Cost (USD)") });
   if (!parts.length) return null;
   return (
     <span className="ds-usage" data-compact={compact}>
@@ -93,7 +94,7 @@ function Payload({ sessionId, item, field, label }: { sessionId: string; item: I
   if (text === undefined || text === "") return (
     <div className="ds-payload">
       <div className="ds-payload-head">{label}</div>
-      <p className="ds-empty">{field === "output" ? (item.endAt || t.isError !== undefined ? "无输出" : "还在运行…") : "未捕获参数"}</p>
+      <p className="ds-empty">{field === "output" ? (item.endAt || t.isError !== undefined ? tr("无输出", "No output") : tr("还在运行…", "Still running…")) : tr("未捕获参数", "Arguments not captured")}</p>
     </div>
   );
   const more = !full && total && total > text.length;
@@ -113,15 +114,15 @@ function Payload({ sessionId, item, field, label }: { sessionId: string; item: I
     <div className="ds-payload">
       <div className="ds-payload-head">
         {label}
-        <span>{(total ?? text.length).toLocaleString()} 字</span>
-        <button className="ds-text-btn" onClick={() => void navigator.clipboard?.writeText(text)} title="复制" aria-label={`复制${label}`}>
+        <span>{tr(`${(total ?? text.length).toLocaleString()} 字`, `${(total ?? text.length).toLocaleString()} chars`)}</span>
+        <button className="ds-text-btn" onClick={() => void navigator.clipboard?.writeText(text)} title={tr("复制", "Copy")} aria-label={tr(`复制${label}`, `Copy ${label.toLowerCase()}`)}>
           <IconCopy size={14} />
         </button>
       </div>
       <pre data-error={field === "output" && !!t.isError}>{text}</pre>
       {more && (
         <button className="ds-text-btn" disabled={loading} onClick={() => void loadFull()}>
-          {loading ? "载入中…" : `已截断，展开全文（共 ${total!.toLocaleString()} 字）`}
+          {loading ? tr("载入中…", "Loading…") : tr(`已截断，展开全文（共 ${total!.toLocaleString()} 字）`, `Truncated; show all (${total!.toLocaleString()} chars)`)}
         </button>
       )}
       {err && <p className="ds-warn">{err}</p>}
@@ -143,11 +144,11 @@ export function ToolDetail({ sessionId, item }: { sessionId: string; item: Item 
           ))}
         </ul>
       )}
-      <Payload sessionId={sessionId} item={item} field="args" label="输入" />
-      <Payload sessionId={sessionId} item={item} field="output" label="输出" />
+      <Payload sessionId={sessionId} item={item} field="args" label={tr("输入", "Input")} />
+      <Payload sessionId={sessionId} item={item} field="output" label={tr("输出", "Output")} />
       <p className="ds-timing">
-        开始 {clock(item.at)}
-        {item.endAt ? ` · 结束 ${clock(item.endAt)} · ${fmtDuration(item.endAt - item.at)}` : ""}
+        {tr("开始", "Started")} {clock(item.at)}
+        {item.endAt ? ` · ${tr("结束", "ended")} ${clock(item.endAt)} · ${fmtDuration(item.endAt - item.at)}` : ""}
       </p>
     </div>
   );
@@ -163,7 +164,7 @@ export function ToolRow({ sessionId, item, open, onToggle }: { sessionId: string
         <IconChevron open={open} />
         <b>{t.name || "tool"}</b>
         <span className="ds-mono">{t.input}</span>
-        {running ? <em className="ds-dot" data-tone="run">运行中</em> : t.isError ? <em className="ds-dot" data-tone="error">失败</em> : item.endAt ? <time>{fmtDuration(item.endAt - item.at)}</time> : null}
+        {running ? <em className="ds-dot" data-tone="run">{tr("运行中", "Running")}</em> : t.isError ? <em className="ds-dot" data-tone="error">{tr("失败", "Failed")}</em> : item.endAt ? <time>{fmtDuration(item.endAt - item.at)}</time> : null}
       </button>
       {open && <ToolDetail sessionId={sessionId} item={item} />}
     </div>
@@ -187,11 +188,12 @@ export function ProcessFold({ sessionId, turn, children }: { sessionId: string; 
   const lastTool = [...process.flatMap((s) => s.records)].reverse().find((r) => r.kind === "tool");
   const elapsed = turn.durationMs ?? (turn.running ? now - turn.startedAt : null);
   const label = turn.running
-    ? `${lastTool ? ACTIVITY_NOW[toolActivity(lastTool.item)] : ACTIVITY_NOW.thinking}${elapsed != null ? `，用时 ${fmtDuration(elapsed)}` : ""}`
+    ? `${lastTool ? ACTIVITY_NOW[toolActivity(lastTool.item)] : ACTIVITY_NOW.thinking}${elapsed != null ? tr(`，用时 ${fmtDuration(elapsed)}`, `, ${fmtDuration(elapsed)} so far`) : ""}`
     : turn.error
-      ? `处理失败：${turn.error}`
-      : `${processTitle(turn.activity)}${elapsed != null ? ` · 用时 ${fmtDuration(elapsed)}` : ""}`;
-  const counts = [turn.toolCount ? `${turn.toolCount} 次工具调用` : "", turn.messageCount > 1 ? `${turn.messageCount - (turn.reply ? 1 : 0)} 条过程消息` : ""].filter(Boolean).join(" · ");
+      ? tr(`处理失败：${turn.error}`, `Failed: ${turn.error}`)
+      : `${processTitle(turn.activity)}${elapsed != null ? tr(` · 用时 ${fmtDuration(elapsed)}`, ` · took ${fmtDuration(elapsed)}`) : ""}`;
+  const said = turn.messageCount - (turn.reply ? 1 : 0);
+  const counts = [turn.toolCount ? tr(`${turn.toolCount} 次工具调用`, `${turn.toolCount} tool call${turn.toolCount === 1 ? "" : "s"}`) : "", turn.messageCount > 1 ? tr(`${said} 条过程消息`, `${said} interim message${said === 1 ? "" : "s"}`) : ""].filter(Boolean).join(" · ");
   return (
     <div className="ds-process" data-open={shown} data-running={turn.running} data-error={!!turn.error}>
       <button className="ds-process-line" onClick={() => setOpen(!open)} disabled={alwaysOpen} aria-expanded={shown}>
@@ -353,35 +355,35 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
   return (
     <div className="ds-traj" data-replay={cutoff != null || undefined}>
       <PlayControls />
-      <div className="ds-traj-bar" role="toolbar" aria-label="轨迹工具栏">
+      <div className="ds-traj-bar" role="toolbar" aria-label={tr("轨迹工具栏", "Trajectory toolbar")}>
         <span className="ds-traj-count">
-          {turns.length} 轮 · {records} 条记录 · {calls} 次调用
+          {tr(`${turns.length} 轮 · ${records} 条记录 · ${calls} 次调用`, `${turns.length} turn${turns.length === 1 ? "" : "s"} · ${records} record${records === 1 ? "" : "s"} · ${calls} call${calls === 1 ? "" : "s"}`)}
         </span>
-        <div className="seg" data-static role="radiogroup" aria-label="时间轴">
+        <div className="seg" data-static role="radiogroup" aria-label={tr("时间轴", "Timeline")}>
           {(["sequence", "duration"] as const).map((m) => (
-            <button key={m} role="radio" aria-checked={mode === m} data-on={mode === m} onClick={() => setMode(m)} title={m === "sequence" ? "每条记录等宽" : "按记录的实际开始时间与时长（去掉空闲间隔）"}>
-              {m === "sequence" ? "等宽" : "实际时长"}
+            <button key={m} role="radio" aria-checked={mode === m} data-on={mode === m} onClick={() => setMode(m)} title={m === "sequence" ? tr("每条记录等宽", "Every record the same width") : tr("按记录的实际开始时间与时长（去掉空闲间隔）", "By each record's real start time and duration (idle gaps removed)")}>
+              {m === "sequence" ? tr("等宽", "Even") : tr("实际时长", "Real time")}
             </button>
           ))}
         </div>
         <button className="ds-text-btn" disabled={!!play} onClick={() => setCollapsed(allOpen ? new Set(turns.map((t) => t.n)) : new Set())}>
-          {allOpen ? "收起所有轮次" : "展开所有轮次"}
+          {allOpen ? tr("收起所有轮次", "Collapse all") : tr("展开所有轮次", "Expand all")}
         </button>
         <label className="ds-search">
           <IconSearch size={14} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索" aria-label="搜索轨迹" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tr("搜索", "Search")} aria-label={tr("搜索轨迹", "Search trajectory")} />
         </label>
       </div>
       {model ? (
         <TrajectoryTimeline model={model} sel={sel} onSel={setSel} onPick={pickRecord} onPickTurn={(n) => reveal(n)} selectedIndex={selectedIndex} activeTurn={selectedTurn ?? play?.n ?? null} />
       ) : (
-        <div className="ds-timeline ds-empty-line">还没有记录</div>
+        <div className="ds-timeline ds-empty-line">{tr("还没有记录", "No records yet")}</div>
       )}
       {sel && dom && (
         <div className="ds-traj-focus">
-          只看{caption(dom, sel)}
+          {tr("只看", "Only: ")}{caption(dom, sel)}
           <button className="ds-text-btn" onClick={() => setSel(null)}>
-            清除
+            {tr("清除", "Clear")}
           </button>
         </div>
       )}
@@ -406,7 +408,7 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
         })}
       </div>
       {play ? (
-        <JumpPill show={away} unread={0} label="回到当前步" onJump={() => ((following.current = true), setAway(false), toNow())} />
+        <JumpPill show={away} unread={0} label={tr("回到当前步", "Back to current step")} onJump={() => ((following.current = true), setAway(false), toNow())} />
       ) : (
         <JumpPill show={jump.show} unread={jump.unread} running={working} onJump={jump.jump} />
       )}
@@ -418,14 +420,14 @@ const recordId = (turns: TrajTurn[], index: number) => turns.flatMap((t) => t.st
 
 function TurnSection({ sessionId, turn, open, dim, onToggle, kids, children }: { sessionId: string; turn: TrajTurn; open: boolean; /** another turn is playing: this one is folded and faded */ dim?: boolean; onToggle: () => void; kids?: WorkRun[]; children: React.ReactNode }) {
   return (
-    <section className="ds-turn" data-traj-turn={turn.n} data-running={turn.running} data-dim={dim || undefined} title={dim ? "回放中，只看正在放的这一轮" : undefined}>
+    <section className="ds-turn" data-traj-turn={turn.n} data-running={turn.running} data-dim={dim || undefined} title={dim ? tr("回放中，只看正在放的这一轮", "Replaying: only the turn being played is shown") : undefined}>
       <div className="ds-turn-headrow">
       <button className="ds-turn-head" onClick={onToggle} aria-expanded={open}>
         <IconChevron open={open} />
-        <b>第 {turn.n} 轮</b>
-        {turn.source === "terminal" && <span className="ds-tag">终端</span>}
-        {turn.running && <span className="ds-dot" data-tone="run">进行中</span>}
-        {turn.error && <span className="ds-dot" data-tone="error">出错</span>}
+        <b>{tr(`第 ${turn.n} 轮`, `Turn ${turn.n}`)}</b>
+        {turn.source === "terminal" && <span className="ds-tag">{tr("终端", "Terminal")}</span>}
+        {turn.running && <span className="ds-dot" data-tone="run">{tr("进行中", "In progress")}</span>}
+        {turn.error && <span className="ds-dot" data-tone="error">{tr("出错", "Error")}</span>}
         <time>{clock(turn.startedAt)}</time>
         <UsageMeta model={turn.model} effort={turn.effort} usage={turn.usage} durationMs={turn.durationMs} compact />
       </button>
@@ -442,13 +444,13 @@ function SubAgents({ kids }: { kids: WorkRun[] }) {
   const at = Date.now();
   return (
     <div className="ds-kids">
-      <div className="ds-group-head"><span>子代理 {kids.length}</span></div>
+      <div className="ds-group-head"><span>{tr(`子代理 ${kids.length}`, `Sub-agents ${kids.length}`)}</span></div>
       {kids.map((k) => {
         const last = k.receipts.at(-1);
-        const state = k.running && !k.doneAt ? "运行中" : last ? RECEIPT_NAMES[receiptView(k, last)] : "";
+        const state = k.running && !k.doneAt ? tr("运行中", "Running") : last ? RECEIPT_NAMES[receiptView(k, last)] : "";
         const took = k.spawnAt != null ? fmtDuration(Math.max(0, (k.doneAt ?? (k.running ? at : k.lastAt)) - k.spawnAt)) : null;
         return (
-          <button key={k.id} className="ds-kid" data-on={followed === k.id || undefined} onClick={() => liveFollow.follow(k.id)} title={k.task ?? "让镜头跟着它"}>
+          <button key={k.id} className="ds-kid" data-on={followed === k.id || undefined} onClick={() => liveFollow.follow(k.id)} title={k.task ?? tr("让镜头跟着它", "Follow it with the camera")}>
             <RunAvatar agent={k.agent} size={16} />
             <span className="ds-kid-name">{k.name}</span>
             <span className="ds-kid-state">{state}</span>
@@ -464,7 +466,7 @@ function StepGroup({ step, children }: { step: TrajStep; children: React.ReactNo
   return (
     <div className="ds-group">
       <div className="ds-group-head">
-        <span>{step.n === 0 ? "消息" : `第 ${step.n} 步`}</span>
+        <span>{step.n === 0 ? tr("消息", "Message") : tr(`第 ${step.n} 步`, `Step ${step.n}`)}</span>
         {step.description && <em>{step.description}</em>}
       </div>
       {children}
@@ -487,11 +489,11 @@ function RecordRow({ sessionId, r, canPlay, onGo, onPlay, selected, onSelect, ag
       >
         <span className="ds-rec-i">#{r.index}</span>
         <span className="ds-rec-kind">{r.kind === "message" && agent && <AgentAvatar kind={agent} size={16} />}{KIND[r.kind]}</span>
-        <span className="ds-rec-text">{r.kind === "tool" ? <span className="ds-mono">{r.text}</span> : r.text || "（空）"}</span>
+        <span className="ds-rec-text">{r.kind === "tool" ? <span className="ds-mono">{r.text}</span> : r.text || tr("（空）", "(empty)")}</span>
         <span className="ds-rec-time">{r.running ? "…" : r.durationMs != null ? fmtDuration(r.durationMs) : clock(r.at)}</span>
       </button>
       {canPlay && (
-        <button className="ds-rec-play" onClick={onPlay} title="从这一步回放：小人和镜头从这里接着走" aria-label={`从 #${r.index} 这一步回放`}>
+        <button className="ds-rec-play" onClick={onPlay} title={tr("从这一步回放：小人和镜头从这里接着走", "Replay from this step: the avatar and camera carry on from here")} aria-label={tr(`从 #${r.index} 这一步回放`, `Replay from step #${r.index}`)}>
           ▶
         </button>
       )}
@@ -502,7 +504,7 @@ function RecordRow({ sessionId, r, canPlay, onGo, onPlay, selected, onSelect, ag
           <div className="ds-inspector">
             <div className="ds-payload">
               <div className="ds-payload-head">
-                {r.kind === "user" ? (r.item.source === "terminal" ? "终端输入" : messageCard(r.item) ? "来自 Agora · 原文" : "来自 Agora") : "回复"}
+                {r.kind === "user" ? (r.item.source === "terminal" ? tr("终端输入", "Terminal input") : messageCard(r.item) ? tr("来自 Agora · 原文", "From Agora · original") : tr("来自 Agora", "From Agora")) : tr("回复", "Reply")}
                 <span>{clock(r.at)}</span>
               </div>
               <pre className="ds-prose">{r.item.text}</pre>

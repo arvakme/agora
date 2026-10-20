@@ -14,6 +14,7 @@
 // Bubbles come in priority order (needs-you first, the main agent, then sub-agents); figures whose
 // heads are side by side extend away from each other (the left one leftwards, the right one
 // rightwards) so both keep their tails. Pure (type-only imports); obstacles go through a grid index.
+import { lang } from "../i18n";
 import type { Box } from "../canvas/clearance";
 
 export type BubbleIn = {
@@ -52,7 +53,7 @@ const SIDE = 10;
  * The widest a bubble gets (px): longer words end in … and show in full while it is hovered (workstation.css `--bub-max`,
  * the same number). The selected bubble adds its two buttons beside the words, so it is wider than this by their width.
  */
-export const BUBBLE_MAX_W = 260;
+export const BUBBLE_MAX_W = lang() === "en" ? 300 : 260;
 
 const hit = (a: Box, b: Box, pad = 0) => a.x < b.x + b.w + pad && b.x < a.x + a.w + pad && a.y < b.y + b.h + pad && b.y < a.y + a.h + pad;
 

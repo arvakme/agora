@@ -9,6 +9,7 @@ import { ProcessFold, ToolRow } from "./TrajectoryView";
 import { fmtDuration, type TrajTurn } from "./trajectoryModel";
 import { activityModel, keepOpen, processMode, wasKeptOpen, type ProcessMode } from "./activityCard";
 import "./activityCard.css";
+import { tr } from "../i18n";
 
 export const useProcessMode = (sessionId: string) => useSyncExternalStore(processMode.subscribe, () => processMode.get(sessionId));
 
@@ -61,15 +62,15 @@ function ActivityCard({ sessionId, turn, waiting }: { sessionId: string; turn: T
         <Markdown key={r.id} className="ds-process-say" text={r.item.text ?? ""} />
       ))}
       {failed.length > 0 && (
-        <div className="ds-act-failed" role="group" aria-label="失败的动作">
-          {m.failed.length > failed.length && <p className="ds-act-more">还有 {m.failed.length - failed.length} 个失败的动作在完整列表里</p>}
+        <div className="ds-act-failed" role="group" aria-label={tr("失败的动作", "Failed actions")}>
+          {m.failed.length > failed.length && <p className="ds-act-more">{tr(`还有 ${m.failed.length - failed.length} 个失败的动作在完整列表里`, `${m.failed.length - failed.length} more failed action${m.failed.length - failed.length === 1 ? "" : "s"} in the full list`)}</p>}
           {failed.map((r) => (
             <ToolRow key={r.id} sessionId={sessionId} item={r.item} open={!!tools[r.id]} onToggle={() => toggleTool(r.id)} />
           ))}
         </div>
       )}
-      <section className="ds-act-card" aria-label="这一轮正在做什么">
-        <button className="ds-act-head" onClick={toggle} aria-expanded={open} title={open ? "收起，只看当前动作" : "展开，看每一个动作"}>
+      <section className="ds-act-card" aria-label={tr("这一轮正在做什么", "What this turn is doing")}>
+        <button className="ds-act-head" onClick={toggle} aria-expanded={open} title={open ? tr("收起，只看当前动作", "Collapse to the current action") : tr("展开，看每一个动作", "Expand to see every action")}>
           <span className="ds-act-spin" aria-hidden />
           <b>{m.title}</b>
           <time>{fmtDuration(now - turn.startedAt)}</time>
@@ -90,8 +91,8 @@ function ActivityCard({ sessionId, turn, waiting }: { sessionId: string; turn: T
             </div>
             <div className="ds-act-foot">
               <span>{m.stats}</span>
-              <button className="ds-text-btn" aria-pressed={follow} onClick={() => setFollow(!follow)} title="新的动作出现时，列表自己滚到底">
-                自动滚到底{follow ? "：开" : "：关"}
+              <button className="ds-text-btn" aria-pressed={follow} onClick={() => setFollow(!follow)} title={tr("新的动作出现时，列表自己滚到底", "Scroll to the bottom when a new action appears")}>
+                {tr("自动滚到底", "Auto-scroll")}{follow ? tr("：开", ": on") : tr("：关", ": off")}
               </button>
             </div>
           </>
@@ -118,8 +119,8 @@ export function LiveBar({ text, since, waiting, onStop }: { text: string; since:
       <span className="sp-livebar-text" title={text}>{text}</span>
       {since != null && <time>{fmtDuration(Math.max(0, now - since))}</time>}
       {onStop && (
-        <button className="sp-livebar-stop" onClick={onStop} title="打断这一轮">
-          ■ 停止
+        <button className="sp-livebar-stop" onClick={onStop} title={tr("打断这一轮", "Interrupt this turn")}>
+          ■ {tr("停止", "Stop")}
         </button>
       )}
     </div>
@@ -127,17 +128,17 @@ export function LiveBar({ text, since, waiting, onStop }: { text: string; since:
 }
 
 export const PROCESS_CHOICES: [ProcessMode, string, string][] = [
-  ["brief", "简洁", "进行中的一轮只显示一张卡：当前动作和已完成几个；点开看每一个动作"],
-  ["detail", "详细", "进行中逐条列出每个动作，和以前一样"],
+  ["brief", tr("简洁", "Brief"), tr("进行中的一轮只显示一张卡：当前动作和已完成几个；点开看每一个动作", "A running turn shows one card: the current action and how many are done; open it to see every action")],
+  ["detail", tr("详细", "Detailed"), tr("进行中逐条列出每个动作，和以前一样", "A running turn lists every action, one by one, as before")],
 ];
 
 /** 「过程：简洁 / 详细」 in the session panel's ⋯ menu: this session, this browser. */
 export function ProcessChoice({ sessionId }: { sessionId: string }) {
   const mode = useProcessMode(sessionId);
   return (
-    <div className="seg vm-seg process-choice" role="radiogroup" aria-label="过程怎么显示">
+    <div className="seg vm-seg process-choice" role="radiogroup" aria-label={tr("过程怎么显示", "How the process is shown")}>
       {PROCESS_CHOICES.map(([k, label, tip]) => (
-        <button key={k} role="radio" aria-checked={mode === k} data-on={mode === k} title={`${tip}。只影响这个会话，只在这个浏览器里记住`} onClick={() => processMode.set(sessionId, k)}>
+        <button key={k} role="radio" aria-checked={mode === k} data-on={mode === k} title={tr(`${tip}。只影响这个会话，只在这个浏览器里记住`, `${tip}. Only this session, remembered in this browser only`)} onClick={() => processMode.set(sessionId, k)}>
           {label}
         </button>
       ))}

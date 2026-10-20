@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { IconClose, IconPause, IconPlay } from "../app/icons";
 import { clock, replayTime, useReplay } from "../workstation/clock";
 import { plays, usePlay } from "../workstation/replayMode";
+import { tr } from "../i18n";
 
 export const PLAY_SPEEDS = [0.5, 1, 2, 4] as const;
 
@@ -33,13 +34,13 @@ export function PlayControls() {
     clock.play(at >= r.until - 1 ? p.win.start : at, r.until, r.speed, r.gaps); // at the end: again from the start
   };
   return (
-    <div className="ds-play" role="toolbar" aria-label="回放控制">
-      <b className="ds-play-turn">第 {p.n} 轮</b>
-      <span className="ds-play-state">{playing ? "回放中" : "已暂停"}</span>
-      <button className="icon-btn sm" onClick={toggle} aria-label={playing ? "暂停" : "继续"} title={playing ? "暂停" : "继续"}>
+    <div className="ds-play" role="toolbar" aria-label={tr("回放控制", "Replay controls")}>
+      <b className="ds-play-turn">{tr(`第 ${p.n} 轮`, `Turn ${p.n}`)}</b>
+      <span className="ds-play-state">{playing ? tr("回放中", "Replaying") : tr("已暂停", "Paused")}</span>
+      <button className="icon-btn sm" onClick={toggle} aria-label={playing ? tr("暂停", "Pause") : tr("继续", "Resume")} title={playing ? tr("暂停", "Pause") : tr("继续", "Resume")}>
         {playing ? <IconPause size={14} /> : <IconPlay size={14} />}
       </button>
-      <div className="seg" data-static role="radiogroup" aria-label="倍速">
+      <div className="seg" data-static role="radiogroup" aria-label={tr("倍速", "Speed")}>
         {PLAY_SPEEDS.map((s) => (
           <button key={s} role="radio" aria-checked={(r?.speed ?? 1) === s} data-on={(r?.speed ?? 1) === s} onClick={() => clock.speed(s)}>
             {s}×
@@ -47,7 +48,7 @@ export function PlayControls() {
         ))}
       </div>
       <span className="grow" />
-      <button className="icon-btn sm" onClick={() => plays.exit()} aria-label="退出回放（Esc）" title="退出回放（Esc）">
+      <button className="icon-btn sm" onClick={() => plays.exit()} aria-label={tr("退出回放（Esc）", "Exit replay (Esc)")} title={tr("退出回放（Esc）", "Exit replay (Esc)")}>
         <IconClose size={14} />
       </button>
     </div>

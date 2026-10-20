@@ -69,6 +69,8 @@ import { useRuns, type Runs } from "./runs/store";
 import { touchedVersion } from "./runs/touched";
 import { touches } from "./runs/touch";
 import { receiptText, type FlatRun } from "./runs/types";
+import { DISPATCH } from "./runs/derive";
+import { lang, tr } from "../i18n";
 import { TalkBubble } from "./TalkBubble";
 import { glideTo } from "../canvas/glide";
 import { itemOfStop, itemsOfStop, latestTurnWindow, pointAt, spanOf, stopForItem, traceAt, walkedAt, type Trace, type TurnWindow } from "./trace";
@@ -81,7 +83,12 @@ const SNAP_MS = 250;
 const BUBBLE_EXIT_MS = 120;
 const RING_EXIT_MS = 300;
 const pad2 = (n: number) => String(n).padStart(2, "0");
-const secs = (ms: number) => (ms < 10_000 ? `${(ms / 1000).toFixed(1).replace(/\.0$/, "")} 秒` : `${Math.round(ms / 1000)} 秒`);
+const secs = (ms: number) => {
+  const v = ms < 10_000 ? (ms / 1000).toFixed(1).replace(/\.0$/, "") : String(Math.round(ms / 1000));
+  return tr(`${v} 秒`, `${v}s`);
+};
+const OFF = tr("图外", "Off the diagram");
+const NODE = tr("节点", "node");
 const base = (p: string) => p.split("/").pop() || p;
 const vkOf = (v: Viewport) => `${v.scrollX}|${v.scrollY}|${v.zoom}|${v.width}|${v.height}`;
 const px = (n: number) => n.toFixed(2);
@@ -329,7 +336,10 @@ function doorTrip(k: number, dir: 1 | -1, leaving: boolean, f: 1 | -1): Trip {
 
 const KIND_ICON: Record<string, typeof IconEye> = { read: IconEye, write: IconCode, exec: IconTerminal, think: IconCpu, wait: IconMessage, idle: IconCheck, walk: IconPath, delegate: IconSend, handoff: IconSend };
 /** The one word a collapsed bubble (a chip at the figure) keeps. */
-const CHIP_VERB: Record<string, string> = { read: "读", write: "写", exec: "跑", think: "想", wait: "等你", idle: "闲", walk: "走", delegate: "派", handoff: "交", unknown: "?", conflict: "写" };
+const CHIP_VERB: Record<string, string> =
+  lang() === "en"
+    ? { read: "Read", write: "Write", exec: "Run", think: "Think", wait: "Waiting", idle: "Idle", walk: "Walk", delegate: "Dispatch", handoff: "Hand off", unknown: "?", conflict: "Write" }
+    : { read: "读", write: "写", exec: "跑", think: "想", wait: "等你", idle: "闲", walk: "走", delegate: "派", handoff: "交", unknown: "?", conflict: "写" };
 
 /** What a worker's bubble says (the prototype's wording and verb icons). `key` changes when the words do (cross-fade). */
 function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflicts: WriteConflict[], byId: Map<string, FlatRun>, folded: number, quiet = 0): { kind: string; key: string; body: ReactNode; chip: ReactNode; verb: string } {
@@ -338,42 +348,42 @@ function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflic
   const par = f.parent;
   const back = !!par && run.doneAt != null && t >= run.doneAt;
   const el = g ? <span className="el">{secs(t - g.start)}</span> : null;
-  const place = (p: string) => (p === OUTSIDE ? "图外" : (geom.labels.get(p) ?? "节点"));
+  const place = (p: string) => (p === OUTSIDE ? OFF : (geom.labels.get(p) ?? NODE));
   // A sub-agent between two commands (or sent and not yet taken) is thinking, not idle: only one that is over is.
   let kind: string = st.pose === "walk" ? "walk" : st.pose === "handoff" || st.pose === "unknown" ? st.pose : g ? g.kind : st.pose === "think" ? "think" : "idle";
   const Ic = KIND_ICON[kind];
   const icon = Ic ? <Ic size={14} /> : null;
   let body: ReactNode;
-  if (kind === "walk" && back) body = <>{icon}<span className="v">走回</span><span>{par!.name}</span><span className="el">交结果</span></>;
-  else if (kind === "walk") body = <>{icon}<span className="v">走去</span><span>{place(st.at)}</span>{g?.say ? <span className="el">要{g.say}</span> : g?.path && <span className="el">要{g.kind === "write" ? "写" : g.kind === "exec" ? "跑" : "读"} {base(g.path)}</span>}</>;
-  else if (kind === "handoff") body = <>{icon}<span className="v">交给 {par?.name}</span><span className="el">结果回到父会话</span></>;
-  else if (kind === "unknown") body = <span className="el">只有回执，看不到它在做什么</span>;
+  if (kind === "walk" && back) body = <>{icon}<span className="v">{tr("走回", "Back to")}</span><span>{par!.name}</span><span className="el">{tr("交结果", "with the result")}</span></>;
+  else if (kind === "walk") body = <>{icon}<span className="v">{tr("走去", "Going to")}</span><span>{place(st.at)}</span>{g?.say ? <span className="el">{tr(`要${g.say}`, g.say)}</span> : g?.path && <span className="el">{tr(`要${g.kind === "write" ? "写" : g.kind === "exec" ? "跑" : "读"} ${base(g.path)}`, `to ${g.kind === "write" ? "write" : g.kind === "exec" ? "run" : "read"} ${base(g.path)}`)}</span>}</>;
+  else if (kind === "handoff") body = <>{icon}<span className="v">{tr(`交给 ${par?.name}`, `Handing to ${par?.name}`)}</span><span className="el">{tr("结果回到父会话", "result goes to the parent session")}</span></>;
+  else if (kind === "unknown") body = <span className="el">{tr("只有回执，看不到它在做什么", "Receipts only — can't see what it's doing")}</span>;
   else if (kind === "idle" && par && st.receipt && st.receipt !== "returned" && st.receipt !== "accepted") body = <span className="v">{receiptText(run, st.receipt)}</span>; // stopped without handing back, cut off, failed: no tick, it did not finish well
-  else if (kind === "idle" && par) body = <>{icon}<span className="v">已交回</span><span className="el">结果回到 {par.name}</span></>; // handed back: not "idle"
-  else if (kind === "idle") body = <>{icon}<span className="v">空闲</span><span className="el">这一轮做完了</span></>;
+  else if (kind === "idle" && par) body = <>{icon}<span className="v">{tr("已交回", "Handed back")}</span><span className="el">{tr(`结果回到 ${par.name}`, `result is with ${par.name}`)}</span></>; // handed back: not "idle"
+  else if (kind === "idle") body = <>{icon}<span className="v">{tr("空闲", "Idle")}</span><span className="el">{tr("这一轮做完了", "turn done")}</span></>;
   else if (kind === "wait")
     body = (
       <>
         {icon}
-        <span className="v">等你回复</span>
+        <span className="v">{tr("等你回复", "Waiting for you")}</span>
         {g?.question && <span className="q">{g.question}</span>}
-        <button className="reply" onClick={(e) => (e.stopPropagation(), openRun(f))}>去回复</button>
+        <button className="reply" onClick={(e) => (e.stopPropagation(), openRun(f))}>{tr("去回复", "Reply")}</button>
       </>
     );
   else if (g?.say && (kind === "write" || kind === "think")) body = <>{icon}<span className="f">{g.say}</span></>; // a stretch with its own words (the build replay, ../buildreplay/plan.ts)
-  else if (kind === "think") body = <>{icon}<span className="v">{par && !g && st.receipt === "dispatched" ? `等 ${run.name} 接手` : "思考"}</span>{el}</>;
+  else if (kind === "think") body = <>{icon}<span className="v">{par && !g && st.receipt === "dispatched" ? tr(`等 ${run.name} 接手`, `Waiting for ${run.name} to start`) : tr("思考", "Thinking")}</span>{el}</>;
   else if (kind === "delegate") {
     const c = g?.child ? byId.get(g.child)?.run : undefined;
-    body = <>{icon}<span className="v">派</span><span>{c ? `${c.name}：${c.task ?? ""}` : g?.label.replace(/^派 /, "")}</span>{c && <span className="el">{c.via === "task" ? "Task 工具" : c.via === "dispatch" ? "Agora 派发" : "原生子代理"}</span>}</>;
-  } else if (kind === "exec") body = <>{icon}<span className="v">{g?.verifies ? "验收 · " : ""}跑</span><span className="f">{g?.cmd ?? g?.label}</span>{el}</>;
-  else body = <>{icon}<span className="v">{g?.verifies ? "验收 · " : ""}{kind === "write" ? "写" : "读"}</span><span className="f">{pathLabel(g?.path) || g?.say || ""}</span>{el}</>;
+    body = <>{icon}<span className="v">{DISPATCH}</span><span>{c ? `${c.name}${tr("：", ": ")}${c.task ?? ""}` : g?.label.startsWith(`${DISPATCH} `) ? g.label.slice(DISPATCH.length + 1) : g?.label}</span>{c && <span className="el">{c.via === "task" ? tr("Task 工具", "Task tool") : c.via === "dispatch" ? tr("Agora 派发", "Agora dispatch") : tr("原生子代理", "native sub-agent")}</span>}</>;
+  } else if (kind === "exec") body = <>{icon}<span className="v">{g?.verifies ? tr("验收 · ", "Verify · ") : ""}{tr("跑", "Running")}</span><span className="f">{g?.cmd ?? g?.label}</span>{el}</>;
+  else body = <>{icon}<span className="v">{g?.verifies ? tr("验收 · ", "Verify · ") : ""}{kind === "write" ? tr("写", "Writing") : tr("读", "Reading")}</span><span className="f">{pathLabel(g?.path) || g?.say || ""}</span>{el}</>;
   const c = conflictAt(conflicts, run.id, t);
   if (c && g) {
     kind = "conflict";
     const other = byId.get(c.runs.find((x) => x !== run.id)!)?.run;
-    body = <>{body}<span className="warn">{other?.name ?? "另一个 agent"} 也在改</span></>;
+    body = <>{body}<span className="warn">{tr(`${other?.name ?? "另一个 agent"} 也在改`, `${other?.name ?? "another agent"} is editing it too`)}</span></>;
   }
-  const verb = kind === "idle" && par ? (st.receipt === "returned" || st.receipt === "accepted" ? "交回" : "停") : (CHIP_VERB[kind] ?? "…");
+  const verb = kind === "idle" && par ? (st.receipt === "returned" || st.receipt === "accepted" ? tr("交回", "Back") : tr("停", "Stopped")) : (CHIP_VERB[kind] ?? "…");
   return {
     kind,
     key: `${kind}|${g?.start ?? st.at}|${st.receipt ?? ""}`,
@@ -383,16 +393,16 @@ function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflic
       <>
         <RunAvatar agent={run.agent} size={par ? 18 : 20} />
         {/* 「Codex Pi 派的 读 users.py 运行中」 */}
-        {par ? <><b className="who">{run.name}</b><span className="par">{par.name} 派的</span></> : <b className="who">{run.name}</b>}
+        {par ? <><b className="who">{run.name}</b><span className="par">{tr(`${par.name} 派的`, `from ${par.name}`)}</span></> : <b className="who">{run.name}</b>}
         {body}
-        {st.portal && <span className="portal" title={`在子图「${st.portal.label}」里`}>↘ 子图 · {st.portal.label}</span>}
+        {st.portal && <span className="portal" title={tr(`在子图「${st.portal.label}」里`, `In sub-diagram “${st.portal.label}”`)}>↘ {tr("子图", "Sub-diagram")} · {st.portal.label}</span>}
         {par && st.receipt && <span className="rc" data-r={st.receipt}>{receiptText(run, st.receipt)}</span>}
         {run.children.map((k) => {
           const acc = k.receipts.find((r) => r.accepted);
-          return acc && t >= acc.at && t < acc.at + 2500 ? <span key={k.id} className="rc" data-r="accepted">{k.name} 验收通过</span> : null;
+          return acc && t >= acc.at && t < acc.at + 2500 ? <span key={k.id} className="rc" data-r="accepted">{tr(`${k.name} 验收通过`, `${k.name} accepted`)}</span> : null;
         })}
-        {folded > 0 && <span className="kbadge" title={`它又派了 ${folded} 个子代理（更深一层不画在图上，见时间线）`}>+{folded}</span>}
-        {quiet > 0 && <span className="kbadge" data-quiet title={`${quiet} 个子代理的气泡收起了（这里挤不下；悬停小人或看时间线）`}>+{quiet}</span>}
+        {folded > 0 && <span className="kbadge" title={tr(`它又派了 ${folded} 个子代理（更深一层不画在图上，见时间线）`, `It dispatched ${folded} more ${folded === 1 ? "sub-agent" : "sub-agents"} (the deeper level isn't drawn on the diagram; see the timeline)`)}>+{folded}</span>}
+        {quiet > 0 && <span className="kbadge" data-quiet title={tr(`${quiet} 个子代理的气泡收起了（这里挤不下；悬停小人或看时间线）`, `${quiet} ${quiet === 1 ? "sub-agent's bubble is" : "sub-agents' bubbles are"} folded (no room here; hover the avatar or see the timeline)`)}>+{quiet}</span>}
       </>
     ),
   };
@@ -453,7 +463,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   // A canvas with nothing on it shows its own guide (「一张空白画布」): the layer gives way (no figures, bubbles, tray), the strip says so.
   const empty = useMemo(() => !view.elements.some((e) => !e.isDeleted), [view.elements, view.version]);
   useEffect(() => {
-    canvasWhere.set(view.id, { ctx, label: (p) => (p === OUTSIDE ? "图外" : (geom.labels.get(p) ?? "节点")), empty });
+    canvasWhere.set(view.id, { ctx, label: (p) => (p === OUTSIDE ? OFF : (geom.labels.get(p) ?? NODE)), empty });
   }, [view.id, ctx, geom, empty]);
   const [snap, setSnap] = useState<Snap>(EMPTY);
   const a = view.appState;
@@ -615,7 +625,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
       const f = snap.byId.get(id);
       if (!f || peekNodes.current.has(place)) continue;
       const where = snap.states.get(id)?.portal?.label;
-      const node = new PeekNode(id, f.run.agent, `${f.run.name} 在子图${where ? `「${where}」` : ""}里 · 点一下跟随`, (rid) => liveFollow.follow(rid));
+      const node = new PeekNode(id, f.run.agent, tr(`${f.run.name} 在子图${where ? `「${where}」` : ""}里 · 点一下跟随`, `${f.run.name} is in ${where ? `sub-diagram “${where}”` : "a sub-diagram"} · click to follow`), (rid) => liveFollow.follow(rid));
       layer.appendChild(node.g);
       peekNodes.current.set(place, { id, node });
     }
@@ -1201,7 +1211,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
     if (b) glideTo(api, { x: b.x + b.w / 2, y: b.y + b.h / 2 });
   }, [fo.pan?.key]);
   const errands = (trv?.subs ?? []).map((k) => ({ id: k.id, ...errand(k.stops.filter((x) => x.done).map((x) => geom.dock(x.place))), run: snap.byId.get(k.id)?.run }));
-  const placeName = (p: string) => (p === OUTSIDE ? "图外" : (geom.labels.get(p) ?? "节点"));
+  const placeName = (p: string) => (p === OUTSIDE ? OFF : (geom.labels.get(p) ?? NODE));
   return (
     <div className="ws-layer" ref={rootEl} style={{ clipPath: clip, display: hideEmptyLayer(empty, runs.flat.some((f) => f.run.running)) ? "none" : undefined }} data-empty={empty || undefined} data-trace={keep ? "" : undefined}>
       <svg className="ws-svg" aria-hidden={!figuresOn}>
@@ -1289,8 +1299,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
       {figuresOn && !ctx.door?.entrance && <OffDiagramChip locate={geom.locate} />}
       {snap.tray && (
         <div className="ws-tray" ref={trayEl}>
-          <b>图外</b>
-          <span>这张图没关联的文件，例如 docs/</span>
+          <b>{OFF}</b>
+          <span>{tr("这张图没关联的文件，例如 docs/", "Files this diagram doesn't link, e.g. docs/")}</span>
           <TrayHint locate={geom.locate} />
         </div>
       )}
@@ -1310,7 +1320,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
           <i
             role="button"
             tabIndex={0}
-            aria-label={`第 ${m.n} 站 · ${placeName(m.s.place)} · ${m.s.calls.length} 次调用`}
+            aria-label={tr(`第 ${m.n} 站 · ${placeName(m.s.place)} · ${m.s.calls.length} 次调用`, `Stop ${m.n} · ${placeName(m.s.place)} · ${m.s.calls.length} ${m.s.calls.length === 1 ? "call" : "calls"}`)}
             onClick={() => jumpToStop(m.i)}
             onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), jumpToStop(m.i))}
           >
@@ -1323,7 +1333,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
           )}
           <div className="ws-stop-calls" role="tooltip">
             <b>
-              第 {m.n} 站 · {placeName(m.s.place)} · {hhmmss(m.s.at)}
+              {tr(`第 ${m.n} 站`, `Stop ${m.n}`)} · {placeName(m.s.place)} · {hhmmss(m.s.at)}
             </b>
             {m.entry.length > 0 && <span className="ws-stop-entry">{stopEntryNote(m.n, m.entry)}</span>}
             {m.s.calls.length ? (
@@ -1333,10 +1343,10 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
                     {c.label}
                   </li>
                 ))}
-                {m.s.calls.length > 12 && <li className="more">…还有 {m.s.calls.length - 12} 条</li>}
+                {m.s.calls.length > 12 && <li className="more">{tr(`…还有 ${m.s.calls.length - 12} 条`, `…${m.s.calls.length - 12} more`)}</li>}
               </ol>
             ) : (
-              <span className="none">这一站没有工具调用</span>
+              <span className="none">{tr("这一站没有工具调用", "No tool calls at this stop")}</span>
             )}
           </div>
         </span>
@@ -1392,7 +1402,7 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
               <span className="ws-bub-chip" key={`c${b.key}`}>{b.chip}</span>
               {sel && f && !exiting && (
                 <span className="ws-acts" data-open>
-                  {following && !camFollow.paused && <span className="ws-follow-tag" title="镜头正跟着它；点气泡取消选中（镜头仍跟着）">跟随中</span>}
+                  {following && !camFollow.paused && <span className="ws-follow-tag" title={tr("镜头正跟着它；点气泡取消选中（镜头仍跟着）", "The camera is following it; click the bubble to deselect (the camera keeps following)")}>{tr("跟随中", "Following")}</span>}
                   {bubbleActions(!!f.root.sessionId).map((act) => (
                     <button key={act} onClick={(e) => (e.stopPropagation(), openRun(f))}>{act}</button>
                   ))}
@@ -1406,7 +1416,8 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
         const lead = snap.byId.get(c.ids[0])!;
         const st = snap.states.get(c.ids[0])!;
         const k = st.seg?.kind === "wait" ? "wait" : st.seg?.kind === "write" ? "write" : st.pose === "idle" ? "idle" : "busy";
-        const verb = st.seg?.kind === "wait" ? "等你回复" : st.seg?.kind === "write" ? "写" : st.seg?.kind === "read" ? "读" : st.seg?.kind === "exec" ? "跑" : st.pose === "idle" ? "空闲" : "思考";
+        const sk = st.seg?.kind;
+        const verb = sk === "wait" ? tr("等你回复", "Waiting for you") : sk === "write" ? tr("写", "Writing") : sk === "read" ? tr("读", "Reading") : sk === "exec" ? tr("跑", "Running") : st.pose === "idle" ? tr("空闲", "Idle") : tr("思考", "Thinking");
         return (
           <button
             key={c.place}
@@ -1423,18 +1434,18 @@ export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
             <RunAvatar agent={lead.run.agent} size={18} />
             <b>{lead.run.name}</b>
             <span>{verb}</span>
-            {pathLabel(st.seg?.path) && (verb === "写" || verb === "读") && <span className="f">{base(st.seg!.path!)}</span>}
+            {pathLabel(st.seg?.path) && (sk === "write" || sk === "read") && <span className="f">{base(st.seg!.path!)}</span>}
             {c.ids.length > 1 && <em>+{c.ids.length - 1}</em>}
           </button>
         );
       })}
       {playing && !only && <ReplayBar />}
       {!playing && !only && fo.traced && trv && trv.stops.length > 0 && <TraceBar turn={fo.turn?.n ?? (tracedRun ? latestTurnWindow(tracedRun)?.n ?? null : null)} />}
-      {!playing && !only && playState.starting && <div className="ws-live-bar" role="status"><span className="btn sm">正在准备回放…（Esc 取消）</span></div>}
+      {!playing && !only && playState.starting && <div className="ws-live-bar" role="status"><span className="btn sm">{tr("正在准备回放…（Esc 取消）", "Preparing replay… (Esc to cancel)")}</span></div>}
       {!playing && !only && followLine && (
         <div className="ws-follow-status" role="status">
           <span>{followLine.text}</span>
-          <button className="btn sm ghost" onClick={() => liveFollow.resume()} title="你动了画布，镜头停下了；点一下继续跟着它走">继续</button>
+          <button className="btn sm ghost" onClick={() => liveFollow.resume()} title={tr("你动了画布，镜头停下了；点一下继续跟着它走", "You moved the canvas, so the camera stopped; click to keep following")}>{tr("继续", "Resume")}</button>
         </div>
       )}
       {playing && <ReplayMarks view={view} ctx={ctx} />}

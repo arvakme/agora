@@ -1,0 +1,426 @@
+<!doctype html>
+<!--
+  Agora README 横幅的源文件：程序化绘制（没有用任何图像模型或外部素材）。
+  先在离屏画布上画一幅平滑的底图（黄昏的天空、广场、柱廊、神庙），再用几十万笔短点按流场重新「点」一遍，
+  最后把星座一样的手绘架构图、站在节点上的小人叠在上面。随机数固定种子，每次渲染结果相同。
+  渲染：NODE_PATH=web/node_modules node docs/promo/render.cjs shot docs/assets/banner.html /tmp/banner.png 2400 800
+-->
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  html, body { margin: 0; background: #0e1430; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="2400" height="800"></canvas>
+<script>
+const W = 2400, H = 800, HORIZON = 560, SUN = { x: 1180, y: 572 };
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rnd = mulberry32(20261020);
+const R = (a, b) => a + (b - a) * rnd();
+
+// 值噪声 + fbm
+function hash(ix, iy) {
+  let h = (ix * 374761393 + iy * 668265263) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function vnoise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const a = hash(ix, iy), b = hash(ix + 1, iy), c = hash(ix, iy + 1), d = hash(ix + 1, iy + 1);
+  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+}
+function fbm(x, y) {
+  let v = 0, amp = 0.5, f = 1;
+  for (let i = 0; i < 5; i++) { v += amp * vnoise(x * f, y * f); f *= 2.03; amp *= 0.5; }
+  return v;
+}
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function mix(c1, c2, t) { return [lerp(c1[0], c2[0], t), lerp(c1[1], c2[1], t), lerp(c1[2], c2[2], t)]; }
+function ramp(stops, t) {
+  for (let i = 1; i < stops.length; i++) {
+    if (t <= stops[i][0]) {
+      const [t0, c0] = stops[i - 1], [t1, c1] = stops[i];
+      return mix(c0, c1, (t - t0) / (t1 - t0));
+    }
+  }
+  return stops[stops.length - 1][1];
+}
+
+// ---------- 1. 底图 ----------
+const base = document.createElement("canvas");
+base.width = W; base.height = H;
+const b = base.getContext("2d");
+
+const SKY = [
+  [0.0, [14, 20, 48]], [0.35, [34, 33, 78]], [0.6, [70, 50, 102]],
+  [0.8, [150, 78, 92]], [0.93, [222, 140, 78]], [1.0, [248, 204, 128]],
+];
+const img = b.createImageData(W, H);
+for (let y = 0; y < HORIZON; y++) {
+  for (let x = 0; x < W; x++) {
+    const dx = (x - SUN.x) / 900, dy = (y - SUN.y) / 380;
+    const glow = Math.exp(-(dx * dx + dy * dy) * 1.6);
+    let c = ramp(SKY, clamp(y / HORIZON * 0.82 + glow * 0.3, 0, 1));
+    // 云：夜空里一圈被落日从下面照亮的云带
+    const band = Math.exp(-Math.pow((y - 330 - 60 * Math.sin(x / 420)) / 120, 2));
+    const n = fbm(x / 260, y / 110);
+    const cloud = clamp((n - 0.48) * 4.5, 0, 1) * band * (1 - glow * 0.5);
+    if (cloud > 0) {
+      const lit = clamp(fbm(x / 140 + 7, (y + 18) / 60) * 1.4 - 0.25 + (y - 250) / 520 + glow * 0.6, 0, 1);
+      const cc = mix([46, 36, 82], [236, 168, 92], lit);
+      c = mix(c, cc, cloud * 0.92);
+    }
+    const i = (y * W + x) * 4;
+    img.data[i] = c[0]; img.data[i + 1] = c[1]; img.data[i + 2] = c[2]; img.data[i + 3] = 255;
+  }
+}
+// 地面：被光照的石板广场
+for (let y = HORIZON; y < H; y++) {
+  for (let x = 0; x < W; x++) {
+    const t = (y - HORIZON) / (H - HORIZON);
+    const dx = (x - SUN.x) / (500 + 900 * t);
+    const glow = Math.exp(-dx * dx * 1.4) * (1 - t * 0.55);
+    let c = mix([60, 38, 58], [30, 22, 44], t);
+    c = mix(c, [236, 170, 104], glow * 0.75);
+    // 透视石板缝
+    const px = (x - SUN.x) / Math.max(1, y - HORIZON + 6);
+    const seam = Math.abs(px * 6 - Math.round(px * 6)) < 0.02 + 0.0 * t;
+    const zrow = 260 / (y - HORIZON + 6);
+    const rowSeam = Math.abs(zrow - Math.round(zrow)) < 0.06 * (1 - t * 0.5);
+    if (seam || rowSeam) c = mix(c, [24, 16, 34], 0.45);
+    const i = (y * W + x) * 4;
+    img.data[i] = c[0]; img.data[i + 1] = c[1]; img.data[i + 2] = c[2]; img.data[i + 3] = 255;
+  }
+}
+b.putImageData(img, 0, 0);
+
+// 远山与城
+b.fillStyle = "rgb(58,36,70)";
+b.beginPath(); b.moveTo(0, HORIZON);
+for (let x = 0; x <= W; x += 8) {
+  const away = Math.abs(x - SUN.x) / 1200;
+  const hgt = (fbm(x / 380, 3.1) - 0.35) * 90 * clamp(away + 0.25, 0, 1);
+  b.lineTo(x, HORIZON - Math.max(0, hgt));
+}
+b.lineTo(W, HORIZON); b.closePath(); b.fill();
+b.fillStyle = "rgb(40,26,56)";
+for (let x = 1500; x < 1840; x += R(10, 26)) {
+  const w = R(10, 24), h = R(10, 38);
+  b.fillRect(x, HORIZON - h, w, h);
+}
+for (let x = 420; x < 760; x += R(10, 26)) {
+  const w = R(10, 24), h = R(8, 30);
+  b.fillRect(x, HORIZON - h, w, h);
+}
+
+const STONE_D = "rgb(28,18,40)", STONE_M = "rgb(52,32,58)", STONE_L = "rgb(120,74,74)";
+// 左侧柱廊（透视）
+function stoa() {
+  const vp = SUN;
+  const x0 = -40, x1 = 640;
+  const top0 = 330, base0 = 700;
+  const yTop = (x) => lerp(top0, 470, (x - x0) / (x1 - x0));
+  const yBase = (x) => lerp(base0, 615, (x - x0) / (x1 - x0));
+  // 屋顶与檐
+  b.fillStyle = STONE_D;
+  b.beginPath(); b.moveTo(x0, yTop(x0) - 46); b.lineTo(x1 + 20, yTop(x1) - 24); b.lineTo(x1 + 20, yTop(x1)); b.lineTo(x0, yTop(x0)); b.closePath(); b.fill();
+  b.fillStyle = STONE_M;
+  b.beginPath(); b.moveTo(x0, yTop(x0) - 8); b.lineTo(x1 + 20, yTop(x1) - 4); b.lineTo(x1 + 20, yTop(x1) + 6); b.lineTo(x0, yTop(x0) + 14); b.closePath(); b.fill();
+  // 柱子
+  const cols = [10, 120, 222, 316, 402, 480, 550, 612];
+  for (const cx of cols) {
+    const s = lerp(1, 0.55, (cx - x0) / (x1 - x0));
+    const w = 46 * s;
+    const t = yTop(cx) + 14 * s, bb = yBase(cx);
+    b.fillStyle = STONE_D; b.fillRect(cx - w / 2, t, w, bb - t);
+    b.fillStyle = STONE_L; b.fillRect(cx + w / 2 - w * 0.28, t, w * 0.28, bb - t); // 朝光的一侧
+    b.fillStyle = STONE_M; b.fillRect(cx - w / 2 - 6 * s, t - 4, w + 12 * s, 12 * s);
+    b.fillRect(cx - w / 2 - 6 * s, bb - 10 * s, w + 12 * s, 10 * s);
+  }
+  // 台阶
+  for (let k = 0; k < 3; k++) {
+    b.fillStyle = k % 2 ? STONE_M : STONE_D;
+    b.beginPath();
+    b.moveTo(x0, base0 + k * 16); b.lineTo(x1 + 30, 615 + k * 9); b.lineTo(x1 + 30, 624 + k * 9); b.lineTo(x0, base0 + 16 + k * 16);
+    b.closePath(); b.fill();
+  }
+}
+stoa();
+
+// 右侧神庙正面
+function temple() {
+  const x0 = 1880, x1 = 2440, top = 420, foot = 660;
+  b.fillStyle = STONE_D;
+  b.beginPath(); b.moveTo(x0 - 20, top); b.lineTo((x0 + x1) / 2, top - 120); b.lineTo(x1 + 20, top); b.closePath(); b.fill();
+  b.strokeStyle = STONE_L; b.lineWidth = 3;
+  b.beginPath(); b.moveTo(x0 - 20, top); b.lineTo((x0 + x1) / 2, top - 120); b.stroke();
+  b.fillStyle = STONE_M; b.fillRect(x0 - 26, top, x1 - x0 + 52, 26);
+  b.fillStyle = STONE_D; b.fillRect(x0 - 20, top + 26, x1 - x0 + 40, 20);
+  for (let i = 0; i < 6; i++) {
+    const cx = x0 + 30 + i * 98, w = 44;
+    b.fillStyle = STONE_D; b.fillRect(cx - w / 2, top + 46, w, foot - top - 46);
+    b.fillStyle = STONE_L; b.fillRect(cx - w / 2, top + 46, w * 0.25, foot - top - 46); // 光从左边来
+    b.fillStyle = STONE_M; b.fillRect(cx - w / 2 - 6, foot - 12, w + 12, 12);
+  }
+  for (let k = 0; k < 3; k++) {
+    b.fillStyle = k % 2 ? STONE_M : STONE_D;
+    b.fillRect(x0 - 40 - k * 16, foot + k * 14, x1 - x0 + 80 + k * 32, 14);
+  }
+}
+temple();
+
+// 广场上的人：黑色剪影，一个指着天上的图
+function person(x, y, h, pose) {
+  b.save(); b.translate(x, y); b.scale(h / 100, h / 100);
+  b.fillStyle = "rgb(14,9,22)";
+  b.beginPath(); b.arc(0, -88, 8.5, 0, Math.PI * 2); b.fill();      // 头
+  b.beginPath();                                                     // 长袍
+  b.moveTo(-9, -78); b.quadraticCurveTo(-17, -40, -22, 0); b.lineTo(22, 0); b.quadraticCurveTo(16, -40, 9, -78); b.closePath(); b.fill();
+  b.lineCap = "round"; b.strokeStyle = "rgb(14,9,22)"; b.lineWidth = 7;
+  if (pose === "point") { b.beginPath(); b.moveTo(4, -72); b.lineTo(30, -110); b.lineTo(40, -126); b.stroke(); }
+  else if (pose === "look") { b.beginPath(); b.moveTo(-6, -70); b.lineTo(-14, -40); b.stroke(); }
+  b.restore();
+}
+person(1000, 742, 128, "point");
+person(944, 748, 112, "look");
+person(1470, 668, 70, "look");
+person(1510, 672, 64, "look");
+person(760, 640, 46, "look");
+
+// ---------- 2. 点彩 ----------
+const src = b.getImageData(0, 0, W, H).data;
+const out = document.getElementById("c").getContext("2d");
+out.fillStyle = "rgb(16,14,34)"; out.fillRect(0, 0, W, H);
+out.globalAlpha = 0.25; out.drawImage(base, 0, 0); out.globalAlpha = 1;
+
+function flow(x, y) {
+  if (y < HORIZON) {
+    // 天空绕着落日打旋，越往上越弯
+    const a = Math.atan2(y - SUN.y, x - SUN.x) + Math.PI / 2;
+    return a + (fbm(x / 500, y / 500) - 0.5) * 1.6;
+  }
+  return (fbm(x / 300, y / 300) - 0.5) * 0.6;
+}
+const N = 520000;
+out.lineCap = "round";
+for (let i = 0; i < N; i++) {
+  const x = rnd() * W, y = rnd() * H;
+  const k = ((y | 0) * W + (x | 0)) * 4;
+  let r = src[k], g = src[k + 1], bl = src[k + 2];
+  const j = R(0.78, 1.22);
+  const warmShift = R(-14, 14);
+  r = clamp(r * j + warmShift, 0, 255); g = clamp(g * j, 0, 255); bl = clamp(bl * j - warmShift * 0.6, 0, 255);
+  // 少量补色点，让颜色「闪」
+  if (rnd() < 0.05) { const t = rnd() < 0.5 ? [255, 214, 140] : [90, 110, 190]; r = lerp(r, t[0], 0.35); g = lerp(g, t[1], 0.35); bl = lerp(bl, t[2], 0.35); }
+  const a = flow(x, y);
+  const len = R(2.5, 6.5), wdt = R(1.6, 2.8);
+  out.strokeStyle = `rgb(${r | 0},${g | 0},${bl | 0})`;
+  out.lineWidth = wdt;
+  out.beginPath();
+  out.moveTo(x - Math.cos(a) * len / 2, y - Math.sin(a) * len / 2);
+  out.lineTo(x + Math.cos(a) * len / 2, y + Math.sin(a) * len / 2);
+  out.stroke();
+}
+
+// 星星
+for (let i = 0; i < 900; i++) {
+  const x = rnd() * W, y = Math.pow(rnd(), 1.6) * 380;
+  const s = Math.pow(rnd(), 3) * 2.2 + 0.6;
+  out.fillStyle = `rgba(255,${(226 + rnd() * 29) | 0},${(180 + rnd() * 60) | 0},${R(0.35, 0.9)})`;
+  out.beginPath(); out.arc(x, y, s, 0, Math.PI * 2); out.fill();
+}
+
+// ---------- 3. 星座：一张手绘的架构图 ----------
+const GOLD = [255, 216, 150], ACCENT = [196, 168, 255];
+const nodes = {
+  agent: { x: 560, y: 150, w: 190, h: 84 },
+  server: { x: 990, y: 96, w: 220, h: 92 },
+  canvas: { x: 1450, y: 150, w: 200, h: 86 },
+  logs: { x: 760, y: 318, w: 196, h: 84 },
+  sub: { x: 1230, y: 300, w: 250, h: 124 },
+  share: { x: 1740, y: 300, w: 176, h: 80 },
+};
+// 一个节点的轮廓：带抖动的圆角矩形，返回折线点
+function roughRect(n, jitter) {
+  const pts = [], r = 14, step = 6;
+  const path = [];
+  const { x, y, w, h } = n;
+  const seg = (ax, ay, bx, by) => { const L = Math.hypot(bx - ax, by - ay), m = Math.max(1, Math.round(L / step)); for (let i = 0; i < m; i++) path.push([lerp(ax, bx, i / m), lerp(ay, by, i / m)]); };
+  const arc = (cx, cy, a0) => { for (let i = 0; i < 4; i++) { const a = a0 + (i / 4) * Math.PI / 2; path.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); } };
+  seg(x + r, y, x + w - r, y); arc(x + w - r, y + r, -Math.PI / 2);
+  seg(x + w, y + r, x + w, y + h - r); arc(x + w - r, y + h - r, 0);
+  seg(x + w - r, y + h, x + r, y + h); arc(x + r, y + h - r, Math.PI / 2);
+  seg(x, y + h - r, x, y + r); arc(x + r, y + r, Math.PI);
+  const ph = rnd() * 10;
+  for (let i = 0; i < path.length; i++) {
+    const [px, py] = path[i];
+    pts.push([px + Math.sin(i * 0.37 + ph) * jitter + R(-0.6, 0.6), py + Math.cos(i * 0.29 + ph) * jitter + R(-0.6, 0.6)]);
+  }
+  return pts;
+}
+function strokePts(pts, color, alpha, width, upto = 1) {
+  const n = Math.floor(pts.length * upto);
+  out.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},${alpha})`;
+  out.lineWidth = width; out.lineJoin = "round";
+  out.beginPath(); out.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < n; i++) out.lineTo(pts[i][0], pts[i][1]);
+  out.stroke();
+}
+function starsAlong(pts, color, upto = 1, every = 2) {
+  const n = Math.floor(pts.length * upto);
+  for (let i = 0; i < n; i += every) {
+    const [x, y] = pts[i];
+    const s = R(0.9, 2.1);
+    out.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${R(0.55, 1)})`;
+    out.beginPath(); out.arc(x + R(-1, 1), y + R(-1, 1), s, 0, Math.PI * 2); out.fill();
+  }
+}
+function flare(x, y, size, color) {
+  const g = out.createRadialGradient(x, y, 0, x, y, size * 5);
+  g.addColorStop(0, `rgba(${color[0]},${color[1]},${color[2]},0.9)`);
+  g.addColorStop(0.2, `rgba(${color[0]},${color[1]},${color[2]},0.25)`);
+  g.addColorStop(1, `rgba(${color[0]},${color[1]},${color[2]},0)`);
+  out.fillStyle = g; out.beginPath(); out.arc(x, y, size * 5, 0, Math.PI * 2); out.fill();
+  out.strokeStyle = `rgba(255,240,210,0.8)`; out.lineWidth = 1.2;
+  out.beginPath(); out.moveTo(x - size * 4, y); out.lineTo(x + size * 4, y); out.moveTo(x, y - size * 4); out.lineTo(x, y + size * 4); out.stroke();
+  out.fillStyle = "rgb(255,248,230)"; out.beginPath(); out.arc(x, y, size * 0.8, 0, Math.PI * 2); out.fill();
+}
+function glowOn(color, blur) { out.shadowColor = `rgba(${color[0]},${color[1]},${color[2]},0.9)`; out.shadowBlur = blur; }
+function glowOff() { out.shadowBlur = 0; out.shadowColor = "transparent"; }
+
+// 箭头（略弯的手绘线，带箭头）
+function arrow(a, bb, color, alpha, bend = 0) {
+  const [x1, y1] = a, [x2, y2] = bb;
+  const mx = (x1 + x2) / 2 - (y2 - y1) * bend, my = (y1 + y2) / 2 + (x2 - x1) * bend;
+  const pts = [];
+  for (let i = 0; i <= 40; i++) {
+    const t = i / 40;
+    pts.push([lerp(lerp(x1, mx, t), lerp(mx, x2, t), t) + R(-0.5, 0.5), lerp(lerp(y1, my, t), lerp(my, y2, t), t) + R(-0.5, 0.5)]);
+  }
+  glowOn(color, 10);
+  strokePts(pts, color, alpha * 0.6, 1.4);
+  starsAlong(pts, color, 1, 3);
+  const [px, py] = pts[38];
+  const ang = Math.atan2(y2 - py, x2 - px);
+  out.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},${alpha})`; out.lineWidth = 2;
+  out.beginPath();
+  out.moveTo(x2 - Math.cos(ang - 0.45) * 16, y2 - Math.sin(ang - 0.45) * 16); out.lineTo(x2, y2);
+  out.lineTo(x2 - Math.cos(ang + 0.45) * 16, y2 - Math.sin(ang + 0.45) * 16);
+  out.stroke();
+  glowOff();
+}
+const right = (n) => [n.x + n.w + 8, n.y + n.h / 2];
+const left = (n) => [n.x - 8, n.y + n.h / 2];
+const bottom = (n, f = 0.5) => [n.x + n.w * f, n.y + n.h + 8];
+const topOf = (n, f = 0.5) => [n.x + n.w * f, n.y - 8];
+arrow(right(nodes.agent), left(nodes.server), GOLD, 0.85, -0.08);
+arrow(right(nodes.server), left(nodes.canvas), GOLD, 0.85, -0.08);
+arrow(bottom(nodes.agent, 0.6), topOf(nodes.logs, 0.3), GOLD, 0.7, 0.05);
+arrow(right(nodes.logs), left(nodes.sub), GOLD, 0.75, 0.04);
+arrow(bottom(nodes.server, 0.62), topOf(nodes.sub, 0.3), GOLD, 0.7, -0.05);
+arrow(bottom(nodes.canvas, 0.6), topOf(nodes.share, 0.4), GOLD, 0.7, -0.06);
+
+for (const [key, n] of Object.entries(nodes)) {
+  const pts = roughRect(n, 1.4);
+  const pts2 = roughRect(n, 1.8);
+  const isSub = key === "sub";
+  const col = key === "server" ? ACCENT : GOLD;
+  const upto = isSub ? 0.72 : 1; // 这一框还在逐站画
+  glowOn(col, 18);
+  strokePts(pts, col, 0.7, 1.6, upto);
+  strokePts(pts2, col, 0.35, 1, upto);
+  starsAlong(pts, col, upto, 2);
+  glowOff();
+  if (isSub) {
+    // 还没画到的部分：极淡的点线
+    const n0 = Math.floor(pts.length * upto);
+    for (let i = n0; i < pts.length; i += 4) { out.fillStyle = "rgba(255,216,150,0.28)"; out.beginPath(); out.arc(pts[i][0], pts[i][1], 1, 0, Math.PI * 2); out.fill(); }
+    // 画笔的笔尖
+    flare(pts[n0 - 1][0], pts[n0 - 1][1], 2.6, GOLD);
+    // 框里的子图：三个小方框
+    const mini = [{ x: n.x + 26, y: n.y + 24, w: 62, h: 30 }, { x: n.x + 150, y: n.y + 24, w: 62, h: 30 }, { x: n.x + 88, y: n.y + 76, w: 66, h: 30 }];
+    glowOn(GOLD, 8);
+    for (const m of mini) { const p = roughRect(m, 0.6); strokePts(p, GOLD, 0.55, 1); starsAlong(p, GOLD, 1, 3); }
+    out.strokeStyle = "rgba(255,216,150,0.5)"; out.lineWidth = 1;
+    out.beginPath(); out.moveTo(n.x + 90, n.y + 39); out.lineTo(n.x + 148, n.y + 39); out.moveTo(n.x + 57, n.y + 56); out.lineTo(n.x + 100, n.y + 74); out.moveTo(n.x + 181, n.y + 56); out.lineTo(n.x + 142, n.y + 74); out.stroke();
+    glowOff();
+  }
+  // 角上的亮星
+  flare(n.x + 2, n.y + 2, key === "server" ? 2.4 : 1.6, col);
+  flare(n.x + n.w - 2, n.y + n.h - 2, 1.3, col);
+  // 框里一行「字」：一串小点
+  if (!isSub) {
+    const cy = n.y + n.h / 2, cx = n.x + n.w / 2, L = n.w * R(0.36, 0.5);
+    for (let x = cx - L / 2; x < cx + L / 2; x += R(5, 8)) {
+      if (rnd() < 0.15) continue;
+      out.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},${R(0.4, 0.75)})`;
+      out.beginPath(); out.arc(x, cy + R(-2, 2), R(1, 1.8), 0, Math.PI * 2); out.fill();
+    }
+  }
+}
+
+// ---------- 4. 站在节点上的小人（工位） ----------
+function figure(x, y, s, head, laptop, pose = "type") {
+  out.save(); out.translate(x, y); out.scale(s, s);
+  glowOn([255, 220, 160], 10);
+  out.strokeStyle = "rgba(255,232,196,0.95)"; out.lineWidth = 2.2; out.lineCap = "round"; out.lineJoin = "round";
+  out.beginPath();
+  out.moveTo(-5, 0); out.lineTo(-2, -14); out.lineTo(0, -24);   // 左腿
+  out.moveTo(5, 0); out.lineTo(3, -14); out.lineTo(0, -24);      // 右腿
+  out.moveTo(0, -24); out.lineTo(0, -40);                        // 身体
+  if (pose === "type") { out.moveTo(0, -37); out.lineTo(7, -30); out.lineTo(14, -30); }
+  else { out.moveTo(0, -37); out.lineTo(10, -46); out.lineTo(15, -54); }
+  out.moveTo(0, -37); out.lineTo(-6, -29); out.lineTo(-3, -24);
+  out.stroke();
+  out.fillStyle = `rgb(${head[0]},${head[1]},${head[2]})`;
+  out.beginPath(); out.arc(0, -47, 6.4, 0, Math.PI * 2); out.fill(); out.stroke();
+  if (laptop) {
+    glowOn(ACCENT, 16);
+    out.fillStyle = "rgba(186,156,255,0.95)";
+    out.fillRect(12, -40, 13, 10);
+    out.strokeStyle = "rgba(255,232,196,0.9)"; out.beginPath(); out.moveTo(10, -29); out.lineTo(28, -29); out.stroke();
+  }
+  glowOff();
+  out.restore();
+}
+figure(nodes.agent.x + 70, nodes.agent.y - 2, 1.05, [224, 132, 96], true);
+figure(nodes.logs.x + 140, nodes.logs.y - 2, 1.0, [236, 236, 230], true);
+figure(nodes.canvas.x + 50, nodes.canvas.y - 2, 1.0, [150, 190, 255], false, "point");
+figure(nodes.sub.x + nodes.sub.w * 0.82, nodes.sub.y - 2, 1.0, [200, 170, 255], true);
+// 一个小人缩成胶囊，沿箭头像数据包一样滑向画布（工位视图里换节点的走法）
+(function glide() {
+  const a = right(nodes.server), c = left(nodes.canvas);
+  const mx = (a[0] + c[0]) / 2 - (c[1] - a[1]) * -0.08, my = (a[1] + c[1]) / 2 + (c[0] - a[0]) * -0.08;
+  const at = (t) => [lerp(lerp(a[0], mx, t), lerp(mx, c[0], t), t), lerp(lerp(a[1], my, t), lerp(my, c[1], t), t)];
+  for (const [t, al] of [[0.42, 0.25], [0.48, 0.4], [0.54, 0.6]]) { const [x, y] = at(t); out.fillStyle = `rgba(196,168,255,${al})`; out.beginPath(); out.arc(x, y, 2.4, 0, Math.PI * 2); out.fill(); }
+  const [x, y] = at(0.62);
+  glowOn(ACCENT, 22);
+  out.fillStyle = "rgba(206,182,255,0.98)";
+  out.beginPath(); out.roundRect(x - 15, y - 8, 30, 16, 8); out.fill();
+  out.fillStyle = "rgb(255,200,120)"; out.beginPath(); out.arc(x - 6, y, 5, 0, Math.PI * 2); out.fill();
+  glowOff();
+})();
+figure(nodes.server.x + 150, nodes.server.y - 2, 1.0, [255, 200, 120], true);
+
+// ---------- 5. 收尾：暗角 + 颗粒 ----------
+const vg = out.createRadialGradient(W / 2, H * 0.55, H * 0.35, W / 2, H * 0.55, W * 0.62);
+vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(6,4,16,0.55)");
+out.fillStyle = vg; out.fillRect(0, 0, W, H);
+
+window.__ready = true;
+</script>
+</body>
+</html>

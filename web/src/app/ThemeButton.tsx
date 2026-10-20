@@ -1,5 +1,6 @@
 import { IconAuto, IconMoon, IconSun } from "./icons";
 import { theme, THEME_LABEL, useTheme } from "./theme";
+import { tr } from "../i18n";
 
 /** Light / dark / follow the system: one icon button that cycles, the current choice in its label. */
 export function ThemeButton() {
@@ -7,7 +8,7 @@ export function ThemeButton() {
   const Icon = t.pref === "system" ? IconAuto : t.pref === "light" ? IconSun : IconMoon;
   const next = t.pref === "system" ? "light" : t.pref === "light" ? "dark" : "system";
   return (
-    <button className="icon-btn theme-btn" onClick={theme.cycle} aria-label={`主题：${THEME_LABEL[t.pref]}，点击切换为${THEME_LABEL[next]}`} title={`主题：${THEME_LABEL[t.pref]}（点击切换为${THEME_LABEL[next]}）`}>
+    <button className="icon-btn theme-btn" onClick={theme.cycle} aria-label={tr(`主题：${THEME_LABEL[t.pref]}，点击切换为${THEME_LABEL[next]}`, `Theme: ${THEME_LABEL[t.pref]}, click for ${THEME_LABEL[next]}`)} title={tr(`主题：${THEME_LABEL[t.pref]}（点击切换为${THEME_LABEL[next]}）`, `Theme: ${THEME_LABEL[t.pref]} (click for ${THEME_LABEL[next]})`)}>
       <Icon size={16} />
     </button>
   );

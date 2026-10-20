@@ -1,0 +1,348 @@
+---
+import { getImage, Picture } from "astro:assets";
+import type { Lang } from "../i18n";
+import { clip, highlights, placeholder, shot } from "../media";
+
+// 截图 / 录屏的窗口：标题栏 + 画面。
+// - image="overview"：docs/media/overview.png（英文页优先 overview.en.png），转成 avif/webp，按 widths 出多档，sizes 要写成真实渲染宽度；
+// - clip="reveal"：docs/media/clips/reveal.mp4（英文页优先 reveal.en.mp4）与同名 jpg 海报，无声循环。
+// 画面解码前铺 24 px 的模糊缩略图和主色，加载完淡入；高亮框按实际用到的文件名从 media.ts 的 highlights 取。
+// 动效：窗口带 data-reveal="frame" 从 from 那一侧滑进来；高亮框在窗口落定后描出来。
+interface Props {
+	lang: Lang;
+	image?: string;
+	clip?: string;
+	alt: string;
+	/** 真实渲染宽度，如 "(max-width: 900px) calc(100vw - 32px), 680px" */
+	sizes: string;
+	widths: number[];
+	from?: "left" | "right";
+	class?: string;
+	/** 交给录屏的播放 / 暂停按钮的无障碍文字 */
+	labels?: { play: string; pause: string };
+	/** 放在卡片里时：卡片自己负责离场淡出和悬停抬起，窗口不再重复 */
+	nested?: boolean;
+	/** 画面自己就是一个窗口（如「运行中」面板）时，不再加标题栏 */
+	bare?: boolean;
+}
+const { lang, image, clip: clipName, alt, sizes, widths, from = "right", class: className, labels, nested = false, bare = false } = Astro.props;
+
+const still = image ? shot(image, lang) : undefined;
+const reel = clipName ? clip(clipName, lang) : undefined;
+const source = still?.image ?? reel!.poster;
+const ph = await placeholder(still?.path ?? reel!.posterPath);
+const mark = still ? highlights[still.file] : undefined;
+// 录屏海报：webp，宽度取 widths 里最大的那档（只在快进入视口时才设上，见下面的脚本）
+const poster = reel ? await getImage({ src: reel.poster, format: "webp", width: Math.min(1280, Math.max(...widths)), quality: 70 }) : undefined;
+---
+
+<div class:list={["stage", className]}>
+	<figure class:list={["frame shot", { lift: !nested }]} data-reveal="frame" data-from={from} data-stay={nested ? "" : undefined}>
+		{!bare && <div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i></div>}
+		<div class="screen" style={`aspect-ratio: ${source.width} / ${source.height}; --ph-color: ${ph.color}; --ph: url(${ph.blur})`}>
+			{
+				still && (
+					<Picture
+						src={still.image}
+						alt={alt}
+						formats={["avif", "webp"]}
+						fallbackFormat="webp"
+						widths={widths}
+						sizes={sizes}
+						quality={60}
+						loading="lazy"
+						decoding="async"
+						data-media
+					/>
+				)
+			}
+			{
+				reel && (
+					<>
+						<video
+							data-media
+							data-clip
+							data-poster={poster!.src}
+							src={reel.url}
+							muted
+							loop
+							playsinline
+							preload="none"
+							width={source.width}
+							height={source.height}
+							aria-label={alt}
+						/>
+						<button type="button" class="clip-toggle" data-play={labels?.play ?? "Play"} data-pause={labels?.pause ?? "Pause"} aria-label={labels?.play ?? "Play"}>
+							<svg class="i-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+								<path d="M8 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 8 5.5Z" />
+							</svg>
+							<svg class="i-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+								<rect x="6" y="5" width="4" height="14" rx="1" />
+								<rect x="14" y="5" width="4" height="14" rx="1" />
+							</svg>
+						</button>
+					</>
+				)
+			}
+			{
+				mark && (
+					<div class="mark" style={`left: ${mark.x}%; top: ${mark.y}%; width: ${mark.w}%; height: ${mark.h}%`} aria-hidden="true">
+						<svg preserveAspectRatio="none" viewBox="0 0 100 100">
+							<rect x="0.5" y="0.5" width="99" height="99" rx="4" pathLength="1" vector-effect="non-scaling-stroke" />
+						</svg>
+						<span class:list={["mark-label", { below: mark.y < 18, end: mark.x + mark.w > 85 }]}>{mark.label[lang]}</span>
+					</div>
+				)
+			}
+		</div>
+	</figure>
+</div>
+
+<script>
+	import { motion } from "../motion";
+
+	// 画面加载完才淡入（模糊占位在下面垫着）
+	for (const img of document.querySelectorAll<HTMLImageElement>(".shot img[data-media]")) {
+		const done = () => img.closest(".screen")!.setAttribute("data-loaded", "");
+		if (img.complete && img.naturalWidth) done();
+		else img.addEventListener("load", done, { once: true });
+	}
+
+	// 录屏：离视口还有一屏时才设海报（不占首屏流量），进入视口一半以上就静音循环播放，离开就停。
+	// 减少动效时不自动播，点按钮才播。任何时候都能用按钮停下，停下后不再自动续播
+	const near = new IntersectionObserver(
+		(entries) => {
+			for (const entry of entries) {
+				if (!entry.isIntersecting) continue;
+				const video = entry.target as HTMLVideoElement;
+				const screen = video.closest<HTMLElement>(".screen")!;
+				const img = new Image();
+				img.onload = () => screen.setAttribute("data-loaded", "");
+				img.src = video.poster = video.dataset.poster!;
+				near.unobserve(video);
+			}
+		},
+		{ rootMargin: "100% 0px" },
+	);
+	const paused = new WeakSet<HTMLVideoElement>();
+	const play = (video: HTMLVideoElement) => video.play().catch(() => {});
+	const inView = new IntersectionObserver(
+		(entries) => {
+			for (const entry of entries) {
+				const video = entry.target as HTMLVideoElement;
+				if (paused.has(video)) continue;
+				if (entry.isIntersecting) play(video);
+				else video.pause();
+			}
+		},
+		{ threshold: 0.5 },
+	);
+	for (const video of document.querySelectorAll<HTMLVideoElement>("video[data-clip]")) {
+		const toggle = video.parentElement!.querySelector<HTMLButtonElement>(".clip-toggle")!;
+		const sync = () => {
+			const playing = !video.paused;
+			toggle.toggleAttribute("data-playing", playing);
+			toggle.setAttribute("aria-label", playing ? toggle.dataset.pause! : toggle.dataset.play!);
+			if (playing) video.closest(".screen")!.setAttribute("data-loaded", "");
+		};
+		video.addEventListener("play", sync);
+		video.addEventListener("pause", sync);
+		toggle.addEventListener("click", () => {
+			if (video.paused) {
+				paused.delete(video);
+				play(video);
+			} else {
+				paused.add(video);
+				video.pause();
+			}
+		});
+		near.observe(video);
+		if (motion) inView.observe(video);
+	}
+</script>
+
+<style>
+	.stage {
+		min-width: 0;
+	}
+
+	.screen {
+		position: relative;
+		overflow: hidden;
+		background-color: var(--ph-color);
+	}
+
+	/* 模糊占位：24 px 缩略图放大并糊开，画面淡入后再撤掉 */
+	.screen::before {
+		content: "";
+		position: absolute;
+		inset: -8%;
+		background: var(--ph) center / cover no-repeat;
+		filter: blur(18px) saturate(1.1);
+		transition: opacity 600ms var(--ease);
+	}
+
+	.screen[data-loaded]::before {
+		opacity: 0;
+	}
+
+	.screen :global(picture),
+	.screen :global(img),
+	.screen video {
+		position: relative;
+		display: block;
+		width: 100%;
+		height: 100%;
+	}
+
+	.screen :global(img),
+	.screen video {
+		object-fit: cover;
+	}
+
+	/* 有脚本时画面先透明，加载完淡入；没有脚本时直接显示 */
+	:global(html.js) .screen :global(img),
+	:global(html.js) .screen video {
+		opacity: 0;
+		transition: opacity 600ms var(--ease);
+	}
+
+	:global(html.js) .screen[data-loaded] :global(img),
+	:global(html.js) .screen[data-loaded] video {
+		opacity: 1;
+	}
+
+	/* 高亮框：窗口落定后描边一圈，再亮起标签；之后轻轻呼吸 */
+	.mark {
+		position: absolute;
+		pointer-events: none;
+	}
+
+	.mark svg {
+		position: absolute;
+		inset: -4px;
+		width: calc(100% + 8px);
+		height: calc(100% + 8px);
+		overflow: visible;
+	}
+
+	.mark rect {
+		fill: color-mix(in oklch, var(--amber) 8%, transparent);
+		stroke: var(--amber);
+		stroke-width: 2.5;
+		stroke-dasharray: 1;
+		stroke-dashoffset: 0;
+	}
+
+	.mark-label {
+		position: absolute;
+		left: -4px;
+		bottom: calc(100% + 10px);
+		padding: 4px 10px;
+		border-radius: 999px;
+		background: var(--amber);
+		color: var(--accent-ink);
+		font-size: 12.5px;
+		font-weight: 650;
+		white-space: nowrap;
+		box-shadow: 0 6px 18px -8px oklch(0.3 0.08 60 / 0.6);
+	}
+
+	/* 靠右边的框：标签贴右对齐，不伸出截图 */
+	.mark-label.end {
+		left: auto;
+		right: -4px;
+	}
+
+	.mark-label.below {
+		bottom: auto;
+		top: calc(100% + 10px);
+	}
+
+	:global(html.motion) .mark rect {
+		stroke-dashoffset: 1;
+		transition: stroke-dashoffset 900ms var(--ease) 700ms;
+	}
+
+	:global(html.motion) .mark-label {
+		opacity: 0;
+		translate: 0 6px;
+		transition:
+			opacity 500ms var(--ease) 1300ms,
+			translate 500ms var(--ease) 1300ms;
+	}
+
+	:global(html.motion) :global(.in) .mark rect {
+		stroke-dashoffset: 0;
+		animation: breathe 2.8s ease-in-out 2.2s infinite;
+	}
+
+	:global(html.motion) :global(.in) .mark-label {
+		opacity: 1;
+		translate: 0 0;
+	}
+
+	@keyframes breathe {
+		50% {
+			stroke-width: 4;
+			fill: color-mix(in oklch, var(--amber) 16%, transparent);
+		}
+	}
+
+	/* 录屏的播放 / 暂停：右下角一个小圆钮，鼠标停在画面上或播放暂停时显示 */
+	.clip-toggle {
+		position: absolute;
+		right: 12px;
+		bottom: 12px;
+		display: grid;
+		place-items: center;
+		width: 36px;
+		height: 36px;
+		border: 0;
+		border-radius: 50%;
+		background: oklch(0.18 0.03 290 / 0.78);
+		color: #f2b867;
+		cursor: pointer;
+		opacity: 0.85;
+		transition:
+			opacity var(--duration-state) var(--ease),
+			scale 100ms var(--ease);
+	}
+
+	.clip-toggle svg {
+		grid-area: 1 / 1;
+		width: 15px;
+		height: 15px;
+	}
+
+	.clip-toggle .i-play {
+		margin-left: 2px;
+	}
+
+	.clip-toggle[data-playing] .i-play,
+	.clip-toggle:not([data-playing]) .i-pause {
+		display: none;
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.clip-toggle[data-playing] {
+			opacity: 0;
+		}
+
+		.screen:hover .clip-toggle,
+		.clip-toggle:focus-visible {
+			opacity: 1;
+		}
+	}
+
+	.clip-toggle:active {
+		scale: 0.92;
+	}
+
+	@media (max-width: 560px) {
+		.mark-label {
+			font-size: 11px;
+			padding: 3px 8px;
+		}
+	}
+</style>

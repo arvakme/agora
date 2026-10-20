@@ -1,0 +1,165 @@
+---
+import InkBanner from "../components/InkBanner.astro";
+import Install from "../components/Install.astro";
+import type { Lang } from "../i18n";
+import { tagline } from "../repo";
+import { copy } from "./Hero.copy";
+
+interface Props {
+	lang: Lang;
+}
+const { lang } = Astro.props;
+const t = copy[lang];
+---
+
+<section class="hero" aria-labelledby="hero-title">
+	<div class="inner" data-hero-copy>
+		<p class="eyebrow rise">{t.eyebrow}</p>
+		<h1 class="display" id="hero-title">
+			{
+				t.title.map((line, i) => (
+					<span class="line">
+						<span class="line-in" style={`--i: ${i}`} set:html={line} />
+					</span>
+				))
+			}
+		</h1>
+		<p class="lede rise" style="--i: 3">{tagline(lang)}</p>
+		<div class="actions rise" style="--i: 4">
+			<Install lang={lang} type />
+			<p class="run">{t.run} <code>cd my-service && agora</code></p>
+		</div>
+	</div>
+	<div class="banner-wrap rise" style="--i: 5" data-hero-banner>
+		<InkBanner alt={t.banner} />
+	</div>
+</section>
+
+<script>
+	import { clamp, scene } from "../motion";
+
+	// 往下滚出首屏：文字先走（滚过首屏高度的 0–35% 时淡出并轻微模糊、上移），横幅以 0.25 倍速落后，像远处的景。
+	// 学的是 firecode 首屏的离场；往回滚原路回来。减少动效时 scene() 不登记，什么都不动
+	const hero = document.querySelector<HTMLElement>(".hero")!;
+	const words = hero.querySelector<HTMLElement>("[data-hero-copy]")!;
+	const banner = hero.querySelector<HTMLElement>("[data-hero-banner]")!;
+	let last = -1;
+	scene(hero, (rect) => {
+		const progress = clamp(-rect.top / rect.height);
+		const p = Math.round(progress * 1000) / 1000;
+		if (p === last) return;
+		last = p;
+		const fade = clamp(p / 0.35);
+		words.style.opacity = String(1 - fade);
+		words.style.transform = fade ? `translateY(${(-fade * 40).toFixed(1)}px)` : "";
+		words.style.filter = fade ? `blur(${(fade * 8).toFixed(1)}px)` : "";
+		banner.style.transform = p ? `translateY(${(rect.height * p * 0.25).toFixed(1)}px)` : "";
+	});
+</script>
+
+<style>
+	.hero {
+		position: relative;
+		isolation: isolate;
+		padding: calc(var(--nav-h) + clamp(40px, 8vw, 104px)) var(--gutter) clamp(24px, 4vw, 48px);
+	}
+
+	/* 画布的点阵底，往下淡出接到下一段 */
+	.hero::before {
+		content: "";
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		background-image: radial-gradient(circle at 1.5px 1.5px, var(--dot) 1.1px, transparent 1.6px);
+		background-size: 24px 24px;
+		mask-image: linear-gradient(#000 55%, transparent 92%);
+		-webkit-mask-image: linear-gradient(#000 55%, transparent 92%);
+	}
+
+	.inner {
+		max-width: var(--page-max);
+		margin-inline: auto;
+		text-align: center;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+
+	.display {
+		margin-top: 22px;
+	}
+
+	/* 每行一个裁切窗口，入场时字从窗口下沿升起；留出升部和降部的余量 */
+	.line {
+		display: block;
+		overflow: clip;
+		padding-block: 0.06em 0.12em;
+		margin-block: -0.06em -0.12em;
+	}
+
+	.line-in {
+		display: block;
+	}
+
+	.lede {
+		max-width: 46ch;
+		margin-top: 26px;
+		color: var(--muted);
+		font-size: var(--text-lede);
+		line-height: 1.6;
+		text-wrap: balance;
+	}
+
+	.actions {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 14px;
+		max-width: 100%;
+		margin-top: 36px;
+	}
+
+	.run {
+		color: var(--muted);
+		font-size: 14.5px;
+	}
+
+	.banner-wrap {
+		max-width: 1320px;
+		margin: clamp(48px, 7vw, 88px) auto 0;
+	}
+
+	.banner-wrap :global(.ink-banner) {
+		border-radius: clamp(14px, 2vw, 24px);
+		box-shadow:
+			0 0 0 1px var(--ring),
+			0 40px 100px -40px oklch(0.3 0.08 290 / 0.55);
+	}
+
+	@media (max-width: 640px) {
+		.run {
+			font-size: 13.5px;
+		}
+	}
+
+	:global(html.motion) .rise {
+		animation: rise 900ms calc(var(--i, 0) * 90ms + 200ms) var(--ease) both;
+	}
+
+	:global(html.motion) .line-in {
+		animation: line-up 1100ms calc(var(--i, 0) * 90ms + 120ms) cubic-bezier(0.19, 1, 0.22, 1) both;
+	}
+
+	@keyframes rise {
+		from {
+			opacity: 0;
+			translate: 0 14px;
+		}
+	}
+
+	@keyframes line-up {
+		from {
+			translate: 0 110%;
+		}
+	}
+</style>

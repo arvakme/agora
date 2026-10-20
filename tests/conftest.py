@@ -6,6 +6,19 @@ import pytest
 
 # Starlette's TestClient sends Host: testserver; the owner app only answers to local names.
 os.environ.setdefault("AGORA_ALLOWED_HOSTS", "testserver")
+# The words the server and the CLI write follow the locale (server/i18n.py); the tests read the Chinese ones,
+# like the page's tests. A test of the English ones sets AGORA_LANG or sends the page's cookie itself.
+os.environ["AGORA_LANG"] = "zh"
+
+
+@pytest.fixture(autouse=True)
+def _page_lang():
+    """No test inherits the language an earlier test's page cookie left behind."""
+    from server import i18n
+
+    i18n.remember(None)
+    yield
+    i18n.remember(None)
 
 
 @pytest.fixture(autouse=True)

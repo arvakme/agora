@@ -235,7 +235,7 @@ class PiAdapter(Adapter):
     tested = VersionRange(">=0.80,<0.88")
     max_tier = "T1"
     icon = "pi"
-    log_hint = "~/.pi/agent/sessions/--<目录>--/<时间>_<id>.jsonl"
+    log_hint = "~/.pi/agent/sessions/--<dir>--/<time>_<id>.jsonl"
     log_dir = "~/.pi/agent/sessions/"
     has_cost = True
     waits = "inferred"

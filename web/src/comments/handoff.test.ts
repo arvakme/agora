@@ -1,6 +1,7 @@
 // The message an agent gets for a canvas comment (comments/handoff.ts): a guest's words are marked as untrusted.
 import { describe, expect, it } from "vitest";
-import { commentMessage, parseCommentMessage } from "./handoff.ts";
+import { commentMessage, parseCommentMessage, speakerLabel } from "./handoff.ts";
+import { setLangForTest } from "../i18n";
 
 const msg = (author: "you" | "agent" | "system", text: string, by?: { id: string; name: string }) => ({ id: text, author, text, at: 1, ...(by ? { by } : {}) }) as never;
 
@@ -73,5 +74,32 @@ describe("parseCommentMessage", () => {
     expect(t).toContain("- 我：再补一张子图");
     expect(t).not.toContain("@Claude Code");
     expect(commentMessage(thread, [])).toContain("@Claude Code"); // (without a mention given it goes as it is)
+  });
+});
+
+describe("commentMessage in an English interface", () => {
+  it("keeps the format the page reads back, and asks for the reply in English", async () => {
+    const { setLangForTest } = await import("../i18n");
+    setLangForTest("en");
+    try {
+      const t = commentMessage({ n: 2, messages: [msg("you", "make it the entry", { id: "user:me", name: "Ann" })] }, [{ id: "r", name: "Browser" }]);
+      expect(t.split("\n")[0]).toBe("画布评论 #2（锚点：Browser（r））：");
+      expect(t.split("\n").at(-1)).toMatch(/^请按这条评论处理画布.*Reply in English/);
+      expect(parseCommentMessage(t)?.messages).toEqual([{ who: "Ann", text: "make it the entry" }]);
+    } finally {
+      setLangForTest("zh");
+    }
+  });
+});
+
+describe("speakerLabel", () => {
+  it("keeps the format's words in Chinese and names them in English", () => {
+    expect(speakerLabel("用户")).toBe("用户");
+    setLangForTest("en");
+    try {
+      expect([speakerLabel("用户"), speakerLabel("系统"), speakerLabel("访客 Alex"), speakerLabel("Agent"), speakerLabel("Mia")]).toEqual(["You", "System", "Guest Alex", "Agent", "Mia"]);
+    } finally {
+      setLangForTest("zh");
+    }
   });
 });

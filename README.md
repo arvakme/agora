@@ -1,236 +1,302 @@
-# Agora
+<p align="center">
+  <img src="docs/assets/banner-ink.svg" alt="Agora" width="100%" />
+</p>
 
-**每个项目自带一个 Agora：在项目的架构图上，和你自己选的 coding agent 讨论设计，再一键回到终端接着写代码。**
+<p align="center">
+  <a href="README.md"><img alt="English" src="https://img.shields.io/badge/English-7048b4?style=for-the-badge"></a>
+  <a href="README.zh-CN.md"><img alt="简体中文" src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-2b2b2b?style=for-the-badge"></a>
+</p>
 
-*A per-project architecture canvas where you and your own coding agent (Pi, Claude Code or Codex) discuss the design, then continue the very same session in the terminal.*
+<h1 align="center">Agora</h1>
 
-![Agora 演示：让 Claude Code 改代码和架构图，指针跟着改动在图上移动，轨迹里展开一次工具调用](docs/media/agora-demo.gif)
+<p align="center"><b>Every project gets its own Agora: talk the design through with your own coding agent on the project's architecture diagram, then pick up the very same session in the terminal.</b></p>
 
-在项目目录里运行 `agora`，就得到只属于这个项目的本地服务：架构图、评论、会话记录都存在项目的 `.agora/` 里，跟着代码一起提交、克隆、切分支。
+<p align="center">
+  <a href="https://arvakme.github.io/agora/"><img alt="Website" src="https://img.shields.io/badge/website-arvakme.github.io%2Fagora-7048b4"></a>
+  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
+</p>
+
+Type `agora` in a project directory and your browser opens an architecture diagram that belongs to that project alone. Ask the agent to change code and its little figure walks to the matching node on the diagram to work there; ask it to change the diagram and it draws it station by station. Diagrams, comments and session records live in the project's `.agora/`, so they are committed, cloned and branched along with the code. Sessions stay the CLI's own native sessions: Agora follows their logs and never keeps a second copy of the conversation.
+
+<p align="center">
+  <a href="docs/media/agora-promo.en.mp4"><img src="docs/assets/demo.en.gif" alt="Promo clip: an agent draws the architecture diagram station by station; scrolling into a node opens its sub-diagram" width="80%"></a>
+</p>
+
+> The UI comes in English and Chinese. It follows your browser language; switch it in the top bar’s View and layout menu.
+
+## How it works
+
+![Your coding agent writes its native session log; this project's agora service follows it every 0.4 s and pushes changes over HTTP + SSE to the canvas in your browser; below, what each of the six session agents can do](docs/assets/how-it-works.en.svg)
+
+- You talk to the agent in the panel or in the terminal, and it writes its own native session log as usual; this project's agora service follows that log every 0.4 s and pushes turns from both sides to the page.
+- The agent reads and edits the diagram through the `agora` skill, which calls `agora canvas read / apply / link / anim`. The page owns the canvas: edit requests go through the service to the page, which validates schema, references and freshness, writes the result back to `.agora/`, and makes every batch undoable.
+- Everything runs on your own machine, and the service listens on `127.0.0.1` only. A read-only guest entrance is opened through Cloudflare Tunnel only when you share.
+
+There are six session agents: **Pi, Claude Code, Codex, Grok, Cursor and Devin**. All of them get the figure on the canvas, progress pointers and station-by-station drawing, and all can be messaged from the panel and continued in the terminal. The two differences at the bottom of the figure come from the CLIs themselves: the `-p` modes of Grok, Cursor and Devin take no input once a turn has started, so you can't interject mid-turn; Pi and Devin have no native sub-agents.
+
+Running, it looks roughly like this: three agents each run turn after turn, the service follows their native logs and pushes changes to the canvas; on the right is what happens only when you click. Turns, turn ids and times are illustrative; the states `pending → in_flight → accepted → completed` are the real states Agora records for each turn.
+
+<p align="center">
+  <img src="docs/assets/live-panel.en.webp" alt="A terminal-style live panel: Claude Code, Codex and Pi sessions connect to this project's agora service and on to the canvas in the browser; the session log scrolls below" width="560">
+</p>
+
+## Which way to use it
+
+| You want to | Use |
+|---|---|
+| Use Agora in your own projects | [Install it as a global command](#install-as-a-global-command), then type `agora` in a project directory |
+| Work on Agora itself | [Run from source](#run-from-source), or `uv tool install --editable ~/code/agora` to use it in other projects while you change it |
+| Show a diagram to someone and let them comment | [Share it](#share-it-with-others): `agora share create --for 1d` opens a read-only address |
+
+## Quick start
+
+Requirements:
+
+| Requirement | For |
+|---|---|
+| [uv](https://docs.astral.sh/uv/) (Python 3.12+, uv installs it if missing) | Installing and running `agora` |
+| Node 22+ and npm (when installing from source or developing; development uses Node 24, pinned in `web/mise.toml` and picked up automatically by [mise](https://mise.jdx.dev)) | Building the front end |
+| tmux | "Open in terminal" |
+| At least one signed-in agent CLI: `pi`, `claude`, `codex`, `grok`, `cursor-agent` or `devin` | Sessions |
+| Optional: `cf` (falls back to `npx cf@1.0.0-beta.5` when missing, override with `AGORA_CF_VERSION`; run `npx cf auth login` first) plus your own Cloudflare domain | Sharing |
+
+### Install as a global command
+
+You don't need to keep the repository around:
 
 ```bash
-uv tool install git+https://github.com/arvakme/agora   # 装成全局命令（需要 Node 22+ 构建前端，见「快速开始」）
-cd ~/code/my-service && agora                          # 起本项目服务并打开浏览器
+uv tool install git+https://github.com/arvakme/agora     # builds the front end at install time; needs Node and npm
+
+cd ~/code/my-service                  # your project (.agora/ is created in the current directory)
+agora                                 # same as agora open: initialise .agora/, start this project's service, open the browser
+agora open --no-browser               # start the service and print the address only
+agora status                          # if running, print address, port and pid
+agora down                            # stop the service and this project's tmux
+agora doctor [--fix]                  # check local data; --fix restores missing pieces from backups and the local registry
 ```
 
-## 为什么
+- If `agora` isn't found after installing, run `uv tool update-shell` once and reopen the terminal. `which agora` shows which copy runs (if you once added `~/code/agora/bin` to `PATH`, remove it).
+- Upgrade: `uv tool upgrade agora-canvas` (or reinstall with `uv tool install --force git+https://github.com/arvakme/agora`). Uninstall: `uv tool uninstall agora-canvas`.
+- The distribution is called `agora-canvas` (`agora` and `agora-cli` are taken on PyPI); the command is still `agora`. Pushing a `v*` tag attaches a wheel with the front end prebuilt to the GitHub Release, which installs without Node. **No version has been released yet, and nothing is on PyPI.** Once it is, `uv tool install agora-canvas` will work, or `uvx --from agora-canvas agora open` without installing.
 
-- **架构讨论和开发是脱节的。** 图画在白板工具里，代码写在终端里，讨论完的结论要靠人搬运。
-- **Agent 不记得项目是怎么定的。** 每次开新会话都要重新解释模块怎么分、为什么这么分。
-- **Agent 的改动不可见。** 它改了哪些文件、落在架构的哪一块、有没有改到计划之外，只能事后翻 diff。
+The first open creates an empty canvas named after the project and one session. The session's "Draw this project's architecture" button lets the recommended agent look through the project and draw its architecture (you can also pick the agent and write the first message yourself); "See an example" opens the example diagram as a separate canvas.
 
-Agora 把这三件事放到同一张图上：图就在仓库里，agent 能读能改；它写代码时，图上的指针告诉你它正在动哪一块。
+### Run from source
 
-## 核心能力
-
-### 1. 一个项目一个 Agora，数据跟着代码走
-
-`agora up` 在当前目录初始化 `.agora/` 并起本项目专属服务（只监听 `127.0.0.1`，不同项目各占一个端口）。画布是标准 `.excalidraw` 文件，评论是 JSON，键排序、内容不变就不重写，git diff 可读。会话记录、运行状态和分享记录默认不提交。格式见[项目存储](web/docs/project-storage.md)。
-
-![画布与会话并排：左边是项目的架构图和评论钉，右边是 Claude Code 会话](docs/media/overview.png)
-
-### 2. 你自己的 coding agent，平级、会话锁定
-
-每个会话开始时从 **Pi / Claude Code / Codex** 里选一个，连同模型和强度一起锁定。会话就是这个 CLI 自己的原生会话，Agora 不另存对话，而是跟随 CLI 的会话日志。agent 通过 `agora` skill 调 `agora canvas read / apply / link / anim` 读图、改图，每次改图都是一批可撤销的修改。画布上的评论可以直接「交给 Agent」，答复会贴回评论线程。见 [Agent 会话](web/docs/agent-sessions.md)。
-
-![新会话先选 agent、模型和强度，选定后不能更改](docs/media/choose-agent.png)
-
-### 3. 一键在终端继续，双向同步
-
-「在终端打开」用同一个原生会话 id 起交互式 CLI（`claude --resume`、`pi --session-id`、`codex resume`），在本项目专属的 tmux 服务器里起，再用 Ghostty（没有就 Kitty，再没有就 Terminal.app）打开窗口。你在终端里说的话、agent 的回复和工具调用都会出现在面板上；从面板发的消息会等 agent 这一轮结束、且没有人占着终端的输入（接管了，或挂着一个可写窗口）时粘贴进去，队列不丢。
-
-![终端已接管：面板显示 tmux attach 命令，对话继续同步](docs/media/terminal.png)
-
-### 4. 进度指针：AI 正在改架构图的哪一块
-
-给节点关联代码路径（glob，存在元素的 `customData.codePaths` 里，随图提交），可以手动设，也可以让 agent 按目录结构批量关联。agent 读写哪个文件，它的小人就走到这个文件所属的节点上干活（小人就是指针，见[工位视图](web/docs/workstation.md)；两个节点之间有箭头直接相连时，小人沿箭头滑过去，否则蹲下、沿抛物线跳过去）；不属于任何节点的文件在图外托盘。终端里发生的改动同样驱动它。映射规则见[进度指针](web/docs/progress-pointer.md)。
-
-![指针停在「浏览器」节点上，点开是这个节点最近改动的文件和所在轮次](docs/media/pointer.png)
-
-### 5. 轨迹逐步可查
-
-「对话 / 轨迹」两种视图（信息结构取自 DeepSeek Harness）：每轮的模型、强度、输入 / 输出 / 缓存 tokens、耗时、花费；时间轴总览；每次工具调用可展开看完整输入、输出、改到的文件和起止时间。
-
-![轨迹视图：时间轴、每轮用量，展开的 Edit 调用显示完整输入](docs/media/trajectory.png)
-
-### 6. 经 quietharbor.de 分享给别人只读评论
-
-`agora share create --for 1d`（或顶栏「分享」）经 Cloudflare Tunnel 给一块画布（或 `--whole-project` 整个项目，之后新建的画布也自动可见）开一个独立子域名，访客只能看图、读评论、发评论和回复；改图、会话、终端、代码路径和本地路径都不下发。到期或撤销后 DNS 记录和隧道一起删除。域名来自你自己的 Cloudflare zone（作者本机用的是 `quietharbor.de`）。没有账号也行：`agora share create --quick` 用 `cf tunnels quick-start` 开一个临时 trycloudflare.com 地址（一次一个分享，撤销或 `agora down` 即失效）。想把画布交给别的开发者：`agora share export` 导出分享包（访客页也有「导入到我的 Agora」），对方 `agora import` 就成了他项目里的新画布，评论作为只读历史；**分享包一旦给出去就收不回来**。见[分享](web/docs/sharing.md)。
-
-| 作者：选画布和有效期 | 访客：只读画布，可评论 |
-|---|---|
-| ![分享弹层](docs/media/share.png) | ![访客页](docs/media/guest.png) |
-
-## 架构
-
-```mermaid
-flowchart LR
-  subgraph browser [浏览器]
-    UI[Agora 页面<br/>Excalidraw 画布 · 会话 · 轨迹 · 指针]
-  end
-  subgraph project [你的项目目录]
-    Server[本项目的 agora 服务<br/>127.0.0.1:随机端口]
-    Files[(.agora/<br/>canvases · threads · sessions · config)]
-    subgraph tmux [tmux -L agora-项目哈希]
-      TUI[交互式 CLI<br/>claude / pi / codex]
-    end
-    Headless[无头续接<br/>claude -p · pi -p · codex exec]
-    Logs[(CLI 原生会话日志<br/>~/.claude · ~/.pi · ~/.codex)]
-  end
-  subgraph share [分享]
-    Guest[访客浏览器<br/>子域名.quietharbor.de]
-    CF[cf tunnels run<br/>Cloudflare Tunnel]
-    Gateway[分享网关<br/>白名单路由]
-  end
-
-  UI <-->|HTTP + SSE| Server
-  Server <-->|原子写 + 版本校验| Files
-  Server -->|发消息| Headless
-  Server -->|粘贴 / 托管| TUI
-  Headless -->|agora skill<br/>agora canvas read/apply/link| Server
-  TUI -->|agora skill| Server
-  Headless --> Logs
-  TUI --> Logs
-  Logs -->|每 0.4s 跟随| Server
-  Server -->|改图请求| UI
-  Guest -->|HTTPS| CF --> Gateway -->|一块画布 + 评论| Files
-```
-
-- 画布由页面持有：`agora canvas apply` 经服务转给最近连接的页面执行（校验 schema、引用和新鲜度），结果写回 `.agora/`。
-- 对话以 CLI 自己的会话日志为准；服务跟随日志，把终端和面板两边的轮次都推给页面。
-- 分享网关只通到被分享的那一块画布和它的评论；作者自己的应用不在隧道后面。
-
-## 快速开始
-
-依赖：
-
-| 依赖 | 用途 |
-|---|---|
-| [uv](https://docs.astral.sh/uv/)（Python 3.12+，没有时 uv 自己装） | 安装和运行 `agora` 命令 |
-| Node 22+ 与 npm（从源码安装或开发时；开发用 Node 24，写在 `web/mise.toml`，装了 [mise](https://mise.jdx.dev) 会自动选用） | 构建前端 |
-| tmux | 「在终端打开」 |
-| 至少一个已登录的 agent CLI：`claude`、`pi` 或 `codex` | 会话 |
-| 可选：`cf`（没装时自动用 `npx cf@1.0.0-beta.5`，`AGORA_CF_VERSION` 可改；先 `npx cf auth login`）+ 自己的 Cloudflare 域名 | 分享 |
-
-安装成全局命令（不需要留着仓库）：
-
-```bash
-uv tool install git+https://github.com/arvakme/agora     # 安装时构建前端，需要 Node 和 npm
-
-cd ~/code/my-service                  # 你的项目（.agora/ 建在当前目录）
-agora                                 # 不带子命令等于 agora open：初始化 .agora/，起本项目服务并打开浏览器
-agora open --no-browser               # 只起服务、打印地址
-agora status                          # 在跑就打印地址、端口、pid
-agora down                            # 停掉服务和本项目的 tmux
-agora doctor [--fix]                  # 检查本机数据；--fix 从备份和本机注册表放回丢了的东西
-```
-
-装好后提示找不到 `agora` 时运行一次 `uv tool update-shell` 再重开终端；`which agora` 能看到跑的是哪一份（以前把 `~/code/agora/bin` 加进过 `PATH` 的话，记得删掉）。升级用 `uv tool upgrade agora-canvas`（或重新 `uv tool install --force git+https://github.com/arvakme/agora`），卸载用 `uv tool uninstall agora-canvas`。推 `v*` 标签后，GitHub Release 里会有带好前端的 wheel，装它不需要 Node（目前还没有发布过版本）。发行包名是 `agora-canvas`（PyPI 上 `agora`、`agora-cli` 都已被占用），命令名仍是 `agora`；发布到 PyPI 后可以 `uv tool install agora-canvas`，或不安装直接 `uvx --from agora-canvas agora open`（目前还没发布）。
-
-从源码运行（开发 Agora 本身时用；改代码立即生效，还能走 vite 热更新）：
+For working on Agora itself; code changes apply immediately, and the front end can run on vite hot reload:
 
 ```bash
 git clone https://github.com/arvakme/agora.git ~/code/agora
 cd ~/code/agora
 uv sync
-cd web && npm ci && npm run build && cd ..      # 用 mise 时：mise exec -- npm ci，以此类推
+cd web && npm ci && npm run build && cd ..      # with mise: mise exec -- npm ci, and so on
 
 cd ~/code/my-service
-~/code/agora/bin/agora open                     # 与上面的 agora 相同，跑的是这份仓库的代码
-~/code/agora/bin/agora open --dev               # 前端走 vite 热更新（只有源码仓库能用）
+~/code/agora/bin/agora open                     # same as agora above, running this repository's code
+~/code/agora/bin/agora open --dev               # front end on vite hot reload (source checkout only)
 ```
 
-一边改 Agora 一边在别的项目里用：`uv tool install --editable ~/code/agora`。全局的 `agora` 直接跑这份仓库的代码，改完不用重装，`agora open --dev` 也能用。
+To use Agora in other projects while changing it: `uv tool install --editable ~/code/agora`. The global `agora` then runs this repository's code directly, with no reinstall after changes, and `agora open --dev` works too.
 
-- 删除的画布和会话进「回收站」，30 天内可恢复（刷新、重启后也行）；「所有画布」底部还有「会话历史」，可以按时间、agent、主题、画布找会话，也能把本机找到的原生会话重新导入。
-- 仓库移动、`cp -r` 复制、重新 clone 都有处理：移动后 Pi 会话的日志跟着挪；副本里的会话只读、可分叉继续；别的机器建的会话显示成只读卡片。`git clean -fdx` 删掉的本机数据（会话绑定、改图记录、回收站）由仓库外的每日备份和本机注册表兜底：`agora doctor --fix`。见[项目存储](web/docs/project-storage.md)。
+- `agora up` only starts the service and prints the address. When running from source, adding `~/code/agora/bin` to `PATH` also gives you `agora` directly.
+- With services running from several worktrees at once, `agora dev status` lists every service on the machine and the git SHA each runs (installed copies show the package version); `agora dev gc` clears records of services that have exited.
 
-- 首次打开会建一块以项目命名的空画布和一个会话；会话里的「画出这个项目的架构」按钮让推荐的 agent 看一遍项目、把架构画上去（也可以自己选 agent、自己写第一句话）；「看一个示例」会把示例图作为另一张画布打开。
-- 绑定会话时会自动为该 agent 安装 `agora` skill（旧的 `agora-canvas` 链接会被换掉）；也可以手动 `agora skill install --agent claude|codex|pi|all`（Claude Code 链接到 `.claude/skills/`，Codex 链接到 `.agents/skills/`，Pi 每次启动带 `--skill`；链接写进 `.git/info/exclude`，不改全局配置）。
-- `agora up` 只起服务并打印地址。从源码运行时把 `~/code/agora/bin` 加进 `PATH` 也能直接用 `agora`。同时开着几个 worktree 的服务时，`agora dev status` 列出本机所有服务和各自跑的 git SHA（安装版显示包版本），`agora dev gc` 清掉已退出的记录。
+### Share it with others
 
-分享需要 `cf`（Cloudflare CLI；没装就用固定版本的 `npx cf`），并已 `npx cf auth login`（凭据归 `cf` 管，Agora 不存也不读）；`AGORA_SHARE_DOMAIN` 指定分享用的域名（账号里只有一个域名时可省）：
+Sharing needs `cf` (the Cloudflare CLI; a pinned `npx cf` is used when it isn't installed) and a prior `npx cf auth login` (credentials belong to `cf`; Agora neither stores nor reads them). `AGORA_SHARE_DOMAIN` sets the domain to share on (optional when the account has only one):
 
 ```bash
-agora share create --for 1d        # 默认分享聚焦的画布；--canvas <id|名字>；--for 10m|2h|1d|7d|forever
+agora share create --for 1d        # shares the focused canvas by default; --canvas <id|name>; --for 10m|2h|1d|7d|forever
 agora share list
-agora share revoke <id>            # 或 --all
+agora share revoke <id>            # or --all
 ```
 
-## 评测
+No Cloudflare account? `agora share create --quick` opens a temporary trycloudflare.com address. Details under [sharing](#6-read-only-sharing-with-comments) below.
 
-固定的 7 类改图任务，每类跑 3 次，逐次检查：通过 schema 校验、新鲜度、改对元素、没有误伤、撤销后完全还原。最近一次（2026-09-28，`claude-sonnet-5`）：
+## Features
 
-| 任务 | 通过 | 平均耗时 | 平均花费 |
+### 1. One Agora per project, data travels with the code
+
+`agora up` initialises `.agora/` in the current directory and starts a service just for this project (listening on `127.0.0.1` only, one port per project). Canvases are standard `.excalidraw` files and comments are JSON, with sorted keys and no rewrite when content is unchanged, so git diffs stay readable. Session records, run state and share records are not committed by default. Format: [project storage](web/docs/project-storage.md).
+
+- Deleted canvases and sessions go to the trash and can be restored for 30 days (across reloads and restarts too). At the bottom of "All canvases" there's "Session history", where you can find sessions by time, agent, topic or canvas, and re-import native sessions found on this machine.
+- Moving the repository, copying it with `cp -r` or cloning it again are all handled: after a move, Pi session logs move along; sessions in a copy are read-only and can be forked to continue; sessions created on another machine show as read-only cards. Local data wiped by `git clean -fdx` (session bindings, edit records, trash) is backed by a daily backup outside the repository and a local registry: `agora doctor --fix`.
+
+![Canvas and session side by side: the architecture diagram with comment pins on the left, Claude Code's avatar on the API node writing a file there; the live session on the right](docs/media/overview.en.png)
+
+### 2. Your own coding agent, side by side, session-locked
+
+Each session picks an agent when it starts, locked together with its model and effort. The session is that CLI's own native session; Agora keeps no separate conversation and follows the CLI's session log instead. A comment on the canvas can be "handed to the agent", and the answer is posted back into the comment thread. See [agent sessions](web/docs/agent-sessions.md).
+
+Binding a session installs the `agora` skill for that agent automatically (an old `agora-canvas` link is replaced); you can also run `agora skill install --agent <agent>|all` by hand (for example Claude Code links into `.claude/skills/`, Codex into `.agents/skills/`, and Pi gets `--skill` on every launch; links are written to `.git/info/exclude`, and no global config is changed).
+
+![A new session picks agent, model and effort first; they can't be changed afterwards](docs/media/choose-agent.en.png)
+
+### 3. Continue in the terminal in one click, synced both ways
+
+"Open in terminal" starts the interactive CLI on the same native session id (for example `claude --resume`, `pi --session-id`, `codex resume`) inside this project's own tmux server, then opens a window in Ghostty (or Kitty, or Terminal.app). What you say in the terminal, the agent's replies and its tool calls all show up in the panel; messages sent from the panel wait until the agent's turn ends and nobody holds the terminal's input (taken over, or a writable window attached), then get pasted in. The queue never drops anything.
+
+![The session open in a terminal: the panel says the terminal window is open and queues your messages; that turn is tagged “terminal”](docs/media/terminal.en.png)
+
+### 4. Progress pointer: which part of the architecture the AI is changing
+
+Link nodes to code paths (globs, stored in the element's `customData.codePaths` and committed with the diagram), by hand or by letting the agent link them in bulk from the directory layout. Whatever file the agent reads or writes, its figure walks to the node that file belongs to (the figure is the pointer, see [workstation view](web/docs/workstation.md); when two nodes are joined by an arrow it glides along the arrow, otherwise it crouches and hops over on a parabola). Files that belong to no node are listed under the “off the diagram” chip. Changes made in the terminal drive it the same way. Mapping rules: [progress pointer](web/docs/progress-pointer.md).
+
+![Replaying a turn: the avatar's route over the diagram, numbered stops, +N files changed on each node, and the turn's summary of nodes and files changed](docs/media/pointer.en.png)
+
+### 5. Step-by-step trajectories
+
+Two views, "Conversation / Trajectory" (information structure taken from DeepSeek Harness): model, effort, input / output / cached tokens, duration and cost per turn; a timeline overview; and every tool call expands to its full input, output, changed files and start and end times.
+
+![Trajectory view: timeline, per-turn usage, and an expanded Edit call showing its full input](docs/media/trajectory.en.png)
+
+### 6. Read-only sharing with comments
+
+`agora share create --for 1d` (or "Share" in the top bar) opens a dedicated subdomain through Cloudflare Tunnel for one canvas (or `--whole-project` for the whole project, including canvases created later). Guests can only view the diagram, read comments, comment and reply; diagram editing, sessions, terminal, code paths and local paths are never sent. On expiry or revocation the DNS record and the tunnel are deleted together. The domain comes from your own Cloudflare zone (the author uses `quietharbor.de`). No account is fine too: `agora share create --quick` uses `cf tunnels quick-start` to open a temporary trycloudflare.com address (one share at a time, gone on revoke or `agora down`). To hand a canvas to another developer: `agora share export` writes a share bundle (the guest page also has "Import into my Agora"), and `agora import` on their side turns it into a new canvas in their project, with comments kept as read-only history. **A share bundle can't be taken back once given out.** See [sharing](web/docs/sharing.md).
+
+| Author: pick a canvas and an expiry | Guest: read-only canvas, can comment |
+|---|---|
+| ![Share popover](docs/media/share.en.png) | ![Guest page](docs/media/guest.en.png) |
+
+### Architecture in detail
+
+```mermaid
+flowchart LR
+  subgraph browser [Browser]
+    UI[Agora page<br/>Excalidraw canvas · sessions · trajectories · pointers]
+  end
+  subgraph project [Your project directory]
+    Server[This project's agora service<br/>127.0.0.1:random port]
+    Files[(.agora/<br/>canvases · threads · sessions · config)]
+    subgraph tmux [tmux -L agora-project-hash]
+      TUI[Interactive CLI<br/>claude / pi / codex / …]
+    end
+    Headless[Headless resume<br/>claude -p · pi -p · codex exec · …]
+    Logs[(CLI native session logs<br/>~/.claude · ~/.pi · ~/.codex · …)]
+  end
+  subgraph share [Sharing]
+    Guest[Guest browser<br/>subdomain.quietharbor.de]
+    CF[cf tunnels run<br/>Cloudflare Tunnel]
+    Gateway[Share gateway<br/>allow-listed routes]
+  end
+
+  UI <-->|HTTP + SSE| Server
+  Server <-->|atomic writes + version check| Files
+  Server -->|send message| Headless
+  Server -->|paste / host| TUI
+  Headless -->|agora skill<br/>agora canvas read/apply/link| Server
+  TUI -->|agora skill| Server
+  Headless --> Logs
+  TUI --> Logs
+  Logs -->|followed every 0.4s| Server
+  Server -->|edit requests| UI
+  Guest -->|HTTPS| CF --> Gateway -->|one canvas + comments| Files
+```
+
+- The page owns the canvas: `agora canvas apply` goes through the service to the most recently connected page, which validates schema, references and freshness, and writes the result back to `.agora/`.
+- The CLI's own session log is the source of truth for the conversation; the service follows it and pushes turns from both the terminal and the panel to the page.
+- The share gateway reaches only the shared canvas and its comments; the author's own app is not behind the tunnel.
+
+## FAQ
+
+**Does Agora send my code or conversations anywhere?**
+No. The service listens on `127.0.0.1` only, and the conversation is the CLI's own session log, which Agora reads without keeping a copy. Only when you run `agora share create` does the shared canvas, with its comments, go out through Cloudflare Tunnel; diagram editing, sessions, terminal, code paths and local paths are never sent.
+
+**Which model provider does it need? Does Agora ship its own agent?**
+No. Sessions use a CLI already installed and signed in on your machine (any of Pi, Claude Code, Codex, Grok, Cursor, Devin), and models and costs go through that CLI's own account.
+
+**Should `.agora/` be committed?**
+Canvases (`.excalidraw`) and comments (JSON) are designed to be committed with readable diffs; session records, run state and share records are not committed by default.
+
+**Can the agent edit the diagram with no browser open?**
+No. Diagram edits, code links and animations are carried out by the page; with only the terminal open, `agora canvas apply` exits with code 3.
+
+**Can several people edit at once?**
+No, editing is single-user for now. Conflicts are caught by a version check, and you choose whether to load the disk version or overwrite. Others can view and comment through a share address.
+
+**Linux / Windows?**
+Only tested on macOS. Without Ghostty, Kitty or Terminal.app, the panel gives you a `tmux attach` command that works in any terminal.
+
+**Why is the package called `agora-canvas`?**
+`agora` and `agora-cli` are taken on PyPI. The command is still `agora`. The package isn't on PyPI yet; use `uv tool install git+https://github.com/arvakme/agora` above for now.
+
+## Evaluation
+
+Seven fixed kinds of diagram edit, three runs each, every run checked for: passing schema validation, freshness, changing the right elements, no collateral damage, and an undo that restores everything. Latest run (2026-09-28, `claude-sonnet-5`):
+
+| Task | Passed | Avg. time | Avg. cost |
 |---|---|---|---|
-| T1 改名 | 3/3 | 5.7 s | $0.0088 |
-| T2 新增节点并连线 | 3/3 | 8.7 s | $0.0092 |
-| T3 给箭头加标签 | 3/3 | 4.6 s | $0.0039 |
-| T4 对齐两个节点 | 3/3 | 26.2 s | $0.0232 |
-| T5 删除节点并重连 | 3/3 | 4.8 s | $0.0050 |
-| T6 从素材库插入 Kafka | 3/3 | 18.9 s | $0.0213 |
-| T7 画一个普通 TODO 方框 | 3/3 | 6.3 s | $0.0057 |
-| **合计** | **21/21（100%）** | **10.7 s** | **$0.0110（总 $0.2312）** |
+| T1 Rename | 3/3 | 5.7 s | $0.0088 |
+| T2 Add a node and connect it | 3/3 | 8.7 s | $0.0092 |
+| T3 Label an arrow | 3/3 | 4.6 s | $0.0039 |
+| T4 Align two nodes | 3/3 | 26.2 s | $0.0232 |
+| T5 Delete a node and reconnect | 3/3 | 4.8 s | $0.0050 |
+| T6 Insert Kafka from the library | 3/3 | 18.9 s | $0.0213 |
+| T7 Draw a plain TODO box | 3/3 | 6.3 s | $0.0057 |
+| **Total** | **21/21 (100%)** | **10.7 s** | **$0.0110 ($0.2312 total)** |
 
-评测基线是一次性的 `claude -p --json-schema`，在**中性的空临时目录**里运行，不继承仓库或项目上下文，也不经过 Agent 会话，只衡量「看图 + 评论 → 类型化改图操作」这一步。明细见 [web/eval/latest-report.md](web/eval/latest-report.md)，原始记录在 `web/eval/runs/`。
+The baseline is a one-shot `claude -p --json-schema` run in a **neutral, empty temporary directory**, inheriting no repository or project context and not going through an agent session; it measures only the "diagram + comment → typed edit operations" step. Details in [web/eval/latest-report.md](web/eval/latest-report.md), raw records in `web/eval/runs/`.
 
 ```bash
 cd web
-npm run eval -- --runs 3     # 真模型，写 eval/runs/*.jsonl 与 eval/latest-report.md
-npm run eval:replay          # 离线回放最近一轮的模型输出（validate → apply → check → undo），不调模型
+npm run eval -- --runs 3     # real model; writes eval/runs/*.jsonl and eval/latest-report.md
+npm run eval:replay          # replays the latest run's model output offline (validate → apply → check → undo), no model calls
 ```
 
-## 项目结构
+## Project layout
 
 ```
-agora_cli/            agora 命令：init / up / open / status / down / canvas / skill / share
-bin/agora             在任意项目目录里调用上面的命令：源码仓库里经 uv run --project <仓库>，安装版里用安装环境自己的 Python
-bin/agora-state       CLI 钩子向服务回报状态的脚本
-server/canvas/        本项目服务：项目存储、三个 agent 后端、会话跟随与终端、画布桥接、分享与网关
-server/paths.py       非 Python 文件（前端、素材库、skill、bin/）的唯一定位：源码里是仓库根，安装后是包内 server/_bundle/
-hatch_build.py        打包钩子：没有 web/dist 时先构建，再把上述文件放进 wheel
-skills/agora/         给 Pi / Claude Code / Codex 的 skill：SKILL.md 是入口路由，references/ 按领域放细节（改图、动画、子图、关联代码、评论、派活）
-web/                  前端（React + Excalidraw）；web/docs/ 是各功能规格，web/eval/ 是评测
-web/libraries/        vendored 素材库（约 6k 个组件，来源与许可见其 NOTICE.md）
-tests/                Python 测试
-docs/                 开发协作与测试说明
+agora_cli/            the agora command: init / up / open / status / down / canvas / skill / share
+bin/agora             runs that command from any project directory: via uv run --project <repo> in a source checkout, with the install's own Python when installed
+bin/agora-state       script CLI hooks use to report state to the service
+server/canvas/        the per-project service: project storage, six agent back ends, session following and terminal, canvas bridge, sharing and gateway
+server/paths.py       the single locator for non-Python files (front end, library, skill, bin/): repo root in source, server/_bundle/ inside the package when installed
+hatch_build.py        packaging hook: builds web/dist if missing, then puts the files above into the wheel
+skills/agora/         the skill for session agents: SKILL.md routes, references/ holds details by area (editing, animation, sub-diagrams, code links, comments, dispatch)
+web/                  front end (React + Excalidraw); web/docs/ holds feature specs, web/eval/ the evaluation
+web/libraries/        vendored asset library (about 6k components; sources and licenses in its NOTICE.md)
+tests/                Python tests
+docs/                 development conventions and testing notes; docs/assets/ holds the README banner (banner-ink.svg animated, banner.png static) and figures with their generator sources; docs/promo/ is the promo film source (renders in docs/media/agora-promo.en.mp4 and agora-promo.zh.mp4)
+site/                 the website (Astro), English at / and Chinese at /zh
 ```
 
-## 限制
+## Limitations
 
-- **单人编辑。** 没有实时多人协同。同一项目开多个窗口，或在编辑器 / git 里改了 `.agora/` 文件，靠版本校验发现冲突，由你选择载入磁盘版本或覆盖；外部改动不会主动推送到已打开的页面。
-- **写图需要打开的页面。** 改图、关联代码、动画都由页面执行；只开终端、没开页面时 `agora canvas apply` 返回退出码 3。
-- **访客只能评论。** 不能改图、不能标记解决、不能交给 Agent。分享依赖你自己的 Cloudflare 账号和域名；刚删掉的子域名在别人的 DNS 缓存里可能还会留几分钟（返回 530）。
-- **一轮 30 分钟没有任何输出会被中止。** 只看静默，不看总时长：一直有输出的轮、有工具调用在跑的轮（放宽到 2 小时）都不受这条限制；另有 6 小时总时长的保险丝。中止后原生会话还在，面板上点「继续」接着跑。`AGORA_TURN_IDLE_TIMEOUT_S` / `AGORA_TURN_MAX_S` 改秒数，0 = 不设。
-- **终端里仍能换模型。** 锁定只管 Agora 这一侧，终端里的 `/model` 无法禁止（Pi 用 `--models` 把轮换限制在选定模型）；下一次无头续接仍按绑定的模型启动。
-- **终端投递的边角。** 首次进入不信任的目录时 CLI 会先问是否信任，需要在终端里回答；输入框里留着没发出的半句话时，面板投递的消息会接在后面。
-- **Codex 终端先行时靠认领。** 还没有原生 id 的 Codex 会话在终端里开新会话，Agora 认领打开终端之后同目录下出现的第一个 rollout；同一时间在同一目录另起 Codex 可能认错。
-- **用量不全。** Claude Code 终端里的轮次没有花费（原生日志不记），Codex 不记花费。
-- **指针只看编辑工具的写入。** `sed -i`、`cat > x` 这类 shell 写入不会被识别；读文件、跑测试不移动指针；一个文件只属于最具体的那个节点。
-- **只在 macOS 上实测过。** 终端窗口用 Ghostty、Kitty 或 Terminal.app 打开（按这个顺序找已安装的，环境变量 `AGORA_TERMINAL=ghostty|kitty|terminal|auto` 可指定）；都没有时面板给出 `tmux attach` 命令；下拉里的「复制打开命令」给出可在任意终端里运行的命令。
+- **Single-user editing.** No real-time collaboration. Several windows on one project, or edits to `.agora/` files from an editor or git, are caught by the version check, and you choose whether to load the disk version or overwrite; outside changes aren't pushed to pages already open.
+- **Diagram edits need an open page.** Diagram edits, code links and animations are carried out by the page; with only the terminal open, `agora canvas apply` exits with code 3.
+- **Guests can only comment.** They can't edit the diagram, resolve threads or hand comments to the agent. Sharing depends on your own Cloudflare account and domain; a just-deleted subdomain can linger in other people's DNS caches for a few minutes (returning 530).
+- **A turn with no output for 30 minutes is stopped.** Only silence counts, not total length: turns that keep producing output, and turns with a tool call running (relaxed to 2 hours), aren't affected; there's also a 6-hour total-length fuse. The native session survives a stop; click "Continue" in the panel to carry on. `AGORA_TURN_IDLE_TIMEOUT_S` / `AGORA_TURN_MAX_S` set the seconds, 0 = no limit.
+- **The model can still be changed in the terminal.** The lock covers Agora's side only; `/model` in the terminal can't be blocked (Pi uses `--models` to limit cycling to the chosen model). The next headless resume still starts with the bound model.
+- **Terminal delivery edge cases.** The first time a CLI enters an untrusted directory it asks whether to trust it, which you answer in the terminal; if a half-typed message sits in the input box, a message delivered from the panel is appended to it.
+- **Codex started from the terminal is claimed.** A Codex session without a native id that starts a new session in the terminal claims the first rollout appearing in the same directory after the terminal opens; starting another Codex in the same directory at the same moment may claim the wrong one.
+- **Usage is incomplete.** Claude Code turns from the terminal have no cost (the native log doesn't record it), and Codex records no cost.
+- **The pointer only sees writes by edit tools.** Shell writes such as `sed -i` or `cat > x` aren't recognised; reading files or running tests doesn't move the pointer; a file belongs only to the most specific node.
+- **Only tested on macOS.** Terminal windows open in Ghostty, Kitty or Terminal.app (first installed one in that order, or set `AGORA_TERMINAL=ghostty|kitty|terminal|auto`); with none, the panel gives a `tmux attach` command; "Copy open command" in the menu gives a command that runs in any terminal.
 
-可能的方向（未排期）：多人实时协同编辑、Linux 上的终端窗口、进度指针识别更多写入方式。
+Possible directions (unscheduled): real-time multi-user editing, terminal windows on Linux, more UI languages, and more kinds of writes recognised by the progress pointer.
 
-## 开发
+## Development
 
 ```bash
-uv run pytest tests/test_project_store.py tests/test_agent_sessions.py tests/test_share.py   # 画布相关，免外部服务
+uv run pytest tests/test_project_store.py tests/test_agent_sessions.py tests/test_share.py   # canvas-related, no external services
 cd web && npx tsc -p . && npx vitest run && npm run build && npm run eval:replay
 ```
 
-打包：`uv build` 在 `dist/` 生成 sdist 和 wheel（没有 `web/dist` 时先在 `web/` 里 `npm ci && npm run build`；`AGORA_SKIP_WEB_BUILD=1` 跳过前端）。推 `v*` 标签时 `.github/workflows/release.yml` 构建并附到 GitHub Release，不发布到 PyPI。
+Packaging: `uv build` writes an sdist and a wheel to `dist/` (run `npm ci && npm run build` in `web/` first if there's no `web/dist`; `AGORA_SKIP_WEB_BUILD=1` skips the front end). Pushing a `v*` tag makes `.github/workflows/release.yml` build and attach them to a GitHub Release; nothing is published to PyPI.
 
-仓库目前不跑 CI，提交前在本地跑上面的检查；`.github/workflows/test.yml` 还在（全部 Python 测试，以及前端的类型检查、单测、构建、离线评测回放和素材库校验），需要时在 GitHub 上重新启用 Actions 即可。开发协作见 [docs/development.md](docs/development.md)，测试说明见 [docs/testing.md](docs/testing.md)，后端编排（Agent 生命周期、派发与恢复）见 [docs/orchestration.md](docs/orchestration.md)，一页面试讲法见 [docs/orchestration-interview.md](docs/orchestration-interview.md)。
+CI isn't running on the repository right now, so run the checks above locally before committing; `.github/workflows/test.yml` is still there (all Python tests plus front-end type check, unit tests, build, offline eval replay and library validation) and can be re-enabled in GitHub Actions when needed. Development conventions: [docs/development.md](docs/development.md); testing: [docs/testing.md](docs/testing.md); back-end orchestration (agent lifecycle, dispatch and recovery): [docs/orchestration.md](docs/orchestration.md). These docs are in Chinese.
 
-## 许可与致谢
+## License and credits
 
-本项目以 [MIT](LICENSE) 许可发布。第三方内容：
+This project is released under the [MIT](LICENSE) license. Third-party content:
 
-- **Excalidraw**（MIT）：画布编辑器。
-- **素材库**（`web/libraries/`）：来自 excalidraw-libraries 等来源的组件。各自的作者、许可和原始地址见 [NOTICE.md](web/libraries/NOTICE.md) 与 [SOURCES.md](web/libraries/SOURCES.md)，许可全文在 `web/libraries/licenses/`。其中的产品名称和标志归各自所有者，仅用于在图中指代对应产品。
-- **Dither Icons**（[`@unlocalhosted/dither-icons`](https://dithered.dev)，MIT，© 2026 Unlocalhosted）：界面图标。
-- **dither-extra 图标**（`web/src/app/dither-extra/`）：本项目作者为 Marginalia 按 Dither Icons 的构造规则绘制的 17 个补充图标（`eye-off` 复用 Dither Icons 的眼睛几何），随本项目以 MIT 发布，并附 Dither Icons 的许可原文（[LICENSE-dither-icons.txt](web/src/app/dither-extra/LICENSE-dither-icons.txt)）。
-- **DeepSeek Harness**（github.com/deepseek-ai/deepseek-harness，MIT）：会话「对话 / 轨迹」视图的信息结构，用本项目的技术栈重写，未引入其依赖。
-- **Agent 标志**（`web/src/app/agents/`，随应用打包、不在运行时外链）：Pi 取自 [pi.dev](https://pi.dev) Press Kit 的方形徽标（Badge SVG，`pi.dev/favicon.svg`，单色，亮色 `#111111`、暗色 `#f6f6f6`），以矢量路径内联；Claude Code 取自官方文档站 [code.claude.com/docs](https://code.claude.com/docs) 的矢量标志（橙色星芒 `#D97757`），以矢量路径内联；Codex 取自 OpenAI 签名的 Codex 桌面应用（bundle id `com.openai.codex`，26.908.70816）自带的 1024px 图标 `Contents/Resources/icon-codex-light.png` 与 `icon-codex-dark-color.png`：用两张图做差分抠图去掉应用底板与投影，只留中间的云形标志，导出 64px 与 128px 两档；Grok 取自 xAI 官网 [x.ai](https://x.ai) 自己发布的站点图标 `https://x.ai/icon.png`（512px 位图，黑底白标；官方没有公开矢量，`grok.com` 拒绝抓取），2026-09-29 取得，缩成 64px 与 128px 两档；Cursor 取自 [cursor.com](https://cursor.com) 的 `https://cursor.com/favicon.svg`（矢量，自带深色圆角底板 `#14120b` 与浅色立方体 `#edecec`，两种主题下原样使用，以矢量路径内联），2026-09-29 取得；Devin 取自 [devin.ai](https://devin.ai) 的 `https://devin.ai/favicon.svg`（单色矢量，原色黑 `#000000`，内联时改用主题墨色：亮色 `#111111`、暗色 `#f6f6f6`），2026-09-29 取得。
-- **终端应用图标**（`web/src/app/terminals/`）：Kitty 取自本机 `kitty.app`（0.48.2）的 `Contents/Resources/kitty.icns`，Kitty 为 Kovid Goyal 的作品（[kovidgoyal/kitty](https://github.com/kovidgoyal/kitty)）；取 32px 与 64px 两档，未改动图形。
-- **以上标志和图标是各自所有者（Earendil / Pi、Anthropic、OpenAI、xAI、Anysphere / Cursor、Cognition / Devin、Kovid Goyal / kitty）的商标或作品，不在本项目的 MIT 许可范围内，这里仅用于标识对应的产品；本项目与它们没有从属或背书关系。**
+- **Excalidraw** (MIT): the canvas editor.
+- **live-panel** ([ythx-101/live-panel-skill](https://github.com/ythx-101/live-panel-skill), MIT): renders the "running" panel animation in this README (`docs/assets/live-panel*.json` are the configs; its code isn't in this repository, and its Smiley Sans font and Lucide icons aren't used). The panel's style and motion are learned from [@thedelost](https://x.com/thedelost/status/2105398038026195279).
+- **Banner animation**: the ink reveal in `docs/assets/banner-ink.svg` borrows its technique from browser-use's banner-ink.svg ([browser-use/media](https://github.com/browser-use/media)); the picture and parameters are this project's own.
+- **Asset library** (`web/libraries/`): components from excalidraw-libraries and other sources. Authors, licenses and original addresses are in [NOTICE.md](web/libraries/NOTICE.md) and [SOURCES.md](web/libraries/SOURCES.md), full license texts in `web/libraries/licenses/`. Product names and logos in it belong to their owners and are used only to refer to those products in diagrams.
+- **Dither Icons** ([`@unlocalhosted/dither-icons`](https://dithered.dev), MIT, © 2026 Unlocalhosted): UI icons.
+- **dither-extra icons** (`web/src/app/dither-extra/`): 17 extra icons drawn by this project's author for Marginalia following Dither Icons' construction rules (`eye-off` reuses Dither Icons' eye geometry), released with this project under MIT together with the Dither Icons license text ([LICENSE-dither-icons.txt](web/src/app/dither-extra/LICENSE-dither-icons.txt)).
+- **DeepSeek Harness** (github.com/deepseek-ai/deepseek-harness, MIT): the information structure of the session "Conversation / Trajectory" views, rewritten in this project's stack without its dependencies.
+- **Agent logos** (`web/src/app/agents/`, bundled with the app, never hot-linked at runtime): Pi from the square badge in the [pi.dev](https://pi.dev) press kit (badge SVG, `pi.dev/favicon.svg`, monochrome, `#111111` light and `#f6f6f6` dark), inlined as vector paths; Claude Code from the vector logo on the official docs site [code.claude.com/docs](https://code.claude.com/docs) (orange starburst `#D97757`), inlined as vector paths; Codex from the 1024 px icons `Contents/Resources/icon-codex-light.png` and `icon-codex-dark-color.png` shipped in OpenAI's signed Codex desktop app (bundle id `com.openai.codex`, 26.908.70816), difference-matted from the two images to remove the app tile and shadow, keeping only the cloud mark, exported at 64 px and 128 px; Grok from the site icon `https://x.ai/icon.png` published on xAI's own site [x.ai](https://x.ai) (512 px bitmap, white mark on black; no public vector, and `grok.com` refuses fetching), taken 2026-09-29 and scaled to 64 px and 128 px; Cursor from `https://cursor.com/favicon.svg` on [cursor.com](https://cursor.com) (vector with its own dark rounded tile `#14120b` and light cube `#edecec`, used as-is in both themes, inlined as vector paths), taken 2026-09-29; Devin from `https://devin.ai/favicon.svg` on [devin.ai](https://devin.ai) (monochrome vector, originally black `#000000`, inlined in the theme ink: `#111111` light, `#f6f6f6` dark), taken 2026-09-29.
+- **Terminal app icons** (`web/src/app/terminals/`): Kitty from `Contents/Resources/kitty.icns` in the local `kitty.app` (0.48.2); Kitty is the work of Kovid Goyal ([kovidgoyal/kitty](https://github.com/kovidgoyal/kitty)); taken at 32 px and 64 px, artwork unchanged.
+- **The logos and icons above are trademarks or works of their respective owners (Earendil / Pi, Anthropic, OpenAI, xAI, Anysphere / Cursor, Cognition / Devin, Kovid Goyal / kitty), are not covered by this project's MIT license, and are used here only to identify the corresponding products; this project is not affiliated with or endorsed by them.**

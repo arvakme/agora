@@ -1,13 +1,14 @@
 // Evidence for 分站揭示 (web/docs/workstation.md §2 智能体改图): an agent's one `agora canvas apply` that draws a whole diagram, on a fresh canvas,
 // as the live 工位视图 shows it.
 //
-//   node scripts/reveal-capture.ts <dev page url> <out.mp4> [--library] [--dark] [--reduced] [--frames <dir> [--every <ms>]] [--click <s>]
+//   node scripts/reveal-capture.ts <dev page url> <out.mp4> [--library] [--dark] [--reduced] [--frames <dir> [--every <ms>]] [--click <s>] [--lang zh|en]
 //
 // Needs the vite dev server (the page's own modules are imported to stand in for the agent: a Pi session is bound on the first canvas and
 // `applyFromAgent` — the page executor `agora canvas apply` runs through — is called with one batch of 12 nodes and 8 arrows) and a backend on an empty
 // project (each run adds the diagram to the first canvas: start the backend on a fresh project for each). Records the page from just before the batch
 // until the figure is done, crops nothing, writes an MP4 (ffmpeg) and, with --frames, a PNG a second (or every `--every` ms, named by ms after the batch); `--click <s>`: click the canvas that many seconds in.
 // At the end it prints whether the page's own picture is gone and the opacities of the elements in the saved canvas (the agent's: never the page's).
+// --lang en (for the promo film's English cut, docs/promo/): English node labels and agent note, and the page opened with ?lang=en.
 // The Chromium is Playwright's, or `CHROMIUM=<path>` when the installed Playwright's own build is not there.
 import { chromium } from "playwright";
 import { execFileSync } from "node:child_process";
@@ -27,6 +28,14 @@ const framesDir = args.includes("--frames") ? args[args.indexOf("--frames") + 1]
 const clickAt = args.includes("--click") ? Number(args[args.indexOf("--click") + 1]) : null;
 const every = args.includes("--every") ? Number(args[args.indexOf("--every") + 1]) : 1000;
 const library = args.includes("--library");
+const en = args.includes("--lang") && args[args.indexOf("--lang") + 1] === "en";
+/** The architecture's labels, in grid order (row by row). */
+const LABELS = en
+  ? ["Web app", "Mobile", "Admin", "API gateway", "Auth", "Orders", "Payments", "Search", "Postgres", "Redis cache", "Queue", "Elasticsearch"]
+  : ["Web 前端", "移动端", "管理后台", "API 网关", "认证服务", "订单服务", "支付服务", "搜索服务", "Postgres", "Redis 缓存", "消息队列", "Elasticsearch"];
+const NOTES = en
+  ? { draw: "Draw this project's architecture", library: "Place a set of library components", every: "One of every element" }
+  : { draw: "画出这个项目的架构", library: "放一组素材库组件", every: "每种元素各画一个" };
 const VIEW = { width: 1280, height: 800 };
 /** --library: when the second batch (the synthetic scene) is applied, after the first. */
 const SECOND_AT_MS = 13_000;
@@ -52,7 +61,11 @@ const tmp = mkdtempSync(join(tmpdir(), "reveal-"));
 const ctx = await browser.newContext({ viewport: VIEW, deviceScaleFactor: 1, colorScheme: dark ? "dark" : "light", reducedMotion: reduced ? "reduce" : "no-preference", recordVideo: { dir: tmp, size: VIEW } });
 const t0 = Date.now();
 const page = await ctx.newPage();
-await page.goto(url);
+{
+  const u = new URL(url);
+  if (en) u.searchParams.set("lang", "en");
+  await page.goto(u.href);
+}
 await page.waitForFunction(() => !!(window as unknown as { __agora?: unknown }).__agora, null, { timeout: 30_000 });
 await page.waitForTimeout(1500);
 
@@ -60,7 +73,7 @@ await page.waitForTimeout(1500);
 // components in one call (insert_library_item, as an agent places them), then a second batch with the synthetic scene of every element type
 // (scripts/ink-scenes.ts: it is not something ops can make, so it is applied the way applyFromAgent applies a batch: the figure is told, the reveal
 // holds what it adds, the scene changes).
-const startAt = await page.evaluate(async ({ library, items }) => {
+const startAt = await page.evaluate(async ({ library, items, L, N }) => {
   const imp = (p: string) => import(/* @vite-ignore */ p);
   const { agents } = await imp("/src/session/agents.ts");
   const { sessions } = await imp("/src/session/store.ts");
@@ -77,18 +90,18 @@ const startAt = await page.evaluate(async ({ library, items }) => {
   const ops = library
     ? items.map((item: string, k: number) => ({ op: "insert_library_item", ref: `lib${k}`, item, at: { x: 40 + (k % 4) * 300, y: 40 + Math.floor(k / 4) * 240 }, width: 170 }))
     : [
-        shape("web", "Web 前端", 0, 0),
-        shape("mobile", "移动端", 1, 0),
-        shape("admin", "管理后台", 2, 0),
-        shape("gw", "API 网关", 1, 1),
-        shape("auth", "认证服务", 0, 2),
-        shape("order", "订单服务", 1, 2),
-        shape("pay", "支付服务", 2, 2),
-        shape("search", "搜索服务", 3, 2),
-        shape("pg", "Postgres", 0, 3),
-        shape("redis", "Redis 缓存", 1, 3),
-        shape("mq", "消息队列", 2, 3),
-        shape("es", "Elasticsearch", 3, 3),
+        shape("web", L[0], 0, 0),
+        shape("mobile", L[1], 1, 0),
+        shape("admin", L[2], 2, 0),
+        shape("gw", L[3], 1, 1),
+        shape("auth", L[4], 0, 2),
+        shape("order", L[5], 1, 2),
+        shape("pay", L[6], 2, 2),
+        shape("search", L[7], 3, 2),
+        shape("pg", L[8], 0, 3),
+        shape("redis", L[9], 1, 3),
+        shape("mq", L[10], 2, 3),
+        shape("es", L[11], 3, 3),
         { op: "add_arrow", from: "web", to: "gw" },
         { op: "add_arrow", from: "mobile", to: "gw" },
         { op: "add_arrow", from: "admin", to: "gw" },
@@ -100,23 +113,23 @@ const startAt = await page.evaluate(async ({ library, items }) => {
       ];
   // a fresh project opens a 新会话 pane beside the canvas once there is a session: closed, so the canvas has the window
   await new Promise((r) => setTimeout(r, 600));
-  document.querySelector<HTMLButtonElement>('button.wm-tab-close[aria-label^="关闭 新会话"]')?.click();
+  document.querySelector<HTMLButtonElement>('.wm-tab[data-kind="session"] button.wm-tab-close')?.click(); // by kind, not by its (translated) name
   await new Promise((r) => setTimeout(r, 600));
-  console.log("pane closed:", ![...document.querySelectorAll("*")].some((e) => e.children.length === 0 && e.textContent?.trim() === "新会话"));
+  console.log("pane closed:", !document.querySelector('.wm-tab[data-kind="session"]'));
   // the components' grid in view
   if (library) (w.__agora.handles.get(canvasId) as { api: { updateScene(x: unknown): void } }).api.updateScene({ appState: { scrollX: 30, scrollY: 40, zoom: { value: 0.82 } } });
   await new Promise((r) => setTimeout(r, 1200));
   const at = Date.now();
-  const res = await applyFromAgent({ canvasId, sessionId: s.id, plan: { ops, note: library ? "放一组素材库组件" : "画出这个项目的架构" }, versions: {} });
+  const res = await applyFromAgent({ canvasId, sessionId: s.id, plan: { ops, note: library ? N.library : N.draw }, versions: {} });
   console.log("apply", JSON.stringify(res).slice(0, 400));
   return at;
-}, { library, items: LIBRARY_ITEMS });
+}, { library, items: LIBRARY_ITEMS, L: LABELS, N: NOTES });
 const second = (async () => {
   if (!library) return;
   // the second batch, once the first is drawn: the synthetic scene, below the components, the view moved to it
   const due = startAt + SECOND_AT_MS - Date.now();
   if (due > 0) await page.waitForTimeout(due);
-  await page.evaluate(async () => {
+  await page.evaluate(async (say) => {
     const imp = (p: string) => import(/* @vite-ignore */ p);
     const { syntheticScene } = await imp("/scripts/ink-scenes.ts");
     const { touches, touchNodesOf } = await imp("/src/workstation/runs/touch.ts");
@@ -131,14 +144,14 @@ const second = (async () => {
     const after = [...api.getSceneElements(), ...elements];
     const map = new Map(after.map((e) => [e.id, e]));
     const at = Date.now();
-    touches.record({ session: w.__sid, canvas: canvasId, at, until: at, nodes: touchNodesOf(elements.map((e: { id: string }) => e.id), map), say: "每种元素各画一个" });
+    touches.record({ session: w.__sid, canvas: canvasId, at, until: at, nodes: touchNodesOf(elements.map((e: { id: string }) => e.id), map), say });
     const held = holdReveal(canvasId, at, elements.map((e: { id: string }) => e.id), map);
     api.updateScene({ elements: after, captureUpdate: "IMMEDIATELY" });
     for (const ms of [300, 1000, 2500]) {
       await new Promise((r) => setTimeout(r, ms));
       console.log(`second batch: held ${held}, ${ms} ms on: revealing ${!!document.querySelector(".canvas-layers[data-revealing]")}, pictures ${document.querySelectorAll(".ws-reveal-pic").length}`);
     }
-  });
+  }, NOTES.every);
 })();
 page.on("console", (m) => console.log("[page]", m.text()));
 const shots: Promise<unknown>[] = [];

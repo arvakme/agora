@@ -1,0 +1,219 @@
+---
+import { INSTALL, site, type Lang } from "../i18n";
+
+// 安装命令与复制按钮；Hero 与收尾共用。复制逻辑用事件委托只挂一次：任何带 data-copy-install 的按钮都复制命令、
+// 置 data-state="done"，并把 data-copied 写进紧随其后的 aria-live 节点；剪贴板被拒时播报 data-failed 并选中命令文字
+interface Props {
+	lang: Lang;
+	class?: string;
+	/** 首屏用：命令像被敲出来一样逐字出现（只在宽屏、允许动效时） */
+	type?: boolean;
+}
+const { lang, class: className, type = false } = Astro.props;
+const t = site[lang];
+---
+
+<div class:list={["install", className, { type }]}>
+	<code><span class="typed" style={`--n: ${INSTALL.length}`}>{
+		// 手机上在 install 后换行，网址整段放第二行；复制的永远是 INSTALL 本身
+		INSTALL.split(" git+").map((part, i) => (i === 0 ? <span>{part} </span> : <span class="url">git+{part}</span>))
+	}</span></code>
+	<button type="button" class="copy" aria-label={t.copy} title={t.copy} data-copy-install data-copied={t.copied} data-failed={t.copyFailed}>
+		<svg class="icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
+		<svg class="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+	</button>
+	<span class="sr-only" aria-live="polite"></span>
+</div>
+
+<script>
+	import { INSTALL } from "../i18n";
+
+	const COPIED_MS = 1600;
+	const timers = new WeakMap<HTMLButtonElement, number>();
+
+	document.addEventListener("click", async (event) => {
+		const button = (event.target as Element).closest<HTMLButtonElement>("[data-copy-install]");
+		if (!button) return;
+		const live = button.nextElementSibling!;
+		const copied = await navigator.clipboard?.writeText(INSTALL).then(
+			() => true,
+			() => false,
+		);
+		if (!copied) {
+			live.textContent = button.dataset.failed!;
+			const code = button.parentElement!.querySelector("code");
+			if (code) getSelection()!.selectAllChildren(code);
+			return;
+		}
+		button.dataset.state = "done";
+		live.textContent = button.dataset.copied!;
+		clearTimeout(timers.get(button));
+		timers.set(
+			button,
+			window.setTimeout(() => {
+				delete button.dataset.state;
+				live.textContent = "";
+			}, COPIED_MS),
+		);
+	});
+</script>
+
+<style>
+	.install {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		max-width: 100%;
+		padding: 7px 7px 7px 18px;
+		border-radius: 14px;
+		background: var(--code-bg);
+		color: var(--code-fg);
+		box-shadow:
+			0 0 0 1px oklch(1 0 0 / 0.08) inset,
+			0 18px 40px -22px oklch(0.2 0.05 290 / 0.6);
+	}
+
+	code {
+		/* 放不下时命令横向滚动，按钮不缩 */
+		min-width: 0;
+		overflow-x: auto;
+		scrollbar-width: none;
+		font-size: 14.5px;
+		white-space: nowrap;
+	}
+
+	/* 提示符画在样式里：不进读屏，也不进复制或选中的文字 */
+	code::before {
+		content: "$";
+		margin-right: 10px;
+		color: var(--code-prompt);
+	}
+
+	.copy {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 38px;
+		height: 38px;
+		border: 0;
+		border-radius: 10px;
+		background: oklch(1 0 0 / 0.08);
+		color: var(--code-fg);
+		cursor: pointer;
+		transition:
+			background-color var(--duration-state) var(--ease),
+			scale 100ms var(--ease);
+	}
+
+	.copy svg {
+		grid-area: 1 / 1;
+		width: 17px;
+		height: 17px;
+		transition: opacity var(--duration-state) var(--ease);
+	}
+
+	.icon-check,
+	.copy[data-state="done"] .icon-copy {
+		opacity: 0;
+	}
+
+	.copy[data-state="done"] .icon-check {
+		opacity: 1;
+		color: var(--code-prompt);
+	}
+
+	.copy:active {
+		scale: 0.92;
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.copy:hover {
+			background: oklch(1 0 0 / 0.16);
+		}
+	}
+
+	/* 打字效果：等宽字体下每个字 1ch，按字数分步把裁切窗口拉开，光标跟在后面，打完闪两下消失。
+	   只改 clip-path 和 translate，不改尺寸，复制按钮不会被挤动 */
+	.typed {
+		position: relative;
+	}
+
+	@media (min-width: 481px) {
+		:global(html.motion) .type .typed {
+			display: inline-block;
+			animation: type calc(var(--n) * 28ms) steps(var(--n), end) 900ms both;
+		}
+
+		:global(html.motion) .type .typed::after {
+			content: "";
+			position: absolute;
+			top: 0.1em;
+			left: 0;
+			width: 0.55ch;
+			height: 1.15em;
+			background: var(--code-prompt);
+			animation:
+				caret calc(var(--n) * 28ms) steps(var(--n), end) 900ms both,
+				blink 1s steps(1) calc(var(--n) * 28ms + 900ms) 2 forwards;
+		}
+	}
+
+	@keyframes type {
+		from {
+			clip-path: inset(0 100% 0 0);
+		}
+		to {
+			clip-path: inset(0 -1ch 0 0);
+		}
+	}
+
+	@keyframes caret {
+		from {
+			translate: 0 0;
+		}
+		to {
+			translate: calc(var(--n) * 1ch) 0;
+		}
+	}
+
+	@keyframes blink {
+		0% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0;
+		}
+		100% {
+			opacity: 0;
+		}
+	}
+
+	/* 手机上命令放不下：前半句和复制按钮在第一行，网址整段在第二行 */
+	@media (max-width: 480px) {
+		.install {
+			position: relative;
+			display: block;
+			padding: 12px 14px;
+		}
+
+		code {
+			display: block;
+			text-align: left;
+			font-size: 12.5px;
+			line-height: 1.7;
+		}
+
+		.url {
+			display: block;
+			padding-left: calc(1ch + 10px);
+		}
+
+		.copy {
+			position: absolute;
+			top: 6px;
+			right: 6px;
+			width: 34px;
+			height: 34px;
+		}
+	}
+</style>

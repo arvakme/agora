@@ -176,6 +176,7 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .wm-slot[data-float-mode="strip"] .sp-composer textarea { height: 24px; min-height: 0; max-height: 24px; overflow: hidden; }
 /* a session without a composer yet (choosing its agent, a copy, a lost log): the strip says to pull it up */
 .wm-slot[data-float-mode="strip"]:not(:has(.sp-composer))::after { content: "先展开：选一个 agent，或处理里面的提示"; position: absolute; inset: 0; display: flex; align-items: center; padding-left: var(--space-5); color: var(--fg-muted); font-size: var(--text-sm); pointer-events: none; }
+:root:lang(en) .wm-slot[data-float-mode="strip"]:not(:has(.sp-composer))::after { content: "Expand first: pick an agent, or handle the prompt inside"; }
 .wm-slot[data-float-mode="strip"] .sp-composer .sp-ctx, .wm-slot[data-float-mode="strip"] .sp-composer .sp-ways { display: none; }
 .float-head { display: flex; align-items: center; gap: var(--space-2); height: 36px; padding: 0 var(--space-3); border-radius: var(--r-lg) var(--r-lg) 0 0; background: var(--bg); box-shadow: inset 0 -1px var(--line); cursor: grab; touch-action: none; user-select: none; outline: 0; }
 .float-head[data-variant="half"] { height: 48px; }
