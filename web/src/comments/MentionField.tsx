@@ -12,6 +12,7 @@ import "../session/recommend.css";
 import { applyMention, GROUP_TITLES, MENTION_LIST_CLASS, mentionQuery, mentionRows, submitMention, type MentionRow, type MentionSources, type MentionTarget } from "./mention";
 import { topicOf } from "../workspace/model";
 import type { Thread } from "./threads";
+import { tr } from "../i18n";
 
 /** Room for eight rows (a row is 29.4px, the list has 4px padding, comments/handoff.css); a longer list scrolls. */
 const ROW_PX = 29.4;
@@ -106,7 +107,7 @@ export function MentionField({ value, onValue, onSend, placeholder, rows = 1, la
             className={MENTION_LIST_CLASS}
             role="listbox"
             id={listId}
-            aria-label="@ 一个 agent 或对话"
+            aria-label={tr("@ 一个 agent 或对话", "@ an agent or conversation")}
             style={{ left: rect.left, width: Math.max(rect.width, 220), maxHeight: ROW_PX * VISIBLE_ROWS + LIST_PAD_PX, ...(rect.top > 240 ? { bottom: window.innerHeight - rect.top + 6 } : { top: rect.bottom + 6 }) }}
           >
             {options.map((o, i) => {

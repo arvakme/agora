@@ -12,6 +12,7 @@ import { clashText, useSessionLabel } from "../pointer/PointerLayer";
 import { conflicts, conflictsOf } from "./pointers";
 import { useSessionFolds } from "./writes";
 import "./multi.css";
+import { tr } from "../i18n";
 
 export function ConflictNotice({ sessionId }: { sessionId: string }) {
   const folds = useSessionFolds();
@@ -32,13 +33,13 @@ export function ConflictNotice({ sessionId }: { sessionId: string }) {
     <div className="notice sp-clash" role="status" data-tone="caution">
       <span className="nest-dot" aria-hidden />
       <span>
-        可能冲突：{clashText(c, label)}
-        {mine.length > 1 ? `（另有 ${mine.length - 1} 处）` : ""}
+        {tr("可能冲突：", "Possible conflict: ")}{clashText(c, label)}
+        {mine.length > 1 ? tr(`（另有 ${mine.length - 1} 处）`, ` (${mine.length - 1} more)`) : ""}
       </span>
       <button className="btn sm quiet" onClick={() => ui.openSession(other)}>
-        {kind && <AgentAvatar kind={kind} size={16} />}看 {label(other, c.sessions)}
+        {kind && <AgentAvatar kind={kind} size={16} />}{tr("看", "View")} {label(other, c.sessions)}
       </button>
-      <button className="icon-btn sm muted" aria-label="知道了" title="知道了（有新的冲突会再提示）" onClick={() => setHidden(key)}>
+      <button className="icon-btn sm muted" aria-label={tr("知道了", "Got it")} title={tr("知道了（有新的冲突会再提示）", "Got it (new conflicts will show again)")} onClick={() => setHidden(key)}>
         <IconClose size={14} />
       </button>
     </div>

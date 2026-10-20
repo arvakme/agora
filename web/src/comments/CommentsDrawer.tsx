@@ -21,9 +21,10 @@ import { offerUndo } from "./undo";
 import { SPRING } from "./motion";
 import { AnchorTag } from "./AnchorTag";
 import { MomentChip } from "./MomentChip";
-import { ago } from "./ThreadCard";
+import { ago, repliesText } from "./ThreadCard";
 import { GUEST } from "../guest/mode";
 import "./drawerFloat.css";
+import { tr, lang } from "../i18n";
 
 export function CommentsDrawer({ title, api, store, view, open, onOpen, onClose, focusId, onRepin }: {
   title: string;
@@ -134,10 +135,10 @@ export function CommentsDrawer({ title, api, store, view, open, onOpen, onClose,
             </span>
             <span className="ditem-text">{t.messages[0].text}</span>
             <span className="ditem-foot">
-              {t.messages.length > 1 && <span>{t.messages.length - 1} 条回复</span>}
-              {t.agent === "running" && <span><i className="dot" data-tone="ok" />Agent 处理中</span>}
-              {pinState(t) === "answered" && <span><i className="dot" data-tone="answered" />Agent 已答复</span>}
-              {t.resolved && <span>已解决{t.resolvedBy ? ` · ${t.resolvedBy.name}` : ""}{t.resolvedAt ? ` · ${ago(t.resolvedAt)}` : ""}</span>}
+              {t.messages.length > 1 && <span>{repliesText(t.messages.length - 1)}</span>}
+              {t.agent === "running" && <span><i className="dot" data-tone="ok" />{tr("Agent 处理中", "Agent working")}</span>}
+              {pinState(t) === "answered" && <span><i className="dot" data-tone="answered" />{tr("Agent 已答复", "Agent replied")}</span>}
+              {t.resolved && <span>{tr("已解决", "Resolved")}{t.resolvedBy ? ` · ${t.resolvedBy.name}` : ""}{t.resolvedAt ? ` · ${ago(t.resolvedAt)}` : ""}</span>}
             </span>
           </span>
         </button>
@@ -146,11 +147,11 @@ export function CommentsDrawer({ title, api, store, view, open, onOpen, onClose,
             <motion.div className="ditem-acts" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0, transition: { duration: 0.12 } }} transition={SPRING}>
               {lost ? (
                 <>
-                  <button className="btn sm quiet" onClick={() => onRepin?.(t.id)}><IconTarget size={14} />重新钉到…</button>
-                  {isOwner() && <button className="btn sm ghost danger" onClick={() => offerUndo(store.removeThread(t.id))}><IconTrash size={14} />删除</button>}
+                  <button className="btn sm quiet" onClick={() => onRepin?.(t.id)}><IconTarget size={14} />{tr("重新钉到…", "Repin to…")}</button>
+                  {isOwner() && <button className="btn sm ghost danger" onClick={() => offerUndo(store.removeThread(t.id))}><IconTrash size={14} />{tr("删除", "Delete")}</button>}
                 </>
               ) : (
-                <button className="btn sm quiet" onClick={() => (store.setResolved(t.id, false), setTab("open"), setExpanded(null), setTimeout(() => focus(t.id), 60))}><IconRetry size={14} />重新打开</button>
+                <button className="btn sm quiet" onClick={() => (store.setResolved(t.id, false), setTab("open"), setExpanded(null), setTimeout(() => focus(t.id), 60))}><IconRetry size={14} />{tr("重新打开", "Reopen")}</button>
               )}
             </motion.div>
           )}
@@ -165,20 +166,20 @@ export function CommentsDrawer({ title, api, store, view, open, onOpen, onClose,
         top={tabTop}
         avatar={<IconList size={20} />}
         count={g.open.length}
-        label="评论"
-        aria={`展开「${title}」的评论列表 · ${g.open.length} 条进行中`}
+        label={tr("评论", "Comments")}
+        aria={tr(`展开「${title}」的评论列表 · ${g.open.length} 条进行中`, `Expand comments on “${title}” · ${g.open.length} open`)}
         onOpen={() => (onOpen(), setShell({ ...shell, folded: false }), floatFocus.set("comments"))}
         forwardRef={setEl}
       />
     );
   return (
-    <aside ref={setEl} className="drawer" data-float-shell="comments" data-float-pad={HANDLE} style={{ left: at.x, top: at.y, width: at.w, height: at.h }} aria-label={`「${title}」的评论`} onPointerDown={(e) => e.stopPropagation()}>
-      <header className="drawer-head float-head" tabIndex={0} {...gestures.head} title="拖动可以挪位置 · 双击换宽度 · Alt+方向键移动 · Esc 收起">
-        <h2 className="drawer-title" title={title}>{title}<span> 的评论</span></h2>
-        <button className="icon-btn muted" onClick={() => setShell({ ...shell, folded: true })} aria-label="收起" title="收起（Esc）">
+    <aside ref={setEl} className="drawer" data-float-shell="comments" data-float-pad={HANDLE} style={{ left: at.x, top: at.y, width: at.w, height: at.h }} aria-label={tr(`「${title}」的评论`, `Comments on “${title}”`)} onPointerDown={(e) => e.stopPropagation()}>
+      <header className="drawer-head float-head" tabIndex={0} {...gestures.head} title={tr("拖动可以挪位置 · 双击换宽度 · Alt+方向键移动 · Esc 收起", "Drag to move · double-click to change width · Alt+arrow keys to move · Esc to collapse")}>
+        <h2 className="drawer-title" title={title}>{lang() === "en" ? <><span>Comments · </span>{title}</> : <>{title}<span> 的评论</span></>}</h2>
+        <button className="icon-btn muted" onClick={() => setShell({ ...shell, folded: true })} aria-label={tr("收起", "Collapse")} title={tr("收起（Esc）", "Collapse (Esc)")}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="M6 12h12" /></svg>
         </button>
-        <button className="icon-btn muted" onClick={onClose} aria-label="关闭评论列表" title="关闭"><IconClose size={16} /></button>
+        <button className="icon-btn muted" onClick={onClose} aria-label={tr("关闭评论列表", "Close comment list")} title={tr("关闭", "Close")}><IconClose size={16} /></button>
       </header>
       <ResizeHandles handle={gestures.handle} />
       <div className="drawer-bar">
@@ -186,14 +187,14 @@ export function CommentsDrawer({ title, api, store, view, open, onOpen, onClose,
           {(["open", "resolved"] as const).map((k) => (
             <button key={k} role="tab" aria-selected={tab === k} data-on={tab === k} onClick={() => setTab(k)}>
               {tab === k && <motion.span layoutId={`seg-${view.id}`} className="seg-bg" transition={SPRING} />}
-              <span>{k === "open" ? "进行中" : "已解决"}</span>
+              <span>{k === "open" ? tr("进行中", "Open") : tr("已解决", "Resolved")}</span>
               <em>{k === "open" ? g.open.length : g.resolved.length}</em>
             </button>
           ))}
         </div>
-        <button className="drawer-sw" role="switch" aria-checked={showResolved} onClick={() => prefs.set({ showResolved: !showResolved })} title="已解决的评论在画布上显示为淡色的钉">
+        <button className="drawer-sw" role="switch" aria-checked={showResolved} onClick={() => prefs.set({ showResolved: !showResolved })} title={tr("已解决的评论在画布上显示为淡色的钉", "Resolved comments show as faded pins on the canvas")}>
           <span className="sw" aria-hidden />
-          在画布上显示已解决
+          {tr("在画布上显示已解决", "Show resolved on canvas")}
         </button>
       </div>
       <div className="drawer-list">
@@ -203,15 +204,15 @@ export function CommentsDrawer({ title, api, store, view, open, onOpen, onClose,
         {!shown.length && (
           <div className="drawer-empty">
             <span className="dither-field" aria-hidden />
-            {tab === "open" ? <span>没有进行中的评论。<br />按 C，再点一个元素钉一条；或用左下角的「整张图」评论整张图。</span> : <span>还没有已解决的评论。</span>}
+            {tab === "open" ? <span>{tr("没有进行中的评论。", "No open comments.")}<br />{tr("按 C，再点一个元素钉一条；或用左下角的「整张图」评论整张图。", "Press C, then click an element to pin one; or use “Whole canvas” at the bottom left to comment on the whole canvas.")}</span> : <span>{tr("还没有已解决的评论。", "No resolved comments yet.")}</span>}
           </div>
         )}
         {g.lost.length > 0 && (
-          <section className="drawer-group" aria-label="锚点已失效">
+          <section className="drawer-group" aria-label={tr("锚点已失效", "Lost anchors")}>
             <h3>
-              锚点已失效 <em>{g.lost.length}</em>
+              {tr("锚点已失效", "Lost anchors")} <em>{g.lost.length}</em>
             </h3>
-            <p>评论的元素被删掉了，这些评论不再画在图上。重新钉到别的元素，或者删除。</p>
+            <p>{tr("评论的元素被删掉了，这些评论不再画在图上。重新钉到别的元素，或者删除。", "The elements these comments were on were deleted, so they no longer show on the canvas. Repin them to another element, or delete them.")}</p>
             <AnimatePresence initial={false}>{g.lost.map((t) => row(t, true))}</AnimatePresence>
           </section>
         )}

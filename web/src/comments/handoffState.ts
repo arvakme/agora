@@ -2,10 +2,11 @@
 // ThreadCard.tsx, CommentLayer.tsx, CommentsDrawer.tsx read it). Pure.
 import type { Dispatch } from "../session/agents";
 import type { Message, Thread } from "./threads";
+import { tr } from "../i18n";
 
 /** The four things a pin can say about the agent: nothing from it yet, at work, answered, the person closed the thread. */
 export type PinState = "pending" | "running" | "answered" | "resolved";
-export const PIN_LABEL: Record<PinState, string> = { pending: "未答复", running: "处理中", answered: "已答复", resolved: "已解决" };
+export const PIN_LABEL: Record<PinState, string> = { pending: tr("未答复", "Unanswered"), running: tr("处理中", "Working"), answered: tr("已答复", "Answered"), resolved: tr("已解决", "Resolved") };
 
 const live = (m: Pick<Message, "deleted">) => !m.deleted;
 
@@ -52,7 +53,7 @@ export function collapseSuperseded(messages: Message[], to?: string | ((sessionI
     if (i < lastAnswer && failure(m)) {
       const prev = out.at(-1);
       if (prev && "folded" in prev) prev.count++;
-      else out.push({ id: `folded-${m.id}`, folded: true, text: `之前未交出，已重新交给 ${name ?? "Agent"}`, count: 1 });
+      else out.push({ id: `folded-${m.id}`, folded: true, text: tr(`之前未交出，已重新交给 ${name ?? "Agent"}`, `Didn’t go through earlier; handed to ${name ?? "Agent"} again`), count: 1 });
     } else out.push(m);
   });
   return out;
