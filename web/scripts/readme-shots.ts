@@ -209,7 +209,8 @@ async function turn(text: string, during?: () => Promise<void>) {
 /** While a turn works: frames with the figure writing a file under `prefix` (its bubble says so) and standing still — a bubble
  *  rides on its figure's feet, and walking to the node is a write too (「走去 …」), so a frame counts when the bubble is where it
  *  was in the frame before. Frames are taken all through the turn and the best one is written when it ends. */
-async function whenWriting(n: string, prefix: string) {
+async function whenWriting(n: string, prefix: string, node: string) {
+  const at = await nodeAt(first(node));
   let last: string | null = null;
   let best: { buf: Buffer; still: boolean } | null = null;
   const seen = new Set<string>();
@@ -219,9 +220,11 @@ async function whenWriting(n: string, prefix: string) {
       const kinds = ps.map((p) => `${p.querySelector(".ws-bub")?.getAttribute("data-k")}:${p.innerText.replace(/\s+/g, " ").slice(0, 50)}`);
       const p = ps.find((p) => !!p.querySelector('.ws-bub[data-k="write"]') && p.innerText.includes(prefix));
       const r = p?.getBoundingClientRect();
-      return { at: r ? `${Math.round(r.x / 2)},${Math.round(r.y / 2)}` : null, kinds };
+      return { at: r ? `${Math.round(r.x / 2)},${Math.round(r.y / 2)}` : null, cx: r ? r.x + r.width / 2 : 0, kinds };
     }, prefix);
-    now.kinds.forEach((k) => seen.add(k));
+    // and standing on that node: the bubble names the file before the walk there is over
+    if (Math.abs(now.cx - at.x) > at.right - at.x) now.at = null;
+    now.kinds.filter((k) => !k.startsWith("think:")).forEach((k) => seen.add(k.replace(/\d+(\.\d+)? 秒|\d+(\.\d+)?s\b/g, "")));
     const buf = await page.screenshot();
     if (now.at) {
       const still = now.at === last;
@@ -229,7 +232,7 @@ async function whenWriting(n: string, prefix: string) {
     }
     last = now.at;
   }
-  if (!best) return console.log(`(${n}: no write under ${prefix} seen; bubbles were: ${[...seen].slice(0, 12).join(" | ")})`);
+  if (!best) return console.log(`(${n}: no write under ${prefix} seen; bubbles were: ${[...seen].slice(0, 30).join(" | ")})`);
   await shot(n, best.buf);
   return true;
 }
@@ -285,7 +288,7 @@ try {
   await turn(T.turns[1]); // a feature across the diagram, and docs/ off it
   await fit();
   let overview = false;
-  await turn(T.turns[2], async () => void (overview = !!(await whenWriting("overview", "api/"))));
+  await turn(T.turns[2], async () => void (overview = !!(await whenWriting("overview", "api/", T.nodes.api))));
   if (!overview) console.log("overview: the figure was never caught writing in api/; again with --reuse <dir> --only overview");
   await turn(T.turns[3]);
   await wait(1500);
@@ -293,7 +296,7 @@ try {
     await layout(-1);
     await fit();
     // --reuse --only overview: one more small change in api/, for another try at catching the figure there
-    if (want("overview") && ONLY) await turn(T.retryTurn, async () => void (await whenWriting("overview", "api/")));
+    if (want("overview") && ONLY) await turn(T.retryTurn, async () => void (await whenWriting("overview", "api/", T.nodes.api)));
   }
 
   // share: the popover
@@ -310,9 +313,10 @@ try {
     await page.locator(".ds-trace-btn").nth(1).scrollIntoViewIfNeeded();
     await page.locator(".ds-trace-btn").nth(1).click();
     await page.locator(".ws-play-sum").first().waitFor({ timeout: 180_000 });
-    // the figure done with the turn's last stop too (its bubble back to idle), the route and the counts left on the diagram
-    for (let i = 0; i < 60 && (await page.locator('.ws-bub-pos .ws-bub:not([data-k="idle"])').count()); i++) await wait(250);
-    await wait(1200);
+    // the figure done with the turn's last stop too (its bubble back to idle), the route and the counts left on the diagram —
+    // taken at once: the summary only lasts until the replay ends and the page drops to the bare route
+    for (let i = 0; i < 120 && (await page.locator('.ws-bub-pos .ws-bub:not([data-k="idle"])').count()); i++) await wait(100);
+    await wait(300);
     await shot("pointer");
     await page.keyboard.press("Escape");
     await wait(1500);
@@ -325,7 +329,7 @@ try {
     await wait(1200);
     // the turn's last Edit: by then the figure has reached the node it writes in
     await page.locator(".ds-rec-line", { hasText: /Edit\s+\// }).last().click();
-    await wait(1500);
+    await wait(3500); // the figure walks to the step's node after the seek
     await shot("trajectory");
     await page.keyboard.press("Escape");
     await wait(800);
