@@ -22,7 +22,7 @@ export function messageCard(it: Pick<Item, "text" | "source" | "card" | "dispatc
   return c ? { kind: "comment", ...c } : undefined;
 }
 
-const STATE_WORD: Record<string, string> = { done: tr("完成", "Done"), failed: tr("失败", "Failed"), blocked: tr("受阻", "Blocked"), idle_no_reply: tr("结束了，没有交回执", "Ended without a receipt") };
+const STATE_WORD: Record<string, string> = { done: tr("完成", "Done"), failed: tr("失败", "Failed"), blocked: tr("受阻", "Blocked"), idle_no_reply: tr("结束了，没有交回执", "Stopped without a receipt") };
 export const stateWord = (state: string) => STATE_WORD[state] ?? state;
 
 /** The turn's head, instead of 第 N 轮: what arrived. */

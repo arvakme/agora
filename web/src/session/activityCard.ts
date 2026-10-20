@@ -32,7 +32,7 @@ export function statsLine(counts: Record<Bucket, number>): string {
   const done = ORDER.reduce((n, b) => n + counts[b], 0);
   if (!done) return tr("还没有动作", "No actions yet");
   const parts = ORDER.filter((b) => counts[b]);
-  return tr(`已完成 ${done} 个动作：${parts.map((b) => `${LABEL[b]} ${counts[b]}`).join(" · ")}`, `${done} action${done === 1 ? "" : "s"} done: ${parts.map((b) => `${counts[b]} ${LABEL[b]}`).join(" · ")}`);
+  return tr(`已完成 ${done} 个动作：${parts.map((b) => `${LABEL[b]} ${counts[b]}`).join(" · ")}`, `${done} action${done === 1 ? "" : "s"} done: ${parts.map((b) => `${counts[b]} ${counts[b] === 1 && b !== "other" ? LABEL[b].replace(/s$/, "") : LABEL[b]}`).join(" · ")}`);
 }
 
 export function activityModel(turn: TrajTurn, o: { waiting?: boolean } = {}): ActivityModel {
