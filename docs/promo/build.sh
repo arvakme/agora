@@ -42,14 +42,29 @@ prep() {
     ffmpeg -v error -y -i "$FOOTAGE/$2" -an -vf "$3,scale=1440:900:flags=lanczos,fps=${4:-30},format=yuv420p" \
       -c:v libvpx-vp9 -crf 24 -b:v 0 -deadline good -cpu-used 4 -row-mt 1 -g 15 "$BUILD/assets/clips/$1.webm"
   }
-  clip reveal  reveal/after.mp4        "crop=1280:800:0:0"
-  clip library reveal/library.mp4      "crop=1280:800:0:0"
-  # 两轮进子图：web/scripts/promo-capture.ts 录的 60 fps（setup 搭两层子图，zoom 逐帧步进；画面里只有画布），中英文标签各一条
+  # 每段实录按语言各一份：assets/clips/<名>.<lang>.webm。录制脚本带 --lang en 录的（页面开 ?lang=en，图上标签也是英文）放在
+  # promo-bilingual/footage/<名>.<lang>.mp4，原尺寸录、不裁；某种语言还没有，就用中文那份顶上（原来的实录，带它原来的裁切）
+  langclip() { # name zh-src zh-crop
+    local l f
+    for l in zh en; do
+      f="promo-bilingual/footage/$1.$l.mp4"
+      if [ -f "$FOOTAGE/$f" ]; then clip "$1.$l" "$f" null
+      elif [ $l = zh ]; then clip "$1.zh" "$2" "$3"
+      else cp "$BUILD/assets/clips/$1.zh.webm" "$BUILD/assets/clips/$1.en.webm"; fi
+    done
+  }
+  langclip reveal  reveal/after.mp4    "crop=1280:800:0:0"    # web/scripts/reveal-capture.ts [--lang en]
+  langclip library reveal/library.mp4  "crop=1280:800:0:0"    # 同上，--library
+  langclip hop     hop/after.mp4       "crop=1488:930:56:90"  # web/scripts/motion-capture.ts（?mock=runs 的脚本场景）[--lang en]
+  # 两轮进子图：web/scripts/promo-capture.ts 录的 60 fps（setup 搭两层子图，zoom 逐帧步进；画面里只有画布），中英文各一条
   for l in zh en; do clip "zoom.$l" "promo-bilingual/footage/zoom.$l.mp4" "crop=1440:900:0:0" 60; done
-  clip hop     hop/after.mp4           "crop=1488:930:56:90"
 
-  # README 里的截图（docs/media/），蒙太奇用
-  for s in trajectory terminal share guest choose-agent; do cp "$REPO/docs/media/$s.png" "$BUILD/assets/stills/"; done
+  # 蒙太奇里的截图：docs/media/<名>.png 是中文版；英文版 <名>.en.png（web/scripts/readme-shots.ts --lang en 拍的）还没有就用中文的
+  for s in trajectory terminal share guest; do
+    cp "$REPO/docs/media/$s.png" "$BUILD/assets/stills/$s.zh.png"
+    if [ -f "$REPO/docs/media/$s.en.png" ]; then cp "$REPO/docs/media/$s.en.png" "$BUILD/assets/stills/$s.en.png"
+    else cp "$REPO/docs/media/$s.png" "$BUILD/assets/stills/$s.en.png"; fi
+  done
   cp "$REPO/docs/assets/banner.png" "$BUILD/assets/stills/banner.png"
   # README 示意图的上半部分（数据流），只改 viewBox 裁出来；中英文各一张（how-it-works.py 同时写出两份）
   for l in zh en; do
@@ -104,7 +119,7 @@ finish() { # lang
   # README 动图：逐站画出来（4–10 s）接缩放进子图（16–20 s），无声，960 宽 15 fps，≤ 3.5 MB；
   # demo.zh.gif → docs/assets/demo.gif，demo.en.gif → docs/assets/demo.en.gif
   ffmpeg -v error -y -i "$full" -filter_complex \
-    "[0:v]trim=4:10,setpts=PTS-STARTPTS[a];[0:v]trim=16:20,setpts=PTS-STARTPTS[b];[a][b]concat=n=2:v=1[c];[c]fps=15,scale=960:-1:flags=lanczos,split[x][y];[x]palettegen=max_colors=128:stats_mode=diff[p];[y][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" \
+    "[0:v]trim=4:10,setpts=PTS-STARTPTS[a];[0:v]trim=16:20,setpts=PTS-STARTPTS[b];[a][b]concat=n=2:v=1[c];[c]fps=15,scale=960:-1:flags=lanczos,split[x][y];[x]palettegen=max_colors=96:stats_mode=diff[p];[y][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle" \
     "$out/demo.$lang.gif"
   ls -la "$out"
 }

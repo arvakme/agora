@@ -4,8 +4,9 @@
 //
 // 页面装上 Playwright 的假时钟（Date、setTimeout、requestAnimationFrame、performance.now 都归它管）并停住；之后每一帧：
 // 先按这一帧的时刻摆好镜头，时钟走 1/fps 秒，再截一张图。录下来的每一帧都是页面在那个时刻真正画出来的样子，
-// 不靠录屏的帧率，也不需要再放慢。界面外壳（顶栏、标签、Excalidraw 的工具条和页脚、面包屑、子图入口按钮、底部 dock）
+// 不靠录屏的帧率，也不需要再放慢。界面外壳（顶栏、标签、Excalidraw 的工具条和页脚（缩放比例、撤销重做）、面包屑、子图入口按钮、底部 dock）
 // 只是藏起来（visibility），版面不变，镜头的换算照旧；截图只裁画布里的 1440×900。
+// --lang en：标签用英文，页面也带 ?lang=en 打开（界面的英文版），录出来的整帧都是英文。
 //   setup: 在空项目的第一张画布上搭两层子图（总架构 › 后端 API › 订单服务；--lang en 用英文标签），和 zoom-capture.ts 的 setup
 //          同一棵树、同一个版面，只是文字按语言换。
 //   zoom:  两轮语义缩放：从总架构一路放大进「后端 API」，子图接过画面后不停，接着放大进「订单服务」，最后停在第三层的图上。
@@ -53,7 +54,9 @@ const page = await ctx.newPage();
 page.on("pageerror", (e) => console.log("pageerror:", e.message));
 page.on("console", (m) => (m.type() === "error" && !m.text().includes("404") ? console.log("console error:", m.text().slice(0, 300)) : m.text().startsWith("[cap]") && console.log(m.text())));
 if (which !== "setup") await page.clock.install();
-await page.goto(url);
+const u = new URL(url);
+if (lang === "en") u.searchParams.set("lang", "en");
+await page.goto(u.href);
 await page.waitForFunction(() => !!(window as unknown as { __agora?: unknown }).__agora, null, { timeout: 30_000 });
 await page.waitForTimeout(1500);
 
@@ -66,7 +69,8 @@ if (which === "setup") {
     const { canvases } = await imp("/src/session/ui.ts");
     const { labelOf, byId } = await imp("/src/canvas/scene.ts");
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    document.querySelector<HTMLButtonElement>('button.wm-tab-close[aria-label^="关闭 新会话"]')?.click();
+    // 新项目旁边开着的「新会话」窗格关掉（英文界面上是 Close New session）
+    document.querySelector<HTMLButtonElement>('button.wm-tab-close[aria-label^="关闭 新会话"], button.wm-tab-close[aria-label^="Close New session" i]')?.click();
     const w = window as unknown as { __agora: { handles: Map<string, unknown> } };
     const top = [...w.__agora.handles.keys()][0];
     const apiOf = async (id: string) => {
@@ -126,9 +130,11 @@ if (which === "setup") {
 }
 
 /** 藏起界面外壳，只留画布（和画布上的缩放层：缩略图、遮罩）。 */
+const HIDE = [".topbar", ".wm-tab", ".wm-add", ".layer-ui__wrapper", ".layer-ui__wrapper__footer", ".whole-btn", ".nest-mark", ".dock", ".nest-crumbs", ".nest-back", ".di-trigger"];
 async function cleanFrame(p: Page) {
   await p.addStyleTag({
-    content: `.topbar, .wm-tab, .wm-add, .layer-ui__wrapper, .whole-btn, .nest-mark, .dock, .nest-crumbs, .nest-back, .di-trigger { visibility: hidden !important; }
+    // 连子元素一起藏：Excalidraw 的页脚按钮自己写了 visibility: visible，只藏外层会漏出来
+    content: `${HIDE.flatMap((c) => [c, `${c} *`]).join(", ")} { visibility: hidden !important; }
       * { caret-color: transparent !important; }`,
   });
 }
@@ -284,7 +290,7 @@ if (which === "zoom") {
     });
     await page.evaluate((t) => (window as unknown as { __drive: (t: number) => boolean }).__drive(t), t);
     if (process.env.CAP_DEBUG && Math.round(t * fps) % 6 === 0)
-      console.log(t.toFixed(2), await page.evaluate(() => [...document.querySelectorAll(".sz-layer")].map((l) => `${l.hidden ? "H" : "S"} pic:${(l.querySelector(".sz-pic") as HTMLElement).style.opacity} veil:${(l.querySelector(".sz-veil") as HTMLElement).style.opacity}`).join(" | ")));
+      console.log(t.toFixed(2), await page.evaluate(() => [...document.querySelectorAll(".sz-layer")].map((l) => `${(l as HTMLElement).hidden ? "H" : "S"} pic:${(l.querySelector(".sz-pic") as HTMLElement).style.opacity} veil:${(l.querySelector(".sz-veil") as HTMLElement).style.opacity}`).join(" | ")));
   });
   await page.keyboard.up("Control");
 }
