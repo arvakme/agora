@@ -14,6 +14,7 @@ import { FloatChoice } from "./FloatChoice";
 import { prefs, usePrefs } from "./prefs";
 import { theme, useTheme, type ThemePref } from "./theme";
 import type { Preset } from "../workspace/layout";
+import { lang, setLang } from "../i18n";
 
 const LAYOUTS: [Preset, string][] = [
   ["single", "单窗"],
@@ -78,6 +79,12 @@ export function ViewMenu({ onLayout, onRestore, layouts }: { onLayout: (p: Prese
             <div className="seg vm-seg" role="radiogroup" aria-label="主题">
               {THEMES.map(([k, label]) => (
                 <button key={k} role="radio" aria-checked={t.pref === k} data-on={t.pref === k} onClick={() => theme.set(k)}>{label}</button>
+              ))}
+            </div>
+            <p className="menu-title">语言 · Language</p>
+            <div className="seg vm-seg" role="radiogroup" aria-label="语言 · Language">
+              {([["zh", "中文"], ["en", "English"]] as const).map(([k, label]) => (
+                <button key={k} role="radio" aria-checked={lang() === k} data-on={lang() === k} onClick={() => lang() !== k && setLang(k)}>{label}</button>
               ))}
             </div>
             <hr />

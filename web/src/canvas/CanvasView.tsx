@@ -12,6 +12,7 @@ import { AssetBrowser } from "../library/AssetBrowser";
 import { IconFolder, IconTrash } from "../app/icons";
 import { usePrefs } from "../app/prefs";
 import { useTheme } from "../app/theme";
+import { langTag } from "../i18n";
 import { bbox, byId, live, type El } from "./scene";
 import type { ThreadStore } from "../comments/threads";
 import { useHighlight } from "../session/ui";
@@ -248,7 +249,7 @@ export function CanvasView({ doc, mode, drawerOpen, onDrawer, onReady, onGone, o
         initialData={initialData}
         onChange={onChange as never}
         theme={resolved}
-        langCode="zh-CN"
+        langCode={langTag()}
         viewModeEnabled={readOnly}
         onLinkOpen={(el, ev) => {
           // A link written as `?canvas=<id>` (or `#canvas=<id>`) opens that canvas in place.
