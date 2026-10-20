@@ -1,7 +1,7 @@
 // Algorithm-animation script: initial nodes + steps of parallel primitives. Engine-agnostic
 // (no canvas-engine imports).
 // The model returns one of these; nothing runs before validateScript accepts it.
-import { tr } from "../i18n";
+import { tr } from "../i18n/index.ts";
 import { z } from "zod";
 
 const Id = z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/, "id: lowercase, [a-z0-9_-], ≤32");

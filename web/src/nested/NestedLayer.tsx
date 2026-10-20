@@ -164,7 +164,7 @@ function BackHint({ keyLabel }: { keyLabel: string }) {
   if (!visible) return null;
   return (
     <span className="nest-hint" role="status">
-      {tr(`在子图里。点左上角返回，或按 ${keyLabel}`, `In a sub-diagram. Go back with the top-left button, or press ${keyLabel}`)}
+      {tr(`在子图里。点左上角返回，或按 ${keyLabel}`, `In a sub-diagram — go back top left, or press ${keyLabel}`)}
       <button className="nest-act quiet" onClick={() => markBackHintSeen()}>
         {tr("知道了", "Got it")}
       </button>
