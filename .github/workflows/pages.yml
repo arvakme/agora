@@ -1,0 +1,58 @@
+name: pages
+
+# Builds the homepage in site/ and deploys it to GitHub Pages: https://arvakme.github.io/agora/
+# One-time setup: Settings → Pages → Build and deployment → Source: "GitHub Actions".
+# Custom domain later: set the repository variables SITE_URL (e.g. https://agora.example.com) and
+# SITE_BASE (/) — no code change — and add the domain under Settings → Pages.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "docs/assets/**"
+      - "docs/media/**"
+      - "README.md"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+        working-directory: site
+      - run: npm run build
+        working-directory: site
+        env:
+          SITE_URL: ${{ vars.SITE_URL || 'https://arvakme.github.io' }}
+          SITE_BASE: ${{ vars.SITE_BASE || '/agora' }}
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

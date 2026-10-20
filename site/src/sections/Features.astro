@@ -1,0 +1,192 @@
+---
+import Shot from "../components/Shot.astro";
+import type { Lang } from "../i18n";
+import { copy } from "./Features.copy";
+
+interface Props {
+	lang: Lang;
+}
+const { lang } = Astro.props;
+const t = copy[lang];
+// 每行配一张真实截图或录屏动图，顺序与 Features.copy.ts 的 rows 一致
+const media = [
+	{ name: "overview" },
+	{ gif: "assets/demo.gif", width: 960, height: 540 },
+	{ gif: "media/agora-demo.gif", width: 1200, height: 750 },
+	{ name: "trajectory" },
+];
+const cardShots = ["choose-agent", "terminal"];
+---
+
+<section class="section features" id="features" aria-labelledby="features-title">
+	<div class="section-inner">
+		<p class="eyebrow">{t.eyebrow}</p>
+		<h2 class="section-title" id="features-title" set:html={t.title} />
+		{t.uiNote && <p class="ui-note">{t.uiNote}</p>}
+
+		<div class="rows">
+			{
+				t.rows.map((row, i) => (
+					<article class:list={["row", { flip: i % 2 === 1 }]}>
+						<div class="copy">
+							<p class="kicker">{row.kicker}</p>
+							<h3 class="item-title">{row.title}</h3>
+							{row.body.map((p) => (
+								<p class="body" set:html={p} />
+							))}
+						</div>
+						<Shot {...media[i]} alt={row.alt} />
+					</article>
+				))
+			}
+		</div>
+
+		<div class="cards">
+			{
+				t.cards.map((card, i) => (
+					<article class="card">
+						<Shot name={cardShots[i]} alt={card.alt} sizes="(max-width: 900px) 100vw, 560px" />
+						<h3 class="item-title">{card.title}</h3>
+						<p class="body" set:html={card.body} />
+					</article>
+				))
+			}
+			<article class="card wide">
+				<div class="share-copy">
+					<h3 class="item-title">{t.share.title}</h3>
+					<p class="body" set:html={t.share.body} />
+				</div>
+				<div class="pair">
+					<figure>
+						<Shot name="share" alt={t.share.altAuthor} sizes="(max-width: 900px) 100vw, 560px" />
+						<figcaption>{t.share.author}</figcaption>
+					</figure>
+					<figure>
+						<Shot name="guest" alt={t.share.altGuest} sizes="(max-width: 900px) 100vw, 560px" />
+						<figcaption>{t.share.guest}</figcaption>
+					</figure>
+				</div>
+			</article>
+		</div>
+	</div>
+</section>
+
+<style>
+	.ui-note {
+		margin-top: 14px;
+		color: var(--muted);
+		font-size: 14px;
+	}
+
+	.rows {
+		display: grid;
+		gap: clamp(64px, 9vw, 128px);
+		margin-top: clamp(48px, 7vw, 96px);
+	}
+
+	.row {
+		display: grid;
+		grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+		gap: clamp(28px, 5vw, 72px);
+		align-items: center;
+	}
+
+	.row.flip {
+		grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+	}
+
+	.row.flip .copy {
+		order: 2;
+	}
+
+	.kicker {
+		color: var(--amber);
+		font-family: var(--font-mono);
+		font-size: 12.5px;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.item-title {
+		margin-top: 12px;
+	}
+
+	.body {
+		margin-top: 14px;
+		color: var(--muted);
+		line-height: 1.68;
+		text-wrap: pretty;
+	}
+
+	.body :global(code),
+	.ui-note :global(code) {
+		font-size: 0.86em;
+	}
+
+	.cards {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: clamp(16px, 2.4vw, 28px);
+		margin-top: clamp(80px, 10vw, 140px);
+	}
+
+	.card {
+		display: flex;
+		flex-direction: column;
+		padding: clamp(22px, 3vw, 36px);
+		border-radius: calc(var(--radius) + 6px);
+		background: var(--bg-raised);
+		box-shadow: 0 0 0 1px var(--ring);
+	}
+
+	.card .item-title {
+		margin-top: 28px;
+	}
+
+	.wide .item-title {
+		margin-top: 0;
+	}
+
+	.wide {
+		grid-column: 1 / -1;
+		display: grid;
+		grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
+		gap: clamp(24px, 4vw, 56px);
+		align-items: center;
+	}
+
+	.pair {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 16px;
+	}
+
+	.pair figcaption {
+		margin-top: 10px;
+		color: var(--muted);
+		font-size: 13.5px;
+	}
+
+	@media (max-width: 900px) {
+		.row,
+		.row.flip,
+		.wide {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		.row.flip .copy {
+			order: 0;
+		}
+
+		.cards {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+
+	@media (max-width: 560px) {
+		.pair {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+</style>
