@@ -11,10 +11,8 @@
 在项目目录里敲 `agora`，浏览器里就打开只属于这个项目的一张架构图。你让 agent 改代码，它的小人就走到图上对应的节点干活；你让它改图，它一站一站地画出来。图、评论和会话记录都放在项目的 `.agora/` 里，跟代码一起提交、克隆、切分支。会话还是 CLI 自己的原生会话，Agora 只跟随它的日志，不另存一份对话。
 
 <p align="center">
-  <img src="docs/assets/demo.gif" alt="宣传片片段：agent 一站一站画出架构图；滚轮放大节点，进到子图" width="80%">
+  <a href="docs/media/agora-promo.mp4"><img src="docs/assets/demo.gif" alt="宣传片片段：agent 一站一站画出架构图；滚轮放大节点，进到子图" width="80%"></a>
 </p>
-
-<p align="center"><sub>上面是 40 秒宣传片的片段，画面都取自 Agora 的实录；宣传片的源文件和构建脚本在 <a href="docs/promo/">docs/promo/</a>，成片不放进仓库。</sub></p>
 
 ## 它怎么工作
 
@@ -250,7 +248,7 @@ skills/agora/         给各会话 agent 的 skill：SKILL.md 是入口路由，
 web/                  前端（React + Excalidraw）；web/docs/ 是各功能规格，web/eval/ 是评测
 web/libraries/        vendored 素材库（约 6k 个组件，来源与许可见其 NOTICE.md）
 tests/                Python 测试
-docs/                 开发协作与测试说明；docs/assets/ 是 README 的横幅（banner-ink.svg 是墨迹洇开的动画版，banner.png 是静态版）和示意图，都带生成源文件，docs/promo/ 是宣传片源文件
+docs/                 开发协作与测试说明；docs/assets/ 是 README 的横幅（banner-ink.svg 是墨迹洇开的动画版，banner.png 是静态版）和示意图，都带生成源文件，docs/promo/ 是宣传片源文件（成片在 docs/media/agora-promo.mp4）
 ```
 
 ## 限制
