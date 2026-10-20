@@ -115,8 +115,6 @@ No Cloudflare account? `agora share create --quick` opens a temporary trycloudfl
 
 ## Features
 
-![Agora demo: Claude Code is asked to change code and the architecture diagram; the pointer follows the change across the diagram, and the trajectory expands one tool call](docs/media/agora-demo.gif)
-
 ### 1. One Agora per project, data travels with the code
 
 `agora up` initialises `.agora/` in the current directory and starts a service just for this project (listening on `127.0.0.1` only, one port per project). Canvases are standard `.excalidraw` files and comments are JSON, with sorted keys and no rewrite when content is unchanged, so git diffs stay readable. Session records, run state and share records are not committed by default. Format: [project storage](web/docs/project-storage.md).
@@ -124,7 +122,7 @@ No Cloudflare account? `agora share create --quick` opens a temporary trycloudfl
 - Deleted canvases and sessions go to the trash and can be restored for 30 days (across reloads and restarts too). At the bottom of "All canvases" there's "Session history", where you can find sessions by time, agent, topic or canvas, and re-import native sessions found on this machine.
 - Moving the repository, copying it with `cp -r` or cloning it again are all handled: after a move, Pi session logs move along; sessions in a copy are read-only and can be forked to continue; sessions created on another machine show as read-only cards. Local data wiped by `git clean -fdx` (session bindings, edit records, trash) is backed by a daily backup outside the repository and a local registry: `agora doctor --fix`.
 
-![Canvas and session side by side: the project's architecture diagram with comment pins on the left, a Claude Code session on the right](docs/media/overview.png)
+![Canvas and session side by side: the architecture diagram with comment pins on the left, Claude Code's avatar on the API node writing a file there; the live session on the right](docs/media/overview.png)
 
 ### 2. Your own coding agent, side by side, session-locked
 
@@ -138,13 +136,13 @@ Binding a session installs the `agora` skill for that agent automatically (an ol
 
 "Open in terminal" starts the interactive CLI on the same native session id (for example `claude --resume`, `pi --session-id`, `codex resume`) inside this project's own tmux server, then opens a window in Ghostty (or Kitty, or Terminal.app). What you say in the terminal, the agent's replies and its tool calls all show up in the panel; messages sent from the panel wait until the agent's turn ends and nobody holds the terminal's input (taken over, or a writable window attached), then get pasted in. The queue never drops anything.
 
-![Terminal has taken over: the panel shows the tmux attach command and the conversation keeps syncing](docs/media/terminal.png)
+![The session open in a terminal: the panel says the terminal window is open and queues your messages; that turn is tagged “terminal”](docs/media/terminal.png)
 
 ### 4. Progress pointer: which part of the architecture the AI is changing
 
-Link nodes to code paths (globs, stored in the element's `customData.codePaths` and committed with the diagram), by hand or by letting the agent link them in bulk from the directory layout. Whatever file the agent reads or writes, its figure walks to the node that file belongs to (the figure is the pointer, see [workstation view](web/docs/workstation.md); when two nodes are joined by an arrow it glides along the arrow, otherwise it crouches and hops over on a parabola). Files that belong to no node go to the tray outside the diagram. Changes made in the terminal drive it the same way. Mapping rules: [progress pointer](web/docs/progress-pointer.md).
+Link nodes to code paths (globs, stored in the element's `customData.codePaths` and committed with the diagram), by hand or by letting the agent link them in bulk from the directory layout. Whatever file the agent reads or writes, its figure walks to the node that file belongs to (the figure is the pointer, see [workstation view](web/docs/workstation.md); when two nodes are joined by an arrow it glides along the arrow, otherwise it crouches and hops over on a parabola). Files that belong to no node are listed under the “off the diagram” chip. Changes made in the terminal drive it the same way. Mapping rules: [progress pointer](web/docs/progress-pointer.md).
 
-![The pointer stops on the "Browser" node; clicking it shows the files most recently changed there and the turn they changed in](docs/media/pointer.png)
+![Replaying a turn: the avatar's route over the diagram, numbered stops, +N files changed on each node, and the turn's summary of nodes and files changed](docs/media/pointer.png)
 
 ### 5. Step-by-step trajectories
 
