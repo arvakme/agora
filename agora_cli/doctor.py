@@ -72,7 +72,7 @@ def diagnose(p, *, fix: bool = False) -> list[dict[str, Any]]:
             kind = (local.change() or {}).get("kind")
             if kind:
                 say("info", "instance", labels.get(kind, kind).format(local.change().get("from")) + once)
-    say("ok", "instance", tr(f"实例 {(local.instance_id() or '（未建）')[:8]} · {store.root}", f"Instance {(local.instance_id() or '(none yet)')[:8]} · {store.root}"))
+    say("ok", "instance", tr(f"实例 {(local.instance_id() or '（未建）')[:8]} · {store.root}", f"Instance {(local.instance_id() or '')[:8] or '(none yet)'} · {store.root}"))
 
     # p.live() writes run/server.json back when it is missing: only with --fix.
     st = p.live() if fix else next((x for x in (p.state(), p.registered()) if p.answering(x)), None)
