@@ -1,0 +1,9 @@
+{
+ "本项目 Agora 服务（server/）": ["server/**", "native_protocol.py"],
+ ".agora/ 项目存储": ["server/canvas/project.py", "server/canvas/buildlog.py", "server/canvas/build_log.py", "server/canvas/backup.py", "server/canvas/trash.py", "server/canvas/local.py"],
+ "浏览器画布（web/）": ["web/**"],
+ "终端 tmux": ["server/canvas/terminal.py", "server/canvas/terminal_apps.py", "server/canvas/pane_state.py", "server/canvas/pane_state_pi.ts", "bin/agora-state"],
+ "agora CLI（agora_cli/）": ["agora_cli/**", "bin/agora"],
+ "agora skill（skills/agora/）": ["skills/**"],
+ "分享网关": ["server/canvas/share.py", "server/canvas/share_gateway.py", "server/canvas/cloudflare.py", "agora_cli/share.py"]
+}

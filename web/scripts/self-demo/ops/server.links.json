@@ -1,0 +1,14 @@
+{
+ "项目应用": ["server/canvas/project_router.py", "server/canvas/shutdown.py", "server/canvas/version.py", "server/paths.py"],
+ "/api/agent": ["server/canvas/agent_router.py", "server/canvas/events.py"],
+ "AgentHub": ["server/canvas/sessions.py", "server/canvas/agora_msg.py", "server/canvas/selection.py"],
+ "改图执行权": ["server/canvas/executors.py", "server/canvas/fallback.py", "server/canvas/page_help.py", "server/canvas/plan_rules.py", "server/canvas/schemas.py", "server/canvas/model_view.py", "server/canvas/nested.py"],
+ "排版与 lint": ["server/canvas/graph_*.py"],
+ "派发": ["server/canvas/dispatch.py", "server/canvas/dispatch_store.py", "native_protocol.py"],
+ "无头 / 常驻进程": ["server/canvas/agents.py", "server/canvas/runner.py", "server/canvas/resident.py", "server/canvas/turn_clock.py", "server/canvas/proctree.py", "server/canvas/agent_models.py"],
+ "终端": ["server/canvas/terminal.py", "server/canvas/terminal_apps.py", "server/canvas/pane_state.py"],
+ "CLI 适配器": ["server/canvas/adapters/**", "server/canvas/transcript.py", "server/canvas/discover.py"],
+ "项目存储": ["server/canvas/project.py", "server/canvas/local.py", "server/canvas/backup.py", "server/canvas/trash.py"],
+ "施工日志": ["server/canvas/buildlog.py", "server/canvas/build_log.py"],
+ "分享": ["server/canvas/share.py", "server/canvas/share_gateway.py", "server/canvas/cloudflare.py"]
+}

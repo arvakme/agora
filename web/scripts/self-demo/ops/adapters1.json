@@ -1,0 +1,14 @@
+{"note": "会话适配：注册表和六家 CLI", "ops": [
+ {"op": "add_shape", "ref": "reg", "shape": "rectangle", "text": "注册表 registry.py\n按实现了哪些能力算 tier", "x": 0, "y": 0},
+ {"op": "add_shape", "ref": "base", "shape": "rectangle", "text": "适配器契约 base.py\nLocator · Projector · ToolVocab → T2\n+ Headless · Interactive · Catalog · Binding → T1", "x": 0, "y": 0, "width": 480, "height": 100},
+ {"op": "add_shape", "ref": "claude", "shape": "rectangle", "text": "Claude Code  claude.py\nclaude -p 双向 stream-json", "x": 0, "y": 0},
+ {"op": "add_shape", "ref": "codex", "shape": "rectangle", "text": "Codex  codex.py\ncodex exec · app-server 常驻", "x": 0, "y": 0},
+ {"op": "add_shape", "ref": "pi", "shape": "rectangle", "text": "Pi  pi.py\npi -p · rpc 常驻 · 项目移动时搬日志", "x": 0, "y": 0},
+ {"op": "add_shape", "ref": "gcd", "shape": "rectangle", "text": "Grok · Cursor · Devin\n一轮一个进程 · 不能中途插话", "x": 0, "y": 0},
+ {"op": "add_arrow", "from": "reg", "to": "base", "text": "检查能力"},
+ {"op": "add_arrow", "from": "reg", "to": "claude"},
+ {"op": "add_arrow", "from": "reg", "to": "codex"},
+ {"op": "add_arrow", "from": "reg", "to": "pi"},
+ {"op": "add_arrow", "from": "reg", "to": "gcd"},
+ {"op": "layout", "bus": true}
+]}

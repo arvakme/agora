@@ -1,0 +1,20 @@
+{"note": "画出 Agora 自己的总架构", "ops": [
+ {"op": "add_shape", "ref": "web", "shape": "rectangle", "text": "浏览器画布（web/）\nReact + Excalidraw", "x": 560, "y": -40, "width": 280, "height": 80},
+ {"op": "add_shape", "ref": "server", "shape": "rectangle", "text": "本项目 Agora 服务（server/）\nFastAPI · 只听 127.0.0.1", "x": 520, "y": 160, "width": 360, "height": 80},
+ {"op": "add_shape", "ref": "store", "shape": "rectangle", "text": ".agora/ 项目存储\n画布 · 评论 · 施工日志", "x": 10, "y": 160, "width": 280, "height": 80},
+ {"op": "add_shape", "ref": "logs", "shape": "rectangle", "text": "原生会话日志\n~/.claude · ~/.codex · ~/.pi …", "x": 10, "y": 380, "width": 280, "height": 80},
+ {"op": "add_shape", "ref": "cli", "shape": "rectangle", "text": "agora CLI（agora_cli/）\ncanvas · dispatch · share", "x": 340, "y": 380, "width": 280, "height": 80},
+ {"op": "add_shape", "ref": "tmux", "shape": "rectangle", "text": "终端 tmux -L agora-<实例>\n交互式 CLI", "x": 1040, "y": 380, "width": 280, "height": 80},
+ {"op": "add_shape", "ref": "agent", "shape": "rectangle", "text": "Coding Agent CLI\nClaude Code · Codex · Pi\nGrok · Cursor · Devin", "x": 560, "y": 600, "width": 280, "height": 100},
+ {"op": "add_shape", "ref": "skill", "shape": "rectangle", "text": "agora skill（skills/agora/）\n教 agent 读图、改图", "x": 1040, "y": 610, "width": 280, "height": 80},
+ {"op": "add_arrow", "from": "web", "to": "server", "text": "HTTP + SSE", "bothEnds": true},
+ {"op": "add_arrow", "from": "server", "to": "store", "text": "原子写 + 版本校验"},
+ {"op": "add_arrow", "from": "server", "to": "tmux", "text": "粘贴投递"},
+ {"op": "add_arrow", "from": "server", "to": "agent", "text": "无头一轮 -p / exec"},
+ {"op": "add_arrow", "from": "tmux", "to": "agent", "text": "在终端打开"},
+ {"op": "add_arrow", "from": "agent", "to": "logs", "text": "写"},
+ {"op": "add_arrow", "from": "logs", "to": "server", "text": "每 0.4 s 跟随"},
+ {"op": "add_arrow", "from": "skill", "to": "agent", "text": "装进项目"},
+ {"op": "add_arrow", "from": "agent", "to": "cli", "text": "agora canvas …"},
+ {"op": "add_arrow", "from": "cli", "to": "server", "text": "HTTP 127.0.0.1"}
+]}

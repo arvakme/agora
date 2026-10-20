@@ -1,0 +1,16 @@
+{"note": "服务端：派发、进程、终端、适配器、排版、分享", "ops": [
+ {"op": "add_shape", "ref": "share", "shape": "rectangle", "text": "分享 share_gateway.py\n独立端口 · 白名单路由", "x": 460, "y": 400, "width": 280, "height": 80},
+ {"op": "add_shape", "ref": "disp", "shape": "rectangle", "text": "派发 dispatch.py\n至多投递一次 · 重启只对账", "x": 1180, "y": 400, "width": 280, "height": 80},
+ {"op": "add_shape", "ref": "adapt", "shape": "rectangle", "text": "CLI 适配器 adapters/\n6 家 · 按能力分 T1 / T2", "x": 780, "y": 600, "width": 280, "height": 80},
+ {"op": "add_shape", "ref": "proc", "shape": "rectangle", "text": "无头 / 常驻进程\nagents.py · resident.py", "x": 1140, "y": 600, "width": 280, "height": 80},
+ {"op": "add_shape", "ref": "term", "shape": "rectangle", "text": "终端 terminal.py\ntmux 输入权 · 粘贴投递", "x": 1500, "y": 600, "width": 280, "height": 80},
+ {"op": "add_shape", "ref": "graph", "shape": "rectangle", "text": "排版与 lint graph_*.py\nlayout 操作 · 交叉 / 穿框检测", "x": 420, "y": 800, "width": 280, "height": 80},
+ {"op": "add_arrow", "from": "</api/agent>", "to": "disp", "text": "agora dispatch / reply"},
+ {"op": "add_arrow", "from": "disp", "to": "<AgentHub>", "text": "只经 hub.send"},
+ {"op": "add_arrow", "from": "<AgentHub>", "to": "proc", "text": "无头一轮"},
+ {"op": "add_arrow", "from": "<AgentHub>", "to": "term", "text": "粘贴投递"},
+ {"op": "add_arrow", "from": "<AgentHub>", "to": "adapt", "text": "读原生日志"},
+ {"op": "add_arrow", "from": "<改图执行权>", "to": "graph", "text": "展开 layout · 算 lint"},
+ {"op": "add_arrow", "from": "<项目应用>", "to": "share", "text": "起网关"},
+ {"op": "add_arrow", "from": "share", "to": "<项目存储>", "text": "访客读图 · 写评论"}
+]}

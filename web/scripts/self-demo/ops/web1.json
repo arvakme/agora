@@ -1,0 +1,16 @@
+{"note": "前端画布：agent 改图在页面里怎么执行、怎么画出来", "ops": [
+ {"op": "add_shape", "ref": "srv", "shape": "rectangle", "text": "Agora 服务（server/）", "x": 750, "y": 0, "width": 300, "height": 70},
+ {"op": "add_shape", "ref": "bridge", "shape": "rectangle", "text": "画布桥 agents.ts · agentBridge.ts\n认领请求后在页面里执行", "x": 730, "y": 200, "width": 340, "height": 80},
+ {"op": "add_shape", "ref": "ops", "shape": "rectangle", "text": "改图 ops/ops.ts · apply.ts\nschema · 引用 · 新鲜度 → 一次可撤销", "x": 200, "y": 400, "width": 360, "height": 80},
+ {"op": "add_shape", "ref": "rev", "shape": "rectangle", "text": "分站揭示 RevealLayer.tsx\n只改画法，不改数据", "x": 740, "y": 400, "width": 320, "height": 80},
+ {"op": "add_shape", "ref": "ws", "shape": "rectangle", "text": "工位视图 workstation/\n小人沿箭头滑行或跳过去", "x": 1250, "y": 400, "width": 340, "height": 80},
+ {"op": "add_shape", "ref": "cv", "shape": "rectangle", "text": "画布 CanvasView.tsx\nExcalidraw", "x": 740, "y": 600, "width": 320, "height": 80},
+ {"op": "add_shape", "ref": "save", "shape": "rectangle", "text": "保存 persist.ts · saveQueue.ts\nPUT /api/project/* · base 版本 · 409", "x": 720, "y": 800, "width": 360, "height": 80},
+ {"op": "add_arrow", "from": "srv", "to": "bridge", "text": "SSE 改图请求"},
+ {"op": "add_arrow", "from": "bridge", "to": "ops", "text": "validatePlan → applyPlan"},
+ {"op": "add_arrow", "from": "bridge", "to": "rev", "text": "新元素先藏住"},
+ {"op": "add_arrow", "from": "bridge", "to": "ws", "text": "先告诉小人"},
+ {"op": "add_arrow", "from": "ops", "to": "cv", "text": "updateScene 一次"},
+ {"op": "add_arrow", "from": "rev", "to": "cv", "text": "逐站画在静态层上"},
+ {"op": "add_arrow", "from": "cv", "to": "save", "text": "场景变化"}
+]}

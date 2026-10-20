@@ -1,0 +1,12 @@
+{
+ "注册表": ["server/canvas/adapters/registry.py", "server/canvas/adapters/__init__.py"],
+ "适配器契约": ["server/canvas/adapters/base.py"],
+ "Claude Code": ["server/canvas/adapters/claude.py"],
+ "Codex": ["server/canvas/adapters/codex.py"],
+ "Pi": ["server/canvas/adapters/pi.py"],
+ "Grok · Cursor · Devin": ["server/canvas/adapters/grok.py", "server/canvas/adapters/cursor.py", "server/canvas/adapters/devin.py", "server/canvas/adapters/devin_run.py"],
+ "日志跟随": ["server/canvas/transcript.py", "server/canvas/adapters/common.py"],
+ "工具词表": ["server/canvas/adapters/tools.py", "server/canvas/adapters/shell_files.py"],
+ "运行树": ["server/canvas/adapters/runs.py"],
+ "漂移检测": ["server/canvas/adapters/drift.py"]
+}

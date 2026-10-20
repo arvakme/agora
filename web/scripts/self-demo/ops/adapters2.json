@@ -1,0 +1,14 @@
+{"note": "会话适配：日志跟随、工具词表、运行树、漂移检测", "ops": [
+ {"op": "add_shape", "ref": "tail", "shape": "rectangle", "text": "日志跟随 transcript.py\n增量读，半行留到下一次", "x": 0, "y": 0},
+ {"op": "add_shape", "ref": "tools", "shape": "rectangle", "text": "工具词表 tools.py · shell_files.py\n读写了哪个文件 → 小人去哪", "x": 0, "y": 0},
+ {"op": "add_shape", "ref": "runs", "shape": "rectangle", "text": "运行树 runs.py\n会话 → 原生子代理", "x": 0, "y": 0},
+ {"op": "add_shape", "ref": "drift", "shape": "rectangle", "text": "漂移检测 drift.py\n版本超出测过的范围 → 只提示", "x": 0, "y": 0},
+ {"op": "add_arrow", "from": "<Claude Code>", "to": "tail"},
+ {"op": "add_arrow", "from": "<Codex>", "to": "tail"},
+ {"op": "add_arrow", "from": "<Pi>", "to": "tail"},
+ {"op": "add_arrow", "from": "<Grok · Cursor · Devin>", "to": "tail"},
+ {"op": "add_arrow", "from": "tail", "to": "tools", "text": "工具调用"},
+ {"op": "add_arrow", "from": "tail", "to": "runs", "text": "子代理"},
+ {"op": "add_arrow", "from": "drift", "to": "<注册表>", "text": "降级提示"},
+ {"op": "layout", "bus": true}
+]}

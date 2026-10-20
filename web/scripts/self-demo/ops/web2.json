@@ -1,0 +1,10 @@
+{"note": "前端画布：会话、指针、子图、回放", "ops": [
+ {"op": "add_shape", "ref": "replay", "shape": "rectangle", "text": "施工回放 buildreplay/\n按施工日志一步步重演", "x": 210, "y": -5, "width": 340, "height": 80},
+ {"op": "add_shape", "ref": "sess", "shape": "rectangle", "text": "会话面板 session/\n对话 · 轨迹 · 发消息", "x": 1250, "y": -5, "width": 340, "height": 80},
+ {"op": "add_shape", "ref": "ptr", "shape": "rectangle", "text": "进度指针 pointer/\n文件 → 最具体的 glob 所在节点", "x": 1250, "y": 200, "width": 340, "height": 80},
+ {"op": "add_shape", "ref": "nest", "shape": "rectangle", "text": "子图与缩放 nested/\n滚轮进出 · 飞入飞出", "x": 1250, "y": 600, "width": 340, "height": 80},
+ {"op": "add_arrow", "from": "replay", "to": "<Agora 服务>", "text": "GET /api/project/build"},
+ {"op": "add_arrow", "from": "sess", "to": "ptr", "text": "改了哪些文件"},
+ {"op": "add_arrow", "from": "ptr", "to": "<工位视图>", "text": "小人就是指针"},
+ {"op": "add_arrow", "from": "nest", "to": "<画布 CanvasView.tsx>", "text": "换层时带上镜头"}
+]}

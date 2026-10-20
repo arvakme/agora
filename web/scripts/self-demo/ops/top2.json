@@ -1,0 +1,4 @@
+{"note": "加上分享网关", "ops": [
+ {"op": "add_shape", "ref": "share", "shape": "rectangle", "text": "分享网关\nCloudflare Tunnel · 访客只读", "x": 10, "y": -40, "width": 280, "height": 80},
+ {"op": "add_arrow", "from": "share", "to": "<.agora/ 项目存储>", "text": "一块画布 + 评论"}
+]}

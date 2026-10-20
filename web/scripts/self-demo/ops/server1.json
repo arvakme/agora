@@ -1,0 +1,17 @@
+{"note": "服务端：请求从哪来、经过哪些模块", "ops": [
+ {"op": "add_shape", "ref": "page", "shape": "rectangle", "text": "浏览器页面（web/）", "x": 420, "y": 0, "width": 280, "height": 70},
+ {"op": "add_shape", "ref": "cliext", "shape": "rectangle", "text": "agora CLI（agent 调用）", "x": 780, "y": 0, "width": 280, "height": 70},
+ {"op": "add_shape", "ref": "app", "shape": "rectangle", "text": "项目应用 project_router.py\nHost 白名单 421 · 跨站写 403", "x": 40, "y": 200, "width": 300, "height": 80},
+ {"op": "add_shape", "ref": "aroute", "shape": "rectangle", "text": "/api/agent  agent_router.py\n会话 · 事件流 · 画布接口", "x": 780, "y": 200, "width": 280, "height": 80},
+ {"op": "add_shape", "ref": "pstore", "shape": "rectangle", "text": "项目存储 project.py\n原子写 · sha256 版本 · 409", "x": 40, "y": 400, "width": 280, "height": 80},
+ {"op": "add_shape", "ref": "hub", "shape": "rectangle", "text": "AgentHub  sessions.py\n投递队列 · 跟随日志 · 画布桥", "x": 780, "y": 400, "width": 280, "height": 80},
+ {"op": "add_shape", "ref": "blog", "shape": "rectangle", "text": "施工日志 buildlog.py\n每次保存的增删改 → 回放", "x": 40, "y": 600, "width": 280, "height": 80},
+ {"op": "add_shape", "ref": "exec", "shape": "rectangle", "text": "改图执行权 executors.py\n一个页面认领 · 都不在时兜底", "x": 420, "y": 600, "width": 280, "height": 80},
+ {"op": "add_arrow", "from": "page", "to": "app", "text": "HTTP /api/project"},
+ {"op": "add_arrow", "from": "page", "to": "aroute", "text": "SSE 事件 · 回报结果", "bothEnds": true},
+ {"op": "add_arrow", "from": "cliext", "to": "aroute", "text": "/api/agent/canvas/*"},
+ {"op": "add_arrow", "from": "app", "to": "pstore", "text": "画布 · 评论 · 工作区"},
+ {"op": "add_arrow", "from": "pstore", "to": "blog", "text": "保存时追加"},
+ {"op": "add_arrow", "from": "aroute", "to": "hub"},
+ {"op": "add_arrow", "from": "hub", "to": "exec", "text": "agora canvas 请求"}
+]}

@@ -1,0 +1,20 @@
+{"note": "派发：一次请求从落盘到结局（native_protocol.py 的 TurnState）", "ops": [
+ {"op": "add_shape", "ref": "pend", "shape": "rectangle", "text": "pending\n先写记录 .agora/dispatch/<id>.json", "x": 0, "y": 0},
+ {"op": "add_shape", "ref": "infl", "shape": "rectangle", "text": "in_flight\nhand_off：注入之前先落盘", "x": 0, "y": 0},
+ {"op": "add_shape", "ref": "acc", "shape": "rectangle", "text": "accepted\nB 的原生日志里出现 agora-req-<id>", "x": 0, "y": 0},
+ {"op": "add_shape", "ref": "comp", "shape": "rectangle", "text": "completed\n原生日志的回合结束记录", "x": 0, "y": 0},
+ {"op": "add_shape", "ref": "fail", "shape": "rectangle", "text": "failed\n原生日志报错结束", "x": 0, "y": 0},
+ {"op": "add_shape", "ref": "unc", "shape": "rectangle", "text": "uncertain\n结局不明：CLI 先退出 · 注入窗口里重启", "x": 0, "y": 0},
+ {"op": "add_shape", "ref": "rec", "shape": "rectangle", "text": "重启对账 plan_recovery\n有副作用：只对账，不重发", "x": 0, "y": 0},
+ {"op": "add_shape", "ref": "rcpt", "shape": "rectangle", "text": "回执 agora reply\ndone / failed / blocked：B 自己的说法", "x": 0, "y": 0},
+ {"op": "add_shape", "ref": "wd", "shape": "rectangle", "text": "withdraw 撤回 = 决定，不是事实\n之后的结果只留作证据，不发布", "x": 0, "y": 0},
+ {"op": "add_arrow", "from": "pend", "to": "infl", "text": "粘贴 / 无头投递之前"},
+ {"op": "add_arrow", "from": "infl", "to": "acc", "text": "原生证据（hook · queue_ack · record）"},
+ {"op": "add_arrow", "from": "acc", "to": "comp", "text": "execution_completed"},
+ {"op": "add_arrow", "from": "acc", "to": "fail", "text": "execution_failed"},
+ {"op": "add_arrow", "from": "acc", "to": "unc", "text": "进程退出，没有结局"},
+ {"op": "add_arrow", "from": "infl", "to": "unc", "text": "不知道送没送到"},
+ {"op": "add_arrow", "from": "unc", "to": "rec", "text": "服务重启"},
+ {"op": "add_arrow", "from": "comp", "to": "rcpt", "text": "回合结束 + 回执"},
+ {"op": "layout"}
+]}

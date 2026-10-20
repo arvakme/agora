@@ -1,0 +1,13 @@
+{
+ 
+ "画布 CanvasView.tsx": ["web/src/canvas/**"],
+ "保存": ["web/src/persist.ts", "web/src/saveQueue.ts", "web/src/layoutSaves.ts", "web/src/project/**"],
+ "会话面板": ["web/src/session/**"],
+ "画布桥": ["web/src/session/agentBridge.ts", "web/src/session/agents.ts"],
+ "改图": ["web/src/ops/**"],
+ "工位视图": ["web/src/workstation/**"],
+ "分站揭示": ["web/src/workstation/RevealLayer.tsx", "web/src/workstation/reveal.ts", "web/src/workstation/ink.ts"],
+ "子图与缩放": ["web/src/nested/**"],
+ "施工回放": ["web/src/buildreplay/**"],
+ "进度指针": ["web/src/pointer/**"]
+}
