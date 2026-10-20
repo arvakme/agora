@@ -1,16 +1,17 @@
 // The eval fixture: a small architecture diagram laid out for Excalidraw.
 import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
+import { tr } from "../i18n";
 import { buildArrow, buildShape, byId, NODE_SIZE, type El, type ShapeKind } from "../canvas/scene";
 
 type Node = { id: string; label: string; x: number; y: number; shape?: ShapeKind; fill: string; frame?: string };
 
 const NODES: Node[] = [
-  { id: "user", label: "用户", x: 60, y: 60, shape: "ellipse", fill: "#eef4ff" },
-  { id: "browser", label: "浏览器", x: 60, y: 220, fill: "#eef4ff" },
-  { id: "backend", label: "Agora 后端", x: 320, y: 220, fill: "#f3efff" },
+  { id: "user", label: tr("用户", "User"), x: 60, y: 60, shape: "ellipse", fill: "#eef4ff" },
+  { id: "browser", label: tr("浏览器", "Browser"), x: 60, y: 220, fill: "#eef4ff" },
+  { id: "backend", label: tr("Agora 后端", "Agora backend"), x: 320, y: 220, fill: "#f3efff" },
   { id: "postgres", label: "Postgres", x: 200, y: 400, fill: "#eaf7ef" },
   { id: "redis", label: "Redis", x: 440, y: 400, fill: "#eaf7ef" },
-  { id: "host", label: "本机宿主", x: 600, y: 220, fill: "#fff4e6" },
+  { id: "host", label: tr("本机宿主", "Local host"), x: 600, y: 220, fill: "#fff4e6" },
   { id: "pi", label: "Pi Master", x: 880, y: 220, fill: "#fff0f3" },
   { id: "claude", label: "Claude Code", x: 790, y: 410, fill: "#f6f8fa", frame: "tmux" },
   { id: "codex", label: "Codex", x: 1010, y: 410, fill: "#f6f8fa", frame: "tmux" },

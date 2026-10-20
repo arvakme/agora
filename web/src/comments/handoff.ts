@@ -40,6 +40,15 @@ export function commentMessage(thread: Pick<Thread, "n" | "messages">, anchors: 
   return [`画布评论 #${thread.n}（${where}）：`, ...note, ...lines, ...(shown.some(guest) ? ["", GUEST_NOTE] : []), "", `请按这条评论处理画布，完成后用一两句话答复（会贴回评论线程）。${REPLY_LANG[lang()]}`].join("\n");
 }
 
+/** Who said a line of a hand-off (its words are the format's: 用户 / 访客 name / Agent / 系统), as the page shows it. */
+export function speakerLabel(who: string): string {
+  if (lang() !== "en") return who;
+  if (who === "用户") return "You";
+  if (who === "系统") return "System";
+  if (who === "访客" || who.startsWith("访客 ")) return `Guest${who.slice(2)}`;
+  return who;
+}
+
 /** A comment hand-off read back (`commentMessage`'s text as it stands in a session's log): what the page draws as a card. */
 export type ParsedComment = { n: number; anchors: { id: string; name: string }[]; followUp: boolean; messages: { who: string; text: string }[] };
 
