@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Any
 
 from server.paths import CHECKOUT, SOURCE, WEB
+from server.i18n import tr
 
 HOST = "127.0.0.1"
 
@@ -319,18 +320,18 @@ def change_note(change: dict[str, Any], root: Path) -> str | None:
     """One paragraph about what ``reconcile`` found (printed by ``up``; the page shows it too)."""
     kind = change.get("kind")
     if kind == "moved":
-        lines = [f"项目从 {change.get('from')} 移到了 {root}。Claude Code / Codex 的会话照常续接。"]
+        lines = [tr(f"项目从 {change.get('from')} 移到了 {root}。Claude Code / Codex 的会话照常续接。", f"The project moved from {change.get('from')} to {root}. Claude Code / Codex sessions resume as usual.")]
         if change.get("migrated"):
-            lines.append(f"已把 {len(change['migrated'])} 个 Pi 会话的日志迁到新目录（旧文件留了 .agora-moved.bak）。")
+            lines.append(tr(f"已把 {len(change['migrated'])} 个 Pi 会话的日志迁到新目录（旧文件留了 .agora-moved.bak）。", f"Moved the logs of {len(change['migrated'])} Pi sessions to the new folder (the old files are kept as .agora-moved.bak)."))
         for f in change.get("failed") or []:
-            lines.append(f"Pi 会话 {f['sessionId']} 没迁移：{f['error']}" + ("（下一条消息会分叉继续）" if f.get("fallback") == "fork" else ""))
+            lines.append(tr(f"Pi 会话 {f['sessionId']} 没迁移：{f['error']}", f"Pi session {f['sessionId']} was not moved: {f['error']}") + (tr("（下一条消息会分叉继续）", " (the next message forks it and continues)") if f.get("fallback") == "fork" else ""))
         return "\n".join(lines)
     if kind == "copied":
-        return f"这是 {change.get('from')} 的一份副本：带过来的 {len(change.get('sessions') or [])} 个会话在这里只读，页面上可以「在这里分叉继续」。"
+        return tr(f"这是 {change.get('from')} 的一份副本：带过来的 {len(change.get('sessions') or [])} 个会话在这里只读，页面上可以「在这里分叉继续」。", f"This is a copy of {change.get('from')}: the {len(change.get('sessions') or [])} sessions that came along are read-only here; on the page you can “Fork here and continue”.")
     if kind == "fresh":
-        return "这份项目里的会话不是在这台机器上的这个位置建的（新 clone、换机器或 git clean -fdx）：页面上显示为只读卡片；`agora doctor` 会检查本机能找回什么。"
+        return tr("这份项目里的会话不是在这台机器上的这个位置建的（新 clone、换机器或 git clean -fdx）：页面上显示为只读卡片；`agora doctor` 会检查本机能找回什么。", "The sessions in this project were not made at this place on this machine (a new clone, another machine, or git clean -fdx): the page shows them as read-only cards; `agora doctor` checks what this machine can recover.")
     if kind == "reattached":
-        return "这份项目的本机记录（.agora/local）不见了，已按本机注册表认回；`agora doctor` 检查会话绑定。"
+        return tr("这份项目的本机记录（.agora/local）不见了，已按本机注册表认回；`agora doctor` 检查会话绑定。", "This project's local records (.agora/local) were missing and were recovered from this machine's registry; `agora doctor` checks the session bindings.")
     return None
 
 

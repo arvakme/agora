@@ -19,6 +19,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
+from server.i18n import env_lang, tr
 
 
 def find_root(explicit: str | None) -> Path:
@@ -41,7 +42,7 @@ def out(obj: Any, code: int = 0) -> int:
 
 def call(base: str, method: str, path: str, body: Any = None, timeout: float = 60) -> tuple[int, Any]:
     data = None if body is None else json.dumps(body).encode()
-    req = urllib.request.Request(base + path, data=data, method=method, headers={"content-type": "application/json"})
+    req = urllib.request.Request(base + path, data=data, method=method, headers={"content-type": "application/json", "x-agora-lang": env_lang()})  # what the server says back follows this terminal's language
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status, json.loads(r.read() or b"null")
@@ -118,7 +119,7 @@ def cmd_canvas(p, a) -> int:
                     return out(body, 3)
                 return out(body, 0 if code == 200 and body.get("status") in ("preview", "nothing", "applied") else 1)
             if a.apply:
-                return out({"error": "Agora 服务没在运行：先在项目里 `agora open`（改图由打开的页面执行）。不加 --apply 可以先看会动哪些。"}, 3)
+                return out({"error": tr("Agora 服务没在运行：先在项目里 `agora open`（改图由打开的页面执行）。不加 --apply 可以先看会动哪些。", "The Agora server is not running: run `agora open` in the project first (edits run in the open page). Without --apply you can first see what would move.")}, 3)
             from server.canvas import graph_lint, graph_ops
 
             cid = resolve_canvas(store, canvas, session)
@@ -135,7 +136,7 @@ def cmd_canvas(p, a) -> int:
                 names = canvas_names(store)
                 return out({"canvas": {"id": cid, "name": names.get(cid, cid)}, "children": nested.list_children(store, cid, names)})
             if not base:
-                return out({"error": "Agora 服务没在运行：先在项目里 `agora open`（子画布由打开的页面创建和挂接）。"}, 3)
+                return out({"error": tr("Agora 服务没在运行：先在项目里 `agora open`（子画布由打开的页面创建和挂接）。", "The Agora server is not running: run `agora open` in the project first (the open page creates and attaches child canvases).")}, 3)
             if a.op != "list" and not a.node:
                 return out({"error": f"usage: agora canvas child {a.op} --node <id|label> [--parent <canvas>]" + (" --child <canvas>" if a.op == "link" else "")}, 2)
             code, res = call(base, "POST", "/api/agent/canvas/child", {"op": a.op, "canvas": parent, "session": session, "node": a.node, "child": a.child, "title": a.title}, timeout=60)
@@ -157,7 +158,7 @@ def cmd_canvas(p, a) -> int:
 
         if a.action == "link":
             if not base:
-                return out({"error": "Agora 服务没在运行：先在项目里 `agora open`（关联由打开的页面写进画布）。"}, 3)
+                return out({"error": tr("Agora 服务没在运行：先在项目里 `agora open`（关联由打开的页面写进画布）。", "The Agora server is not running: run `agora open` in the project first (the open page writes the links into the canvas).")}, 3)
             if a.json is not None:
                 links = read_input(a.json)
                 if not isinstance(links, dict):
@@ -175,7 +176,7 @@ def cmd_canvas(p, a) -> int:
 
         if a.action in ("apply", "anim"):
             if not base:
-                return out({"error": "Agora 服务没在运行：先在项目里 `agora open`（改图由打开的页面执行）。"}, 3)
+                return out({"error": tr("Agora 服务没在运行：先在项目里 `agora open`（改图由打开的页面执行）。", "The Agora server is not running: run `agora open` in the project first (edits run in the open page).")}, 3)
             payload = read_input(a.json)
             if a.action == "apply":
                 if isinstance(payload, list):

@@ -47,6 +47,7 @@ from server.canvas.adapters.common import (
     user_item,
 )
 from server.canvas.runner import Usage, _int, empty_usage
+from server.i18n import tr
 
 
 def codex_usage(u: dict[str, Any] | None, model: str | None) -> Usage:
@@ -466,7 +467,7 @@ class CodexAdapter(Adapter):
     tested = VersionRange(">=0.149,<0.158")
     max_tier = "T1"
     icon = "codex"
-    log_hint = "~/.codex/sessions/年/月/日/rollout-*-<id>.jsonl"
+    log_hint = "~/.codex/sessions/YYYY/MM/DD/rollout-*-<id>.jsonl"
     log_dir = "~/.codex/sessions/"
     delete_hint = "codex delete {id}"
     waits = "native"
@@ -633,18 +634,18 @@ class CodexAdapter(Adapter):
             a = acts.get(cid, {})
             why = []
             if spawn.get("parent_thread_id") == ref.native_id:
-                why.append("子 rollout 的 session_meta.source.subagent.thread_spawn.parent_thread_id")
+                why.append(tr("子 rollout 的 session_meta.source.subagent.thread_spawn.parent_thread_id", "session_meta.source.subagent.thread_spawn.parent_thread_id in the child rollout"))
             if cid in edges:
-                why.append("Codex 索引 thread_spawn_edges")
+                why.append(tr("Codex 索引 thread_spawn_edges", "the Codex index thread_spawn_edges"))
             if a:
-                why.append("父 rollout 的 spawn_agent（SubAgentActivity / CollabAgentToolCall）")
+                why.append(tr("父 rollout 的 spawn_agent（SubAgentActivity / CollabAgentToolCall）", "spawn_agent in the parent rollout (SubAgentActivity / CollabAgentToolCall)"))
             state = ("failed" if a.get("failed") else "done") if a.get("doneAt") or edges.get(cid) == "closed" else ("running" if edges.get(cid) == "open" or a else None)
             out.append(NativeRef(
                 "codex",
                 cid,
                 look.path,
                 meta.get("cwd") or ref.cwd,
-                ParentLink("native", ref.run_id, tool_call_id=a.get("callId"), evidence="、".join(why)),
+                ParentLink("native", ref.run_id, tool_call_id=a.get("callId"), evidence=tr("、", ", ").join(why)),
                 label=str(spawn.get("agent_nickname") or a.get("nickname") or a.get("path") or cid),
                 meta={"role": spawn.get("agent_role"), "path": spawn.get("agent_path") or a.get("path"), "depth": spawn.get("depth") or 1, "dispatchedAt": a.get("at"), "doneAt": a.get("doneAt"), "interactions": a.get("interactions") or [], "edge": edges.get(cid), "state": state},
             ))
@@ -654,7 +655,7 @@ class CodexAdapter(Adapter):
     def headless_args(self, cmd: list[str], req: Any, *, log_exists: Callable[[str], bool] | bool = False, skill_dir: Path | None = None) -> list[str]:
         o = req.options
         if o.fork_from:
-            raise ValueError("Codex 只能在终端里分叉（codex fork）：点「在终端打开」")
+            raise ValueError(tr("Codex 只能在终端里分叉（codex fork）：点「在终端打开」", "Codex can only fork in the terminal (codex fork): click “Open in terminal”"))
         args = [*cmd, "exec"]
         if o.session:
             args += ["resume", o.session]
