@@ -1,0 +1,83 @@
+---
+import { REPO, blob, href, other, site, type Lang } from "../i18n";
+import Mark from "./Mark.astro";
+
+interface Props {
+	lang: Lang;
+}
+const { lang } = Astro.props;
+const t = site[lang];
+const to = site[other(lang)];
+const c = {
+	en: { license: "MIT License", made: "A per-project architecture canvas for your coding agent.", agents: "For agents" },
+	zh: { license: "MIT 许可", made: "每个项目自带的架构图画布，给你自己的 coding agent。", agents: "给 Agent 读" },
+}[lang];
+---
+
+<footer class="footer">
+	<div class="inner">
+		<div class="brand">
+			<Mark size={22} />
+			<span class="name">Agora</span>
+			<span class="made">{c.made}</span>
+		</div>
+		<nav class="links" aria-label="Footer">
+			<a href={REPO}>GitHub</a>
+			<a href={blob("LICENSE")}>{c.license}</a>
+			<a href={href("/llms.txt")}>{c.agents}</a>
+			<a href={href(to.home)} hreflang={to.tag} lang={to.tag}>{t.switchLabel}</a>
+		</nav>
+	</div>
+</footer>
+
+<style>
+	.footer {
+		padding: 36px var(--gutter) 44px;
+		border-top: 1px solid var(--ring);
+	}
+
+	.inner {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px 32px;
+		max-width: var(--page-max);
+		margin-inline: auto;
+	}
+
+	.brand {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.name {
+		font-family: var(--font-display);
+		font-size: 1.15rem;
+		font-weight: 600;
+	}
+
+	.made {
+		color: var(--muted);
+		font-size: 14px;
+	}
+
+	.links {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 20px;
+		font-size: 14px;
+	}
+
+	.links a {
+		color: var(--muted);
+		text-decoration: none;
+	}
+
+	.links a:hover {
+		color: var(--fg);
+		text-decoration: underline;
+	}
+</style>

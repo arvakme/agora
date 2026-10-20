@@ -1,0 +1,75 @@
+---
+import "@fontsource-variable/fraunces/full.css";
+import "@fontsource-variable/fraunces/full-italic.css";
+import "@fontsource-variable/hanken-grotesk/wght.css";
+import "@fontsource-variable/jetbrains-mono/wght.css";
+import "../styles/global.css";
+import { getImage } from "astro:assets";
+import bannerPng from "../../../docs/assets/banner.png";
+import { href, site, type Lang } from "../i18n";
+import { tagline } from "../repo";
+import Footer from "./Footer.astro";
+import Nav from "./Nav.astro";
+import Hero from "../sections/Hero.astro";
+import Film from "../sections/Film.astro";
+import Flow from "../sections/Flow.astro";
+import Features from "../sections/Features.astro";
+import Start from "../sections/Start.astro";
+
+interface Props {
+	lang: Lang;
+}
+const { lang } = Astro.props;
+const t = site[lang];
+const description = tagline(lang);
+const canonical = new URL(href(t.home), Astro.site);
+const og = await getImage({ src: bannerPng, format: "jpg", width: 1500, quality: 82 });
+const ogImage = new URL(og.src, Astro.site);
+---
+
+<!doctype html>
+<html lang={t.tag}>
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>{t.title}</title>
+		<meta name="description" content={description} />
+		<meta name="color-scheme" content="light dark" />
+		<meta name="theme-color" content="#f4efe6" media="(prefers-color-scheme: light)" />
+		<meta name="theme-color" content="#100f19" media="(prefers-color-scheme: dark)" />
+		<link rel="icon" type="image/svg+xml" href={href("/favicon.svg")} />
+		<link rel="canonical" href={canonical} />
+		{Object.values(site).map((s) => <link rel="alternate" hreflang={s.tag} href={new URL(href(s.home), Astro.site)} />)}
+		<link rel="alternate" hreflang="x-default" href={new URL(href(site.en.home), Astro.site)} />
+		<link rel="alternate" type="text/markdown" href={new URL("index.md", canonical)} />
+		<meta property="og:type" content="website" />
+		<meta property="og:title" content={t.title} />
+		<meta property="og:description" content={description} />
+		<meta property="og:url" content={canonical} />
+		<meta property="og:site_name" content="Agora" />
+		<meta property="og:locale" content={t.ogLocale} />
+		<meta property="og:image" content={ogImage} />
+		<meta property="og:image:width" content="1500" />
+		<meta property="og:image:height" content="500" />
+		<meta name="twitter:card" content="summary_large_image" />
+	</head>
+	<body>
+		<a class="skip" href="#main">{t.skip}</a>
+		<Nav lang={lang} />
+		<main id="main">
+			<Hero lang={lang} />
+			<Film lang={lang} />
+			<Flow lang={lang} />
+			<Features lang={lang} />
+			<Start lang={lang} />
+		</main>
+		<Footer lang={lang} />
+		<script>
+			// 区块离开视口时暂停其中的循环 CSS 动画（global.css 的 [data-offscreen]）
+			const io = new IntersectionObserver((entries) => {
+				for (const entry of entries) entry.target.toggleAttribute("data-offscreen", !entry.isIntersecting);
+			});
+			document.querySelectorAll("main > section").forEach((section) => io.observe(section));
+		</script>
+	</body>
+</html>
