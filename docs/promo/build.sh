@@ -38,13 +38,14 @@ prep() {
   cp "$HERE/film/treatment.md" "$BUILD/tools/treatment.md"
 
   # 实录片段（VP9 WebM：Playwright 的 Chromium 不带 H.264 解码）：统一成 30 fps、无声、1440×900（1.6:1，与卡片同比例）；hop 的录像顶上有一行说明文字，裁掉。只用 #53 之后的实录（小人沿箭头滑行或跳过去）：glide/after.mp4 和 agora-motion.mp4 里还有已删掉的脚手架爬梯，不用。
-  clip() { # name src crop
-    ffmpeg -v error -y -i "$FOOTAGE/$2" -an -vf "$3,scale=1440:900:flags=lanczos,fps=30,format=yuv420p" \
+  clip() { # name src crop [fps]
+    ffmpeg -v error -y -i "$FOOTAGE/$2" -an -vf "$3,scale=1440:900:flags=lanczos,fps=${4:-30},format=yuv420p" \
       -c:v libvpx-vp9 -crf 24 -b:v 0 -deadline good -cpu-used 4 -row-mt 1 -g 15 "$BUILD/assets/clips/$1.webm"
   }
   clip reveal  reveal/after.mp4        "crop=1280:800:0:0"
   clip library reveal/library.mp4      "crop=1280:800:0:0"
-  clip wheel   semantic-zoom/wheel.mp4 "crop=1280:800:0:0"
+  # 两轮进子图：web/scripts/promo-capture.ts 录的 60 fps（setup 搭两层子图，zoom 逐帧步进；画面里只有画布），中英文标签各一条
+  for l in zh en; do clip "zoom.$l" "promo-bilingual/footage/zoom.$l.mp4" "crop=1440:900:0:0" 60; done
   clip hop     hop/after.mp4           "crop=1488:930:56:90"
 
   # README 里的截图（docs/media/），蒙太奇用
@@ -75,7 +76,7 @@ render() { # lang
   om set "lang=$1" "$BUILD"
   om sound "$BUILD"        # prep 拷进来的 index.html 不带 <audio id="om-sound">，先重写配乐再渲染
   om check "$BUILD"
-  om render "$BUILD"
+  om render "$BUILD" --fps 60   # 60 fps：子图那段实录是 60 fps，原速播放
   om qa "$BUILD"
   finish "$1"
 }
