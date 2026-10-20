@@ -50,12 +50,14 @@
   .big { position: absolute; left: 0; right: 0; text-align: center; font-family: var(--disp); white-space: nowrap; line-height: 1.04; }
   .zh .big { font-weight: 900; letter-spacing: .01em; }
   .en .big { font-weight: 400; letter-spacing: -.012em; line-height: .96; }
-  /* 遮罩：每个词（中文每个字）一个，从下沿升上来。内边距给下伸部、意大利体右悬和回弹留地方，负外边距抵掉，字距不变 */
-  .m { display: inline-block; overflow: hidden; vertical-align: top; padding: .12em .1em .22em; margin: -.12em -.1em -.22em; }
+  /* 遮罩：每个词（中文每个字）一个，从下沿升上来。不用 overflow 硬裁：上面留 .42em（升部、回弹）、左右 .3em（意大利体右悬）、
+     下面 .62em（降部），只在最下面 .5em 用渐变软边，字从软边里浮上来，任何一帧都不会被切出一道硬边；负外边距抵掉，字距不变 */
+  .m { display: inline-block; vertical-align: top; padding: .42em .3em .62em; margin: -.42em -.3em -.62em;
+    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - .5em), transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - .5em), transparent 100%); }
   .m > .w { display: inline-block; transform-origin: 0 100%; }
   .em { position: relative; display: inline-block; color: var(--accent); }
   .en .em { font-style: italic; }
-  .en .em .m { padding-right: .18em; margin-right: -.18em; }
   /* 中文行里的拉丁词（agent、CLI、Agora）：去掉手打的整格空格，换成 .2em 的字间空 */
   .lat { display: inline-block; margin: 0 .2em; letter-spacing: 0; }
   /* 强调词下面一道手绘下划线（和画布上的手绘线一个笔性），揭示完的下一拍画出来 */
@@ -109,7 +111,6 @@
   /* 字标：Instrument Serif，古典的衬线和横幅里的柱廊一个时代；落日光上叠一层暖色辉光，底下压一层暗影保证读得清 */
   .wordmark { position: absolute; left: 0; right: 0; top: 560px; text-align: center; color: #fff; font-family: "Instrument Serif", serif; font-weight: 400;
     font-size: 250px; letter-spacing: -.01em; line-height: 1; text-shadow: 0 0 60px rgba(255, 196, 150, .35), 0 6px 40px rgba(8, 6, 20, .55); }
-  .wordmark .m { padding: .1em .04em .24em; margin: -.1em -.04em -.24em; }
   .endsub { position: absolute; left: 0; right: 0; top: 846px; text-align: center; color: #f6ead8; font-family: var(--disp);
     text-shadow: 0 2px 18px rgba(8, 6, 20, .7); white-space: nowrap; }
   .zh .endsub { font-size: 42px; font-weight: 600; letter-spacing: .14em; text-indent: .14em; }
@@ -193,7 +194,7 @@
 
   <!-- ===== mech：README 示意图的上半部分 ===== -->
   <section id="mech" class="layer" data-om-id="mech" style="visibility:hidden">
-    <img id="flow" src="assets/stills/flow.svg" alt="" style="position:absolute;left:100px;top:180px;width:1720px;height:auto;border-radius:22px;box-shadow:0 0 0 1.5px #e2dbcf" data-om-id="flow">
+    <img id="flow" src="assets/stills/flow.zh.svg" alt="" style="position:absolute;left:100px;top:180px;width:1720px;height:auto;border-radius:22px;box-shadow:0 0 0 1.5px #e2dbcf" data-om-id="flow">
     <div id="packet" style="position:absolute;left:0;top:0;width:26px;height:26px;border-radius:13px;background:var(--accent);box-shadow:0 0 0 6px rgba(112,72,180,.18)"></div>
     <div class="cap" id="c8" data-om-id="cap-native" style="top:800px" data-copy="native"></div>
   </section>
@@ -392,7 +393,8 @@ C,,^F,, [C,,^D,,]^F,, C,,^F,, [C,,^D,,]^F,, | C,,^F,, [C,,^D,,]^F,, C,,^F,, [C,,
   document.querySelectorAll('[data-copy]').forEach((el) => { el.innerHTML = lineHTML(COPY[el.dataset.copy], el.hasAttribute('data-ul')); });
   $('#wm').innerHTML = [...'Agora'].map(unit).join('');
   $('#t3c').textContent = COPY.termNote;
-  gsap.set('.w', { yPercent: 118 });
+  $('#flow').src = `assets/stills/flow.${LANG}.svg`;   // README 示意图上半部分，英文版用 how-it-works.en.svg
+  gsap.set('.w', { yPercent: 140, opacity: 0 });
   gsap.set('.ul', { clipPath: 'inset(-50% 100% -50% 0%)' });
   gsap.set(['#c4 .chip', '#cM .label', '#eu'], { opacity: 0 });
 
@@ -410,14 +412,15 @@ C,,^F,, [C,,^D,,]^F,, C,,^F,, [C,,^D,,]^F,, | C,,^F,, [C,,^D,,]^F,, C,,^F,, [C,,
   function reveal(el, at, o = {}) {
     const ws = [...el.querySelectorAll('.w')];
     const st = o.stagger ?? (LANG === 'en' ? SUB : SUB / 2), dur = o.dur ?? 0.62;
-    tl.fromTo(ws, { yPercent: 118, rotation: o.rot ?? 0 }, { yPercent: 0, rotation: 0, duration: dur, ease: o.ease ?? 'back.out(1.3)', stagger: st, immediateRender: false }, at);
+    tl.fromTo(ws, { yPercent: 140, rotation: o.rot ?? 0 }, { yPercent: 0, rotation: 0, duration: dur, ease: o.ease ?? 'back.out(1.3)', stagger: st, immediateRender: false }, at);
+    tl.fromTo(ws, { opacity: 0 }, { opacity: 1, duration: dur * 0.4, ease: 'power1.out', stagger: st, immediateRender: false }, at);
     const end = at + st * (ws.length - 1) + dur * 0.6;
     el.querySelectorAll('.ul').forEach((u) => tl.fromTo(u, { clipPath: 'inset(-50% 100% -50% 0%)' }, { clipPath: 'inset(-50% 0% -50% 0%)', duration: 0.4, ease: 'power2.inOut', immediateRender: false }, o.ulAt ?? end));
     return end;
   }
-  // 离场：整行一起沉进遮罩（读的时候是一眼，走的时候也是一个整体）
+  // 离场：整行一起往上飘走、淡掉（读的时候是一眼，走的时候也是一个整体）
   function leave(el, at, dur = 0.3) {
-    tl.to(el.querySelectorAll('.w'), { yPercent: -118, duration: dur, ease: 'power3.in' }, at);
+    tl.to(el.querySelectorAll('.w'), { yPercent: -30, opacity: 0, duration: dur, ease: 'power2.in' }, at);
     const ul = el.querySelectorAll('.ul'); if (ul.length) tl.to(ul, { opacity: 0, duration: dur * 0.8 }, at);
   }
   const cap = (sel, inAt, outAt) => { const el = $(sel); show(el, inAt); reveal(el, inAt, { dur: 0.55, ease: 'back.out(1.15)' }); leave(el, outAt - 0.3); hide(el, outAt); };
