@@ -50,9 +50,12 @@ prep() {
   # README 里的截图（docs/media/），蒙太奇用
   for s in trajectory terminal share guest choose-agent; do cp "$REPO/docs/media/$s.png" "$BUILD/assets/stills/"; done
   cp "$REPO/docs/assets/banner.png" "$BUILD/assets/stills/banner.png"
-  # README 示意图的上半部分（数据流），只改 viewBox 裁出来
-  sed -e '1s/width="1600" height="1130" viewBox="0 0 1600 1130"/width="1520" height="410" viewBox="40 80 1520 410"/' \
-    "$REPO/docs/assets/how-it-works.svg" > "$BUILD/assets/stills/flow.svg"
+  # README 示意图的上半部分（数据流），只改 viewBox 裁出来；中英文各一张（how-it-works.py 同时写出两份）
+  for l in zh en; do
+    local suf=""; [ $l = en ] && suf=".en"
+    sed -e '1s/width="1600" height="1130" viewBox="0 0 1600 1130"/width="1520" height="410" viewBox="40 80 1520 410"/' \
+      "$REPO/docs/assets/how-it-works$suf.svg" > "$BUILD/assets/stills/flow.$l.svg"
+  done
   cp /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf "$BUILD/assets/fonts/"   # 终端里的等宽字（DejaVu，自由许可）
 
   # earshot 音效（库里的程序化声音，按画面时刻对准；不需要模型）
