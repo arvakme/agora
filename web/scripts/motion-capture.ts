@@ -120,7 +120,7 @@ function analyse(samples: Sample[], opts: { expectJumps?: string[] } = {}) {
   };
 }
 
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}) }); // `CHROMIUM=<path>` when the installed Playwright's own build is not there
 const ctx = await browser.newContext({
   viewport: { width: 1440, height: 900 },
   deviceScaleFactor: 1,
