@@ -1,5 +1,5 @@
 // Hand-written reference scripts: offline demos, the model's few-shot shape, and perf fixtures.
-import { tr } from "../i18n";
+import { tr } from "../i18n/index.ts";
 import type { Action, AnimScript } from "./script.ts";
 
 const GAP = 80;

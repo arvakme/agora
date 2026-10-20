@@ -70,12 +70,12 @@ export function pickTalkHost(views: readonly TalkView[], prev: string | null): s
 export function talkTarget(o: { name: string; hasSession: boolean; rootName: string; working: boolean; plan?: "steer" | "choose" }): { direct: boolean; placeholder: string; prefix: string; note: string | null } {
   const tail = o.working
     ? o.plan === "steer"
-      ? tr("（直接插进这一轮）", " (goes straight into this turn)")
+      ? tr("（直接插进这一轮）", " (goes into this turn now)")
       : o.plan === "choose"
-        ? tr("（回车后选：停下改说 / 等做完）", " (after Enter: stop and say it / wait until done)")
-        : tr("（这一轮结束后送达）", " (arrives when this turn ends)")
+        ? tr("（回车后选：停下改说 / 等做完）", " (↵, then: stop it / wait)")
+        : tr("（这一轮结束后送达）", " (sent when this turn ends)")
     : "";
-  if (o.hasSession) return { direct: true, placeholder: tr(`对 ${o.name} 说…${tail || "（回车发送）"}`, `Talk to ${o.name}…${tail || " (Enter to send)"}`), prefix: "", note: null };
+  if (o.hasSession) return { direct: true, placeholder: tr(`对 ${o.name} 说…${tail || "（回车发送）"}`, `Talk to ${o.name}…${tail || " (↵ to send)"}`), prefix: "", note: null };
   const about = tr(`关于你派的 ${o.name}`, `About ${o.name}, which you dispatched`);
   return {
     direct: false,
