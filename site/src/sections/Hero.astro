@@ -1,0 +1,141 @@
+---
+import { getImage } from "astro:assets";
+import bannerPng from "../../../docs/assets/banner.png";
+import Install from "../components/Install.astro";
+import { REPO, type Lang } from "../i18n";
+import { asset } from "../media";
+import { tagline } from "../repo";
+import { copy } from "./Hero.copy";
+
+interface Props {
+	lang: Lang;
+}
+const { lang } = Astro.props;
+const t = copy[lang];
+// 横幅：允许动效时用墨迹洇开的 SVG 动画（README 同款），减少动效时换成静态版
+const inkSvg = asset("assets/banner-ink.svg");
+const still = await getImage({ src: bannerPng, format: "webp", width: 2400, quality: 82 });
+---
+
+<section class="hero" aria-labelledby="hero-title">
+	<div class="inner">
+		<p class="eyebrow rise">{t.eyebrow}</p>
+		<h1 class="display" id="hero-title">
+			{t.title.map((line, i) => <span class="line rise" style={`--i: ${i + 1}`} set:html={line} />)}
+		</h1>
+		<p class="lede rise" style="--i: 3">{tagline(lang)}</p>
+		<div class="actions rise" style="--i: 4">
+			<Install lang={lang} />
+			<p class="run">{t.run} <code>cd my-service && agora</code></p>
+		</div>
+	</div>
+	<figure class="banner rise" style="--i: 5">
+		<picture>
+			<source media="(prefers-reduced-motion: reduce)" srcset={still.src} type="image/webp" />
+			<img src={inkSvg} alt={t.banner} width="2400" height="800" fetchpriority="high" />
+		</picture>
+	</figure>
+</section>
+
+<style>
+	.hero {
+		position: relative;
+		isolation: isolate;
+		padding: calc(var(--nav-h) + clamp(40px, 8vw, 104px)) var(--gutter) clamp(24px, 4vw, 48px);
+	}
+
+	/* 画布的点阵底，往下淡出接到下一段 */
+	.hero::before {
+		content: "";
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		background-image: radial-gradient(circle at 1.5px 1.5px, var(--dot) 1.1px, transparent 1.6px);
+		background-size: 24px 24px;
+		mask-image: linear-gradient(#000 55%, transparent 92%);
+		-webkit-mask-image: linear-gradient(#000 55%, transparent 92%);
+	}
+
+	.inner {
+		max-width: var(--page-max);
+		margin-inline: auto;
+		text-align: center;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+
+	.display {
+		margin-top: 22px;
+	}
+
+	.line {
+		display: block;
+	}
+
+	.lede {
+		max-width: 46ch;
+		margin-top: 26px;
+		color: var(--muted);
+		font-size: var(--text-lede);
+		line-height: 1.6;
+		text-wrap: balance;
+	}
+
+	.actions {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 14px;
+		max-width: 100%;
+		margin-top: 36px;
+	}
+
+	.run {
+		color: var(--muted);
+		font-size: 14.5px;
+	}
+
+	.banner {
+		position: relative;
+		max-width: 1320px;
+		margin: clamp(48px, 7vw, 88px) auto 0;
+		overflow: hidden;
+		border-radius: clamp(14px, 2vw, 24px);
+		background: #1a1730;
+		box-shadow:
+			0 0 0 1px var(--ring),
+			0 40px 100px -40px oklch(0.3 0.08 290 / 0.55);
+	}
+
+	.banner img {
+		width: 100%;
+		aspect-ratio: 3 / 1;
+		object-fit: cover;
+	}
+
+	/* 手机上 3:1 太扁：裁成 4:3，只留中间的星图和小人 */
+	@media (max-width: 640px) {
+		.banner img {
+			aspect-ratio: 4 / 3;
+			object-position: 50% 40%;
+		}
+
+		.run {
+			font-size: 13.5px;
+		}
+	}
+
+	@media (prefers-reduced-motion: no-preference) {
+		.rise {
+			animation: rise 900ms calc(var(--i, 0) * 90ms) var(--ease) both;
+		}
+
+		@keyframes rise {
+			from {
+				opacity: 0;
+				translate: 0 14px;
+			}
+		}
+	}
+</style>

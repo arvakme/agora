@@ -1,0 +1,325 @@
+/* 颜色只在这里定。亮色取宣传片和示意图的纸色与墨色，暗色取横幅里的夜空与灯火；跟随系统，不另做开关 */
+:root {
+	color-scheme: light dark;
+
+	--bg: #f4efe6;
+	--bg-raised: #fbf8f2;
+	--bg-sunk: #ece5d8;
+	--fg: #1f1c19;
+	--muted: #5d564d;
+	/* 只用于装饰线与图形，不用于正文 */
+	--faint: #cfc5b4;
+	--dot: #d8d0c2;
+	--accent: #6a44ab;
+	--accent-ink: #fbf8f2;
+	--amber: #a85a12;
+	--glow: oklch(0.8 0.13 70 / 0.35);
+	--ring: oklch(0.2 0.01 60 / 0.12);
+	--hover: oklch(0.2 0.01 60 / 0.06);
+	--shadow: 0 1px 0 oklch(1 0 0 / 0.6) inset, 0 24px 60px -28px oklch(0.25 0.03 60 / 0.35);
+	--code-bg: #1d1a24;
+	--code-fg: #efe8dc;
+	--code-muted: #9a92a8;
+	--code-prompt: #f2b867;
+
+	/* 字体：西文自带三款开源字体，中文用系统字体（不下载中文网络字体）。
+	   中文回退按平台排：苹果、思源 / Noto（Linux、新版 Windows）、微软雅黑 / 宋体（Windows） */
+	--font-cjk-sans: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", "WenQuanYi Zen Hei";
+	--font-cjk-serif: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "SimSun";
+	--font-display: "Fraunces Variable", var(--font-cjk-serif), var(--font-cjk-sans), Georgia, serif;
+	--font-sans: "Hanken Grotesk Variable", var(--font-cjk-sans), system-ui, sans-serif;
+	--font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, var(--font-cjk-sans), monospace;
+
+	/* 字阶 */
+	--text-display: clamp(2.5rem, 6.2vw, 5.4rem);
+	--text-title: clamp(2rem, 4.2vw, 3.4rem);
+	--text-item: clamp(1.25rem, 1.8vw, 1.5rem);
+	--text-lede: clamp(1.05rem, 1.35vw, 1.22rem);
+
+	/* 版式 */
+	--page-max: 1180px;
+	--gutter: clamp(16px, 4vw, 48px);
+	--section-space: clamp(64px, 8.5vw, 120px);
+	--nav-h: 64px;
+	--radius: 16px;
+
+	--ease: cubic-bezier(0.16, 1, 0.3, 1);
+	--duration-state: 160ms;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #100f19;
+		--bg-raised: #191726;
+		--bg-sunk: #0b0a12;
+		--fg: #f1eadf;
+		--muted: #a8a0b4;
+		--faint: #37334a;
+		--dot: #25223a;
+		--accent: #b9a0f2;
+		--accent-ink: #15131f;
+		--amber: #f2b867;
+		--glow: oklch(0.8 0.13 70 / 0.18);
+		--ring: oklch(1 0 0 / 0.1);
+		--hover: oklch(1 0 0 / 0.06);
+		--shadow: 0 30px 80px -30px oklch(0 0 0 / 0.8);
+		--code-bg: #1b1928;
+	}
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+	margin: 0;
+}
+
+/* 中文只在标点、空格处换行，不在词中间折；实在放不下才折开，不撑破容器 */
+html:lang(zh) {
+	word-break: keep-all;
+	overflow-wrap: break-word;
+}
+
+html {
+	background: var(--bg);
+	color: var(--fg);
+	font-family: var(--font-sans);
+	line-height: 1.6;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+	scroll-padding-top: calc(var(--nav-h) + 16px);
+	-webkit-text-size-adjust: 100%;
+}
+
+body {
+	background: var(--bg);
+	overflow-x: clip;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	html {
+		scroll-behavior: smooth;
+	}
+}
+
+a {
+	color: inherit;
+}
+
+img,
+video,
+svg,
+picture {
+	display: block;
+	max-width: 100%;
+}
+
+img {
+	height: auto;
+}
+
+code,
+kbd,
+pre {
+	font-family: var(--font-mono);
+	font-size: 0.92em;
+}
+
+:not(pre) > code {
+	padding: 0.08em 0.36em;
+	border-radius: 6px;
+	background: var(--hover);
+	box-shadow: 0 0 0 1px var(--ring);
+	white-space: nowrap;
+}
+
+:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 3px;
+	border-radius: 4px;
+}
+
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.skip {
+	position: absolute;
+	left: 16px;
+	top: -60px;
+	z-index: 20;
+	padding: 10px 14px;
+	border-radius: 10px;
+	background: var(--fg);
+	color: var(--bg);
+	font-weight: 600;
+}
+
+.skip:focus {
+	top: 12px;
+}
+
+/* 区块骨架：外层负责上下留白，内层限宽 */
+.section {
+	position: relative;
+	padding-block: var(--section-space);
+	padding-inline: var(--gutter);
+}
+
+.section-inner {
+	max-width: var(--page-max);
+	margin-inline: auto;
+}
+
+/* 画布的点阵底：和 Agora 画布、宣传片同一种纸面 */
+.dotted {
+	background-image: radial-gradient(circle at 1.5px 1.5px, var(--dot) 1.1px, transparent 1.6px);
+	background-size: 24px 24px;
+}
+
+.eyebrow {
+	display: inline-flex;
+	align-items: center;
+	gap: 10px;
+	color: var(--muted);
+	font-family: var(--font-mono);
+	font-size: 12.5px;
+	font-weight: 500;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+}
+
+.eyebrow::before {
+	content: "";
+	width: 18px;
+	height: 1px;
+	background: currentColor;
+}
+
+:lang(zh) .eyebrow {
+	letter-spacing: 0.08em;
+}
+
+.display,
+.section-title,
+.item-title {
+	font-family: var(--font-display);
+	font-optical-sizing: auto;
+	font-variation-settings: "SOFT" 60, "WONK" 0;
+	text-wrap: balance;
+}
+
+.display {
+	font-size: var(--text-display);
+	font-weight: 480;
+	line-height: 1.02;
+	letter-spacing: -0.025em;
+}
+
+.section-title {
+	margin-top: 16px;
+	font-size: var(--text-title);
+	font-weight: 480;
+	line-height: 1.06;
+	letter-spacing: -0.02em;
+}
+
+.item-title {
+	font-size: var(--text-item);
+	font-weight: 560;
+	line-height: 1.25;
+	letter-spacing: -0.01em;
+}
+
+/* 中文标题：宋体系没有可变字重，字重按 400/700 两档取；字距放回 0，行距加大 */
+:lang(zh) :is(.display, .section-title, .item-title) {
+	letter-spacing: 0;
+	line-height: 1.22;
+}
+
+:lang(zh) .display {
+	font-size: min(calc(var(--text-display) * 0.82), 10vw);
+	font-weight: 600;
+}
+
+:lang(zh) .section-title {
+	font-size: calc(var(--text-title) * 0.88);
+	font-weight: 600;
+}
+
+:lang(zh) .item-title {
+	font-weight: 600;
+}
+
+.display em,
+.section-title em {
+	font-style: italic;
+	color: var(--accent);
+}
+
+:lang(zh) :is(.display, .section-title) em {
+	font-style: normal;
+}
+
+.section-lede {
+	max-width: 60ch;
+	margin-top: 20px;
+	color: var(--muted);
+	font-size: var(--text-lede);
+	line-height: 1.65;
+	text-wrap: pretty;
+}
+
+/* 截图外框：一条浏览器标题栏加圆角卡片 */
+.frame {
+	position: relative;
+	overflow: hidden;
+	border-radius: var(--radius);
+	background: var(--bg-raised);
+	box-shadow:
+		0 0 0 1px var(--ring),
+		var(--shadow);
+}
+
+.frame-bar {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	height: 30px;
+	padding-inline: 14px;
+	border-bottom: 1px solid var(--ring);
+}
+
+.frame-bar i {
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: var(--faint);
+}
+
+.frame img,
+.frame video {
+	width: 100%;
+}
+
+/* 减少动效：CSS 动画只播一遍就停在原样 */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-delay: 0ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
+}
+
+/* 区块不在视口里时暂停其中的循环动画（Landing 维护 data-offscreen） */
+[data-offscreen] * {
+	animation-play-state: paused !important;
+}

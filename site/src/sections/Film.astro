@@ -1,0 +1,164 @@
+---
+import { getImage } from "astro:assets";
+import posterSrc from "../assets/film-poster.jpg";
+import { blob, type Lang } from "../i18n";
+import { film } from "../media";
+import { copy } from "./Film.copy";
+
+interface Props {
+	lang: Lang;
+}
+const { lang } = Astro.props;
+const t = copy[lang];
+// 英文页放英文版、中文页放中文版；分语言版本还没进仓库时退回总版本，连总版本都没有就只放海报和链接
+const reel = film(lang);
+const poster = await getImage({ src: posterSrc, format: "webp", width: 1600, quality: 80 });
+---
+
+<section class="section film" id="film" aria-labelledby="film-title">
+	<div class="section-inner">
+		<div class="head">
+			<p class="eyebrow">{t.eyebrow}</p>
+			<h2 class="section-title" id="film-title">{t.title}</h2>
+			<p class="section-lede">{t.lede}</p>
+		</div>
+		<figure class="reel frame">
+			{
+				reel ? (
+					<>
+						<video src={reel.url} poster={poster.src} preload="none" muted loop playsinline width="1920" height="1080" aria-label={t.videoLabel} />
+						<button type="button" class="play" data-play>
+							<span class="disc" aria-hidden="true">
+								<svg viewBox="0 0 24 24" fill="currentColor">
+									<path d="M8 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 8 5.5Z" />
+								</svg>
+							</span>
+							<span class="label">{t.play}</span>
+						</button>
+					</>
+				) : (
+					<>
+						<img src={poster.src} alt={t.videoLabel} width="1920" height="1080" loading="lazy" />
+						<figcaption class="missing">
+							{t.missing} <a href={blob("docs/media/agora-promo.mp4")}>{t.watch}</a>
+						</figcaption>
+					</>
+				)
+			}
+		</figure>
+	</div>
+</section>
+
+<script>
+	import { filmControl } from "../video";
+
+	const root = document.querySelector<HTMLElement>("#film")!;
+	const video = root.querySelector("video");
+	const play = root.querySelector<HTMLButtonElement>("[data-play]");
+	if (video && play) filmControl(video, play);
+</script>
+
+<style>
+	.head {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+	}
+
+	.head .section-lede {
+		text-wrap: balance;
+	}
+
+	.reel {
+		margin-top: clamp(36px, 5vw, 64px);
+		aspect-ratio: 16 / 9;
+		background: #f4efe6;
+	}
+
+	.reel video,
+	.reel img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+
+	.play {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: flex-end;
+		justify-content: flex-start;
+		gap: 12px;
+		padding: clamp(14px, 2.4vw, 28px);
+		border: 0;
+		background: linear-gradient(transparent 60%, oklch(0.15 0.02 290 / 0.35));
+		color: #fff;
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.disc {
+		display: grid;
+		place-items: center;
+		width: 52px;
+		height: 52px;
+		border-radius: 50%;
+		background: oklch(0.18 0.03 290 / 0.85);
+		box-shadow: 0 0 0 1px oklch(1 0 0 / 0.2);
+		transition: scale var(--duration-state) var(--ease);
+	}
+
+	.disc svg {
+		width: 20px;
+		height: 20px;
+		margin-left: 3px;
+		color: #f2b867;
+	}
+
+	.label {
+		padding: 8px 14px;
+		border-radius: 999px;
+		background: oklch(0.18 0.03 290 / 0.85);
+		font-size: 14.5px;
+		font-weight: 600;
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.play:hover .disc {
+			scale: 1.08;
+		}
+	}
+
+	.play:active .disc {
+		scale: 0.94;
+	}
+
+	.play[hidden] {
+		display: none;
+	}
+
+	.missing {
+		position: absolute;
+		inset: auto 0 0;
+		padding: 14px 18px;
+		background: oklch(0.15 0.02 290 / 0.8);
+		color: #fff;
+		font-size: 14.5px;
+	}
+
+	.missing a {
+		color: #f2b867;
+	}
+
+	@media (max-width: 480px) {
+		.disc {
+			width: 44px;
+			height: 44px;
+		}
+
+		.label {
+			font-size: 13.5px;
+		}
+	}
+</style>

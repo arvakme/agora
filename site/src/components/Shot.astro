@@ -1,0 +1,23 @@
+---
+import { Picture } from "astro:assets";
+import { asset, shot } from "../media";
+
+// 截图外框：浏览器标题栏 + 图。png 截图（docs/media/<名字>.png）由 Astro 转成 avif/webp 多档尺寸；
+// 动图（docs/ 下的路径）原样引用，懒加载
+interface Props {
+	name?: string;
+	gif?: string;
+	alt: string;
+	width?: number;
+	height?: number;
+	sizes?: string;
+	class?: string;
+}
+const { name, gif, alt, width, height, sizes = "(max-width: 900px) 100vw, 720px", class: className } = Astro.props;
+---
+
+<div class:list={["frame", className]}>
+	<div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+	{name && <Picture src={shot(name)} alt={alt} formats={["avif", "webp"]} widths={[640, 960, 1440]} fallbackFormat="webp" sizes={sizes} loading="lazy" decoding="async" />}
+	{gif && <img src={asset(gif)} alt={alt} width={width} height={height} loading="lazy" decoding="async" />}
+</div>
