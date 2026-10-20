@@ -113,8 +113,6 @@ agora share revoke <id>            # 或 --all
 
 ## 核心能力
 
-![Agora 演示：让 Claude Code 改代码和架构图，指针跟着改动在图上移动，轨迹里展开一次工具调用](docs/media/agora-demo.gif)
-
 ### 1. 一个项目一个 Agora，数据跟着代码走
 
 `agora up` 在当前目录初始化 `.agora/` 并起本项目专属服务（只监听 `127.0.0.1`，不同项目各占一个端口）。画布是标准 `.excalidraw` 文件，评论是 JSON，键排序、内容不变就不重写，git diff 可读。会话记录、运行状态和分享记录默认不提交。格式见[项目存储](web/docs/project-storage.md)。
@@ -122,7 +120,7 @@ agora share revoke <id>            # 或 --all
 - 删除的画布和会话进「回收站」，30 天内可恢复（刷新、重启后也行）；「所有画布」底部还有「会话历史」，可以按时间、agent、主题、画布找会话，也能把本机找到的原生会话重新导入。
 - 仓库移动、`cp -r` 复制、重新 clone 都有处理：移动后 Pi 会话的日志跟着挪；副本里的会话只读、可分叉继续；别的机器建的会话显示成只读卡片。`git clean -fdx` 删掉的本机数据（会话绑定、改图记录、回收站）由仓库外的每日备份和本机注册表兜底：`agora doctor --fix`。
 
-![画布与会话并排：左边是项目的架构图和评论钉，右边是 Claude Code 会话](docs/media/overview.png)
+![画布与会话并排：左边是架构图和评论钉，Claude Code 的小人站在「API 服务」上写文件；右边是正在干活的会话](docs/media/overview.png)
 
 ### 2. 你自己的 coding agent，平级、会话锁定
 
@@ -136,13 +134,13 @@ agora share revoke <id>            # 或 --all
 
 「在终端打开」用同一个原生会话 id 起交互式 CLI（比如 `claude --resume`、`pi --session-id`、`codex resume`），在本项目专属的 tmux 服务器里起，再用 Ghostty（没有就 Kitty，再没有就 Terminal.app）打开窗口。你在终端里说的话、agent 的回复和工具调用都会出现在面板上；从面板发的消息会等 agent 这一轮结束、且没有人占着终端的输入（接管了，或挂着一个可写窗口）时粘贴进去，队列不丢。
 
-![终端已接管：面板显示 tmux attach 命令，对话继续同步](docs/media/terminal.png)
+![在终端里打开会话：面板提示终端窗口开着、你的话在排队，这一轮带「终端」标签](docs/media/terminal.png)
 
 ### 4. 进度指针：AI 正在改架构图的哪一块
 
-给节点关联代码路径（glob，存在元素的 `customData.codePaths` 里，随图提交），可以手动设，也可以让 agent 按目录结构批量关联。agent 读写哪个文件，它的小人就走到这个文件所属的节点上干活（小人就是指针，见[工位视图](web/docs/workstation.md)；两个节点之间有箭头直接相连时，小人沿箭头滑过去，否则蹲下、沿抛物线跳过去）；不属于任何节点的文件在图外托盘。终端里发生的改动同样驱动它。映射规则见[进度指针](web/docs/progress-pointer.md)。
+给节点关联代码路径（glob，存在元素的 `customData.codePaths` 里，随图提交），可以手动设，也可以让 agent 按目录结构批量关联。agent 读写哪个文件，它的小人就走到这个文件所属的节点上干活（小人就是指针，见[工位视图](web/docs/workstation.md)；两个节点之间有箭头直接相连时，小人沿箭头滑过去，否则蹲下、沿抛物线跳过去）；不属于任何节点的文件列在「图外 · 改了 N 个文件」里。终端里发生的改动同样驱动它。映射规则见[进度指针](web/docs/progress-pointer.md)。
 
-![指针停在「浏览器」节点上，点开是这个节点最近改动的文件和所在轮次](docs/media/pointer.png)
+![回放一轮：小人在图上走过的路线、按先后编号的站点、每个节点上改了几个文件（+N），以及这一轮的汇总](docs/media/pointer.png)
 
 ### 5. 轨迹逐步可查
 
