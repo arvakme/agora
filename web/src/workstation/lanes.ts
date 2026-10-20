@@ -2,6 +2,7 @@
 // server/canvas/transcript.py) as read / write / exec / think / wait / delegate segments. The
 // same log always gives the same lane; ./runs/derive.ts turns it into a top-level run. A turn that
 // works on a canvas comment says so in its first message, so its segments carry that comment.
+import { tr } from "../i18n";
 import type { Item } from "../session/agents";
 import { buildTurns, toolActivity, type TrajTurn } from "../session/trajectoryModel";
 import type { TurnComment } from "./runs/types";
@@ -29,7 +30,7 @@ export type Seg = {
 };
 export type Lane = { sessionId: string; segs: Seg[]; turns: { n: number; start: number; end: number }[] };
 
-export const SEG_NAMES: Record<SegKind | "idle", string> = { read: "读", write: "写", exec: "执行命令", think: "思考", wait: "等待用户", delegate: "派子代理", idle: "空闲" };
+export const SEG_NAMES: Record<SegKind | "idle", string> = { read: tr("读", "Reading"), write: tr("写", "Writing"), exec: tr("执行命令", "Running command"), think: tr("思考", "Thinking"), wait: tr("等待用户", "Waiting for you"), delegate: tr("派子代理", "Dispatching sub-agent"), idle: tr("空闲", "Idle") };
 
 const MIN_TOOL_MS = 600;
 const MIN_THINK_MS = 400;
@@ -95,7 +96,7 @@ export function buildLane(sessionId: string, items: readonly Item[], opts: { liv
         const path = kind === "write" ? file : kind === "read" ? (it.tool?.reads?.[0] ?? readPath(it.tool?.input, opts.root)) : (file ?? (kind === "exec" ? it.tool?.on?.[0] : undefined));
         const verb = SEG_NAMES[kind];
         const input = (it.tool?.input ?? "").replace(/\s+/g, " ").trim();
-        return { sessionId, kind, start: r.at, end: r.at + Math.max(dur, MIN_TOOL_MS), turn: t.n, itemId: it.id, ...(path ? { path } : {}), ...(!r.running && !(r.durationMs && r.durationMs > 0) ? { durationKnown: false as const } : {}), ...(input && (!path || kind === "exec") ? { input } : {}), ...on, label: path ? `${verb} ${base(path)}` : `${verb} · ${it.tool?.name ?? "工具"} ${it.tool?.input ?? ""}`.trim() } as Seg;
+        return { sessionId, kind, start: r.at, end: r.at + Math.max(dur, MIN_TOOL_MS), turn: t.n, itemId: it.id, ...(path ? { path } : {}), ...(!r.running && !(r.durationMs && r.durationMs > 0) ? { durationKnown: false as const } : {}), ...(input && (!path || kind === "exec") ? { input } : {}), ...on, label: path ? `${verb} ${base(path)}` : `${verb} · ${it.tool?.name ?? tr("工具", "tool")} ${it.tool?.input ?? ""}`.trim() } as Seg;
       })
       .sort((a, b) => a.start - b.start);
     // Parallel calls in one step are shown one after another: a worker does one thing at a time.

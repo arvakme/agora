@@ -18,3 +18,18 @@ describe("a turn Agora stopped for going quiet or running too long", () => {
     expect(stoppedForTime(undefined)).toBe(false);
   });
 });
+
+describe("the stop text in English", () => {
+  it("reads the server's Chinese sentence back in English, and leaves other errors alone", async () => {
+    const { setLangForTest } = await import("../i18n");
+    const { stopText } = await import("./turnStop");
+    setLangForTest("en");
+    try {
+      expect(stopText(quiet)).toMatch(/^This turn had no output for 30 minutes, so it was stopped/);
+      expect(stopText(fuse)).toMatch(/^This turn ran for 6 hours and hit the limit/);
+      expect(stopText("exit 1: boom")).toBe("exit 1: boom");
+    } finally {
+      setLangForTest("zh");
+    }
+  });
+});

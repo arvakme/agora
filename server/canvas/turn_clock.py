@@ -23,6 +23,8 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
+from server.i18n import tr
+
 IDLE_S = 30 * 60
 MAX_S = 6 * 3600
 TOOL_FACTOR = 4
@@ -43,12 +45,12 @@ def _env_s(name: str, default: float) -> float:
 def span(seconds: float) -> str:
     """A length of time the way a person says it: ``30 分钟``, ``6 小时``, ``0.6 秒``."""
     if seconds >= 3600 and seconds % 3600 == 0:
-        return f"{seconds / 3600:g} 小时"
+        return tr(f"{seconds / 3600:g} 小时", f"{seconds / 3600:g} h")
     if seconds >= 60 and seconds % 60 == 0:
-        return f"{seconds / 60:g} 分钟"
+        return tr(f"{seconds / 60:g} 分钟", f"{seconds / 60:g} min")
     if seconds >= 60:
-        return f"{seconds / 60:.1f} 分钟"
-    return f"{seconds:g} 秒"
+        return tr(f"{seconds / 60:.1f} 分钟", f"{seconds / 60:.1f} min")
+    return tr(f"{seconds:g} 秒", f"{seconds:g} s")
 
 
 class TurnClock:
@@ -120,10 +122,10 @@ class TurnClock:
 
     def message(self) -> str:
         if self.reason == "max":
-            why = f"这一轮已经跑了 {span(self.limit_s)}，到了上限"
+            why = tr(f"这一轮已经跑了 {span(self.limit_s)}，到了上限", f"This turn has run for {span(self.limit_s)}, the limit")
         else:
-            why = f"这一轮 {span(self.limit_s)}没有任何输出"
-        return f"{why}，已中止；原生会话还在，发「继续」就能接着"
+            why = tr(f"这一轮 {span(self.limit_s)}没有任何输出", f"This turn produced no output for {span(self.limit_s)}")
+        return tr(f"{why}，已中止；原生会话还在，发「继续」就能接着", f"{why}, so it was stopped. The native session is still there: send “continue” to pick up")
 
     # ——— the stop ———
     async def _watch(self, limit: asyncio.Timeout, probe: Callable[[], float | None] | None) -> None:

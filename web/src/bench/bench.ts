@@ -7,6 +7,7 @@ import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { buildArrow, buildShape, type El } from "../canvas/scene";
 import { handleEvent, type AgentKind, type Item } from "../session/agents";
+import { tr } from "../i18n";
 
 const spec = new URLSearchParams(location.search).get("bench");
 /** `&bare`: no 工位视图 overlay and no timeline at all — the baseline the overlay's cost is measured against. */
@@ -28,7 +29,7 @@ export function benchScene(n: number): El[] {
   for (let i = 0; i < nodes; i++) {
     const x = (i % cols) * 260;
     const y = Math.floor(i / cols) * 180;
-    const els = buildShape({ id: `bn${i}`, shape: "rectangle", x, y, width: 170, height: 64, label: `模块 ${i}`, base: { customData: { codePaths: [`bench/n${i}/**`] } } as never });
+    const els = buildShape({ id: `bn${i}`, shape: "rectangle", x, y, width: 170, height: 64, label: tr(`模块 ${i}`, `Module ${i}`), base: { customData: { codePaths: [`bench/n${i}/**`] } } as never });
     boxes.push(els[0]);
     out.push(...els);
   }

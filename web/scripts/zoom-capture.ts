@@ -48,7 +48,7 @@ if (which === "setup") {
     const { canvases } = await imp("/src/session/ui.ts");
     const { labelOf, byId } = await imp("/src/canvas/scene.ts");
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    document.querySelector<HTMLButtonElement>('button.wm-tab-close[aria-label^="关闭 新会话"]')?.click();
+    document.querySelector<HTMLButtonElement>('.wm-tab[data-kind="session"] button.wm-tab-close')?.click(); // by kind, not by its (translated) name
     const w = window as unknown as { __agora: { handles: Map<string, unknown> } };
     const top = [...w.__agora.handles.keys()][0];
     const apiOf = async (id: string) => {

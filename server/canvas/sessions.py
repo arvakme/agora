@@ -44,6 +44,7 @@ from server.canvas.adapters.claude import answer_response, approve_response, den
 from server.canvas.runner import KILL_GRACE_S, Control, ExecOptions, RunRequest, make_backend
 from server.canvas.terminal import PasteSubmitFailed, TerminalError, Terminals, gate_hold
 from server.canvas.transcript import MARKER, State, Tail, project, split_agora
+from server.i18n import lang, tr
 
 TICK_S = 0.4
 RELOCATE_S = 5.0  # how often a followed log is looked up again (it may have moved: Pi migration, a fork)
@@ -81,7 +82,7 @@ class Copied(RuntimeError):
 
     def __init__(self, sid: str, info: dict[str, Any]) -> None:
         self.info = {**info, "sessionId": sid}
-        super().__init__(f"这个会话是从 {info.get('from')} 复制过来的，原来那份项目还在用它的原生会话；要在这里接着用，先「在这里分叉继续」。")
+        super().__init__(tr(f"这个会话是从 {info.get('from')} 复制过来的，原来那份项目还在用它的原生会话；要在这里接着用，先「在这里分叉继续」。", f"This session was copied from {info.get('from')}, and that copy of the project still uses its native session. To keep going here, first choose “Fork here and continue”."))
 
 
 def agora_prompt(body: str, *, canvas_id: str | None, canvas_name: str | None, extra: str = "", session_id: str | None = None, project_id: str | None = None) -> str:
@@ -91,8 +92,12 @@ def agora_prompt(body: str, *, canvas_id: str | None, canvas_name: str | None, e
     project (first 8 characters of its id), so a native log can later be matched back to the
     Agora session it belongs to even when ``.agora/sessions/`` is gone."""
     ids = " ".join(f"{k}={v}" for k, v in (("canvas", canvas_id), ("session", session_id), ("project", (project_id or "").replace("-", "")[:8] or None)) if v)
-    where = f"画布「{canvas_name or canvas_id}」" if canvas_id else "这个项目的画布"
-    footer = f"{MARKER} 来自 Agora · {where}{f'({ids})' if ids else ''}。读图、改图、做动画用 agora skill（`agora canvas …`）。{extra}".rstrip()
+    if lang() == "en":
+        where = f"canvas “{canvas_name or canvas_id}”" if canvas_id else "this project's canvas"
+        footer = f"{MARKER} From Agora · {where}{f'({ids})' if ids else ''}. Use the agora skill (`agora canvas …`) to read, edit or animate the diagram. {extra}".rstrip()
+    else:
+        where = f"画布「{canvas_name or canvas_id}」" if canvas_id else "这个项目的画布"
+        footer = f"{MARKER} 来自 Agora · {where}{f'({ids})' if ids else ''}。读图、改图、做动画用 agora skill（`agora canvas …`）。{extra}".rstrip()
     return f"{body.rstrip()}\n\n{footer}"
 
 
@@ -261,8 +266,8 @@ class Subscriber:
 def summary_head(found: bool) -> str:
     """The first line of a session's summary: it says the native record is lost only when it is (an imported or a live session has its log; its summary is just a summary)."""
     if found:
-        return "（下面是这个会话此前的对话摘要。）"
-    return "（接着之前的讨论：原来的原生会话记录已经丢失，下面是 Agora 保存的轨迹摘要。）"
+        return tr("（下面是这个会话此前的对话摘要。）", "(Below is a summary of this session's conversation so far.)")
+    return tr("（接着之前的讨论：原来的原生会话记录已经丢失，下面是 Agora 保存的轨迹摘要。）", "(Continuing the earlier discussion: the original native session record is lost; below is the trajectory summary Agora kept.)")
 
 
 def cli_hold(state: str | None, since: float | None, now: float, *, force: bool = False) -> str | None:
@@ -271,14 +276,14 @@ def cli_hold(state: str | None, since: float | None, now: float, *, force: bool 
     if state == "idle":
         return None
     if state == "waiting":
-        return "CLI 在等你在终端里确认权限，确认后再投递"
+        return tr("CLI 在等你在终端里确认权限，确认后再投递", "The CLI is waiting for you to approve a permission in the terminal; delivering after that")
     if state == "running":
-        return "CLI 正在忙，空闲后再投递"
+        return tr("CLI 正在忙，空闲后再投递", "The CLI is busy; delivering when it is idle")
     if state == "exited":
-        return "终端里的 CLI 已退出"
+        return tr("终端里的 CLI 已退出", "The CLI in the terminal has exited")
     if since is not None and now - since >= SIGNAL_WAIT_S:
-        return None if force else "CLI 一直没有就绪：可能在等你在终端里确认（信任目录、审批提示等），确认后会自动投递；已经确认过的话点「现在送出」"
-    return "终端刚打开，等 CLI 就绪再投递"
+        return None if force else tr("CLI 一直没有就绪：可能在等你在终端里确认（信任目录、审批提示等），确认后会自动投递；已经确认过的话点「现在送出」", "The CLI never became ready: it may be waiting for you to confirm something in the terminal (trusting the folder, an approval prompt…). It delivers on its own once you do; if you already did, click “Send now”")
+    return tr("终端刚打开，等 CLI 就绪再投递", "The terminal just opened; delivering once the CLI is ready")
 
 
 class AgentHub:
@@ -344,7 +349,7 @@ class AgentHub:
             pass
         for fut in list(self.bridge_waits.values()):  # an edit waiting for a page: the server is going, tell the caller now
             if not fut.done():
-                fut.set_exception(NoPage("Agora 服务正在关闭：这次改图没有执行。"))
+                fut.set_exception(NoPage(tr("Agora 服务正在关闭：这次改图没有执行。", "The Agora server is shutting down: this edit was not applied.")))
 
     def _get(self, sid: str) -> Live:
         if sid not in self.live:
@@ -597,21 +602,21 @@ class AgentHub:
         turns: list[list[str]] = []
         for it in sorted(lv.items.values(), key=lambda i: i.get("at") or 0):
             if it.get("kind") == "user" and (it.get("text") or "").strip():
-                turns.append([f"用户：{it['text'].strip()}"])
+                turns.append([tr("用户：", "User: ") + it["text"].strip()])
             elif it.get("kind") == "assistant" and (it.get("text") or "").strip() and turns:
-                turns[-1].append(f"助手：{it['text'].strip()}")
+                turns[-1].append(tr("助手：", "Assistant: ") + it["text"].strip())
             elif it.get("kind") == "tool" and turns and (it.get("tool") or {}).get("name"):
                 t = it["tool"]
-                turns[-1].append(f"（工具 {t['name']}{': ' + t['input'] if t.get('input') else ''}）")
+                turns[-1].append(tr(f"（工具 {t['name']}{': ' + t['input'] if t.get('input') else ''}）", f"(tool {t['name']}{': ' + t['input'] if t.get('input') else ''})"))
         b = self.store.read_binding(sid) or {}
         found = bool(b.get("nativeId")) and agents.locate_log(b["agent"], b["nativeId"], self.store.root, hint=(b.get("log") or {}).get("path")).state == "found"
         head = summary_head(found)
-        blocks = [f"第 {n} 轮\n" + "\n".join(lines) for n, lines in enumerate(turns, 1)]
+        blocks = [tr(f"第 {n} 轮", f"Turn {n}") + "\n" + "\n".join(lines) for n, lines in enumerate(turns, 1)]
         out: list[str] = []
         size = len(head)
         for b in reversed(blocks):  # the latest turns first, then as many earlier ones as fit
             if size + len(b) + 2 > SUMMARY_MAX:
-                out.append(f"（更早的 {len(blocks) - len(out)} 轮略）")
+                out.append(tr(f"（更早的 {len(blocks) - len(out)} 轮略）", f"({len(blocks) - len(out)} earlier turns left out)"))
                 break
             out.append(b)
             size += len(b) + 2
@@ -627,7 +632,7 @@ class AgentHub:
         b = self.binding(sid)
         look = agents.locate_log(b["agent"], b.get("nativeId"), self.store.root) if b.get("nativeId") else agents.LogLookup("missing")
         if look.state == "found":
-            raise ValueError("原生会话还在，不需要开新的；直接接着说")
+            raise ValueError(tr("原生会话还在，不需要开新的；直接接着说", "The native session is still there, no need for a new one: just keep talking"))
         # A CLI that takes Agora's id up front gets a fresh one now; one that assigns its own (Codex) on the first run.
         new = str(uuid.uuid4()) if adapters.need(b["agent"]).assigns_id == "agora" else None
         self.store.rebind(sid, new, reason="fresh-after-loss", started=False)
@@ -777,8 +782,8 @@ class AgentHub:
         the log has no terminal record, and a message delivered but never seen in the log may or may
         not have been taken: both outcomes are unknown, said as such, not as done or failed."""
         self._follow(sid, lv)
-        lost = [(p, "终端里的 CLI 已退出，这一轮没有结束记录，结果未知") for p in ([lv.current] if lv.current is not None else [])]
-        lost += [(p, "终端里的 CLI 在日志里出现这条消息之前退出了，不知道它有没有收下、做了多少") for p in lv.awaiting]
+        lost = [(p, tr("终端里的 CLI 已退出，这一轮没有结束记录，结果未知", "The CLI in the terminal exited without recording the end of this turn; the result is unknown")) for p in ([lv.current] if lv.current is not None else [])]
+        lost += [(p, tr("终端里的 CLI 在日志里出现这条消息之前退出了，不知道它有没有收下、做了多少", "The CLI in the terminal exited before this message showed up in its log; whether it got it, and how much it did, is unknown")) for p in lv.awaiting]
         lv.current, lv.awaiting = None, []
         if lost:
             lv.state.busy = False
@@ -795,10 +800,10 @@ class AgentHub:
                 state = lv.cli_state or ("idle" if ready else None)  # a report that came in while the screen was read counts
             reason = cli_hold(state, lv.pane_since, time.time(), force=head.force)
         elif lv.pane_since and time.time() - lv.pane_since < PANE_BOOT_S:
-            reason = "终端刚打开，等 CLI 启动好再投递"
+            reason = tr("终端刚打开，等 CLI 启动好再投递", "The terminal just opened; delivering once the CLI has started")
         else:
             reason = None
-        return reason or ("agent 正在回复，回复完再投递" if lv.state.busy else None)
+        return reason or (tr("agent 正在回复，回复完再投递", "The agent is replying; delivering when it is done") if lv.state.busy else None)
 
     def _has_screen_probe(self, sid: str) -> bool:
         return (self.store.read_binding(sid) or {}).get("agent", "") in pane_state.SCREEN_READY
@@ -855,7 +860,7 @@ class AgentHub:
                 await asyncio.to_thread(self._handoff, sid, head.send_id)
             except Exception as exc:  # what the hooks persist could not be written: nothing was sent, say so
                 lv.pane.pop(0)
-                self._not_delivered(sid, lv, head, f"没能交付：{exc}", "terminal")
+                self._not_delivered(sid, lv, head, tr(f"没能交付：{exc}", f"Could not deliver: {exc}"), "terminal")
                 continue
             try:
                 await asyncio.to_thread(self.terms.paste, sid, head.prompt)
@@ -863,12 +868,12 @@ class AgentHub:
                 # It is in the CLI's input box, unsent. Running it again headless would do it twice: it is not known
                 # whether it will be taken (the person may press Enter there), and the page says exactly that.
                 lv.pane.pop(0)
-                lv.last_error = f"已粘贴到终端的输入框，但回车没有成功：{exc}。不知道它会不会被收下，没有另外重发（在终端里按回车即可提交）"
+                lv.last_error = tr(f"已粘贴到终端的输入框，但回车没有成功：{exc}。不知道它会不会被收下，没有另外重发（在终端里按回车即可提交）", f"Pasted into the terminal's input box, but pressing Enter failed: {exc}. It may or may not be taken; it was not sent again (press Enter in the terminal to submit it)")
                 self.broadcast({"t": "done", "sessionId": sid, "sendId": head.send_id, "text": "", "error": lv.last_error, "outcome": "unknown", "route": "terminal"})
                 self._status(sid)
                 continue
             except (TerminalError, OSError) as exc:
-                lv.last_error = f"投递到终端失败：{exc}"
+                lv.last_error = tr(f"投递到终端失败：{exc}", f"Delivering to the terminal failed: {exc}")
                 lv.headless.append(lv.pane.pop(0))
                 self._kick(sid)
                 continue
@@ -885,7 +890,7 @@ class AgentHub:
                 if p.delivered_at and now - p.delivered_at > DELIVERY_CONFIRM_S:
                     lv.awaiting.remove(p)
                     lv.state.busy = False
-                    self.broadcast({"t": "done", "sessionId": sid, "sendId": p.send_id, "text": "", "error": "终端没有确认收到这条消息（会话日志里没有出现）", "route": "terminal"})
+                    self.broadcast({"t": "done", "sessionId": sid, "sendId": p.send_id, "text": "", "error": tr("终端没有确认收到这条消息（会话日志里没有出现）", "The terminal never confirmed this message (it did not show up in the session log)"), "route": "terminal"})
                     self._status(sid)
 
     # ——— sending ———
@@ -941,7 +946,7 @@ class AgentHub:
         ad = adapters.need(b["agent"])
         turn_runs = bool(lv.running and lv.run and not lv.run.done())
         if mode == "steer" and turn_runs and (not ad.steer or lv.live_control is False):
-            raise ValueError(f"{ad.name} 不能中途插话：{lv.steer_why or ad.no_steer}")
+            raise ValueError(tr(f"{ad.name} 不能中途插话：{lv.steer_why or ad.why_no_steer()}", f"{ad.name} can't take a message mid-turn: {lv.steer_why or ad.why_no_steer()}"))
         # (a resident CLI that has not said yet that its process is up, ``live_control`` None: the words wait, none get lost)
         if turn_runs and mode in ("auto", "steer") and ad.steer and lv.live_control and lv.control is not None and not lv.interrupting:
             lv.control.send(ad.steer_line(prompt))
@@ -973,7 +978,7 @@ class AgentHub:
         """The words went into the running turn: the transcript says at which step, the pages hear of it."""
         at = int(time.time() * 1000)
         text = p.prompt.split(MARKER)[0].strip()
-        note = {"id": f"steer-{p.send_id}", "kind": "notice", "tone": "steer", "at": at, "afterId": lv.last_tool, "text": f"你在这里插了一句：{text}"}
+        note = {"id": f"steer-{p.send_id}", "kind": "notice", "tone": "steer", "at": at, "afterId": lv.last_tool, "text": tr(f"你在这里插了一句：{text}", f"You cut in here: {text}")}
         lv.items[note["id"]] = note
         changed = [note]
         self._keep_snapshot(sid, lv, changed)
@@ -1008,7 +1013,7 @@ class AgentHub:
             try:
                 self.check_native(sid, b)
                 if fork and not adapters.need(b["agent"]).can_fork_headless:
-                    raise ValueError(f"{adapters.need(b['agent']).name} 只能在终端里分叉（{adapters.need(b['agent']).terminal_fork}）：点「在终端打开」，在终端里接着说")
+                    raise ValueError(tr(f"{adapters.need(b['agent']).name} 只能在终端里分叉（{adapters.need(b['agent']).terminal_fork}）：点「在终端打开」，在终端里接着说", f"{adapters.need(b['agent']).name} can only fork in the terminal ({adapters.need(b['agent']).terminal_fork}): click “Open in terminal” and continue there"))
             except (agents.NativeMissing, Copied, ValueError) as e:
                 lv.last_error = str(e)
                 self.broadcast({"t": "done", "sessionId": sid, "sendId": p.send_id, "text": "", "error": str(e), "route": "headless", **({"native": e.public()} if isinstance(e, agents.NativeMissing) else {})})
@@ -1042,7 +1047,7 @@ class AgentHub:
                 env=self.env_for(sid),
                 control=lv.control,
             )
-            lv.activity = "启动中"
+            lv.activity = tr("启动中", "Starting")
             lv.running = True
             started = time.time()
             self._status(sid)
@@ -1052,19 +1057,19 @@ class AgentHub:
                 lv.running = False
                 lv.activity = None
                 self._end_turn(sid, lv)
-                self._not_delivered(sid, lv, p, f"没能交付：{exc}", "headless")
+                self._not_delivered(sid, lv, p, tr(f"没能交付：{exc}", f"Could not deliver: {exc}"), "headless")
                 continue
             self.broadcast({"t": "delivered", "sessionId": sid, "sendId": p.send_id, "route": "headless"})
             result: dict[str, Any] | None = None
             try:
                 async for ev in backend.run(req):
                     if ev["t"] == "start":
-                        lv.activity = "思考中"
+                        lv.activity = tr("思考中", "Thinking")
                     elif ev["t"] == "tool_use":
                         lv.activity = f"{ev.get('name')}"
                         lv.last_tool = ev.get("id")
                     elif ev["t"] == "text":
-                        lv.activity = "回复中"
+                        lv.activity = tr("回复中", "Replying")
                     elif ev["t"] == "session" and ev.get("session") and not b.get("nativeId") and not fork and sid not in self.dropped:
                         # A CLI that names its session as it starts (Codex): the log is followed from now on, not only after the turn.
                         self.store.set_native(sid, ev["session"])
@@ -1077,7 +1082,7 @@ class AgentHub:
                         continue
                     elif ev["t"] == "resident":
                         lv.live_control = bool(ev.get("ok"))
-                        lv.steer_why = None if ev.get("ok") else str(ev.get("why") or "常驻进程起不来")
+                        lv.steer_why = None if ev.get("ok") else str(ev.get("why") or tr("常驻进程起不来", "The resident process would not start"))
                         self._status(sid)
                         continue
                     elif ev["t"] == "mode":
@@ -1097,7 +1102,7 @@ class AgentHub:
                 lv.running = False
                 self._end_turn(sid, lv)
                 self.close_stopped_turn(sid, lv)
-                self.broadcast({"t": "done", "sessionId": sid, "sendId": p.send_id, "text": "", "error": "已停止", "route": "headless"})
+                self.broadcast({"t": "done", "sessionId": sid, "sendId": p.send_id, "text": "", "error": tr("已停止", "Stopped"), "route": "headless"})
                 self._status(sid)
                 raise
             self._end_turn(sid, lv)
@@ -1125,7 +1130,7 @@ class AgentHub:
                 "sessionId": sid,
                 "sendId": p.send_id,
                 "text": (result or {}).get("raw") or "",
-                "error": (result or {}).get("error") or ("已停止" if (result or {}).get("interrupted") else None if result else "no result"),
+                "error": (result or {}).get("error") or (tr("已停止", "Stopped") if (result or {}).get("interrupted") else None if result else "no result"),
                 "usage": (result or {}).get("usage"),
                 "route": "headless",
             })
@@ -1231,7 +1236,7 @@ class AgentHub:
 
     def _note_denied(self, sid: str, lv: Live, ev: dict[str, Any]) -> None:
         """Actions auto mode blocked inside the CLI: no request ever reaches the person, so say so in the conversation."""
-        notes = [{"id": f"denied-{d['toolUseId'] or secrets.token_hex(4)}", "kind": "notice", "tone": "denied", "at": ev["at"], "text": f"被 auto 拦下：{d['tool']} {d['summary']}".rstrip()} for d in ev["denials"] if d["toolUseId"] not in lv.asked]
+        notes = [{"id": f"denied-{d['toolUseId'] or secrets.token_hex(4)}", "kind": "notice", "tone": "denied", "at": ev["at"], "text": tr(f"被 auto 拦下：{d['tool']} {d['summary']}", f"Blocked by auto: {d['tool']} {d['summary']}").rstrip()} for d in ev["denials"] if d["toolUseId"] not in lv.asked]
         if not notes:
             return
         with self._follow_lock:
@@ -1260,11 +1265,11 @@ class AgentHub:
             it = lv.items.get(tid)
             if it is not None and isinstance(it.get("tool"), dict):
                 it["endAt"] = at
-                it["tool"] = {**it["tool"], "isError": True, "output": it["tool"].get("output") or "已停止"}
+                it["tool"] = {**it["tool"], "isError": True, "output": it["tool"].get("output") or tr("已停止", "Stopped")}
                 changed.append(it)
         lv.state.pending.clear()
         lv.state.busy = False
-        note = {"id": f"notice-{sid}-{at}", "kind": "notice", "tone": "interrupted", "at": at, "text": "这一轮被停止了：它没有做完。"}
+        note = {"id": f"notice-{sid}-{at}", "kind": "notice", "tone": "interrupted", "at": at, "text": tr("这一轮被停止了：它没有做完。", "This turn was stopped before it finished.")}
         lv.items[note["id"]] = note
         changed.append(note)
         self._keep_snapshot(sid, lv, changed)
@@ -1306,10 +1311,10 @@ class AgentHub:
             line = approve_response(rid, inp, None)
         elif decision == "allow_session":
             if not ev.get("suggestions"):
-                raise ValueError("这个请求没有「本会话以后都允许」的选项")
+                raise ValueError(tr("这个请求没有「本会话以后都允许」的选项", "This request has no “Always allow in this session” option"))
             line = approve_response(rid, inp, ev["suggestions"])
         else:
-            raise ValueError(f"decision 应为 allow / allow_session / deny，收到 {decision!r}")
+            raise ValueError(tr(f"decision 应为 allow / allow_session / deny，收到 {decision!r}", f"decision must be allow / allow_session / deny, got {decision!r}"))
         lv.control.send(line)
         self._close_request(sid, lv, rid)
 
@@ -1344,7 +1349,7 @@ class AgentHub:
             path.unlink(missing_ok=True)
             _stop_process(m.get("pid"), m.get("argv"))
             at = int(m.get("at") or time.time() * 1000)
-            self._get(sid).notes.append({"id": f"notice-{sid}-{at}", "kind": "notice", "tone": "interrupted", "at": int(time.time() * 1000), "text": "上一轮随服务重启中断了：它没有做完，也不会自动重来。"})
+            self._get(sid).notes.append({"id": f"notice-{sid}-{at}", "kind": "notice", "tone": "interrupted", "at": int(time.time() * 1000), "text": tr("上一轮随服务重启中断了：它没有做完，也不会自动重来。", "The last turn was cut off when the server restarted: it did not finish and won't be retried on its own.")})
         # Resident processes (Codex / Pi) an earlier server left: stopped, and nothing is said about them — the session's next turn
         # starts a new process that resumes its thread from the CLI's own log, and no message is sent again.
         for m in self.residents.leftovers():
@@ -1358,7 +1363,7 @@ class AgentHub:
         b = self.binding(sid)
         lv = self._get(sid)
         if lv.running:
-            raise Busy("这个会话正在无头运行一轮，结束后再在终端打开")
+            raise Busy(tr("这个会话正在无头运行一轮，结束后再在终端打开", "This session is running a headless turn; open it in the terminal when that ends"))
         if not self.terms.alive(sid):
             self.check_native(sid, b)
         hooks = bool(self.url) and pane_state.reports(b["agent"])
@@ -1404,7 +1409,7 @@ class AgentHub:
         self.binding(sid)
         lv = self._get(sid)
         if not lv.pane:
-            raise ValueError("没有排队等着投递的消息")
+            raise ValueError(tr("没有排队等着投递的消息", "No message is waiting to be delivered"))
         lv.pane[0].force = True
         self._status(sid)
         return {"sendId": lv.pane[0].send_id, "queued": len(lv.pane)}
@@ -1449,7 +1454,7 @@ class AgentHub:
         else:
             src_id = b.get("nativeId") or ""
             if not src_id:
-                raise ValueError("这个会话还没有原生会话，不需要分叉")
+                raise ValueError(tr("这个会话还没有原生会话，不需要分叉", "This session has no native session yet; nothing to fork"))
         look = agents.locate_log(b["agent"], src_id, None)
         path = look.path or (look.candidates[0] if look.candidates else None)
         if path is None:
@@ -1531,7 +1536,7 @@ class AgentHub:
         never replaced: its edit may already be on its canvas."""
         pages = self.executors()
         if not pages:
-            raise NoPage("没有打开的 Agora 页面：改图要在页面里执行（它持有画布、做校验、记撤销）。先 `agora open`。")
+            raise NoPage(tr("没有打开的 Agora 页面：改图要在页面里执行（它持有画布、做校验、记撤销）。先 `agora open`。", "No Agora page is open: edits run in the page (it holds the canvas, validates, and records undo). Run `agora open` first."))
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         rid = f"b-{secrets.token_hex(5)}"
@@ -1560,10 +1565,10 @@ class AgentHub:
                     try:
                         return await asyncio.wait_for(fut, max(deadline - loop.time(), 0.01))
                     except TimeoutError:
-                        raise PageTookIt("页面已接手这次改图但没有回报：图上可能已经改了，先看一眼图，再决定要不要重试。") from None
+                        raise PageTookIt(tr("页面已接手这次改图但没有回报：图上可能已经改了，先看一眼图，再决定要不要重试。", "A page took this edit but never reported back: the diagram may already have changed. Look at it before deciding whether to retry.")) from None
                 sub.failed_at = time.time()  # did not take it: behind the others until it does
                 offer["to"] = None
-            raise NoPage("开着的 Agora 页面都没有回应：把 Agora 的标签页切到前台再试一次。")
+            raise NoPage(tr("开着的 Agora 页面都没有回应：把 Agora 的标签页切到前台再试一次。", "None of the open Agora pages answered: bring the Agora tab to the front and try again."))
         finally:
             self.bridge_waits.pop(rid, None)
             self.bridge_offers.pop(rid, None)

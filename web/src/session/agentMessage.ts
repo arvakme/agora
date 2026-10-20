@@ -4,6 +4,7 @@
 // drawn by ./AgoraCard.tsx.
 import { parseCommentMessage, type ParsedComment } from "../comments/handoff";
 import type { Item } from "./agents";
+import { tr } from "../i18n";
 
 export type ReceiptState = "done" | "failed" | "blocked" | "idle_no_reply";
 export type MsgCard =
@@ -21,27 +22,28 @@ export function messageCard(it: Pick<Item, "text" | "source" | "card" | "dispatc
   return c ? { kind: "comment", ...c } : undefined;
 }
 
-const STATE_WORD: Record<string, string> = { done: "完成", failed: "失败", blocked: "受阻", idle_no_reply: "结束了，没有交回执" };
+const STATE_WORD: Record<string, string> = { done: tr("完成", "Done"), failed: tr("失败", "Failed"), blocked: tr("受阻", "Blocked"), idle_no_reply: tr("结束了，没有交回执", "Stopped without a receipt") };
 export const stateWord = (state: string) => STATE_WORD[state] ?? state;
 
 /** The turn's head, instead of 第 N 轮: what arrived. */
-export const cardTurnLabel = (c: MsgCard): string => (c.kind === "receipt" ? "收到回执" : c.kind === "task" ? "收到任务" : c.kind === "page" ? `${c.from}发来的提示` : "收到评论");
+export const cardTurnLabel = (c: MsgCard): string => (c.kind === "receipt" ? tr("收到回执", "Receipt") : c.kind === "task" ? tr("收到任务", "Task received") : c.kind === "page" ? tr(`${c.from}发来的提示`, `Prompt from ${c.from}`) : tr("收到评论", "Comment received"));
 
 /** The one line a card is in the trajectory and in titles. */
 export function cardLine(c: MsgCard): string {
-  if (c.kind === "receipt") return `${c.agent ?? "对方"} 交回了你派的任务 · ${stateWord(c.state)}`;
-  if (c.kind === "task") return `${c.from} 派来一个任务`;
-  if (c.kind === "page") return `来自${c.from} · ${c.title}`;
-  return `画布评论 #${c.n}${c.followUp ? " 有新回复" : ""}${c.messages[0] ? `：${c.messages[0].text.split("\n")[0]}` : ""}`;
+  if (c.kind === "receipt") return tr(`${c.agent ?? "对方"} 交回了你派的任务 · ${stateWord(c.state)}`, `${c.agent ?? "The agent"} returned the task you dispatched · ${stateWord(c.state)}`);
+  if (c.kind === "task") return tr(`${c.from} 派来一个任务`, `${c.from} dispatched a task`);
+  if (c.kind === "page") return tr(`来自${c.from} · ${c.title}`, `From ${c.from} · ${c.title}`);
+  return `${commentHead(c)}${c.messages[0] ? `${tr("：", ": ")}${c.messages[0].text.split("\n")[0]}` : ""}`;
 }
 
 /** A card's heading in the conversation. */
-export const cardHeading = (c: MsgCard): string => (c.kind === "comment" ? `画布评论 #${c.n}${c.followUp ? " 有新回复" : ""}` : cardLine(c));
+export const cardHeading = (c: MsgCard): string => (c.kind === "comment" ? commentHead(c) : cardLine(c));
+const commentHead = (c: { n: number; followUp?: boolean }) => tr(`画布评论 #${c.n}${c.followUp ? " 有新回复" : ""}`, `Canvas comment #${c.n}${c.followUp ? " · new reply" : ""}`);
 
 /** The first words of what came back / was asked: one line, cut where it is long; the rest opens on demand. */
 export const PREVIEW_MAX = 90;
 export function cardPreview(c: MsgCard): { line: string; more: boolean } {
-  const full = c.kind === "receipt" ? c.answer : c.kind === "page" ? c.text : c.kind === "comment" ? (c.messages[0]?.text ?? "") : c.scope.length ? `范围：${c.scope.join("、")}` : "";
+  const full = c.kind === "receipt" ? c.answer : c.kind === "page" ? c.text : c.kind === "comment" ? (c.messages[0]?.text ?? "") : c.scope.length ? tr(`范围：${c.scope.join("、")}`, `Scope: ${c.scope.join(", ")}`) : "";
   const line = full.replace(/\s+/g, " ").trim();
   const cut = line.length > PREVIEW_MAX ? `${line.slice(0, PREVIEW_MAX)}…` : line;
   return { line: cut, more: line.length > PREVIEW_MAX || full.includes("\n") || (c.kind === "comment" && c.messages.length > 1) };

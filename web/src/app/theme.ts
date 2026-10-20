@@ -3,6 +3,7 @@
 // tokens.css reads. `resolved` is what is on screen, for things that cannot read CSS (Excalidraw's
 // `theme` prop and its scene background).
 import { useSyncExternalStore } from "react";
+import { tr } from "../i18n";
 
 export type ThemePref = "system" | "light" | "dark";
 const KEY = "agora.theme";
@@ -57,4 +58,4 @@ if (typeof document !== "undefined") {
 }
 
 export const useTheme = () => useSyncExternalStore(theme.subscribe, theme.get);
-export const THEME_LABEL: Record<ThemePref, string> = { system: "跟随系统", light: "浅色", dark: "深色" };
+export const THEME_LABEL: Record<ThemePref, string> = { system: tr("跟随系统", "system"), light: tr("浅色", "light"), dark: tr("深色", "dark") };

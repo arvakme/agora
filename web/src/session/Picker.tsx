@@ -7,6 +7,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { IconCheck, IconChevron, IconSearch } from "../app/icons";
 import { SPRING } from "../comments/motion";
 import { closedState, findOption, isSearchable, optionCount, openState, pickerKey, pickerRows, queryState, toggleGroup, type PickGroup, type PickState } from "./pickerModel";
+import { tr } from "../i18n";
 
 export function Picker({ label, value, onChange, groups, disabled, placeholder, title, compact, valueLabel }: { label: string; value: string; onChange: (v: string) => void; groups: PickGroup[]; disabled?: boolean; placeholder?: string; title?: string; /** Trigger shows the label only (narrow fields). */ compact?: boolean; /** What the trigger says when the value is empty (default 「CLI 默认」). */ valueLabel?: string }) {
   const id = useId();
@@ -75,7 +76,7 @@ export function Picker({ label, value, onChange, groups, disabled, placeholder, 
         onKeyDown={(e) => (st.open || measure(), onKey(e))}
       >
         <span className="pk-value">
-          <span className="pk-name">{current?.label ?? (value || valueLabel || "CLI 默认")}</span>
+          <span className="pk-name">{current?.label ?? (value || valueLabel || tr("CLI 默认", "CLI default"))}</span>
           {current?.detail && !compact && <span className="pk-id">{current.detail}</span>}
         </span>
         <IconChevron size={12} open={st.open} />
@@ -101,8 +102,8 @@ export function Picker({ label, value, onChange, groups, disabled, placeholder, 
                   aria-controls={`${id}-list`}
                   aria-autocomplete="list"
                   aria-activedescendant={st.active >= 0 ? optId(st.active) : undefined}
-                  aria-label={`搜索${label}`}
-                  placeholder={placeholder ?? "搜索"}
+                  aria-label={tr(`搜索${label}`, `Search ${label.toLowerCase()}`)}
+                  placeholder={placeholder ?? tr("搜索", "Search")}
                   value={st.query}
                   onChange={(e) => setSt(queryState(groups, st, e.target.value, value))}
                   onKeyDown={onKey}
@@ -119,7 +120,7 @@ export function Picker({ label, value, onChange, groups, disabled, placeholder, 
               aria-activedescendant={!searchable && st.active >= 0 ? optId(st.active) : undefined}
               onKeyDown={searchable ? undefined : onKey}
             >
-              {rows.length === 0 && <p className="pk-empty">没有匹配「{st.query}」的{label}</p>}
+              {rows.length === 0 && <p className="pk-empty">{tr(`没有匹配「${st.query}」的${label}`, `No ${label.toLowerCase()} matches “${st.query}”`)}</p>}
               {rows.map((r, i) =>
                 r.kind === "header" ? (
                   r.collapsible ? (

@@ -7,7 +7,9 @@ import { useAgents, type Dispatch, type Item } from "./agents";
 import { cardHeading, cardPreview, type MsgCard } from "./agentMessage";
 import { Markdown } from "./markdown";
 import { ui } from "./ui";
+import { speakerLabel } from "../comments/handoff";
 import "./agentCard.css";
+import { tr } from "../i18n";
 
 export function AgoraCard({ card, open, summary, onOpenSession, onOpenComment }: {
   card: MsgCard;
@@ -21,7 +23,7 @@ export function AgoraCard({ card, open, summary, onOpenSession, onOpenComment }:
   const [opened, setOpened] = useState(!!open);
   const { line, more } = cardPreview(card);
   const Icon = card.kind === "receipt" ? IconMessage : card.kind === "task" || card.kind === "page" ? IconSend : IconComment;
-  const first = summary || line || (card.kind === "receipt" ? "（对方没有写答复）" : "");
+  const first = summary || line || (card.kind === "receipt" ? tr("（对方没有写答复）", "(No answer was written)") : "");
   return (
     <div className="ds-card" data-kind={card.kind} data-state={card.kind === "receipt" ? card.state : undefined}>
       <div className="ds-card-head">
@@ -29,14 +31,14 @@ export function AgoraCard({ card, open, summary, onOpenSession, onOpenComment }:
         <b>{cardHeading(card)}</b>
       </div>
       {!opened && first && <p className="ds-card-line">{first}</p>}
-      {!opened && card.kind === "task" && summary && card.scope.length > 0 && <p className="ds-card-scope">范围：{card.scope.join("、")}</p>}
+      {!opened && card.kind === "task" && summary && card.scope.length > 0 && <p className="ds-card-scope">{tr("范围：", "Scope: ")}{card.scope.join(tr("、", ", "))}</p>}
       {opened && (
         <div className="ds-card-body">
-          {card.kind === "receipt" && (card.answer ? <Markdown text={card.answer} /> : <p>（对方没有写答复）</p>)}
+          {card.kind === "receipt" && (card.answer ? <Markdown text={card.answer} /> : <p>{tr("（对方没有写答复）", "(No answer was written)")}</p>)}
           {card.kind === "task" && (
             <>
               {summary && <p>{summary}</p>}
-              {card.scope.length > 0 && <p className="ds-card-scope">范围：{card.scope.join("、")}</p>}
+              {card.scope.length > 0 && <p className="ds-card-scope">{tr("范围：", "Scope: ")}{card.scope.join(tr("、", ", "))}</p>}
             </>
           )}
           {card.kind === "page" && <Markdown text={card.text} />}
@@ -44,7 +46,7 @@ export function AgoraCard({ card, open, summary, onOpenSession, onOpenComment }:
             <ul>
               {card.messages.map((m, i) => (
                 <li key={i}>
-                  <b>{m.who}</b>
+                  <b>{speakerLabel(m.who)}</b>
                   {m.text}
                 </li>
               ))}
@@ -55,18 +57,18 @@ export function AgoraCard({ card, open, summary, onOpenSession, onOpenComment }:
       <div className="ds-card-acts">
         {(more || (summary && card.kind === "task")) && (
           <button className="ds-card-act" aria-expanded={opened} onClick={() => setOpened(!opened)}>
-            {opened ? "收起" : "展开"}
+            {opened ? tr("收起", "Collapse") : tr("展开", "Expand")}
             <IconChevron open={opened} />
           </button>
         )}
         {onOpenSession && card.kind !== "comment" && card.kind !== "page" && (
           <button className="ds-card-act" onClick={onOpenSession}>
-            打开 {card.kind === "receipt" ? (card.agent ?? "对方") : (card.from.split(" ")[0] || "对方")} 那个会话
+            {card.kind === "receipt" ? (card.agent ? tr(`打开 ${card.agent} 那个会话`, `Open ${card.agent}'s session`) : tr("打开 对方 那个会话", "Open their session")) : card.from.split(" ")[0] ? tr(`打开 ${card.from.split(" ")[0]} 那个会话`, `Open ${card.from.split(" ")[0]}'s session`) : tr("打开 对方 那个会话", "Open their session")}
           </button>
         )}
         {onOpenComment && (
           <button className="ds-card-act" onClick={onOpenComment}>
-            在画布上看这条评论
+            {tr("在画布上看这条评论", "View this comment on the canvas")}
           </button>
         )}
       </div>

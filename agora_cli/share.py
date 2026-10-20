@@ -1,10 +1,10 @@
 """``agora share create|list|revoke``: share one canvas for viewing and commenting.
 
-    agora share create [--whole-project | --canvas ID|名字] [--for 1h|1d|7d|10m|forever] [--max-opens N] [--domain ZONE] [--quick] [--build-replay] [--json]
+    agora share create [--whole-project | --canvas ID|NAME] [--for 1h|1d|7d|10m|forever] [--max-opens N] [--domain ZONE] [--quick] [--build-replay] [--json]
     agora share list   [--json]
     agora share revoke <id>|--all
-    agora share export [--canvas ID|名字] [-o 文件]     the canvas as a share bundle file
-    agora import <文件|分享链接>                          bring a bundle in as new canvases
+    agora share export [--canvas ID|NAME] [-o FILE]     the canvas as a share bundle file
+    agora import <FILE|SHARE-LINK>                      bring a bundle in as new canvases
 
 ``create`` needs the project's server (``agora up``): it runs the share gateway and the tunnel.
 ``list`` and ``revoke`` work without it (revoke then cleans up DNS and the tunnel itself).
@@ -29,17 +29,18 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from agora_cli.canvas import call, server_url
+from server.i18n import lang, tr
 
 
 def remaining(ms: int | None) -> str:
     if ms is None:
-        return "直到撤销"
+        return tr("直到撤销", "until revoked")
     s = ms // 1000
     if s >= 86400:
-        return f"{s // 86400}天{(s % 86400) // 3600}小时"
+        return tr(f"{s // 86400}天{(s % 86400) // 3600}小时", f"{s // 86400}d {(s % 86400) // 3600}h")
     if s >= 3600:
-        return f"{s // 3600}小时{(s % 3600) // 60}分"
-    return f"{s // 60}分{s % 60}秒"
+        return tr(f"{s // 3600}小时{(s % 3600) // 60}分", f"{s // 3600}h {(s % 3600) // 60}m")
+    return tr(f"{s // 60}分{s % 60}秒", f"{s // 60}m {s % 60}s")
 
 
 def opens(s: dict[str, Any]) -> str:
@@ -50,9 +51,9 @@ def opens(s: dict[str, Any]) -> str:
 
 def table(shares: list[dict[str, Any]]) -> str:
     if not shares:
-        return "没有分享。"
-    rows = [("ID", "状态", "画布", "剩余", "打开", "评论", "地址")]
-    label = {"active": "有效", "revoked": "已撤销", "expired": "已到期"}
+        return tr("没有分享。", "No shares.")
+    rows = [tuple(tr("ID|状态|画布|剩余|打开|评论|地址", "ID|Status|Canvas|Left|Opens|Comments|Address").split("|"))]
+    label = {"active": tr("有效", "active"), "revoked": tr("已撤销", "revoked"), "expired": tr("已到期", "expired")}
     for s in shares:
         left = remaining(s.get("remainingMs")) if s["status"] == "active" else "—"
         rows.append((s["id"], label.get(s["status"], s["status"]), s.get("canvasTitle") or s["canvasId"], left, opens(s), str(s.get("comments", 0)), s["url"]))
@@ -100,8 +101,12 @@ def cmd_import(p, a) -> int:
     except BundleError as e:
         print(f"agora import: {e}")
         return 1
-    replay = "带着搭建过程（在画布的视图菜单里回放）；" if res.get("builds") else ""
-    print(f"已导入 {res['canvases']} 块画布、{res['threads']} 条评论线程（评论是只读的历史）。{replay}画布 id {res['canvasId']}；已开着的页面刷新后在「所有画布」里能看到。")
+    if lang() == "en":
+        replay = "With its build history (replay it from the canvas's view menu). " if res.get("builds") else ""
+        print(f"Imported {res['canvases']} canvases and {res['threads']} comment threads (the comments are read-only history). {replay}Canvas id {res['canvasId']}; pages already open show it under “All canvases” after a reload.")
+    else:
+        replay = "带着搭建过程（在画布的视图菜单里回放）；" if res.get("builds") else ""
+        print(f"已导入 {res['canvases']} 块画布、{res['threads']} 条评论线程（评论是只读的历史）。{replay}画布 id {res['canvasId']}；已开着的页面刷新后在「所有画布」里能看到。")
     return 0
 
 
@@ -118,7 +123,7 @@ def cmd_export(p, a) -> int:
         return 2
     out = Path(a.output or f"{slug(title or cid)}.agora-share.json")
     out.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n")
-    print(f"{out}（{len(data['canvases'])} 块画布）\n分享包一旦给出去就收不回来：拿到文件的人可以随意保存和转发。")
+    print(tr(f"{out}（{len(data['canvases'])} 块画布）\n分享包一旦给出去就收不回来：拿到文件的人可以随意保存和转发。", f"{out} ({len(data['canvases'])} canvases)\nA bundle can't be taken back once handed over: whoever has the file can keep and forward it."))
     return 0
 
 
@@ -138,27 +143,34 @@ def cmd_share(p, a) -> int:
             print(f"agora share: {e}")
             return 2
         if not base:
-            print("agora share: 项目服务没在运行，先 `agora up`（分享网关和隧道由它运行）")
+            print(tr("agora share: 项目服务没在运行，先 `agora up`（分享网关和隧道由它运行）", "agora share: the project server is not running; run `agora up` first (it runs the share gateway and the tunnel)"))
             return 3
         code, res = call(base, "POST", "/api/share", {"scope": "project" if a.whole_project else "canvas", "canvasId": "" if a.whole_project else cid, "ttl": ttl, "maxOpens": a.max_opens, "quick": a.quick, "domain": a.domain, "buildReplay": a.build_replay}, timeout=120)
         if code != 200:
             zones = (res or {}).get("zones")
             if zones:  # several zones and none chosen: list them, the next step is --domain
-                print(f"agora share: 账号里有多个域名，用 --domain 选一个：\n" + "\n".join(f"  {z}" for z in zones) + f"\n例如：agora share create --domain {zones[0]}（选过的会记住；也可以先用 --quick 要一个临时链接）")
+                listed = "\n".join(f"  {z}" for z in zones)
+                print(tr(
+                    f"agora share: 账号里有多个域名，用 --domain 选一个：\n{listed}\n例如：agora share create --domain {zones[0]}（选过的会记住；也可以先用 --quick 要一个临时链接）",
+                    f"agora share: the account has several domains; pick one with --domain:\n{listed}\nFor example: agora share create --domain {zones[0]} (the choice is remembered; or use --quick for a temporary link first)",
+                ))
                 return 1
-            print(f"agora share: 创建失败：{(res or {}).get('detail') or res}")
+            print(tr(f"agora share: 创建失败：{(res or {}).get('detail') or res}", f"agora share: creating failed: {(res or {}).get('detail') or res}"))
             return 1
         if a.json:
             print(json.dumps(res, ensure_ascii=False, indent=2))
         else:
             s = res["share"]
-            until = "直到撤销" if s["expiresAt"] is None else time.strftime("%Y-%m-%d %H:%M", time.localtime(s["expiresAt"] / 1000))
-            limit = f"最多打开 {s['maxOpens']} 次" if s.get("maxOpens") else "不限打开次数"
-            replay = " · 访客可看搭建过程" if s.get("buildReplay") else ""
-            what = "整个项目（含之后新建的画布）" if s.get("scope") == "project" else f"画布「{s.get('canvasTitle') or s['canvasId']}」"
-            print(f"{res['url']}\n{what} · 有效期到 {until} · {limit}{replay} · id {s['id']}\n链接只显示这一次（只存了令牌的哈希）；撤销：agora share revoke {s['id']}")
+            until = tr("直到撤销", "until revoked") if s["expiresAt"] is None else time.strftime("%Y-%m-%d %H:%M", time.localtime(s["expiresAt"] / 1000))
+            limit = tr(f"最多打开 {s['maxOpens']} 次", f"at most {s['maxOpens']} opens") if s.get("maxOpens") else tr("不限打开次数", "unlimited opens")
+            replay = tr(" · 访客可看搭建过程", " · guests can watch the build replay") if s.get("buildReplay") else ""
+            what = tr("整个项目（含之后新建的画布）", "The whole project (including canvases made later)") if s.get("scope") == "project" else tr(f"画布「{s.get('canvasTitle') or s['canvasId']}」", f"Canvas “{s.get('canvasTitle') or s['canvasId']}”")
+            print(tr(
+                f"{res['url']}\n{what} · 有效期到 {until} · {limit}{replay} · id {s['id']}\n链接只显示这一次（只存了令牌的哈希）；撤销：agora share revoke {s['id']}",
+                f"{res['url']}\n{what} · valid {until if s['expiresAt'] is None else 'until ' + until} · {limit}{replay} · id {s['id']}\nThe link is shown only this once (only a hash of its token is kept); to revoke: agora share revoke {s['id']}",
+            ))
             if s.get("quick"):
-                print("临时地址：不需要 Cloudflare 账号；同一时间只有这一个分享；撤销或 agora down 后地址失效。这条隧道不支持实时推送，访客页每几秒自己刷新。")
+                print(tr("临时地址：不需要 Cloudflare 账号；同一时间只有这一个分享；撤销或 agora down 后地址失效。这条隧道不支持实时推送，访客页每几秒自己刷新。", "Temporary address: no Cloudflare account needed; only this one share at a time; it stops working after revoke or agora down. This tunnel has no live push, so the guest page refreshes itself every few seconds."))
         return 0
 
     if a.action == "list":
@@ -190,15 +202,15 @@ def cmd_share(p, a) -> int:
                 try:
                     s = m.revoke(id)
                 except KeyError:
-                    print(f"{id}: 没有这个分享")
+                    print(tr(f"{id}: 没有这个分享", f"{id}: no such share"))
                     failed += 1
                     continue
-            left = "（DNS 记录待清理，下次启动服务时重试）" if s.get("cleanup") else ""
-            print(f"{id}: {'已撤销' if s['status'] == 'revoked' else s['status']} · {s['host']}{left}")
+            left = tr("（DNS 记录待清理，下次启动服务时重试）", " (DNS record still to clean up; retried when the server next starts)") if s.get("cleanup") else ""
+            print(f"{id}: {tr('已撤销', 'revoked') if s['status'] == 'revoked' else s['status']} · {s['host']}{left}")
         if m is not None:
             m.sweep()
         if not ids:
-            print("没有有效的分享。")
+            print(tr("没有有效的分享。", "No active shares."))
         return 1 if failed else 0
     return 2
 

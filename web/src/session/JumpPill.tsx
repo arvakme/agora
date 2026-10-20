@@ -3,6 +3,7 @@
 // pane (not in a text box), scrolls to the end — smoothly, or at once with reduced motion.
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { jumpLabel, observe, type Metrics, type Track } from "./jumpToBottom";
+import { tr } from "../i18n";
 
 const metrics = (el: HTMLElement): Metrics => ({ top: el.scrollTop, height: el.scrollHeight, client: el.clientHeight });
 const reduced = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -104,7 +105,7 @@ export function useJumpToBottom(el: RefObject<HTMLElement | null>, count: number
 export function JumpPill({ show, unread, running, onJump, label }: { show: boolean; unread: number; running?: boolean; onJump: () => void; label?: string }) {
   const text = label ?? jumpLabel(unread, !!running);
   return (
-    <button className="sp-jump" data-show={show || undefined} data-new={unread > 0 || undefined} onClick={onJump} tabIndex={show ? 0 : -1} aria-hidden={!show} aria-label={text} title={label ? undefined : "滚到最新（End）"}>
+    <button className="sp-jump" data-show={show || undefined} data-new={unread > 0 || undefined} onClick={onJump} tabIndex={show ? 0 : -1} aria-hidden={!show} aria-label={text} title={label ? undefined : tr("滚到最新（End）", "Scroll to latest (End)")}>
       {running && <i className="sp-jump-dot" />}
       <span>{text}</span>
     </button>

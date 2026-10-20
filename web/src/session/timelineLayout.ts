@@ -14,13 +14,24 @@
 //     single block) until the newest turns fit; a block that still comes out under MIN_BLOCK px merges
 //     with its thin neighbours of the same colour into one band.
 import { fmtDuration, type Activity, type RecordKind, type Span, type TimelineModel } from "./trajectoryModel";
+import { tr } from "../i18n";
 
 // ——— kind → colour token, shape, lane ———
 /** Stack order of a density bar (top to bottom); also the legend's order. */
 export const CLASSES = ["fail", "user", "message", "read", "write", "run", "agent", "wait", "other"] as const;
 export type Cls = (typeof CLASSES)[number];
 export type Look = { cls: Cls; token: string; fill: "solid" | "hollow"; cross: boolean; lane: 0 | 1 | 2 };
-export const CLASS_NAME: Record<Cls, string> = { user: "用户", message: "助手消息", read: "读文件", write: "改文件", run: "命令", agent: "子代理", wait: "等你", other: "其它工具", fail: "失败" };
+export const CLASS_NAME: Record<Cls, string> = {
+  user: tr("用户", "User"),
+  message: tr("助手消息", "Message"),
+  read: tr("读文件", "Reading"),
+  write: tr("改文件", "Writing"),
+  run: tr("命令", "Command"),
+  agent: tr("子代理", "Sub-agent"),
+  wait: tr("等你", "Waiting for you"),
+  other: tr("其它工具", "Other tool"),
+  fail: tr("失败", "Failed"),
+};
 
 const LOOKS: Record<Cls, Omit<Look, "cross">> = {
   user: { cls: "user", token: "--tl-user", fill: "solid", lane: 0 },
@@ -276,15 +287,15 @@ export function clockMs(at: number): string {
 /** What the 0.5 s hover shows: a headline and lines (exact time, how long, what it was). */
 export function hoverText(t: Target): { title: string; lines: string[] } {
   if (t.kind === "bar")
-    return { title: `第 ${t.turn} 轮 · ${t.n} 条记录`, lines: [clockMs(t.at), t.parts.map((p) => `${CLASS_NAME[p.cls]} ${p.count}`).join(" · ")] };
+    return { title: tr(`第 ${t.turn} 轮 · ${t.n} 条记录`, `Turn ${t.turn} · ${t.n} record${t.n === 1 ? "" : "s"}`), lines: [clockMs(t.at), t.parts.map((p) => `${CLASS_NAME[p.cls]} ${p.count}`).join(" · ")] };
   if (t.kind === "band") {
-    const turns = t.turn === t.turnTo ? `第 ${t.turn} 轮` : `第 ${t.turn}–${t.turnTo} 轮`;
-    return { title: `${t.count} 个「${CLASS_NAME[t.look.cls]}」 · #${t.first}–#${t.last} · ${turns}`, lines: [`${clockMs(t.at)} – ${clockMs(t.atEnd)}`] };
+    const turns = t.turn === t.turnTo ? tr(`第 ${t.turn} 轮`, `turn ${t.turn}`) : tr(`第 ${t.turn}–${t.turnTo} 轮`, `turns ${t.turn}–${t.turnTo}`);
+    return { title: tr(`${t.count} 个「${CLASS_NAME[t.look.cls]}」 · #${t.first}–#${t.last} · ${turns}`, `${t.count} × ${CLASS_NAME[t.look.cls]} · #${t.first}–#${t.last} · ${turns}`), lines: [`${clockMs(t.at)} – ${clockMs(t.atEnd)}`] };
   }
   const s = t.span;
-  const what = t.look.cls === "fail" ? "失败的工具调用" : CLASS_NAME[t.look.cls];
+  const what = t.look.cls === "fail" ? tr("失败的工具调用", "Failed tool call") : CLASS_NAME[t.look.cls];
   const lines = [clockMs(s.at)];
-  if (s.durationMs != null) lines.push(`耗时 ${s.durationMs < 1000 ? `${Math.round(s.durationMs)} ms` : fmtDuration(s.durationMs)}`);
+  if (s.durationMs != null) lines.push(`${tr("耗时", "Took")} ${s.durationMs < 1000 ? `${Math.round(s.durationMs)} ms` : fmtDuration(s.durationMs)}`);
   if (s.label) lines.push(s.label.slice(0, 160));
-  return { title: `#${s.index} · ${what} · 第 ${s.turn} 轮`, lines };
+  return { title: `#${s.index} · ${what} · ${tr(`第 ${s.turn} 轮`, `turn ${s.turn}`)}`, lines };
 }

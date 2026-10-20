@@ -1,3 +1,4 @@
+import { tr } from "../i18n";
 // 「回到最新」 for the session pane (chat and trajectory): when to show the pill, what it counts, when the pane
 // follows new content. Pure — the scroll listener and the pill are ./JumpPill.tsx.
 export type Metrics = { top: number; height: number; client: number };
@@ -31,4 +32,4 @@ export function observe(prev: Track, m: Metrics, count: number): Seen {
 }
 
 /** The pill's words. (A turn still running is a dot beside them.) */
-export const jumpLabel = (unread: number, _running: boolean) => (unread > 0 ? `↓ ${unread} 条新消息` : "回到最新 ↓");
+export const jumpLabel = (unread: number, _running: boolean) => (unread > 0 ? tr(`↓ ${unread} 条新消息`, `↓ ${unread} new message${unread === 1 ? "" : "s"}`) : tr("回到最新 ↓", "Back to latest ↓"));

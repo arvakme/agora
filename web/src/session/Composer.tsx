@@ -10,6 +10,7 @@ import { canvases } from "./ui";
 import { IconSend } from "../app/icons";
 import { selectedIds, selectionElements, selectionLabel } from "./selection";
 import { CHOICES, defaultChoice, whyNoSteer, type SendMode, type SendPlan } from "./steerModel";
+import { tr } from "../i18n";
 
 type Option = { id: string; label: string; hint?: string };
 
@@ -19,14 +20,14 @@ function elementOptions(canvasId: string, q: string): Option[] {
   const view = toModelView(c.api.getSceneElementsIncludingDeleted() as Scene);
   const sel = new Set(Object.keys(c.api.getAppState().selectedElementIds));
   const opts: Option[] = [
-    ...view.nodes.map((n) => ({ id: n.id, label: n.label || n.id, hint: n.type === "library" ? `素材 · ${n.component}` : n.type })),
-    ...view.arrows.filter((a) => a.label).map((a) => ({ id: a.id, label: a.label!, hint: "箭头" })),
-    ...view.frames.map((f) => ({ id: f.id, label: f.name, hint: "分组" })),
+    ...view.nodes.map((n) => ({ id: n.id, label: n.label || n.id, hint: n.type === "library" ? tr(`素材 · ${n.component}`, `Library · ${n.component}`) : n.type })),
+    ...view.arrows.filter((a) => a.label).map((a) => ({ id: a.id, label: a.label!, hint: tr("箭头", "arrow") })),
+    ...view.frames.map((f) => ({ id: f.id, label: f.name, hint: tr("分组", "group") })),
   ];
   const needle = q.toLowerCase();
   return opts
     .filter((o) => !needle || o.label.toLowerCase().includes(needle) || o.id.includes(needle))
-    .map((o) => (sel.has(o.id) ? { ...o, hint: `选区 · ${o.hint}` } : o))
+    .map((o) => (sel.has(o.id) ? { ...o, hint: tr(`选区 · ${o.hint}`, `Selection · ${o.hint}`) } : o))
     .sort((a, b) => Number(sel.has(b.id)) - Number(sel.has(a.id)))
     .slice(0, 8);
 }
@@ -88,7 +89,7 @@ export function Composer({ canvasId, canvasTitle, agentName, onSend, initial, wo
       <AnimatePresence>
         {pick && options.length > 0 && (
           <motion.ul className="menu sp-pick" role="listbox" initial={{ opacity: 0, y: 6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 4 }} transition={SPRING}>
-            <li className="sp-pick-head">引用「{canvasTitle ?? "画布"}」里的元素</li>
+            <li className="sp-pick-head">{canvasTitle ? tr(`引用「${canvasTitle}」里的元素`, `Reference elements in “${canvasTitle}”`) : tr("引用「画布」里的元素", "Reference canvas elements")}</li>
             {options.map((o, i) => (
               <li key={o.id} role="option" aria-selected={i === pick.i} data-on={i === pick.i} onPointerDown={(e) => (e.preventDefault(), choose(o))}>
                 <span>#{o.label}</span>
@@ -103,7 +104,7 @@ export function Composer({ canvasId, canvasTitle, agentName, onSend, initial, wo
           ref={ta}
           value={text}
           rows={2}
-          placeholder={working ? (plan?.kind === "steer" ? `${agentName} 在干活，你的话会直接插进这一轮` : plan?.kind === "choose" ? `${agentName} 在干活，发出前选一下怎么说` : `${agentName} 在干活，新消息会排在这一轮之后`) : `给 ${agentName} 发消息…  # 引用画布元素`}
+          placeholder={working ? (plan?.kind === "steer" ? tr(`${agentName} 在干活，你的话会直接插进这一轮`, `${agentName} is working; your message goes straight into this turn`) : plan?.kind === "choose" ? tr(`${agentName} 在干活，发出前选一下怎么说`, `${agentName} is working; choose how to send before you send`) : tr(`${agentName} 在干活，新消息会排在这一轮之后`, `${agentName} is working; new messages queue after this turn`)) : tr(`给 ${agentName} 发消息…  # 引用画布元素`, `Message ${agentName}…  # to reference canvas elements`)}
           onChange={(e) => update(e.target.value, e.target.selectionStart)}
           onKeyDown={(e) => {
             e.stopPropagation();
@@ -121,7 +122,7 @@ export function Composer({ canvasId, canvasTitle, agentName, onSend, initial, wo
           {refs.map((r) => <span key={r.id} className="chip"><span>#{r.label}</span></span>)}
         </span>
         {plan?.kind === "choose" && (
-          <fieldset className="sp-ways" aria-label="这一轮还在跑，你的话怎么说">
+          <fieldset className="sp-ways" aria-label={tr("这一轮还在跑，你的话怎么说", "This turn is still running: how should your message go?")}>
             <legend>{whyNoSteer(agentName, plan.reason)}</legend>
             {CHOICES.map((c) => (
               <label key={c.mode}>
@@ -131,15 +132,15 @@ export function Composer({ canvasId, canvasTitle, agentName, onSend, initial, wo
             ))}
           </fieldset>
         )}
-        {err && <p className="sp-warn" role="alert">没有发出去：{err}</p>}
+        {err && <p className="sp-warn" role="alert">{tr("没有发出去：", "Not sent: ")}{err}</p>}
       </div>
       {working && onStop && (
-        <button className="sp-stop" onClick={onStop} title="打断这一轮">
+        <button className="sp-stop" onClick={onStop} title={tr("打断这一轮", "Interrupt this turn")}>
           <i aria-hidden />
-          停止
+          {tr("停止", "Stop")}
         </button>
       )}
-      <button className="send sp-send" onClick={send} disabled={!text.trim()} aria-label="发送"><IconSend size={14} /></button>
+      <button className="send sp-send" onClick={send} disabled={!text.trim()} aria-label={tr("发送", "Send")}><IconSend size={14} /></button>
     </div>
   );
 }

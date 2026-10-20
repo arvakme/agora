@@ -40,6 +40,7 @@ type State = {
 
 import { afterProbe, GuestEmpty, type Probe, type Step } from "./scope";
 import { GuestTabs, replayRoot, type GuestTab } from "./tabs";
+import { tr } from "../i18n";
 
 const NAME_KEY = "agora.guestName";
 const readName = () => {
@@ -61,7 +62,7 @@ export async function loadGuest(canvas?: string): Promise<State> {
   const r = await fetch(`/api/guest/state${canvas ? `?canvas=${encodeURIComponent(canvas)}` : ""}`, { credentials: "same-origin" });
   if (r.status === 403) throw new Ended();
   if (r.status === 404) throw new Empty();
-  if (!r.ok) throw new Error(`加载失败（${r.status}）`);
+  if (!r.ok) throw new Error(tr(`加载失败（${r.status}）`, `Failed to load (${r.status})`));
   return (await r.json()) as State;
 }
 
@@ -83,8 +84,8 @@ export function GuestEnded() {
     <div className="guest-ended">
       <main>
         <IconLock size={56} />
-        <h1>这个分享链接已失效</h1>
-        <p>它可能已经到期或被作者撤销。需要继续查看的话，请向作者要一个新链接。</p>
+        <h1>{tr("这个分享链接已失效", "This share link no longer works")}</h1>
+        <p>{tr("它可能已经到期或被作者撤销。需要继续查看的话，请向作者要一个新链接。", "It may have expired or been revoked by its author. To keep viewing, ask the author for a new link.")}</p>
       </main>
     </div>
   );
@@ -108,7 +109,7 @@ export function GuestApp({ initial }: { initial: State }) {
   const waiting = useRef<(() => void)[]>([]);
   const me = initial.me?.id ?? "guest:?";
 
-  useEffect(() => setIdentity({ id: me, name: name || "访客" }), [me, name]);
+  useEffect(() => setIdentity({ id: me, name: name || tr("访客", "Guest") }), [me, name]);
 
   // The canvas on screen (the shared one, or one nested below it) and one thread store per canvas.
   const [cur, setCur] = useState<State>(initial);
@@ -126,8 +127,8 @@ export function GuestApp({ initial }: { initial: State }) {
           body: JSON.stringify({ ...body, canvasId, name: nameRef.current }),
         });
         if (r.status === 403) return lost();
-        if (r.status === 429) return flash("发得太快了，稍等一会儿再试");
-        if (!r.ok) return flash(`没有发出去：${((await r.json().catch(() => ({}))) as { error?: string }).error ?? r.status}`);
+        if (r.status === 429) return flash(tr("发得太快了，稍等一会儿再试", "Too fast. Wait a moment and try again"));
+        if (!r.ok) return flash(tr("没有发出去：", "Couldn’t send: ") + (((await r.json().catch(() => ({}))) as { error?: string }).error ?? r.status));
       };
       if (nameRef.current.trim()) return send();
       waiting.current.push(() => void send());
@@ -163,7 +164,7 @@ export function GuestApp({ initial }: { initial: State }) {
       try {
         storeFor(await loadGuest(root));
       } catch {
-        return flash("打不开这张画布的搭建过程");
+        return flash(tr("打不开这张画布的搭建过程", "Couldn’t open this canvas’s build replay"));
       }
     }
     buildReplay.open(root);
@@ -183,7 +184,7 @@ export function GuestApp({ initial }: { initial: State }) {
       if (push) history.pushState({ canvas: id }, "", urlFor(id));
     } catch (e) {
       if (e instanceof Ended) lost();
-      else flash("打不开这一层");
+      else flash(tr("打不开这一层", "Couldn’t open this level"));
     }
   };
   const project = initial.share.scope === "project";
@@ -202,7 +203,7 @@ export function GuestApp({ initial }: { initial: State }) {
   const act = (step: Step) => {
     if (step === "ended") setEnded(true);
     else if (step === "empty") setEmpty(true);
-    else if (step === "home") void goHome("这张画布已经被作者删除了");
+    else if (step === "home") void goHome(tr("这张画布已经被作者删除了", "The author deleted this canvas"));
   };
   /** A request was refused. In a project share the canvas may just be one the owner deleted: if the link still opens, go back to where it opens; otherwise the share has ended. */
   const lost = () => act(afterProbe({ project, probe: "ended", showingEmpty: false }));
@@ -333,21 +334,21 @@ export function GuestApp({ initial }: { initial: State }) {
       <div className="app guest" data-mode={mode}>
         <header className="guest-top">
           <span className="brand"><IconWorkspace size={18} />Agora</span>
-          <span className="guest-title" title={cur.canvas.title}>{empty ? initial.project.name : cur.canvas.title || "画布"}</span>
+          <span className="guest-title" title={cur.canvas.title}>{empty ? initial.project.name : cur.canvas.title || tr("画布", "Canvas")}</span>
           <span className="guest-project">{initial.project.name}</span>
           <span className="guest-gap" />
           {replayOn && (
-            <button className="btn quiet" onClick={() => void openReplay()} title="看这张图从空白到现在是怎么一步步搭起来的">
-              <IconPlay size={16} /><span>看搭建过程</span>
+            <button className="btn quiet" onClick={() => void openReplay()} aria-label={tr("看搭建过程", "Watch the build")} title={tr("看这张图从空白到现在是怎么一步步搭起来的", "See how this diagram was built, step by step from a blank canvas")}>
+              <IconPlay size={16} /><span>{tr("看搭建过程", "Watch the build")}</span>
             </button>
           )}
-          <span className="guest-note"><IconEye size={16} />只能查看和评论{expires != null && <> · <Remaining at={expires} /></>}</span>
-          <button className="btn quiet" onClick={() => setImporting(true)} title="把这块画布和评论下载成文件，导入到你自己的 Agora">
-            <IconFile size={16} /><span>导入到我的 Agora</span>
+          <span className="guest-note"><IconEye size={16} />{tr("只能查看和评论", "View and comment only")}{expires != null && <> · <Remaining at={expires} /></>}</span>
+          <button className="btn quiet" onClick={() => setImporting(true)} aria-label={tr("导入到我的 Agora", "Import to my Agora")} title={tr("把这块画布和评论下载成文件，导入到你自己的 Agora", "Download this canvas and its comments as a file to import into your own Agora")}>
+            <IconFile size={16} /><span>{tr("导入到我的 Agora", "Import to my Agora")}</span>
           </button>
           <ThemeButton />
-          <button className="btn quiet guest-name" onClick={() => setAsking("needed")} title="修改显示名">
-            <IconUser size={16} /><span>{name || "填写名字"}</span>
+          <button className="btn quiet guest-name" onClick={() => setAsking("needed")} title={tr("修改显示名", "Change display name")}>
+            <IconUser size={16} /><span>{name || tr("填写名字", "Enter your name")}</span>
           </button>
         </header>
         {!empty && cur.share.tabs && <GuestTabs tabs={cur.share.tabs} path={cur.path ?? []} current={cur.canvas.id} canvases={cur.canvases ?? {}} onGo={(id) => void goTo(id)} />}
@@ -367,14 +368,14 @@ export function GuestApp({ initial }: { initial: State }) {
             onEnterChild={(id) => void goTo(id)}
             top={<Breadcrumb path={cur.path ?? []} current={cur.canvas.id} onGo={(id) => void goTo(id)} />}
             overlay={(view, chrome) => (
-              <ChildMarkers view={view} chrome={chrome} canvasId={cur.canvas.id} info={(k) => (cur.canvases?.[k] ? { title: cur.canvases[k].title || "子图", open: cur.canvases[k].open } : null)} onEnter={(id) => void goTo(id)} />
+              <ChildMarkers view={view} chrome={chrome} canvasId={cur.canvas.id} info={(k) => (cur.canvases?.[k] ? { title: cur.canvases[k].title || tr("子图", "Sub-diagram"), open: cur.canvases[k].open } : null)} onEnter={(id) => void goTo(id)} />
             )}
           />
         </div>}
         {!empty && <GuestDock mode={mode} setMode={(m) => (m === "comment" ? startComment() : setMode(m))} drawer={drawer} toggleDrawer={() => setDrawer((d) => !d)} store={store} />}
         {mode === "comment" && (
           <motion.div className="mode-hint" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
-            <IconComment size={14} />点一个元素钉评论 · Esc 退出
+            <IconComment size={14} />{tr("点一个元素钉评论 · Esc 退出", "Click an element to pin a comment · Esc to exit")}
           </motion.div>
         )}
         {toast && <div className="toast" role="status"><span>{toast}</span></div>}
@@ -392,30 +393,30 @@ function Remaining({ at }: { at: number }) {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
-  return <span className="guest-left">{fmtLeft(at - now)}后失效</span>;
+  return <span className="guest-left">{tr(`${fmtLeft(at - now)}后失效`, `Expires in ${fmtLeft(at - now)}`)}</span>;
 }
 
 export function fmtLeft(ms: number) {
   const s = Math.max(0, Math.floor(ms / 1000));
-  if (s >= 86400) return `${Math.floor(s / 86400)} 天 ${Math.floor((s % 86400) / 3600)} 小时`;
-  if (s >= 3600) return `${Math.floor(s / 3600)} 小时 ${Math.floor((s % 3600) / 60)} 分`;
-  if (s >= 60) return `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
-  return `${s} 秒`;
+  if (s >= 86400) return tr(`${Math.floor(s / 86400)} 天 ${Math.floor((s % 86400) / 3600)} 小时`, `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`);
+  if (s >= 3600) return tr(`${Math.floor(s / 3600)} 小时 ${Math.floor((s % 3600) / 60)} 分`, `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`);
+  if (s >= 60) return tr(`${Math.floor(s / 60)} 分 ${s % 60} 秒`, `${Math.floor(s / 60)}m ${s % 60}s`);
+  return tr(`${s} 秒`, `${s}s`);
 }
 
 function GuestDock({ mode, setMode, drawer, toggleDrawer, store }: { mode: "browse" | "comment"; setMode: (m: "browse" | "comment") => void; drawer: boolean; toggleDrawer: () => void; store: ThreadStore }) {
   const { threads } = useThreads(store);
   const open = threads.filter((t) => !t.resolved).length;
   return (
-    <div className="dock" role="toolbar" aria-label="评论工具">
+    <div className="dock" role="toolbar" aria-label={tr("评论工具", "Comment tools")}>
       <div className="dock-tools">
-        {([["browse", IconPointer, "浏览 · V"], ["comment", IconComment, "评论 · C"]] as const).map(([m, Icon, label]) => (
+        {([["browse", IconPointer, tr("浏览 · V", "Browse · V")], ["comment", IconComment, tr("评论 · C", "Comment · C")]] as const).map(([m, Icon, label]) => (
           <button key={m} className="dock-btn" data-on={mode === m} aria-pressed={mode === m} onClick={() => setMode(m)} aria-label={label} title={label}>
             {mode === m && <motion.span layoutId="dock-on" className="dock-on" transition={SPRING} />}
             <Icon size={18} />
           </button>
         ))}
-        <button className="dock-btn" data-on={drawer} aria-pressed={drawer} onClick={toggleDrawer} aria-label={`所有评论 · ${open} 条进行中`} title="所有评论">
+        <button className="dock-btn" data-on={drawer} aria-pressed={drawer} onClick={toggleDrawer} aria-label={tr(`所有评论 · ${open} 条进行中`, `All comments · ${open} open`)} title={tr("所有评论", "All comments")}>
           {drawer && <motion.span layoutId="dock-drawer" className="dock-on" transition={SPRING} />}
           <IconList size={18} />
           {open > 0 && <em className="dock-badge">{open}</em>}
@@ -434,29 +435,33 @@ function NameDialog({ initial, welcome, title, project, onOk, onSkip }: { initia
       <motion.form
         className="guest-dialog"
         role="dialog"
-        aria-label="你的名字"
+        aria-label={tr("你的名字", "Your name")}
         initial={{ opacity: 0, y: 8, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={SPRING}
         onSubmit={(e) => (e.preventDefault(), onOk(v))}
       >
         {welcome && <IconEye size={48} />}
-        <h2>{welcome ? `你正在查看「${title || "画布"}」` : "评论前留个名字"}</h2>
-        <p>{welcome ? `可以浏览${project ? "项目里的画布" : "这块画布"}，也可以在元素上钉评论、或评论整张图；作者会看到并回复。不能修改画图。` : "名字会显示在你的评论旁边，作者靠它认出你。"}</p>
+        <h2>{welcome ? tr(`你正在查看「${title || "画布"}」`, `You’re viewing “${title || "Canvas"}”`) : tr("评论前留个名字", "Leave a name before commenting")}</h2>
+        <p>
+          {welcome
+            ? tr(`可以浏览${project ? "项目里的画布" : "这块画布"}，也可以在元素上钉评论、或评论整张图；作者会看到并回复。不能修改画图。`, `You can browse ${project ? "the project’s canvases" : "this canvas"}, pin comments on elements, or comment on the whole canvas; the author will see them and reply. You can’t edit the diagram.`)
+            : tr("名字会显示在你的评论旁边，作者靠它认出你。", "Your name shows next to your comments so the author knows who you are.")}
+        </p>
         <label>
-          <span>显示名</span>
-          <input ref={ref} value={v} maxLength={40} placeholder="例如：小王" onChange={(e) => setV(e.target.value)} />
+          <span>{tr("显示名", "Display name")}</span>
+          <input ref={ref} value={v} maxLength={40} placeholder={tr("例如：小王", "e.g. Alex")} onChange={(e) => setV(e.target.value)} />
         </label>
         <div className="guest-dialog-actions">
-          <button type="button" className="btn quiet" onClick={onSkip}>{welcome ? "先只看" : "取消"}</button>
-          <button type="submit" className="btn primary" disabled={!v.trim()}>{welcome ? "开始" : "好"}</button>
+          <button type="button" className="btn quiet" onClick={onSkip}>{welcome ? tr("先只看", "Just look for now") : tr("取消", "Cancel")}</button>
+          <button type="submit" className="btn primary" disabled={!v.trim()}>{welcome ? tr("开始", "Start") : tr("好", "OK")}</button>
         </div>
       </motion.form>
     </div>
   );
 }
 
-const IMPORT_CMD = "agora import <下载的文件>";
+const IMPORT_CMD = tr("agora import <下载的文件>", "agora import <downloaded file>");
 
 /** How a guest takes the share home: the bundle file, and the command that brings it into their own Agora. */
 function ImportDialog({ onClose }: { onClose: () => void }) {
@@ -469,23 +474,23 @@ function ImportDialog({ onClose }: { onClose: () => void }) {
   };
   return (
     <div className="guest-scrim" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="guest-dialog" role="dialog" aria-label="导入到我的 Agora">
-        <h2>导入到我的 Agora</h2>
-        <p>下载分享包，再在你自己的项目里运行下面的命令：画布和子图会作为新画布导入，评论作为只读的历史保留。</p>
+      <div className="guest-dialog" role="dialog" aria-label={tr("导入到我的 Agora", "Import to my Agora")}>
+        <h2>{tr("导入到我的 Agora", "Import to my Agora")}</h2>
+        <p>{tr("下载分享包，再在你自己的项目里运行下面的命令：画布和子图会作为新画布导入，评论作为只读的历史保留。", "Download the share bundle, then run the command below in your own project: the canvas and its sub-diagrams are imported as new canvases, and the comments are kept as read-only history.")}</p>
         <a className="btn primary" href="/api/guest/bundle" download>
-          <IconFile size={16} />下载分享包
+          <IconFile size={16} />{tr("下载分享包", "Download share bundle")}
         </a>
         <div className="guest-cmd">
           <code>{IMPORT_CMD}</code>
-          <button className="btn quiet" onClick={copy} aria-label="复制命令">
-            <IconCopy size={16} />{copied ? "已复制" : "复制"}
+          <button className="btn quiet" onClick={copy} aria-label={tr("复制命令", "Copy command")}>
+            <IconCopy size={16} />{copied ? tr("已复制", "Copied") : tr("复制", "Copy")}
           </button>
         </div>
         <p className="guest-warn" role="note">
-          <IconLock size={14} />分享包一旦下载就收不回来：撤销分享只让链接失效，已经保存的文件不受影响。
+          <IconLock size={14} />{tr("分享包一旦下载就收不回来：撤销分享只让链接失效，已经保存的文件不受影响。", "A downloaded bundle can’t be taken back: revoking the share only stops the link, files already saved are not affected.")}
         </p>
         <div className="guest-dialog-actions">
-          <button className="btn quiet" onClick={onClose}>关闭</button>
+          <button className="btn quiet" onClick={onClose}>{tr("关闭", "Close")}</button>
         </div>
       </div>
     </div>

@@ -8,6 +8,7 @@ import { AgentAvatar } from "../session/AgentAvatar";
 import type { AgentKind } from "../session/agents";
 import type { StatusLine } from "../session/floatStatus";
 import { useDragGuard } from "./dragGuard";
+import { tr } from "../i18n";
 import {
   applySnap, type Bar, type Box, cycleWidth, dragBy, floatFocus, type Handle, HANDLES, keyMove, loadBar, loadShell, mayDrag, RAIL_W, resizeBar, resizeBy, saveBar, saveShell, shouldDock, type Shell, type ShellName,
 } from "./floatShell";
@@ -223,7 +224,7 @@ function SessionMenu({ items, active, onPick, onNew }: { items: SessionItem[]; a
   const cur = items.find((i) => i.id === active) ?? items[0];
   return (
     <div className="float-pick" data-nodrag>
-      <button ref={btn} className="float-pick-btn" aria-haspopup="menu" aria-expanded={open} title={items.length > 1 ? "切换会话" : cur?.title} onClick={() => setAt(open ? null : (() => { const r = btn.current!.getBoundingClientRect(); return { x: r.left, y: r.bottom + 4 }; })())}>
+      <button ref={btn} className="float-pick-btn" aria-haspopup="menu" aria-expanded={open} title={items.length > 1 ? tr("切换会话", "Switch session") : cur?.title} onClick={() => setAt(open ? null : (() => { const r = btn.current!.getBoundingClientRect(); return { x: r.left, y: r.bottom + 4 }; })())}>
         {cur?.mark}
         <span className="float-pick-name">{cur?.title}</span>
         <Svg><path d="M7 10l5 5 5-5" /></Svg>
@@ -238,7 +239,7 @@ function SessionMenu({ items, active, onPick, onNew }: { items: SessionItem[]; a
             </button>
           ))}
           <hr />
-          <button role="menuitem" onClick={() => (onNew(), setAt(null))}>新建会话</button>
+          <button role="menuitem" onClick={() => (onNew(), setAt(null))}>{tr("新建会话", "New session")}</button>
         </div>,
         document.body,
       )}
@@ -270,18 +271,18 @@ export function FloatHead({ variant, items, active, status, onPick, onNew, onDoc
   head?: Record<string, unknown>;
 }) {
   return (
-    <div className="float-head" data-variant={variant} tabIndex={0} aria-label="会话面板标题条：拖动移动，双击换宽度，Alt+方向键移动，Alt+Shift+方向键调大小，Esc 收起" title={variant === "card" ? "拖动可以挪位置 · 双击换宽度 · Alt+方向键移动 · Esc 收起" : undefined} {...head}>
+    <div className="float-head" data-variant={variant} tabIndex={0} aria-label={tr("会话面板标题条：拖动移动，双击换宽度，Alt+方向键移动，Alt+Shift+方向键调大小，Esc 收起", "Session panel title bar: drag to move, double-click to change width, Alt+arrows to move, Alt+Shift+arrows to resize, Esc to fold")} title={variant === "card" ? tr("拖动可以挪位置 · 双击换宽度 · Alt+方向键移动 · Esc 收起", "Drag to move · double-click to change width · Alt+arrows to move · Esc to fold") : undefined} {...head}>
       <span className="float-grip-icon" aria-hidden><GripIcon /></span>
       <SessionMenu items={items} active={active} onPick={onPick} onNew={onNew} />
       <Status s={status} />
       <span className="float-spacer" />
       {onShrink && (
-        <button className="float-btn" data-nodrag onClick={onShrink} aria-label="落回一条" title="落回一条（Esc）">
+        <button className="float-btn" data-nodrag onClick={onShrink} aria-label={tr("落回一条", "Back to the bar")} title={tr("落回一条（Esc）", "Back to the bar (Esc)")}>
           <Svg><path d="M7 10l5 5 5-5" /></Svg>
         </button>
       )}
-      <button className="float-btn" data-nodrag onClick={onDock} aria-label="停靠到右边" title="停靠到右边（一栏）"><DockIcon /></button>
-      <button className="float-btn" data-nodrag onClick={onFold} aria-label="收起" title="收起（Esc）"><FoldIcon /></button>
+      <button className="float-btn" data-nodrag onClick={onDock} aria-label={tr("停靠到右边", "Dock on the right")} title={tr("停靠到右边（一栏）", "Dock on the right (a column)")}><DockIcon /></button>
+      <button className="float-btn" data-nodrag onClick={onFold} aria-label={tr("收起", "Fold")} title={tr("收起（Esc）", "Fold (Esc)")}><FoldIcon /></button>
     </div>
   );
 }
@@ -294,14 +295,14 @@ export function BarStrip({ kind, status, said, onExpand, onFold }: { kind?: Agen
         <Avatar kind={kind} size={32} />
         <span className="bar-text">
           <Status s={status} />
-          <span className="bar-said" title={said}>{said || "还没有对话"}</span>
+          <span className="bar-said" title={said}>{said || tr("还没有对话", "No conversation yet")}</span>
         </span>
       </span>
       <span className="bar-right">
-        <button className="float-btn" onClick={onExpand} aria-label="展开成半屏" title="展开成半屏">
+        <button className="float-btn" onClick={onExpand} aria-label={tr("展开成半屏", "Expand to half screen")} title={tr("展开成半屏", "Expand to half screen")}>
           <Svg><path d="M7 14l5-5 5 5" /></Svg>
         </button>
-        <button className="float-btn" onClick={onFold} aria-label="收起成药丸" title="收起（Esc）"><FoldIcon /></button>
+        <button className="float-btn" onClick={onFold} aria-label={tr("收起成药丸", "Fold into a pill")} title={tr("收起（Esc）", "Fold (Esc)")}><FoldIcon /></button>
       </span>
     </div>
   );

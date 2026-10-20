@@ -40,6 +40,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from server.i18n import tr
+
 # Pi's EXTENDED_THINKING_LEVELS; used only to order and clamp, never to offer a level on its own.
 PI_ORDER = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
 
@@ -453,14 +455,17 @@ def model_refusal(entry: dict[str, Any], model: str) -> str | None:
         return None
     name = entry.get("name") or entry.get("kind") or "Agent"
     shown = entry.get("models") or []
-    choices = "、".join(shown[:8]) + (f" 等 {len(shown)} 个" if len(shown) > 8 else "") if shown else "（没有可选模型）"
+    if shown:
+        choices = tr("、".join(shown[:8]) + (f" 等 {len(shown)} 个" if len(shown) > 8 else ""), ", ".join(shown[:8]) + (f" ({len(shown)} in all)" if len(shown) > 8 else ""))
+    else:
+        choices = tr("（没有可选模型）", "(no models to choose from)")
     scope = entry.get("scope") or {}
     if scope.get("kind") == "enabledModels":
-        where = scope.get("source") or "Pi 设置"
-        return f"{model} 不在 Pi 的 enabledModels 范围里（{where}）；可选：{choices}"
+        where = scope.get("source") or tr("Pi 设置", "Pi settings")
+        return tr(f"{model} 不在 Pi 的 enabledModels 范围里（{where}）；可选：{choices}", f"{model} is not in Pi's enabledModels ({where}); choose from: {choices}")
     if entry.get("kind") == "pi":
-        return f"Pi 没有可用的模型 {model}（未配置凭据、不存在或不适合交互会话）；可选：{choices}"
-    return f"{name} 的模型列表里没有 {model}；可选：{choices}"
+        return tr(f"Pi 没有可用的模型 {model}（未配置凭据、不存在或不适合交互会话）；可选：{choices}", f"Pi has no usable model {model} (no credentials, no such model, or not fit for an interactive session); choose from: {choices}")
+    return tr(f"{name} 的模型列表里没有 {model}；可选：{choices}", f"{model} is not in {name}'s model list; choose from: {choices}")
 
 
 def efforts_for(entry: dict[str, Any], model: str) -> list[str] | None:

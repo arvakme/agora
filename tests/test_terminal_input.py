@@ -543,6 +543,19 @@ def test_child_env_leaves_out_seedmux_variables(monkeypatch):
     assert not [k for k in env if k.startswith("SEEDMUX_")] and env["AGORA_SESSION"] == "s-1" and env["CLAUDE_CODE_USE_BEDROCK"] == "1"
 
 
+def test_child_env_carries_the_pages_language(monkeypatch):
+    from server import i18n
+    from server.canvas.agents import child_env
+
+    monkeypatch.setenv("LANG", "zh_CN.UTF-8")
+    i18n.remember("en")  # the owner's page is in English: the agent's `agora …` output follows it, not the machine
+    try:
+        assert child_env()["AGORA_LANG"] == "en"
+    finally:
+        i18n.remember(None)
+    assert child_env()["AGORA_LANG"] == "zh"
+
+
 async def test_a_headless_turn_is_started_without_seedmux_variables(monkeypatch, tmp_path):
     from server.canvas import agents
     from server.canvas.runner import ExecOptions, RunRequest

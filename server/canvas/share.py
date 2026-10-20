@@ -38,6 +38,7 @@ from typing import Any, Protocol
 from server.canvas import buildlog, nested
 from server.canvas.local import state_dir
 from server.canvas.project import ID_RE, ProjectStore, dump_json
+from server.i18n import tr
 
 SHARES_DIR = "shares"
 SCOPE_CANVAS = "canvas"
@@ -550,7 +551,7 @@ def import_bundle(store: ProjectStore, data: Any) -> dict[str, Any]:
     root = manifest.get("root")
     if root not in src:
         raise BundleError("the manifest's root canvas is not in the bundle")
-    project = str(manifest.get("project") or "另一个项目")[:60]
+    project = str(manifest.get("project") or tr("另一个项目", "another project"))[:60]
     ids = {old: f"c-{secrets.token_hex(4)}" for old in src}
     total = 0
     planned: dict[str, tuple[str, dict[str, Any], dict[str, Any] | None]] = {}
@@ -567,7 +568,7 @@ def import_bundle(store: ProjectStore, data: Any) -> dict[str, Any]:
         els = [x for x in (_import_element(e, ids) for e in c["elements"]) if x is not None]
         threads, n = _import_threads(c.get("threads"), {e["id"] for e in els}, project)
         n_threads += n
-        title = f"来自 {project} · {str(c.get('title') or '画布')[:MAX_TITLE]}"
+        title = tr(f"来自 {project} · {str(c.get('title') or '画布')[:MAX_TITLE]}", f"From {project} · {str(c.get('title') or 'Canvas')[:MAX_TITLE]}")
         planned[old] = (title, {"elements": els}, {"seq": len(threads), "threads": threads} if threads else None)
         if c.get("build") is not None:
             builds[old] = _import_build(c["build"], ids)
@@ -979,7 +980,7 @@ class ShareManager:
             if share is None:
                 raise KeyError(id)
             if not share.active(self.now_ms()):
-                raise ValueError("这条分享已经结束，不能再改")
+                raise ValueError(tr("这条分享已经结束，不能再改", "This share has ended and can no longer be changed"))
             with self.lock:
                 share.buildReplay = bool(on)
                 self._save()

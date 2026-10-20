@@ -113,9 +113,9 @@ const startAt = await page.evaluate(async ({ library, items, L, N }) => {
       ];
   // a fresh project opens a 新会话 pane beside the canvas once there is a session: closed, so the canvas has the window
   await new Promise((r) => setTimeout(r, 600));
-  document.querySelector<HTMLButtonElement>('button.wm-tab-close[aria-label^="关闭 新会话"], button.wm-tab-close[aria-label^="Close New session" i]')?.click();
+  document.querySelector<HTMLButtonElement>('.wm-tab[data-kind="session"] button.wm-tab-close')?.click(); // by kind, not by its (translated) name
   await new Promise((r) => setTimeout(r, 600));
-  console.log("pane closed:", ![...document.querySelectorAll("*")].some((e) => e.children.length === 0 && e.textContent?.trim() === "新会话" || /^new session$/i.test(e.textContent?.trim() ?? "")));
+  console.log("pane closed:", !document.querySelector('.wm-tab[data-kind="session"]'));
   // the components' grid in view
   if (library) (w.__agora.handles.get(canvasId) as { api: { updateScene(x: unknown): void } }).api.updateScene({ appState: { scrollX: 30, scrollY: 40, zoom: { value: 0.82 } } });
   await new Promise((r) => setTimeout(r, 1200));

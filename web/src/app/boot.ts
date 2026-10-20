@@ -6,6 +6,7 @@ import type { FileError, LocalChange, ProjectInfo } from "../persist";
 import { sessions } from "../session/store";
 import { group, moveTab, type Node } from "../workspace/layout";
 import { migrateDocs, recoverWorkspace, sessionDocId, type Doc } from "../workspace/model";
+import { tr } from "../i18n";
 
 export type WorkspaceState = { v?: 2; docs: Doc[]; root: Node; focused: string };
 export type Boot = {
@@ -30,7 +31,7 @@ export const FIRST_SCENE: readonly El[] = [];
 function defaults(projectName?: string): WorkspaceState {
   const s = sessions.create("c1", undefined, { draft: true });
   const p = sessionDocId(s.id);
-  const docs: Doc[] = [{ id: "c1", kind: "canvas", title: projectName?.trim() || "画布" }, { id: p, kind: "session", sessionId: s.id, title: "" }];
+  const docs: Doc[] = [{ id: "c1", kind: "canvas", title: projectName?.trim() || tr("画布", "Canvas") }, { id: p, kind: "session", sessionId: s.id, title: "" }];
   const g = group(["c1", p]);
   const root = moveTab(g, p, g.id, "right");
   return { v: 2, docs, root: root.kind === "split" ? { ...root, sizes: [0.6, 0.4] } : root, focused: "c1" };

@@ -16,6 +16,7 @@ import { commentMessage } from "../comments/handoff";
 import { runningThreads } from "../comments/handoffState";
 import { threadSessionName } from "../comments/mention";
 import { threadSessionTitles } from "../comments/sessionTitles";
+import { tr } from "../i18n";
 
 export { sceneIndex } from "../session/runTurn";
 
@@ -30,7 +31,7 @@ export async function handToAgent(api: ExcalidrawImperativeAPI, threads: ThreadS
       sessionId: session.id,
       canvasId: threads.canvasId,
       request: threadRequest(thread),
-      origin: { kind: "comment", threadId, threadN: thread.n, anchor: names.length > 1 ? `${names[0]} 等 ${names.length} 个` : names[0] ?? "" },
+      origin: { kind: "comment", threadId, threadN: thread.n, anchor: names.length > 1 ? tr(`${names[0]} 等 ${names.length} 个`, `${names[0]} + ${names.length - 1} more`) : names[0] ?? "" },
       text: thread.messages.filter((m) => m.author === "you").at(-1)?.text ?? "",
     });
     const turn = sessions.get().turns[o.turnId];
@@ -87,7 +88,7 @@ export async function handOff(api: ExcalidrawImperativeAPI, threads: ThreadStore
   const thread = threads.thread(threadId)!;
   const canvasId = threads.canvasId;
   const anchors = resolveAnchor(thread.anchor, byId(api.getSceneElementsIncludingDeleted())).names.map((n) => ({ id: n.id, name: n.name }));
-  const anchor = anchors.length > 1 ? `${anchors[0].name} 等 ${anchors.length} 个` : anchors[0]?.name ?? "";
+  const anchor = anchors.length > 1 ? tr(`${anchors[0].name} 等 ${anchors.length} 个`, `${anchors[0].name} + ${anchors.length - 1} more`) : anchors[0]?.name ?? "";
   const name = opts.name ?? threadSessionName(thread.n, anchor);
   threads.setAgent(threadId, "running");
   try {
@@ -95,11 +96,11 @@ export async function handOff(api: ExcalidrawImperativeAPI, threads: ThreadStore
     try {
       const mention = opts.mention ?? ("sid" in to ? opts.name : undefined); // the @name is left out of what the conversation is told
       sent = await agents.dispatchComment("sid" in to ? to.sid : { new: to.agent }, commentMessage(thread, anchors, { followUp: opts.bound, ...(mention && { mention }) }), { canvasId, threadId, threadN: thread.n, anchor, name });
-      if ("sid" in to && sent.dispatch.target.sessionId !== to.sid) threads.reply(threadId, { author: "system", text: `注意：这条评论交给了会话 ${sent.dispatch.target.sessionId}，不是你 @ 的 ${to.sid}。`, tone: "warn" });
+      if ("sid" in to && sent.dispatch.target.sessionId !== to.sid) threads.reply(threadId, { author: "system", text: tr(`注意：这条评论交给了会话 ${sent.dispatch.target.sessionId}，不是你 @ 的 ${to.sid}。`, `Note: this comment went to session ${sent.dispatch.target.sessionId}, not ${to.sid} that you @-mentioned.`), tone: "warn" });
     } catch (e) {
       const gone = opts.bound && /no agent|不在/.test((e as Error).message);
       if (gone) threads.endHandoff(threadId);
-      threads.reply(threadId, { author: "system", text: gone ? "这条评论绑定的对话已经不在了，评论没有交出去。重新 @ 一个 agent 或对话。" : `没有交出去：${(e as Error).message}`, tone: "error", ...("sid" in to && { sessionId: to.sid }) });
+      threads.reply(threadId, { author: "system", text: gone ? tr("这条评论绑定的对话已经不在了，评论没有交出去。重新 @ 一个 agent 或对话。", "The conversation this comment was bound to is gone, so the comment wasn’t handed off. @ another agent or conversation.") : tr(`没有交出去：${(e as Error).message}`, `Couldn’t hand off: ${(e as Error).message}`), tone: "error", ...("sid" in to && { sessionId: to.sid }) });
       return;
     }
     if ("agent" in to) {

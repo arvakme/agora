@@ -1,6 +1,7 @@
 // The tab row of a whole-project share (server/canvas/share.py `project_tree`): the project's top-level canvases; the canvases nested
 // under the one being viewed follow it, every other parent only says how many it holds. Pure pieces are exported for tests.
 import type { ReactNode } from "react";
+import { tr } from "../i18n";
 
 export type GuestTab = { id: string; children: { id: string; depth: number }[] };
 type Info = Record<string, { title: string; open: number }>;
@@ -25,14 +26,14 @@ export function tabItems(tabs: readonly GuestTab[], top: string | undefined, cur
 export function GuestTabs({ tabs, path, current, canvases, onGo }: { tabs: GuestTab[]; path: { id: string }[]; current: string; canvases: Info; onGo: (id: string) => void }): ReactNode {
   const items = tabItems(tabs, path[0]?.id ?? current, current);
   return (
-    <nav className="guest-tabs" aria-label="画布">
+    <nav className="guest-tabs" aria-label={tr("画布", "Canvases")}>
       {items.map((t) => {
         const info = canvases[t.id];
         return (
-          <button key={t.id} className="guest-tab" data-on={t.on} data-sub={t.depth > 0 || undefined} aria-current={t.on ? "page" : undefined} onClick={() => onGo(t.id)} title={info?.title || "画布"}>
-            <span>{info?.title || "画布"}</span>
-            {t.folded > 0 && <em className="guest-tab-more" title={`含 ${t.folded} 张子图`}>+{t.folded}</em>}
-            {!!info?.open && <em className="guest-tab-open" title={`${info.open} 条进行中的评论`}>{info.open}</em>}
+          <button key={t.id} className="guest-tab" data-on={t.on} data-sub={t.depth > 0 || undefined} aria-current={t.on ? "page" : undefined} onClick={() => onGo(t.id)} title={info?.title || tr("画布", "Canvas")}>
+            <span>{info?.title || tr("画布", "Canvas")}</span>
+            {t.folded > 0 && <em className="guest-tab-more" title={tr(`含 ${t.folded} 张子图`, `${t.folded} ${t.folded === 1 ? "sub-diagram" : "sub-diagrams"} inside`)}>+{t.folded}</em>}
+            {!!info?.open && <em className="guest-tab-open" title={tr(`${info.open} 条进行中的评论`, `${info.open} open ${info.open === 1 ? "comment" : "comments"}`)}>{info.open}</em>}
           </button>
         );
       })}
