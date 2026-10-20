@@ -1,6 +1,7 @@
 // What a two-way CLI asks the person (server/canvas/sessions.py `public_request`) and the rules for the
 // cards that answer it, plus how the page says who holds a terminal session's input. Pure.
 import type { Status } from "./agents";
+import { tr } from "../i18n";
 
 export type Question = { question: string; header?: string | null; multiSelect: boolean; options: { label: string; description: string }[] };
 export type HostRequest = {
@@ -44,7 +45,7 @@ export const removeRequest = (list: HostRequest[], id: string) => (list.some((x)
 /** The permission mode the CLI really runs in: auto, or — a model without auto — what it fell back to. */
 export function modeLabel(mode: { actual: string | null; asked: string } | null | undefined): { text: string; tone: "ok" | "caution" } | null {
   if (!mode?.actual) return null;
-  return mode.actual === mode.asked ? { text: mode.actual, tone: "ok" } : { text: `${mode.actual}（这个模型不支持 ${mode.asked}）`, tone: "caution" };
+  return mode.actual === mode.asked ? { text: mode.actual, tone: "ok" } : { text: tr(`${mode.actual}（这个模型不支持 ${mode.asked}）`, `${mode.actual} (this model doesn't support ${mode.asked})`), tone: "caution" };
 }
 
 type Term = Status["terminal"];
@@ -61,7 +62,7 @@ export function terminalBanner(t: Term | undefined): "attached" | "background" |
 export function waitLabel(since: number | null | undefined, now: number): string | null {
   if (since == null) return null;
   const min = Math.floor(Math.max(0, now - since) / 60_000);
-  return min < 1 ? "等你" : `等你 ${min} 分钟`;
+  return min < 1 ? tr("等你", "Waiting for you") : tr(`等你 ${min} 分钟`, `Waiting for you · ${min} min`);
 }
 
 export type InputRightNote = { text: string; by: "window" | "takeover"; canSendNow: boolean; canTakeOver: boolean; takenOver: boolean };
@@ -69,8 +70,8 @@ export type InputRightNote = { text: string; by: "window" | "takeover"; canSendN
 export function inputRightNote(s: Pick<Status, "queued" | "held" | "terminal">): InputRightNote | null {
   const t = s.terminal;
   if (!t?.alive || s.queued < 1) return null;
-  if (t.inputRight === "human") return { text: "终端已被你接管 · 你的话在排队", by: "takeover", canSendNow: true, canTakeOver: true, takenOver: true };
-  if ((t.writers ?? 0) > 0 || t.paused) return { text: "终端窗口开着 · 你的话在排队", by: "window", canSendNow: true, canTakeOver: true, takenOver: false };
+  if (t.inputRight === "human") return { text: tr("终端已被你接管 · 你的话在排队", "You've taken over the terminal · your messages are queued"), by: "takeover", canSendNow: true, canTakeOver: true, takenOver: true };
+  if ((t.writers ?? 0) > 0 || t.paused) return { text: tr("终端窗口开着 · 你的话在排队", "A terminal window is open · your messages are queued"), by: "window", canSendNow: true, canTakeOver: true, takenOver: false };
   return null;
 }
 
@@ -83,7 +84,7 @@ export function windowNote(s: Pick<Status, "queued" | "held" | "terminal">): Inp
   if (!t?.alive) return null;
   const waiting = inputRightNote(s);
   if (waiting) return waiting;
-  if (t.inputRight === "human") return { text: "终端已被你接管 · 你的话在排队", by: "takeover", canSendNow: false, canTakeOver: true, takenOver: true };
-  if ((t.writers ?? 0) > 0 || t.paused) return { text: "终端窗口开着 · 你的话在排队", by: "window", canSendNow: false, canTakeOver: true, takenOver: false };
+  if (t.inputRight === "human") return { text: tr("终端已被你接管 · 你的话在排队", "You've taken over the terminal · your messages are queued"), by: "takeover", canSendNow: false, canTakeOver: true, takenOver: true };
+  if ((t.writers ?? 0) > 0 || t.paused) return { text: tr("终端窗口开着 · 你的话在排队", "A terminal window is open · your messages are queued"), by: "window", canSendNow: false, canTakeOver: true, takenOver: false };
   return null;
 }

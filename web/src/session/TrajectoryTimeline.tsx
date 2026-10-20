@@ -9,10 +9,11 @@ import { CLASS_NAME, HEIGHT, LANES, LANE_H, hitTest, hoverText, laneTop, layoutT
 import { paintTimeline, readPalette, type Palette } from "./timelinePaint";
 import { HANDLE_HIT, caption, domainOf, dragEdge, edgeX, keepTurns, panSel, partAt, posAtX, range, recordAtX, selectFrom, stepEdge, turnsOf, type Edge, type Part, type Sel } from "./timelineSelection";
 import type { TimelineModel } from "./trajectoryModel";
+import { tr } from "../i18n";
 
 /** How long the pointer (or the keyboard cursor) rests on a block before its details show. */
 export const HOVER_MS = 500;
-const LANE_NAMES = ["用户", "消息", "工具"];
+const LANE_NAMES = [tr("用户", "User"), tr("消息", "Message"), tr("工具", "Tool")];
 const LEGEND: Cls[] = ["user", "message", "read", "write", "run", "agent", "wait", "fail", "other"];
 const LEGEND_KEY = "agora.trajectory.legend";
 const TIP_HALF = 130; // half the tooltip's widest width, to keep it inside the strip
@@ -188,7 +189,7 @@ export function TrajectoryTimeline({ model, sel, onSel, onPick, onPickTurn, sele
           className="ds-timeline-track"
           ref={track}
           role="group"
-          aria-label="轨迹时间轴"
+          aria-label={tr("轨迹时间轴", "Trajectory timeline")}
           data-part={part === "out" ? undefined : part}
           aria-describedby={tip ? "ds-timeline-tip" : undefined}
           tabIndex={0}
@@ -206,7 +207,7 @@ export function TrajectoryTimeline({ model, sel, onSel, onPick, onPickTurn, sele
         >
           <canvas ref={canvas} style={{ width: lay?.width ?? 0, height: HEIGHT }} />
           {lay && shown && <SelectionOverlay lay={lay} dom={dom} sel={shown} live={!!live} edgeKeys={edgeKeys} />}
-          {!shown && <span className="ds-tl-hint" aria-hidden>拖动选一段 · Esc 取消</span>}
+          {!shown && <span className="ds-tl-hint" aria-hidden>{tr("拖动选一段 · Esc 取消", "Drag to select a range · Esc to cancel")}</span>}
         </div>
         {tipText && (
           <div id="ds-timeline-tip" className="ds-timeline-tip" role="tooltip" style={{ "--x": `${tipX}px` } as React.CSSProperties}>
@@ -224,7 +225,7 @@ export function TrajectoryTimeline({ model, sel, onSel, onPick, onPickTurn, sele
   );
 }
 
-const STEP_HELP = "←→ 移动一条，Shift+←→ 移动一轮，Esc 取消选区";
+const STEP_HELP = tr("←→ 移动一条，Shift+←→ 移动一轮，Esc 取消选区", "←→ moves one record, Shift+←→ one turn, Esc clears the selection");
 type OverlayProps = { lay: NonNullable<ReturnType<typeof layoutTimeline>>; dom: ReturnType<typeof domainOf>; sel: Sel; live: boolean; edgeKeys: (edge: Edge) => (e: RKeyboardEvent) => void };
 /**
  * The picked stretch on the strip: everything outside it washed over, a purple frame, a grip on each edge
@@ -236,19 +237,19 @@ function SelectionOverlay({ lay, dom, sel, live, edgeKeys }: OverlayProps) {
   const [r0, r1] = range(dom, sel);
   const [t0, t1] = turnsOf(dom, sel);
   const edge = (e: Edge, x: number, r: number, turn: number) => {
-    const label = e === "left" ? "选区左边界" : "选区右边界";
+    const label = e === "left" ? tr("选区左边界", "Selection start") : tr("选区右边界", "Selection end");
     return (
       <span
         className="ds-tl-handle"
         data-edge={e}
         role="slider"
         tabIndex={live ? -1 : 0}
-        aria-label={`${label}。${STEP_HELP}`}
+        aria-label={tr(`${label}。${STEP_HELP}`, `${label}. ${STEP_HELP}`)}
         aria-orientation="horizontal"
         aria-valuemin={dom.ordered[0].index}
         aria-valuemax={dom.ordered[dom.ordered.length - 1].index}
         aria-valuenow={dom.ordered[r].index}
-        aria-valuetext={`第 ${turn} 轮 #${dom.ordered[r].index}`}
+        aria-valuetext={tr(`第 ${turn} 轮 #${dom.ordered[r].index}`, `Turn ${turn} #${dom.ordered[r].index}`)}
         aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Escape"
         style={{ left: x - HANDLE_HIT / 2, width: HANDLE_HIT }}
         onKeyDown={edgeKeys(e)}
@@ -288,9 +289,9 @@ function Legend() {
   };
   return (
     <div className="ds-tl-legend" data-open={open}>
-      <button className="ds-text-btn" onClick={toggle} aria-expanded={open} aria-label="图例">
+      <button className="ds-text-btn" onClick={toggle} aria-expanded={open} aria-label={tr("图例", "Legend")}>
         <IconChevron open={open} />
-        图例
+        {tr("图例", "Legend")}
       </button>
       {open && (
         <ul>

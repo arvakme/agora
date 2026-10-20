@@ -15,6 +15,7 @@
 // Only what the log recorded is shown: unknown durations, tokens or costs stay null.
 import { cardLine, messageCard } from "./agentMessage";
 import type { FileOp, Item, Usage } from "./agents";
+import { tr, lang } from "../i18n";
 
 export type RecordKind = "user" | "message" | "tool";
 export type TrajRecord = {
@@ -104,33 +105,33 @@ export function activityOf(name = ""): Activity {
 }
 /** Past-tense labels (DSH ui-chat locale `message.stepProcess.done.*`, zh). */
 export const ACTIVITY_DONE: Record<Activity | "thinking", string> = {
-  thinking: "已完成分析",
-  read: "已读取文件",
-  search: "已搜索代码",
-  write: "已写入文件",
-  edit: "修改了文件",
-  commands: "执行了命令",
-  webSearch: "已搜索网页",
-  webFetch: "已访问网页",
-  subagents: "已协调子智能体",
-  plan: "更新了计划",
-  questions: "向用户提出了问题",
-  tools: "已调用工具",
+  thinking: tr("已完成分析", "Analyzed the request"),
+  read: tr("已读取文件", "Read files"),
+  search: tr("已搜索代码", "Searched code"),
+  write: tr("已写入文件", "Wrote files"),
+  edit: tr("修改了文件", "Edited files"),
+  commands: tr("执行了命令", "Ran commands"),
+  webSearch: tr("已搜索网页", "Searched the web"),
+  webFetch: tr("已访问网页", "Fetched web pages"),
+  subagents: tr("已协调子智能体", "Coordinated sub-agents"),
+  plan: tr("更新了计划", "Updated the plan"),
+  questions: tr("向用户提出了问题", "Asked you questions"),
+  tools: tr("已调用工具", "Called tools"),
 };
 /** Present-tense labels for a turn still running (`message.stepProcess.*`). */
 export const ACTIVITY_NOW: Record<Activity | "thinking", string> = {
-  thinking: "正在分析请求",
-  read: "正在读取文件",
-  search: "正在搜索代码",
-  write: "正在写入文件",
-  edit: "正在编辑文件",
-  commands: "正在运行命令",
-  webSearch: "正在搜索网页",
-  webFetch: "正在访问网页",
-  subagents: "正在协调子智能体",
-  plan: "正在更新计划",
-  questions: "等待你的操作",
-  tools: "正在调用工具",
+  thinking: tr("正在分析请求", "Analyzing the request"),
+  read: tr("正在读取文件", "Reading files"),
+  search: tr("正在搜索代码", "Searching code"),
+  write: tr("正在写入文件", "Writing files"),
+  edit: tr("正在编辑文件", "Editing files"),
+  commands: tr("正在运行命令", "Running commands"),
+  webSearch: tr("正在搜索网页", "Searching the web"),
+  webFetch: tr("正在访问网页", "Fetching web pages"),
+  subagents: tr("正在协调子智能体", "Coordinating sub-agents"),
+  plan: tr("正在更新计划", "Updating the plan"),
+  questions: tr("等待你的操作", "Waiting for you"),
+  tools: tr("正在调用工具", "Calling tools"),
 };
 
 /** DSH step-process.ts `processTitle`: the top three activities, "{first}并{second}", "…等". */
@@ -138,6 +139,12 @@ export function processTitle(activity: TrajTurn["activity"]): string {
   const labels = activity.slice(0, 3).map(({ kind }) => ACTIVITY_DONE[kind]);
   if (!labels.length) return ACTIVITY_DONE.thinking;
   if (labels.length === 1) return labels[0];
+  if (lang() === "en") {
+    // "Read files and edited files"; "Read files, edited files, ran commands and more"
+    const rest = labels.slice(1).map((l) => l[0].toLowerCase() + l.slice(1));
+    if (labels.length === 2) return `${labels[0]} and ${rest[0]}`;
+    return activity.length > 3 ? `${[labels[0], ...rest].join(", ")} and more` : `${labels[0]}, ${rest[0]} and ${rest[1]}`;
+  }
   if (labels.length === 2) {
     const shared = labels[0].startsWith("已") && labels[1].startsWith("已");
     return `${labels[0]}并${shared ? labels[1].slice(1) : labels[1]}`;

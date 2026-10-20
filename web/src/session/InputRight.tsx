@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { agents, useAgents } from "./agents";
 import { windowNote } from "./requestModel";
+import { tr } from "../i18n";
 
 export function InputRight({ sessionId }: { sessionId: string }) {
   const status = useAgents().status[sessionId];
@@ -17,9 +18,9 @@ export function InputRight({ sessionId }: { sessionId: string }) {
     <div className="sp-inputright" role="status" data-by={note.by}>
       <i className="dot" data-tone="caution" />
       <span>{note.text}</span>
-      <button className="btn sm" disabled={!note.canSendNow} onClick={() => run(() => agents.deliverNow(sessionId))} title={note.canSendNow ? "只送出排在最前的这一条；后面的照旧等着" : "现在没有排队的话"}>现在送出</button>
+      <button className="btn sm" disabled={!note.canSendNow} onClick={() => run(() => agents.deliverNow(sessionId))} title={note.canSendNow ? tr("只送出排在最前的这一条；后面的照旧等着", "Send only the first queued message; the rest keep waiting") : tr("现在没有排队的话", "Nothing is queued")}>{tr("现在送出", "Send now")}</button>
       {note.canTakeOver ? (
-        <button className="btn sm ghost" onClick={() => run(() => (note.takenOver ? agents.giveBack(sessionId) : agents.takeover(sessionId)))}>{note.takenOver ? "交回 Agora" : "接管"}</button>
+        <button className="btn sm ghost" onClick={() => run(() => (note.takenOver ? agents.giveBack(sessionId) : agents.takeover(sessionId)))}>{note.takenOver ? tr("交回 Agora", "Hand back to Agora") : tr("接管", "Take over")}</button>
       ) : null}
       {err ? <span className="sp-req-err">{err}</span> : null}
     </div>
