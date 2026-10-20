@@ -1,0 +1,328 @@
+#!/usr/bin/env python3
+"""A scripted stand-in for `claude`, for the README screenshots (scripts/readme-shots.ts): no model, no tokens.
+
+It speaks what Agora uses — the SDK ``initialize`` request (the model picker), one headless turn per process
+(``-p --input-format stream-json … --session-id|--resume <id>``) and the interactive TUI in Agora's tmux — and
+writes a native session log (``~/.claude/projects/<cwd>/<id>.jsonl``) record for record the way Claude Code does,
+so everything the page shows (figure, bubbles, replay, trajectory, turn tags) comes from the same path as with
+the real CLI. The tools really run: files in the demo project are edited, `agora canvas link` links the nodes.
+
+Which turn it plays is picked from the prompt (the script's own prompts, zh or en); replies follow the
+prompt's language. Pace: READMESHOTS_STEP_S seconds per tool call (default 1.4); writes under api/ are slower
+so the figure stands on 「API」 long enough for the overview shot.
+"""
+import json, os, re, subprocess, sys, time, uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+a = sys.argv[1:]
+if "--version" in a or "-v" in a:
+    print("2.1.304 (Claude Code)"); sys.exit(0)
+if "--help" in a:
+    print('  --effort <level>  Effort level for the current session (choices: "low", "medium", "high", "xhigh", "max")'); sys.exit(0)
+
+MODEL = "claude-opus-5-5"
+STEP = float(os.environ.get("READMESHOTS_STEP_S", "1.4"))
+cwd = os.getcwd()
+
+
+def opt(name):
+    return a[a.index(name) + 1] if name in a and a.index(name) + 1 < len(a) else None
+
+
+def emit(o):
+    if HEADLESS:
+        print(json.dumps(o, ensure_ascii=False), flush=True)
+
+
+def ts():
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+HEADLESS = "-p" in a or "--print" in a
+sid = opt("--session-id") or opt("--resume") or str(uuid.uuid4())
+if "--fork-session" in a:
+    sid = str(uuid.uuid4())
+logdir = Path.home() / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", cwd)
+log = logdir / f"{sid}.jsonl"
+last = [None]
+if log.exists():
+    for line in log.read_text().splitlines():
+        try:
+            last[0] = json.loads(line).get("uuid") or last[0]
+        except Exception:
+            pass
+
+
+def rec(o):
+    u = str(uuid.uuid4())
+    o = {"parentUuid": last[0], "isSidechain": False, "userType": "external", "cwd": cwd, "sessionId": sid, "version": "2.1.304", "gitBranch": "main", "type": o["type"], **o, "uuid": u, "timestamp": ts()}
+    if not HEADLESS:
+        o["entrypoint"] = "cli"
+    last[0] = u
+    logdir.mkdir(parents=True, exist_ok=True)
+    with log.open("a") as f:
+        f.write(json.dumps(o, ensure_ascii=False) + "\n")
+
+
+USAGE = {"input_tokens": 6, "output_tokens": 412, "cache_read_input_tokens": 41200, "cache_creation_input_tokens": 1800}
+n = [0]
+
+
+def assistant(blocks, end=False):
+    n[0] += 1
+    m = {"model": MODEL, "id": f"msg_{sid[:8]}{int(time.time())}{n[0]}", "type": "message", "role": "assistant", "content": blocks, "stop_reason": "end_turn" if end else ("tool_use" if any(b.get("type") == "tool_use" for b in blocks) else None), "stop_sequence": None, "usage": USAGE}
+    rec({"type": "assistant", "message": m, "requestId": f"req_{uuid.uuid4().hex[:20]}"})
+    emit({"type": "assistant", "message": m, "session_id": sid, "parent_tool_use_id": None})
+
+
+def tool(name, inp, run=None, wait=None):
+    tid = f"toolu_{uuid.uuid4().hex[:24]}"
+    assistant([{"type": "tool_use", "id": tid, "name": name, "input": inp}])
+    time.sleep(STEP if wait is None else wait)
+    out = run() if run else "ok"
+    body = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": tid, "content": out}]}
+    rec({"type": "user", "message": body})
+    emit({"type": "user", "message": body, "session_id": sid})
+    return out
+
+
+def sh(cmd):
+    r = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, cwd=cwd)
+    return (r.stdout + r.stderr)[-4000:] or f"exit {r.returncode}"
+
+
+def P(rel):
+    return Path(cwd) / rel
+
+
+def read(rel):
+    p = P(rel)
+    return tool("Read", {"file_path": str(p)}, lambda: "\n".join(f"{i + 1:>6}\t{l}" for i, l in enumerate(p.read_text().splitlines()))[:3000] if p.exists() else "File does not exist.")
+
+
+def slow(rel):
+    return STEP * 3 if rel.startswith("api/") else None
+
+
+def edit(rel, old, new):
+    p = P(rel)
+
+    def run():
+        s = p.read_text() if p.exists() else ""
+        p.write_text(s.replace(old, new, 1) if old in s else s + new)
+        return f"The file {p} has been updated successfully."
+
+    return tool("Edit", {"file_path": str(p), "old_string": old, "new_string": new, "replace_all": False}, run, slow(rel))
+
+
+def write(rel, content):
+    p = P(rel)
+
+    def run():
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content)
+        return f"File created successfully at: {p}"
+
+    return tool("Write", {"file_path": str(p), "content": content}, run, slow(rel))
+
+
+def bash(cmd, desc):
+    return tool("Bash", {"command": cmd, "description": desc}, lambda: sh(cmd))
+
+
+# ——— the turns (the prompts are scripts/readme-shots.ts's own) ———
+def t_link(zh):
+    out = bash("agora canvas read", "Read the canvas")
+    try:
+        nodes = json.loads(out).get("scene", {}).get("nodes") or []
+    except Exception:
+        nodes = []
+    links = {}
+    for nd in nodes:
+        m = re.search(r"\b([a-z]+)/\s*$", str(nd.get("label") or nd.get("text") or ""))
+        if m:
+            links[nd["id"]] = [f"{m.group(1)}/**"]
+    bash("ls -R web api db queue worker docs | head -40", "List the code")
+    bash(f"agora canvas link --json '{json.dumps(links)}'", "Link the nodes to their code")
+    return ("5 个节点都已关联到各自的目录：Web 前端 → `web/**`，API 服务 → `api/**`，数据库 → `db/**`，任务队列 → `queue/**`，通知 Worker → `worker/**`。"
+            "「用户」节点没有关联，`README.md` 和 `docs/` 不属于任何节点，以后改这些文件会显示为“图外”。") if zh else (
+        "All five nodes are linked to their directories: Web front end → `web/**`, API service → `api/**`, Database → `db/**`, Job queue → `queue/**`, "
+        "Notify worker → `worker/**`. “User” has no code; `README.md` and `docs/` belong to no node, so changes there show as “outside the diagram”.")
+
+
+def t_cancel(zh):
+    read("worker/main.py")
+    edit("worker/main.py", '        print("send confirmation for order", job["payload"]["id"])\n',
+         '        print("send confirmation for order", job["payload"]["id"])\n    elif job["kind"] == "order_cancelled":\n        print("send cancellation notice for order", job["payload"]["id"])\n')
+    read("db/repo.py")
+    edit("db/repo.py", '    return {"id": cur.lastrowid, "total": total, "status": "new"}\n',
+         '    return {"id": cur.lastrowid, "total": total, "status": "new"}\n\n\ndef cancel_order(order_id: int):\n    DB.execute("update orders set status = \'cancelled\' where id = ?", (order_id,))\n    DB.commit()\n    row = DB.execute("select id, total, status from orders where id = ?", (order_id,)).fetchone()\n    return dict(row) if row else None\n')
+    read("api/routes/orders.py")
+    edit("api/routes/orders.py", "from fastapi import APIRouter\n", "from fastapi import APIRouter, HTTPException\n")
+    edit("api/routes/orders.py", '    return order\n',
+         '    return order\n\n\n@router.post("/orders/{order_id}/cancel")\ndef cancel_order(order_id: int):\n    order = repo.cancel_order(order_id)\n    if order is None:\n        raise HTTPException(status_code=404, detail="order not found")\n    enqueue("order_cancelled", {"id": order_id})\n    return order\n')
+    read("web/src/api.ts")
+    edit("web/src/api.ts", "  return r.json();\n}\n",
+         '  return r.json();\n}\n\nexport async function cancelOrder(id: number): Promise<Order> {\n  const r = await fetch(`/api/orders/${id}/cancel`, { method: "POST" });\n  if (!r.ok) throw new Error(`cancel failed: ${r.status}`);\n  return r.json();\n}\n')
+    read("web/src/pages/Orders.tsx")
+    edit("web/src/pages/Orders.tsx", 'import { listOrders, type Order } from "../api";', 'import { cancelOrder, listOrders, type Order } from "../api";')
+    edit("web/src/pages/Orders.tsx", "<td>{o.status}</td></tr>",
+         '<td>{o.status}</td><td><button disabled={o.status === "cancelled"} onClick={() => cancelOrder(o.id).then((u) => setOrders((all) => all.map((x) => (x.id === u.id ? u : x))))}>{"' + ("取消" if zh else "Cancel") + '"}</button></td></tr>')
+    edit("docs/notes.md", "\n- 订单通过" if zh else "\n- Orders are created", ("\n- 取消订单：`POST /api/orders/{id}/cancel`，入队 `order_cancelled`，worker 发取消通知。\n- 订单通过") if zh else
+         "\n- Cancelling: `POST /api/orders/{id}/cancel` enqueues `order_cancelled`; the worker sends the notice.\n- Orders are created")
+    read("web/src/pages/Orders.tsx")  # a last look at the page: the turn ends with the figure on 「Web」
+    return ("取消订单功能已按你给的顺序逐个改完，6 个文件都是用编辑工具改的：\n\n"
+            "- **`worker/main.py`**：`handle` 新增 `order_cancelled` 分支，打印发送取消通知。\n"
+            "- **`db/repo.py`**：新增 `cancel_order(order_id)`，把订单状态改成 `'cancelled'` 并返回更新后的订单；不存在时返回 `None`。\n"
+            "- **`api/routes/orders.py`**：新增 `POST /orders/{order_id}/cancel`，取消成功后入队 `order_cancelled`，不存在返回 404。\n"
+            "- **`web/src/api.ts`**：新增 `cancelOrder(id)`，请求失败时抛错。\n"
+            "- **`web/src/pages/Orders.tsx`**：每行加了「取消」按钮，已取消的订单按钮禁用；点击后用返回的订单更新这一行。\n"
+            "- **`docs/notes.md`**：记了一行取消流程。") if zh else (
+        "Order cancelling is in, one file at a time in your order, all six with the edit tools:\n\n"
+        "- **`worker/main.py`**: `handle` has an `order_cancelled` branch that sends the cancellation notice.\n"
+        "- **`db/repo.py`**: new `cancel_order(order_id)` sets the status to `'cancelled'` and returns the order, or `None` when it doesn't exist.\n"
+        "- **`api/routes/orders.py`**: new `POST /orders/{order_id}/cancel`; enqueues `order_cancelled` on success, 404 for an unknown order.\n"
+        "- **`web/src/api.ts`**: new `cancelOrder(id)`, throws when the request fails.\n"
+        "- **`web/src/pages/Orders.tsx`**: a Cancel button on every row, disabled once cancelled; the row updates from the returned order.\n"
+        "- **`docs/notes.md`**: one line on the cancel flow.")
+
+
+REFUNDS = '''from fastapi import APIRouter, HTTPException
+
+from db import repo
+
+router = APIRouter()
+
+
+@router.post("/orders/{order_id}/refund")
+def refund_order(order_id: int, amount: int | None = None):
+    row = repo.DB.execute("select id, total, status from orders where id = ?", (order_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="order not found")
+    if amount is None:
+        amount = row["total"]
+    if row["status"] == "cancelled":
+        raise HTTPException(status_code=409, detail="cancelled order cannot be refunded")
+    if row["status"] == "refunded":
+        raise HTTPException(status_code=409, detail="order already refunded")
+    repo.DB.execute("update orders set status = 'refunded' where id = ?", (order_id,))
+    repo.DB.commit()
+    return {**dict(row), "status": "refunded"}
+'''
+
+
+def t_refund(zh):
+    read("api/server.py")
+    read("api/routes/orders.py")
+    write("api/routes/refunds.py", REFUNDS)
+    edit("api/server.py", "from api.routes import orders\n", "from api.routes import orders, refunds\n")
+    edit("api/server.py", 'app.include_router(orders.router, prefix="/api")\n', 'app.include_router(orders.router, prefix="/api")\napp.include_router(refunds.router, prefix="/api")\n')
+    bash("python3 -m py_compile api/server.py api/routes/refunds.py && echo ok", "Syntax-check")
+    return ("我新建了 `api/routes/refunds.py`，实现 `POST /orders/{id}/refund`：订单不存在返回 404，已取消或已退款的订单返回 409，成功时把状态改成 `refunded`。"
+            "路由已在 `api/server.py` 里注册到 `/api` 下。两个文件都过了语法检查，接口没有实际运行测试过。") if zh else (
+        "I added `api/routes/refunds.py` with `POST /orders/{id}/refund`: 404 for an unknown order, 409 when it is cancelled or already refunded, "
+        "otherwise the status becomes `refunded`. It is registered under `/api` in `api/server.py`. Both files pass a syntax check; I haven't run the endpoint.")
+
+
+def t_refund_web(zh):
+    edit("web/src/api.ts", "export async function cancelOrder", 'export async function refundOrder(id: number): Promise<Order> {\n  const r = await fetch(`/api/orders/${id}/refund`, { method: "POST" });\n  if (!r.ok) throw new Error(`refund failed: ${r.status}`);\n  return r.json();\n}\n\nexport async function cancelOrder')
+    edit("web/src/pages/Orders.tsx", "import { cancelOrder, listOrders", "import { cancelOrder, listOrders, refundOrder")
+    c, r = ("取消", "退款") if zh else ("Cancel", "Refund")
+    edit("web/src/pages/Orders.tsx", '{"' + c + '"}</button></td>', '{"' + c + '"}</button> <button disabled={o.status !== "new"} onClick={() => refundOrder(o.id).then((u) => setOrders((all) => all.map((x) => (x.id === u.id ? u : x))))}>{"' + r + '"}</button></td>')
+    return ("我在 `web/src/api.ts` 加了 `refundOrder(id)`，并在 `Orders.tsx` 的「取消」按钮旁边每行加了「退款」按钮：退款成功后这一行直接更新，已取消或已退款时按钮不能点。") if zh else (
+        "`web/src/api.ts` has `refundOrder(id)`, and every row in `Orders.tsx` has a Refund button next to Cancel: the row updates when it succeeds, and the button is disabled once the order is cancelled or refunded.")
+
+
+def t_amount(zh):
+    read("api/routes/refunds.py")
+    edit("api/routes/refunds.py", '        amount = row["total"]\n', '        amount = row["total"]\n    if amount <= 0:\n        raise HTTPException(status_code=422, detail="refund amount must be greater than 0")\n')
+    bash("python3 -m py_compile api/routes/refunds.py && echo ok", "Syntax-check")
+    return ("退款接口现在多了一个可选的查询参数 `amount`，金额小于等于 0 时返回 422；不传时按订单总额退款。") if zh else (
+        "The refund endpoint now takes an optional `amount`; zero or less returns 422, and without it the order total is refunded.")
+
+
+def t_worker(zh):
+    read("worker/main.py")
+    return ("`worker/main.py` 一直用 `blpop` 阻塞读取 Redis 的 `jobs` 队列，把每条任务解析成 JSON 后交给 `handle`：遇到 `order_created` 打印发送确认，遇到 `order_cancelled` 打印发送取消通知，其他类型的任务会被直接忽略。") if zh else (
+        "`worker/main.py` blocks on `blpop` over the Redis `jobs` list and hands each job, parsed from JSON, to `handle`: `order_created` sends a confirmation, `order_cancelled` a cancellation notice, and any other kind is ignored.")
+
+
+def pick(prompt):
+    zh = bool(re.search(r"[一-鿿]", prompt))
+    low = prompt.lower()
+    if "关联路径" in prompt or "link the diagram" in low:
+        return t_link, zh
+    if "取消订单" in prompt or "order cancelling" in low:
+        return t_cancel, zh
+    if "金额校验" in prompt or "amount check" in low:
+        return t_amount, zh
+    if "前端接上退款" in prompt or "wire refunds" in low:
+        return t_refund_web, zh
+    if "退款接口" in prompt or "add refunds" in low:
+        return t_refund, zh
+    return t_worker, zh
+
+
+def prompt_of(content):
+    return content if isinstance(content, str) else " ".join(c.get("text", "") for c in content if isinstance(c, dict))
+
+
+# ——— interactive: the TUI in Agora's tmux ———
+if not HEADLESS:
+    print(f"\n \x1b[38;5;173m✻\x1b[0m Claude Code v2.1.304\n   Opus 5.5 · {cwd}\n")
+    while True:
+        sys.stdout.write("\x1b[2m────────────────────────────────────────\x1b[0m\n❯ ")
+        sys.stdout.flush()
+        line = sys.stdin.readline()
+        if not line:
+            sys.exit(0)
+        text = line.strip()
+        if not text:
+            continue
+        t0 = time.time()
+        rec({"type": "user", "message": {"role": "user", "content": text}})
+        fn, zh = pick(text)
+        print("\n\x1b[2m● 想…\x1b[0m" if zh else "\n\x1b[2m● Thinking…\x1b[0m", flush=True)
+        time.sleep(STEP)
+        reply = fn(zh)
+        time.sleep(STEP)
+        assistant([{"type": "text", "text": reply}], end=True)
+        rec({"type": "system", "subtype": "turn_duration", "durationMs": int((time.time() - t0) * 1000), "isMeta": False})
+        print(f"\n● {reply}\n", flush=True)
+
+# ——— headless: one turn per process ———
+first = sys.stdin.readline()
+try:
+    msg = json.loads(first)
+except Exception:
+    sys.exit(1)
+if msg.get("type") == "control_request" and msg.get("request", {}).get("subtype") == "initialize":
+    lv = ["low", "medium", "high", "xhigh", "max"]
+    m = lambda v, r, name, d: {"value": v, "resolvedModel": r, "displayName": name, "description": d, "supportsEffort": True, "supportedEffortLevels": lv, "supportsAdaptiveThinking": True, "supportsAutoMode": True, "supportsThinkingOff": False}
+    models = [m("default", "claude-opus-5-5", "Default (recommended)", "Opus 5.5 · Best for everyday, complex tasks"), m("sonnet", "claude-sonnet-5-5", "Sonnet 5.5", "Sonnet 5.5 · Efficient for routine tasks"),
+              m("fable", "claude-fable-5-1", "Fable 5.1", "Fable 5.1 · Most capable for your hardest and longest-running tasks"), m("opus", "claude-opus-5-5", "Opus 5.5", "Opus 5.5 · Best for everyday, complex tasks"),
+              m("haiku", "claude-haiku-5-5", "Haiku 5.5", "Haiku 5.5 · Fastest for quick answers")]
+    emit({"type": "control_response", "response": {"subtype": "success", "request_id": msg["request_id"], "response": {"models": models, "claude_code_version": "2.1.304"}}})
+    sys.exit(0)
+
+prompt = prompt_of(msg.get("message", {}).get("content"))
+rec({"type": "user", "message": {"role": "user", "content": prompt}})
+emit({"type": "system", "subtype": "init", "session_id": sid, "model": MODEL, "cwd": cwd, "permissionMode": "auto", "claude_code_version": "2.1.304", "tools": ["Bash", "Edit", "Read", "Write"]})
+t0 = time.time()
+time.sleep(STEP)
+fn, zh = pick(prompt)
+reply = fn(zh)
+time.sleep(STEP)
+assistant([{"type": "text", "text": reply}], end=True)
+dur = int((time.time() - t0) * 1000)
+emit({"type": "result", "subtype": "success", "is_error": False, "result": reply, "session_id": sid, "total_cost_usd": 0.31, "duration_ms": dur, "num_turns": n[0], "usage": USAGE,
+      "modelUsage": {MODEL: {"inputTokens": 6, "outputTokens": 412, "cacheReadInputTokens": 41200, "cacheCreationInputTokens": 1800, "costUSD": 0.31}}, "terminal_reason": "completed"})
+# the pipe stays open until Agora closes it
+for line in sys.stdin:
+    try:
+        o = json.loads(line)
+    except Exception:
+        continue
+    if o.get("type") == "control_request" and (o.get("request") or {}).get("subtype") == "interrupt":
+        emit({"type": "control_response", "response": {"subtype": "success", "request_id": o["request_id"], "response": {}}})

@@ -1,15 +1,20 @@
-// The README screenshots (docs/media/*.png), shot from the current build on a fresh demo project with a real Claude Code session.
+// The README screenshots (docs/media/*.png), shot from the current build on a fresh demo project with a Claude Code session.
 //
-//   node scripts/readme-shots.ts [--lang zh|en] [--out <dir>] [--keep] [--reuse <kept dir>] [--real-home] [--only a,b]
+//   node scripts/readme-shots.ts [--lang zh|en] [--out <dir>] [--keep] [--reuse <kept dir>] [--only a,b] [--real-claude [--real-home]]
 //
-// Needs: web/dist built (`npm run build`), `claude` logged in, tmux, uv; ffmpeg (optional) to shrink the PNGs to a 256-colour palette.
+// By default `claude` is scripts/readme-shots/bin/claude, a scripted stand-in (no model, no tokens) that speaks the same
+// stream-json and TUI, writes a native session log the way Claude Code does and really edits the demo files; the run
+// refuses to start when `claude` on its PATH is anything else. --real-claude uses the real CLI (logged in; a few minutes
+// and some tokens; the replies' wording then differs between runs, the layout does not).
+//
+// Needs: web/dist built (`npm run build`), tmux, uv; ffmpeg (optional) to shrink the PNGs to a 256-colour palette.
 // Chromium is Playwright's, or `CHROMIUM=<path>`.
 //
 // What it does, in this order (each step is what a person would do; the page executes every canvas edit):
 //   1. writes a small shop app (web/ api/ db/ queue/ worker/ docs/) into <tmp>/shop-demo, `git init`s it and runs `agora up`
-//      there with its own HOME and AGORA_STATE_DIR (both under <tmp>), so nothing of yours is read or written; Claude's
-//      login is copied from ~/.claude/.credentials.json when there is one (or pass --real-home to run claude with your HOME);
-//   2. opens the page (`?lang=en` for English), draws the diagram with `agora canvas apply`        → choose-agent
+//      there with its own HOME and AGORA_STATE_DIR (both under <tmp>), so nothing of yours is read or written;
+//      with --real-claude, Claude's login is copied from ~/.claude/.credentials.json (or --real-home runs claude with your HOME);
+//   2. opens the page (`?lang=zh|en`), draws the diagram with `agora canvas apply`        → choose-agent
 //   3. starts Claude Code from the picker; turn 1 links the nodes to code paths (`agora canvas link`, by the agent), two
 //      comments are pinned, turn 2 adds a feature across db/api/worker/web and docs/ (off the diagram)
 //   4. turn 3 adds a refund endpoint in api/: shot while the figure stands on 「API」 writing                → overview
@@ -20,8 +25,7 @@
 //   9. 「open in terminal」: a tmux client attaches (taking the terminal over), a turn is typed in the TUI; single-pane
 //      layout at 800×600                                                                                               → terminal
 //  10. the guest page of a share, served by the real share gateway with Cloudflare stood in (scripts/readme-shots/guest.py) → guest
-// Output: <out>/<name>.png for zh, <out>/<name>.en.png for en (default out: docs/media). The turns are real model calls
-// (a few minutes, some tokens); the wording of the replies differs between runs, the layout does not.
+// Output: <out>/<name>.png for zh, <out>/<name>.en.png for en (default out: docs/media).
 import { chromium, type Page } from "playwright";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -39,7 +43,9 @@ const ONLY = args.includes("--only") ? new Set(opt("--only", "").split(",")) : n
 const KEEP = args.includes("--keep") || args.includes("--reuse");
 /** --reuse <dir>: a project a --keep run left; only the shots after the turns are taken again (pointer onwards). */
 const REUSE = opt("--reuse", "");
-const REAL_HOME = args.includes("--real-home");
+const REAL = args.includes("--real-claude");
+const REAL_HOME = REAL && args.includes("--real-home");
+const STUB = join(REPO, "web/scripts/readme-shots/bin");
 const AGORA = join(REPO, "bin/agora");
 const VIEW = { width: 1440, height: 900 };
 if (!existsSync(join(REPO, "web/dist/index.html"))) throw new Error("web/dist is missing: run `npm run build` in web/ first");
@@ -90,8 +96,12 @@ const TMP = REUSE ? resolve(REUSE) : mkdtempSync(join(tmpdir(), "agora-readme-sh
 const PROJ = REUSE ? readFileSync(join(TMP, "project.txt"), "utf8").trim() : !existsSync(join(tmpdir(), "shop-demo")) ? join(tmpdir(), "shop-demo") : join(TMP, "shop-demo");
 if (!REUSE) writeFileSync(join(TMP, "project.txt"), PROJ);
 const HOME = REAL_HOME ? process.env.HOME! : join(TMP, "home");
-const env: NodeJS.ProcessEnv = { ...process.env, HOME, AGORA_STATE_DIR: join(TMP, "state"), PATH: `${join(REPO, "bin")}:${process.env.PATH}`, AGORA_SHARE_DOMAIN: "example.com", UV_CACHE_DIR: process.env.UV_CACHE_DIR ?? join(process.env.HOME!, ".cache/uv") };
+const env: NodeJS.ProcessEnv = { ...process.env, HOME, AGORA_STATE_DIR: join(TMP, "state"), PATH: `${REAL ? "" : STUB + ":"}${join(REPO, "bin")}:${process.env.PATH}`, AGORA_SHARE_DOMAIN: "example.com", UV_CACHE_DIR: process.env.UV_CACHE_DIR ?? join(process.env.HOME!, ".cache/uv") };
 delete env.TMUX;
+for (const k of ["AGORA_LANG", "AGORA_URL", "AGORA_PROJECT", "AGORA_SESSION", "AGORA_CANVAS"]) delete env[k];
+const which = execFileSync("bash", ["-c", "command -v claude || true"], { env, encoding: "utf8" }).trim();
+if (!REAL && which !== join(STUB, "claude")) throw new Error(`refusing to start: claude on PATH is ${which || "missing"}, not the stand-in ${join(STUB, "claude")}`);
+if (REAL && which === join(STUB, "claude")) throw new Error("--real-claude, but claude on PATH is the stand-in");
 const FILES: Record<string, string> = {
   "README.md": T.readme,
   "docs/notes.md": T.notes,
@@ -119,18 +129,22 @@ if (!REUSE) {
 if (!REAL_HOME && !REUSE) {
   mkdirSync(join(HOME, ".claude"), { recursive: true });
   const cred = join(process.env.HOME!, ".claude/.credentials.json");
-  if (existsSync(cred)) copyFileSync(cred, join(HOME, ".claude/.credentials.json"));
+  if (REAL && existsSync(cred)) copyFileSync(cred, join(HOME, ".claude/.credentials.json"));
+  // the picker's default model, as on the machine the zh set was first shot on
+  if (!REAL) writeFileSync(join(HOME, ".claude/settings.json"), JSON.stringify({ model: "opus" }));
   // no first-run screens in the terminal: onboarding done, light theme, this folder trusted
   writeFileSync(join(HOME, ".claude.json"), JSON.stringify({ hasCompletedOnboarding: true, theme: "light", projects: { [PROJ]: { hasTrustDialogAccepted: true, hasCompletedProjectOnboarding: true } } }));
 }
 console.log("project", PROJ);
 run(AGORA, ["up"]);
 const server = JSON.parse(readFileSync(join(PROJ, ".agora/run/server.json"), "utf8")) as { url: string };
-const URL0 = server.url + (LANG === "zh" ? "" : `?lang=${LANG}`);
+// always explicit: without it the page follows the browser's language
+const URL0 = server.url + (server.url.includes("?") ? "&" : "?") + `lang=${LANG}`;
 
 // ——— the page ———
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}) });
-const ctx = await browser.newContext({ viewport: VIEW, deviceScaleFactor: 1, colorScheme: "light", reducedMotion: "no-preference" });
+const LOCALE = LANG === "zh" ? "zh-CN" : "en-US";
+const ctx = await browser.newContext({ viewport: VIEW, deviceScaleFactor: 1, colorScheme: "light", reducedMotion: "no-preference", locale: LOCALE });
 // the camera stays where the shot frames it (⋯ →「镜头跟随主 agent」off; a per-browser preference, app/prefs.ts)
 await ctx.addInitScript(() => {
   try {
@@ -383,10 +397,10 @@ try {
       g.on("exit", () => no(new Error("guest.py exited")));
     });
     await new Promise((r) => setTimeout(r, 1500));
-    const gctx = await browser.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1, colorScheme: "light" });
+    const gctx = await browser.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1, colorScheme: "light", locale: LOCALE });
     const gp = await gctx.newPage();
     await gp.goto(url);
-    if (LANG !== "zh") await gp.goto(gp.url() + (gp.url().includes("?") ? "&" : "?") + `lang=${LANG}`);
+    await gp.goto(gp.url() + (gp.url().includes("?") ? "&" : "?") + `lang=${LANG}`);
     await gp.waitForTimeout(2500);
     await gp.locator("input").first().fill(T.guest);
     await gp.keyboard.press("Enter");
