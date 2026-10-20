@@ -18,6 +18,7 @@ import { useSessionFolds, useSessionNames } from "../multi/writes";
 import { place } from "./codeLinks";
 import { useFollowedSession } from "./follow";
 import "./pointer.css";
+import { tr } from "../i18n";
 
 const base = (p: string) => p.split("/").pop() || p;
 const NONE: never[] = [];
@@ -68,5 +69,8 @@ export function PointerLayer({ api, view, chrome = [] }: { api: ExcalidrawImpera
 export function clashText(c: Conflict, label: (sid: string, among?: string[]) => string) {
   const [a, b] = c.sessions.map((s) => label(s, c.sessions));
   const gap = Math.max(1, Math.round((c.writes[1].at - c.writes[0].at) / 60_000));
-  return c.kind === "file" ? `${a} 与 ${b} 在 ${gap} 分钟内都改了 ${c.path}` : `${a} 改了 ${base(c.writes[0].path)}，${b} 在 ${gap} 分钟内改了同一节点的 ${base(c.writes[1].path)}`;
+  const mins = gap === 1 ? "1 minute" : `${gap} minutes`;
+  return c.kind === "file"
+    ? tr(`${a} 与 ${b} 在 ${gap} 分钟内都改了 ${c.path}`, `${a} and ${b} both changed ${c.path} within ${mins}`)
+    : tr(`${a} 改了 ${base(c.writes[0].path)}，${b} 在 ${gap} 分钟内改了同一节点的 ${base(c.writes[1].path)}`, `${a} changed ${base(c.writes[0].path)}, and within ${mins} ${b} changed ${base(c.writes[1].path)} on the same node`);
 }

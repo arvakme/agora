@@ -13,9 +13,10 @@ import { threadAuthorName } from "./authorColor";
 import { routeMessage } from "./mention";
 import { MomentChip } from "./MomentChip";
 import { SPRING } from "./motion";
-import { ago, Composer, ThreadCard } from "./ThreadCard";
+import { ago, Composer, repliesText, ThreadCard } from "./ThreadCard";
 import { useThreads, type Thread, type ThreadStore } from "./threads";
 import "./whole.css";
+import { tr } from "../i18n";
 
 const WHOLE: AnchorState = { point: { x: 0, y: 0 }, names: [], status: "whole" };
 /** Above the corner button, clear of the dock. */
@@ -50,17 +51,17 @@ export function WholeCanvas({ api, store, width, height }: { api: ExcalidrawImpe
   };
   return (
     <div className="whole" onPointerDown={(e) => e.stopPropagation()}>
-      <button className="whole-btn" data-on={panel !== null || !!active} aria-expanded={panel !== null} onClick={() => (store.close(), setPanel(panel ? null : "list"))} title="评论整张图：不钉在元素上">
+      <button className="whole-btn" data-on={panel !== null || !!active} aria-expanded={panel !== null} onClick={() => (store.close(), setPanel(panel ? null : "list"))} title={tr("评论整张图：不钉在元素上", "Comment on the whole canvas, not pinned to an element")}>
         <IconWhole size={16} />
-        <span className="whole-label">整张图</span>
+        <span className="whole-label">{tr("整张图", "Whole canvas")}</span>
         {open.length > 0 && <em>{open.length}</em>}
       </button>
       <AnimatePresence>
         {panel === "list" && (
-          <motion.section key="list" className="whole-panel" aria-label="整张图的评论" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4, transition: { duration: 0.12 } }} transition={SPRING}>
+          <motion.section key="list" className="whole-panel" aria-label={tr("整张图的评论", "Comments on the whole canvas")} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4, transition: { duration: 0.12 } }} transition={SPRING}>
             <header>
-              <h2>整张图的评论</h2>
-              <button className="icon-btn sm muted" onClick={() => setPanel(null)} aria-label="关闭" title="关闭（Esc）"><IconClose size={16} /></button>
+              <h2>{tr("整张图的评论", "Comments on the whole canvas")}</h2>
+              <button className="icon-btn sm muted" onClick={() => setPanel(null)} aria-label={tr("关闭", "Close")} title={tr("关闭（Esc）", "Close (Esc)")}><IconClose size={16} /></button>
             </header>
             <div className="whole-list">
               {[...open, ...done].map((t) => (
@@ -68,18 +69,18 @@ export function WholeCanvas({ api, store, width, height }: { api: ExcalidrawImpe
                   <span className="whole-row-meta">
                     <b>{threadAuthorName(t)}</b>
                     <time>{ago(t.messages.at(-1)!.at)}</time>
-                    {t.resolved && <span>已解决</span>}
+                    {t.resolved && <span>{tr("已解决", "Resolved")}</span>}
                   </span>
                   <span className="whole-row-text">{t.messages.find((m) => !m.deleted)?.text}</span>
                   <span className="whole-row-foot">
-                    {t.messages.length > 1 && <span>{t.messages.length - 1} 条回复</span>}
+                    {t.messages.length > 1 && <span>{repliesText(t.messages.length - 1)}</span>}
                     <MomentChip t={t} canvasId={store.canvasId} />
                   </span>
                 </button>
               ))}
-              {!whole.length && <p className="whole-empty">还没有人评论整张图。</p>}
+              {!whole.length && <p className="whole-empty">{tr("还没有人评论整张图。", "No one has commented on the whole canvas yet.")}</p>}
             </div>
-            <button className="btn sm primary whole-write" onClick={() => setPanel("write")}><IconPlus size={14} />写一条</button>
+            <button className="btn sm primary whole-write" onClick={() => setPanel("write")}><IconPlus size={14} />{tr("写一条", "Write one")}</button>
           </motion.section>
         )}
         {panel === "write" && (

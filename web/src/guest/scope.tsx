@@ -2,6 +2,7 @@
 // the decision is pure; the page acts on it. Whole-project shares only change shape (canvases come and go); a single-canvas share that is
 // refused has ended.
 import { IconEye } from "../app/icons";
+import { tr } from "../i18n";
 
 /** What asking came back with: the state, refused (403: that canvas is not in reach any more, or the share ended), nothing to show (404: the project has no canvas), or a failure to try again. */
 export type Probe = "ok" | "ended" | "empty" | "failed";
@@ -22,8 +23,8 @@ export function GuestEmpty() {
     <div className="guest-empty" role="status">
       <main>
         <IconEye size={48} />
-        <h2>这个项目暂时没有画布</h2>
-        <p>作者新建画布后，这里会自动出现，不用刷新。</p>
+        <h2>{tr("这个项目暂时没有画布", "This project has no canvases yet")}</h2>
+        <p>{tr("作者新建画布后，这里会自动出现，不用刷新。", "When the author creates a canvas, it shows up here automatically, no refresh needed.")}</p>
       </main>
     </div>
   );

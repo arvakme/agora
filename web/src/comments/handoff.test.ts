@@ -75,3 +75,18 @@ describe("parseCommentMessage", () => {
     expect(commentMessage(thread, [])).toContain("@Claude Code"); // (without a mention given it goes as it is)
   });
 });
+
+describe("commentMessage in an English interface", () => {
+  it("keeps the format the page reads back, and asks for the reply in English", async () => {
+    const { setLangForTest } = await import("../i18n");
+    setLangForTest("en");
+    try {
+      const t = commentMessage({ n: 2, messages: [msg("you", "make it the entry", { id: "user:me", name: "Ann" })] }, [{ id: "r", name: "Browser" }]);
+      expect(t.split("\n")[0]).toBe("画布评论 #2（锚点：Browser（r））：");
+      expect(t.split("\n").at(-1)).toMatch(/^请按这条评论处理画布.*Reply in English/);
+      expect(parseCommentMessage(t)?.messages).toEqual([{ who: "Ann", text: "make it the entry" }]);
+    } finally {
+      setLangForTest("zh");
+    }
+  });
+});
