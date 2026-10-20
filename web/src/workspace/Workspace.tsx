@@ -18,6 +18,7 @@ import { groupKind, plusMenu, type NewWhat } from "./model";
 import { nextFront } from "./frontPane";
 import { installPinchRouting } from "./pinchRoute";
 import { NARROW_MIN_PANE, narrowRoot, useNarrow, type Stack } from "./narrow";
+import { tr } from "../i18n";
 
 // Panes are flush: a 1px gap over the hairline-coloured workspace is the divider (D13).
 const GAP = 1, PAD = 0, HEADER = 36, MIN_PANE = 220;
@@ -27,10 +28,10 @@ type Target = { groupId: string; index?: number; preview: Rect };
 type Drag = { tab: string; x: number; y: number; ox: number; oy: number; active: boolean; target: Target | null };
 
 const ITEMS: Record<NewWhat, { icon: ReactNode; label: string }> = {
-  canvas: { icon: <IconPlus size={14} />, label: "新建画布" },
-  session: { icon: <IconMessage size={14} />, label: "新建会话" },
-  sample: { icon: <IconLayers size={14} />, label: "从示例新建画布" },
-  open: { icon: <IconFolder size={14} />, label: "打开画布" },
+  canvas: { icon: <IconPlus size={14} />, label: tr("新建画布", "New canvas") },
+  session: { icon: <IconMessage size={14} />, label: tr("新建会话", "New session") },
+  sample: { icon: <IconLayers size={14} />, label: tr("从示例新建画布", "New canvas from sample") },
+  open: { icon: <IconFolder size={14} />, label: tr("打开画布", "Open canvas") },
 };
 type Props = {
   /** Phone only: the canvas and the session shown together while a turn plays (./narrow.ts). */
@@ -111,7 +112,7 @@ export function Workspace({ root: savedRoot, setRoot: setSavedRoot, titles, subt
     const box = ref.current!.getBoundingClientRect(), b = anchor.getBoundingClientRect();
     setMenu({ group: groupId, kind, x: Math.min(b.left - box.left, box.width - 200), y: b.bottom - box.top + 4 });
   };
-  const plusLabel = (tabs: string[]) => ({ canvas: "新建或打开画布", session: "新建会话", mixed: "新建…" })[groupKind(tabs, kindOf)];
+  const plusLabel = (tabs: string[]) => ({ canvas: tr("新建或打开画布", "New or open canvas"), session: tr("新建会话", "New session"), mixed: tr("新建…", "New…") })[groupKind(tabs, kindOf)];
 
   const targetAt = (x: number, y: number): Target | null => {
     // the floating group is on top: it is looked at first (not at all while it is only its rail tab or pill)
@@ -225,18 +226,18 @@ export function Workspace({ root: savedRoot, setRoot: setSavedRoot, titles, subt
                   >
                     {marks[t] ?? <span className="wm-tab-dot" />}
                     {editing === t ? (
-                      <TitleInput value={titles[t]} label={kinds[t] === "session" ? "会话名称" : "画布名称"} onDone={(v) => (v !== null && onRename(t, v), setEditing(null))} />
+                      <TitleInput value={titles[t]} label={kinds[t] === "session" ? tr("会话名称", "Session name") : tr("画布名称", "Canvas name")} onDone={(v) => (v !== null && onRename(t, v), setEditing(null))} />
                     ) : (
-                      <span className="wm-tab-title" title={subtitles[t] ? `${titles[t]} · 关联画布：${subtitles[t]}（双击重命名）` : "双击重命名"}>
+                      <span className="wm-tab-title" title={subtitles[t] ? tr(`${titles[t]} · 关联画布：${subtitles[t]}（双击重命名）`, `${titles[t]} · canvas: ${subtitles[t]} (double-click to rename)`) : tr("双击重命名", "Double-click to rename")}>
                         {titles[t]}
                         {subtitles[t] && <span className="wm-tab-sub">{subtitles[t]}</span>}
                       </span>
                     )}
-                    <button className="wm-tab-close" aria-label={`关闭 ${titles[t]}`} title="关闭（不会删除）" onClick={() => onClose(t)}><IconClose size={14} /></button>
+                    <button className="wm-tab-close" aria-label={tr(`关闭 ${titles[t]}`, `Close ${titles[t]}`)} title={tr("关闭（不会删除）", "Close (doesn't delete)")} onClick={() => onClose(t)}><IconClose size={14} /></button>
                     {g.active === t && <motion.span layoutId={`tab-ind-${g.id}`} className="wm-tab-ind" transition={SPRING} />}
                   </motion.div>
                 ))}
-                {narrow && sheet && g.id === "narrow-bottom" && <button className="wm-add" onClick={sheet.toggle} aria-expanded={sheet.open} aria-label={sheet.open ? "收起会话" : "展开会话"} title={sheet.open ? "收起会话" : "展开会话"}><IconChevron open={sheet.open} /></button>}
+                {narrow && sheet && g.id === "narrow-bottom" && <button className="wm-add" onClick={sheet.toggle} aria-expanded={sheet.open} aria-label={sheet.open ? tr("收起会话", "Fold session") : tr("展开会话", "Expand session")} title={sheet.open ? tr("收起会话", "Fold session") : tr("展开会话", "Expand session")}><IconChevron open={sheet.open} /></button>}
                 <button className="wm-add" onClick={(e) => plus(g.id, e.currentTarget)} aria-label={plusLabel(g.tabs)} title={plusLabel(g.tabs)}><IconPlus size={16} /></button>
               </div>
             </section>
@@ -298,9 +299,9 @@ export function Workspace({ root: savedRoot, setRoot: setSavedRoot, titles, subt
               </>
             ) : (
               <>
-                <button role="menuitem" onClick={() => (setEditing(menu.tab), setMenu(null))}><IconPencil size={14} />重命名<kbd>双击</kbd></button>
-                <button role="menuitem" onClick={() => (onClose(menu.tab), setMenu(null))}><IconClose size={14} />关闭</button>
-                <button role="menuitem" className="danger" onClick={() => (onDelete(menu.tab), setMenu(null))}><IconTrash size={14} />删除…</button>
+                <button role="menuitem" onClick={() => (setEditing(menu.tab), setMenu(null))}><IconPencil size={14} />{tr("重命名", "Rename")}<kbd>{tr("双击", "Double-click")}</kbd></button>
+                <button role="menuitem" onClick={() => (onClose(menu.tab), setMenu(null))}><IconClose size={14} />{tr("关闭", "Close")}</button>
+                <button role="menuitem" className="danger" onClick={() => (onDelete(menu.tab), setMenu(null))}><IconTrash size={14} />{tr("删除…", "Delete…")}</button>
               </>
             )}
           </motion.div>

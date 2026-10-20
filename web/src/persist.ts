@@ -11,6 +11,7 @@ import { foldSessions, sessionRecords, threadsFromFile, threadsToFile, type Logg
 import { markImported, readLegacy } from "./project/legacy";
 import { createSaveQueue } from "./saveQueue";
 import { layoutSaves } from "./layoutSaves";
+import { tr } from "./i18n";
 import { trash, type Restored } from "./workspace/trash";
 import { threadStores, type ThreadSnapshot } from "./comments/threads";
 import type { El } from "./canvas/scene";
@@ -291,9 +292,11 @@ export function slotOfFile(file: string): string | undefined {
 
 /** One line for the banner: which file, what is wrong, where. */
 export function describeFileError(e: FileError): string {
-  const where = e.line ? `第 ${e.line} 行` : "";
-  if (e.error === "unreadable") return `.agora/${e.file} 读不了（${e.detail ?? "没有权限"}）`;
-  return e.error === "merge-conflict" ? `.agora/${e.file} 有合并冲突（${where || "冲突标记"}）` : `.agora/${e.file} 不是有效的 JSON${where ? `（${where}）` : ""}`;
+  const where = e.line ? tr(`第 ${e.line} 行`, `line ${e.line}`) : "";
+  if (e.error === "unreadable") return tr(`.agora/${e.file} 读不了（${e.detail ?? "没有权限"}）`, `.agora/${e.file} can't be read (${e.detail ?? "no permission"})`);
+  return e.error === "merge-conflict"
+    ? tr(`.agora/${e.file} 有合并冲突（${where || "冲突标记"}）`, `.agora/${e.file} has a merge conflict (${where || "conflict markers"})`)
+    : tr(`.agora/${e.file} 不是有效的 JSON${where ? `（${where}）` : ""}`, `.agora/${e.file} isn't valid JSON${where ? ` (${where})` : ""}`);
 }
 
 /** A conflicted slot → the file it names, for the banner. */

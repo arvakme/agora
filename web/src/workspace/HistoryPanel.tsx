@@ -11,6 +11,7 @@ import { AgentAvatar } from "../session/AgentAvatar";
 import { AGENT_KINDS, agents, useAgentName, useAgents, type AgentKind } from "../session/agents";
 import { sessions } from "../session/store";
 import { sessionDocId, type Doc, type SessionDoc } from "./model";
+import { langTag, tr } from "../i18n";
 
 export type HistoryRow = {
   sessionId?: string | null;
@@ -54,9 +55,9 @@ type Props = {
 };
 
 const DAY = 86400000;
-const RANGES = { all: "全部时间", day: "24 小时内", week: "7 天内", month: "30 天内" } as const;
-const STATES = { all: "全部状态", open: "打开的", closed: "已关闭", trash: "回收站", problem: "要处理的", import: "可以导入的" } as const;
-const when = (at?: number) => (at ? new Date(at).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
+const RANGES = { all: tr("全部时间", "Any time"), day: tr("24 小时内", "Past 24 hours"), week: tr("7 天内", "Past 7 days"), month: tr("30 天内", "Past 30 days") };
+const STATES = { all: tr("全部状态", "Any state"), open: tr("打开的", "Open"), closed: tr("已关闭", "Closed"), trash: tr("回收站", "Trash"), problem: tr("要处理的", "Needs attention"), import: tr("可以导入的", "Importable") };
+const when = (at?: number) => (at ? new Date(at).toLocaleString(langTag(), { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
 
 export function HistoryPanel({ docs, titles, canvasTitles, open, currentCanvas, onOpen, onRestore, onImported, onDismiss }: Props) {
   const agentLabel = useAgentName();
@@ -77,7 +78,7 @@ export function HistoryPanel({ docs, titles, canvasTitles, open, currentCanvas, 
   const load = () =>
     fetch("/api/project/history")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${r.status}`))))
-      .then(setData, (e) => setErr(`读不到会话历史：${(e as Error).message}`));
+      .then(setData, (e) => setErr(tr(`读不到会话历史：${(e as Error).message}`, `Couldn't load session history: ${(e as Error).message}`)));
   useEffect(() => {
     void load();
     input.current?.focus();
@@ -106,22 +107,22 @@ export function HistoryPanel({ docs, titles, canvasTitles, open, currentCanvas, 
   const nameOf = (r: HistoryRow) => {
     const d = docOf(r);
     if (d) return titles[d.id] ?? d.title;
-    const agentName = r.agent ? agentLabel(r.agent) : "会话";
+    const agentName = r.agent ? agentLabel(r.agent) : tr("会话", "Session");
     return r.title || (r.topic ? `${agentName} · ${r.topic}` : r.firstMessage ? `${agentName} · ${r.firstMessage.slice(0, 24)}` : agentName);
   };
   const label = (r: HistoryRow): { text: string; tone?: "caution" | "error" } => {
-    if (r.state === "trash") return { text: `在回收站 · ${r.daysLeft ?? "?"} 天后清除` };
-    if (r.state === "registry") return { text: "不在项目里 · 本机有记录", tone: "caution" };
-    if (r.state === "found") return { text: r.source === "cwd" ? "在项目目录里 · 不是 Agora 建的" : "在本机找到 · 不在项目里", tone: "caution" };
-    if (r.origin === "foreign") return { text: "来自另一台机器", tone: "caution" };
-    if (r.origin === "copy") return { text: "副本 · 只读", tone: "caution" };
-    if (r.origin === "recoverable" || r.origin === "other-copy") return { text: r.origin === "other-copy" ? "属于另一份副本" : "绑定可恢复", tone: "caution" };
-    if (r.state === "listed" && !r.agent) return { text: "还没选 agent" }; // a session nobody started: nothing to resume
+    if (r.state === "trash") return { text: tr(`在回收站 · ${r.daysLeft ?? "?"} 天后清除`, `In trash · purged in ${r.daysLeft ?? "?"} ${r.daysLeft === 1 ? "day" : "days"}`) };
+    if (r.state === "registry") return { text: tr("不在项目里 · 本机有记录", "Not in the project · known on this machine"), tone: "caution" };
+    if (r.state === "found") return { text: r.source === "cwd" ? tr("在项目目录里 · 不是 Agora 建的", "In the project folder · not made by Agora") : tr("在本机找到 · 不在项目里", "Found on this machine · not in the project"), tone: "caution" };
+    if (r.origin === "foreign") return { text: tr("来自另一台机器", "From another machine"), tone: "caution" };
+    if (r.origin === "copy") return { text: tr("副本 · 只读", "Copy · read-only"), tone: "caution" };
+    if (r.origin === "recoverable" || r.origin === "other-copy") return { text: r.origin === "other-copy" ? tr("属于另一份副本", "Belongs to another copy") : tr("绑定可恢复", "Binding restorable"), tone: "caution" };
+    if (r.state === "listed" && !r.agent) return { text: tr("还没选 agent", "No agent chosen yet") }; // a session nobody started: nothing to resume
     const st = r.sessionId ? status[r.sessionId] : undefined;
-    if (st?.native?.blocking) return { text: "原生记录缺失", tone: "error" };
-    if (st?.terminal.alive) return { text: "在终端里运行" };
+    if (st?.native?.blocking) return { text: tr("原生记录缺失", "Native record missing"), tone: "error" };
+    if (st?.terminal.alive) return { text: tr("在终端里运行", "Running in terminal") };
     const d = docOf(r);
-    return { text: d && open.has(d.id) ? "已打开" : "已关闭 · 可续接" };
+    return { text: d && open.has(d.id) ? tr("已打开", "Open") : tr("已关闭 · 可续接", "Closed · resumable") };
   };
   const problem = (r: HistoryRow) => !!label(r).tone;
 
@@ -161,7 +162,7 @@ export function HistoryPanel({ docs, titles, canvasTitles, open, currentCanvas, 
     } catch (e) {
       const { [s.id]: _, ...rest } = sessions.get().sessions;
       sessions.hydrate({ ...sessions.get(), sessions: rest });
-      setErr(`没能导入：${(e as Error).message}`);
+      setErr(tr(`没能导入：${(e as Error).message}`, `Couldn't import: ${(e as Error).message}`));
     } finally {
       setBusy(null);
     }
@@ -173,11 +174,11 @@ export function HistoryPanel({ docs, titles, canvasTitles, open, currentCanvas, 
     const d = docOf(r);
     const snippet = full && hits ? (hits.get(r.sessionId ?? "") ?? hits.get(r.nativeId ?? "")) : undefined;
     const meta = [
-      r.canvasId ? (canvasTitles[r.canvasId] ? `「${canvasTitles[r.canvasId]}」` : "画布不在工作区") : "",
+      r.canvasId ? (canvasTitles[r.canvasId] ? tr(`「${canvasTitles[r.canvasId]}」`, `“${canvasTitles[r.canvasId]}”`) : tr("画布不在工作区", "Canvas not in workspace")) : "",
       r.model ?? "",
-      r.turns ? `${r.turns} 轮` : "",
-      r.createdAt || r.logCreatedAt ? `建于 ${when(r.createdAt ?? r.logCreatedAt)}` : "",
-      r.lastActiveAt ? `最后活动 ${when(r.lastActiveAt)}` : "",
+      r.turns ? tr(`${r.turns} 轮`, `${r.turns} ${r.turns === 1 ? "turn" : "turns"}`) : "",
+      r.createdAt || r.logCreatedAt ? tr(`建于 ${when(r.createdAt ?? r.logCreatedAt)}`, `created ${when(r.createdAt ?? r.logCreatedAt)}`) : "",
+      r.lastActiveAt ? tr(`最后活动 ${when(r.lastActiveAt)}`, `last active ${when(r.lastActiveAt)}`) : "",
     ].filter(Boolean);
     return (
       <li key={key} className="lp-row" data-state={r.state}>
@@ -191,11 +192,11 @@ export function HistoryPanel({ docs, titles, canvasTitles, open, currentCanvas, 
           {snippet && <span className="hs-snippet">…{snippet}…</span>}
           {!snippet && r.firstMessage && !d?.topic && r.state !== "listed" && <span className="hs-snippet">{r.firstMessage}</span>}
         </div>
-        {r.state === "listed" && d && <button className="btn sm quiet" onClick={() => onOpen(d.id)}>打开</button>}
-        {r.state === "trash" && r.trashId && <button className="btn sm quiet" onClick={() => onRestore(r.trashId!)}><IconRetry size={14} />恢复</button>}
+        {r.state === "listed" && d && <button className="btn sm quiet" onClick={() => onOpen(d.id)}>{tr("打开", "Open")}</button>}
+        {r.state === "trash" && r.trashId && <button className="btn sm quiet" onClick={() => onRestore(r.trashId!)}><IconRetry size={14} />{tr("恢复", "Restore")}</button>}
         {(r.state === "registry" || r.state === "found") && r.nativeId && (
-          <button className="btn sm quiet" disabled={busy === r.nativeId || !r.agent} onClick={() => void importRow(r)} title={r.logPath ? `原生日志：${r.logPath}` : undefined}>
-            导入{r.canvasId && canvasTitles[r.canvasId] ? "" : "到当前画布"}
+          <button className="btn sm quiet" disabled={busy === r.nativeId || !r.agent} onClick={() => void importRow(r)} title={r.logPath ? tr(`原生日志：${r.logPath}`, `Native log: ${r.logPath}`) : undefined}>
+            {r.canvasId && canvasTitles[r.canvasId] ? tr("导入", "Import") : tr("导入到当前画布", "Import to current canvas")}
           </button>
         )}
       </li>
@@ -206,51 +207,51 @@ export function HistoryPanel({ docs, titles, canvasTitles, open, currentCanvas, 
   return (
     <>
       <div className="lp-scrim" onPointerDown={onDismiss} />
-      <motion.div className="lp hs" role="dialog" aria-label="会话历史" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
+      <motion.div className="lp hs" role="dialog" aria-label={tr("会话历史", "Session history")} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
         <header className="lp-head">
           <IconHistory size={18} />
-          <h2>会话历史</h2>
+          <h2>{tr("会话历史", "Session history")}</h2>
           <label className="hs-search">
             <IconSearch size={16} />
-            <input ref={input} value={q} onChange={(e) => setQ(e.target.value)} placeholder={full ? "搜索对话全文（至少 2 个字）" : "搜索名字、主题、首条消息"} aria-label="搜索会话" />
+            <input ref={input} value={q} onChange={(e) => setQ(e.target.value)} placeholder={full ? tr("搜索对话全文（至少 2 个字）", "Search conversation text (2+ characters)") : tr("搜索名字、主题、首条消息", "Search names, topics, first messages")} aria-label={tr("搜索会话", "Search sessions")} />
           </label>
-          <button className="icon-btn sm muted" aria-label="关闭" onClick={onDismiss}><IconClose size={16} /></button>
+          <button className="icon-btn sm muted" aria-label={tr("关闭", "Close")} onClick={onDismiss}><IconClose size={16} /></button>
         </header>
         <div className="hs-filters">
           <div className="seg" data-static role="radiogroup" aria-label="Agent">
             {(["all", ...AGENT_KINDS] as const).map((k) => (
               <button key={k} role="radio" aria-checked={agent === k} data-on={agent === k} onClick={() => setAgent(k)}>
-                {k === "all" ? "全部" : agentLabel(k)}
+                {k === "all" ? tr("全部", "All") : agentLabel(k)}
               </button>
             ))}
           </div>
-          <select value={canvas} onChange={(e) => setCanvas(e.target.value)} aria-label="画布">
-            <option value="all">全部画布</option>
+          <select value={canvas} onChange={(e) => setCanvas(e.target.value)} aria-label={tr("画布", "Canvas")}>
+            <option value="all">{tr("全部画布", "All canvases")}</option>
             {canvasIds.map((id) => <option key={id} value={id}>{canvasTitles[id]}</option>)}
           </select>
-          <select value={state} onChange={(e) => setState(e.target.value as keyof typeof STATES)} aria-label="状态">
+          <select value={state} onChange={(e) => setState(e.target.value as keyof typeof STATES)} aria-label={tr("状态", "State")}>
             {Object.entries(STATES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
-          <select value={range} onChange={(e) => setRange(e.target.value as keyof typeof RANGES)} aria-label="时间">
+          <select value={range} onChange={(e) => setRange(e.target.value as keyof typeof RANGES)} aria-label={tr("时间", "Time")}>
             {Object.entries(RANGES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
-          <label className="hs-full" title="在各会话的原生日志里搜（原生日志没了就搜 Agora 的快照）">
+          <label className="hs-full" title={tr("在各会话的原生日志里搜（原生日志没了就搜 Agora 的快照）", "Searches each session's native log (or Agora's snapshot when the log is gone)")}>
             <input type="checkbox" checked={full} onChange={(e) => setFull(e.target.checked)} />
-            搜索对话全文{searching ? "…" : ""}
+            {tr("搜索对话全文", "Search full text")}{searching ? "…" : ""}
           </label>
         </div>
         {err && <p className="notice lp-note" role="alert" data-tone="error"><span>{err}</span></p>}
-        {!data && !err && <p className="hs-loading">正在读取…</p>}
+        {!data && !err && <p className="hs-loading">{tr("正在读取…", "Loading…")}</p>}
         {data && (
           <ul className="lp-list">
-            {rows.length > 0 && <li className="ad-group">这个项目的会话 · {rows.length}</li>}
+            {rows.length > 0 && <li className="ad-group">{tr("这个项目的会话", "Sessions in this project")} · {rows.length}</li>}
             {rows.map(row)}
-            {agoraFound.length > 0 && <li className="ad-group">在本机找到、不在项目里的会话 · {agoraFound.length}</li>}
+            {agoraFound.length > 0 && <li className="ad-group">{tr("在本机找到、不在项目里的会话", "Found on this machine, not in the project")} · {agoraFound.length}</li>}
             {agoraFound.map(row)}
             {cwdFound.length > 0 && (
               <li className="ad-group">
                 <button className="hs-toggle" aria-expanded={showCwd} onClick={() => setShowCwd((v) => !v)}>
-                  {showCwd ? "▾" : "▸"} 在项目目录里、不是 Agora 建的会话 · {cwdFound.length}
+                  {showCwd ? "▾" : "▸"} {tr("在项目目录里、不是 Agora 建的会话", "In the project folder, not made by Agora")} · {cwdFound.length}
                 </button>
               </li>
             )}
@@ -258,7 +259,7 @@ export function HistoryPanel({ docs, titles, canvasTitles, open, currentCanvas, 
             {!rows.length && !found.length && (
               <li className="lp-empty">
                 <span className="dither-field" aria-hidden />
-                <p>{q || agent !== "all" || canvas !== "all" || state !== "all" || range !== "all" ? "没有符合条件的会话" : "这个项目还没有会话"}</p>
+                <p>{q || agent !== "all" || canvas !== "all" || state !== "all" || range !== "all" ? tr("没有符合条件的会话", "No matching sessions") : tr("这个项目还没有会话", "No sessions in this project yet")}</p>
               </li>
             )}
           </ul>

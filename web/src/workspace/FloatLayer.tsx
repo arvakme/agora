@@ -6,6 +6,7 @@ import { applySnap, floatFocus, HANDLE, railTop, RAIL_H, shellBox } from "../app
 import { Avatar, BarPill, BarStrip, FloatHead, RailTab, ResizeHandles, SnapPreview, type SessionItem } from "../app/shellParts";
 import type { FloatSpec } from "../app/useSessionFloat";
 import type { useFloat } from "./useFloat";
+import { tr } from "../i18n";
 
 const box = (r: { x: number; y: number; w: number; h: number }) => ({ left: r.x, top: r.y, width: Math.max(0, r.w), height: Math.max(0, r.h) });
 
@@ -67,14 +68,14 @@ export function FloatExtras({ flt, F, header, ws }: { flt: FloatSpec; F: F; head
   }, [flt.folded, railEl, pillEl]);
   const live = F.card.live;
   const preview = flt.mode === "card" && live?.kind === "move" && F.cardBox && live.snap ? shellBox(applySnap(flt.shell, live.snap, F.cardPane), F.cardPane, "session") : null;
-  const news = flt.dot ? "（有新消息）" : "";
+  const news = flt.dot ? tr("（有新消息）", " (new messages)") : "";
   return (
     <>
       {railed && (
-        <RailTab name="session" top={top + header} avatar={<Avatar kind={flt.kind} size={20} />} label={flt.label} dot={flt.dot} aria={`展开「${flt.label}」的会话面板${news}`} onOpen={flt.onUnfold} forwardRef={setRailEl} />
+        <RailTab name="session" top={top + header} avatar={<Avatar kind={flt.kind} size={20} />} label={flt.label} dot={flt.dot} aria={tr(`展开「${flt.label}」的会话面板${news}`, `Expand the session panel for “${flt.label}”${news}`)} onOpen={flt.onUnfold} forwardRef={setRailEl} />
       )}
       {flt.mode === "bar" && flt.folded && F.pill && (
-        <BarPill box={F.pill} kind={flt.kind} status={flt.status} dot={flt.dot} aria={`展开「${flt.label}」的会话条${news}`} onOpen={flt.onUnfold} forwardRef={setPillEl} />
+        <BarPill box={F.pill} kind={flt.kind} status={flt.status} dot={flt.dot} aria={tr(`展开「${flt.label}」的会话条${news}`, `Expand the session bar for “${flt.label}”${news}`)} onOpen={flt.onUnfold} forwardRef={setPillEl} />
       )}
       {flt.mode === "card" && !flt.folded && (live?.dock || preview) && (
         <SnapPreview box={preview ? { ...preview, y: preview.y + header } : null} dock={!!live?.dock} dockBox={{ x: ws.w * 0.6, y: 0, w: ws.w * 0.4, h: ws.h }} />
