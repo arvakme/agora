@@ -4,7 +4,9 @@
 // same edges and labels and the same code links — so `?mock=runs` (runs/fixtures.ts, the
 // prototype's script) plays on the same picture as the prototype.
 //
-//   node scripts/fidelity/setup.ts <source project> <new project dir>
+//   node scripts/fidelity/setup.ts <source project> <new project dir> [--lang en]
+//
+// --lang en: the same picture with English labels and tab titles (the promo film's English cut, docs/promo/).
 //
 // The source project is copied without its live-server records (.agora/run) or its machine-local
 // records (.agora/local, so it opens as a fresh project, not as a copy), and is never modified.
@@ -127,18 +129,36 @@ export function canvas(nodes: N[] = NODES, edges: typeof EDGES = EDGES, child: R
   return { type: "excalidraw", version: 2, source: "agora", elements: els, appState: { gridSize: null, viewBackgroundColor: "#ffffff" }, files: {} };
 }
 
-export function setup(src: string, dir: string) {
+/** --lang en: labels by element id (nodes and edge labels' arrows), and the tab titles. */
+const EN: Record<string, string> = {
+  web: "Web app", api: "API service", pay: "Payments", "e-api-redis": "cache", "e-api-pay": "sub-service",
+  "api-app": "App entry", "api-routes": "Router", "api-users": "Users", "api-auth": "Auth", "e-api-app-api-routes": "mounts", "e-api-users-api-auth": "checks",
+};
+const english = (c: ReturnType<typeof canvas>) => {
+  for (const e of c.elements as { id: string; type: string; text?: string; originalText?: string; containerId?: string | null; width?: number; x?: number; fontSize?: number }[]) {
+    const s = e.type === "text" && e.containerId ? EN[e.containerId] : undefined;
+    if (!s) continue;
+    const w = textW(s, e.fontSize!);
+    e.x = e.x! + (e.width! - w) / 2;
+    e.width = w;
+    e.text = e.originalText = s;
+  }
+  return c;
+};
+
+export function setup(src: string, dir: string, lang: "zh" | "en" = "zh") {
+  const L = lang === "en" ? english : (c: ReturnType<typeof canvas>) => c;
   rmSync(dir, { recursive: true, force: true });
   cpSync(src, dir, { recursive: true, filter: (p) => !p.includes("/.agora/run") && !p.includes("/.agora/local") && !p.endsWith("/.git") && !p.includes("/.git/") });
   const store = join(dir, ".agora");
   rmSync(join(store, "canvases"), { recursive: true, force: true });
   mkdirSync(join(store, "canvases"), { recursive: true });
-  writeFileSync(join(store, "canvases", "c1.excalidraw"), JSON.stringify(canvas(), null, 1));
-  writeFileSync(join(store, "canvases", `${API_CHILD}.excalidraw`), JSON.stringify(canvas(API_NODES, API_EDGES, {}), null, 1));
+  writeFileSync(join(store, "canvases", "c1.excalidraw"), JSON.stringify(L(canvas()), null, 1));
+  writeFileSync(join(store, "canvases", `${API_CHILD}.excalidraw`), JSON.stringify(L(canvas(API_NODES, API_EDGES, {})), null, 1));
   writeFileSync(
     join(store, "workspace.json"),
     JSON.stringify(
-      { v: 2, docs: [{ id: "c1", kind: "canvas", title: "总架构" }, { id: API_CHILD, kind: "canvas", title: "API 服务" }], focused: "c1", root: { id: "g-fid", kind: "group", tabs: ["c1"], active: "c1" } },
+      { v: 2, docs: [{ id: "c1", kind: "canvas", title: lang === "en" ? "Overview" : "总架构" }, { id: API_CHILD, kind: "canvas", title: lang === "en" ? "API service" : "API 服务" }], focused: "c1", root: { id: "g-fid", kind: "group", tabs: ["c1"], active: "c1" } },
       null,
       2,
     ),
@@ -151,6 +171,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.error("usage: node scripts/fidelity/setup.ts <source project> <new project dir>");
     process.exit(2);
   }
-  setup(src, dir);
+  setup(src, dir, process.argv.includes("--lang") && process.argv[process.argv.indexOf("--lang") + 1] === "en" ? "en" : "zh");
   console.log(dir);
 }
