@@ -12,6 +12,8 @@ import asyncio
 from typing import TYPE_CHECKING, Any
 
 from server.canvas import graph_lint, graph_ops
+from server.i18n import tr
+
 if TYPE_CHECKING:
     from server.canvas.sessions import AgentHub
 
@@ -36,7 +38,7 @@ async def annotate(hub: AgentHub, cid: str, session: str | None, result: dict[st
     try:
         out["lint"] = graph_lint.brief(graph_lint.lint(await scene_of(hub, cid, session)))
     except Exception as e:  # the edit is done; say that the measure is missing rather than pretend it is clean
-        out["lint"] = {"error": f"改图已完成，但没能量出结果：{e}"}
+        out["lint"] = {"error": tr(f"改图已完成，但没能量出结果：{e}", f"The edit is done, but measuring the result failed: {e}")}
     return out
 
 
@@ -51,7 +53,7 @@ async def canvas_layout(hub: AgentHub, canvas: str | None, session: str | None, 
     """Re-arrange nodes that are already on the canvas. Says first what would move and how the diagram measures
     before and after; only ``apply`` touches the canvas. (New nodes are laid out by the ``layout`` op of ``apply``.)"""
     if not nodes and not everything:
-        raise ValueError("要说清楚排哪些：`--nodes a,b,c`（写 id）或 `--all`（整张图）。只排你刚画的新节点，不用这条：在 apply 的 ops 末尾加 {\"op\": \"layout\"}。")
+        raise ValueError(tr("要说清楚排哪些：`--nodes a,b,c`（写 id）或 `--all`（整张图）。只排你刚画的新节点，不用这条：在 apply 的 ops 末尾加 {\"op\": \"layout\"}。", "Say which to arrange: `--nodes a,b,c` (ids) or `--all` (the whole diagram). To lay out only the nodes you just drew, don't use this: end the apply ops with {\"op\": \"layout\"}."))
     from server.canvas.sessions import resolve_canvas
 
     cid = resolve_canvas(hub.store, canvas, session)
@@ -59,8 +61,8 @@ async def canvas_layout(hub: AgentHub, canvas: str | None, session: str | None, 
     plan = await asyncio.to_thread(graph_ops.plan_reflow, read["scene"], None if everything else nodes)
     head = {"canvas": {"id": cid, "name": read["canvas"].get("name")}, "willMove": plan["moves"], "before": graph_lint.brief(plan["before"]), "after": graph_lint.brief(plan["after"])}
     if not plan["ops"]:
-        return {"status": "nothing", **head, "note": "现在的摆法已经是排出来的结果，没有要动的。"}
+        return {"status": "nothing", **head, "note": tr("现在的摆法已经是排出来的结果，没有要动的。", "The current arrangement is already the laid-out result; nothing to move.")}
     if not apply:
-        return {"status": "preview", **head, "next": "确认要动这些节点，再加 --apply 执行（一次可撤销）。"}
+        return {"status": "preview", **head, "next": tr("确认要动这些节点，再加 --apply 执行（一次可撤销）。", "If these moves look right, add --apply to run them (one undoable step).")}
     got = await hub.canvas_apply(cid, session, read["base"], plan["ops"], note)
     return {**got, **head}

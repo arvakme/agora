@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from server.canvas.project import ProjectStore
+from server.i18n import tr
 
 SVG_MAX = 1_500_000  # bytes; an svg with big embedded images is refused, the page then sends the words only
 PNG_MAX = 3_000_000
@@ -35,7 +36,7 @@ class Selections:
 
     def save(self, *, canvas_id: str, elements: list[dict[str, str]], svg: str, png: bytes | None) -> dict[str, Any]:
         if len(svg.encode()) > SVG_MAX or (png is not None and len(png) > PNG_MAX):
-            raise ValueError("选区的图太大，没有保存")
+            raise ValueError(tr("选区的图太大，没有保存", "The selection picture is too large; not saved"))
         id = f"sel-{secrets.token_hex(5)}"
         folder = self.dir / id
         meta = {"id": id, "canvasId": canvas_id, "elements": elements, "at": int(time.time() * 1000), "hasThumb": bool(svg), "hasImage": png is not None}

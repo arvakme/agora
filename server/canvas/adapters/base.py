@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 
+from server.i18n import tr
+
 Tier = Literal["T1", "T2", "T0"]
 TIERS: tuple[Tier, ...] = ("T1", "T2", "T0")
 Via = Literal["native", "dispatch", "inferred"]
@@ -82,7 +84,7 @@ class VersionRange:
         hi = re.search(r"<\s*([\d.]+)", self.spec)
         if lo and hi:
             return f"{lo.group(1)}–<{hi.group(1)}"
-        return self.spec or "任意"
+        return self.spec or tr("任意", "any")
 
 
 # ——— references and links ———
@@ -231,8 +233,12 @@ class Adapter:
     # Whether words written while a headless turn runs are read by that turn (``steer_line`` is the line), else why not.
     steer: bool = False
     no_steer: str = ""
+    no_steer_en: str = ""  # (``why_no_steer`` picks the one for the person's language)
     # The permission mode Agora asks the CLI for; the session header compares it with the mode the CLI reports.
     asked_mode: str = "auto"
+
+    def why_no_steer(self) -> str:
+        return tr(self.no_steer, self.no_steer_en or self.no_steer)
 
     def steer_line(self, prompt: str) -> dict[str, Any]:
         """The words the person adds while the turn runs, as the line the host sends a two-way turn (``Control``): one more

@@ -22,8 +22,13 @@ from typing import Any
 from server.canvas import plan_rules, schemas
 from server.canvas.model_view import bound_text, label_of, library_meta
 from server.canvas.project import Conflict, ProjectStore
+from server.i18n import tr
 
-NEEDS_PAGE = "这条要打开页面才能做"
+
+
+def needs_page() -> str:
+    return tr("这条要打开页面才能做", "this one needs an open page")
+
 SUPPORTED = {"update_text"}
 # op name → (can_do(op, scene) -> str | None (the reason it cannot), do(op, scene, put) -> summary line): more ops, when they need no page.
 EXTRA_OPS: dict[str, tuple[Callable[..., Any], Callable[..., Any]]] = {}
@@ -43,14 +48,14 @@ def _cannot(op: dict[str, Any], by_id: dict[str, dict[str, Any]]) -> str | None:
     if name in EXTRA_OPS:
         return EXTRA_OPS[name][0](op, by_id)
     if name not in SUPPORTED:
-        return f"{name} 要摆放、连线或改几何，服务端直接改文件只能改节点文字"
+        return tr(f"{name} 要摆放、连线或改几何，服务端直接改文件只能改节点文字", f"{name} places, connects or reshapes things; editing the file on the server can only change node text")
     e = by_id[op["id"]]
     if e.get("type") == "frame":
         return None
     if e.get("type") == "arrow" or library_meta(e):
-        return "箭头和素材库组件的文字要重新排版"
+        return tr("箭头和素材库组件的文字要重新排版", "text on arrows and library components has to be laid out again")
     if bound_text(e, by_id) is None:
-        return "这个节点还没有文字元素，要新建一个"
+        return tr("这个节点还没有文字元素，要新建一个", "this node has no text element yet; one would have to be created")
     return None
 
 
@@ -71,7 +76,7 @@ def apply(store: ProjectStore, canvas_id: str, session_id: str | None, plan: dic
     for i, op in enumerate(plan["ops"]):
         why = _cannot(op, by_id)
         if why:
-            return {"status": "needs-page", "errors": [f"ops[{i}]（{op['op']}）：{NEEDS_PAGE}：{why}。一条计划里只要有一条做不了，整条都不会被执行。"]}
+            return {"status": "needs-page", "errors": [tr(f"ops[{i}]（{op['op']}）：{needs_page()}：{why}。一条计划里只要有一条做不了，整条都不会被执行。", f"ops[{i}] ({op['op']}): {needs_page()}: {why}. If any op in a plan can't be done, none of the plan runs.")]}
     watched = list(dict.fromkeys(plan_rules.referenced_ids(plan)))
     stale = plan_rules.stale_ids(versions, watched, elements)
     if stale:
@@ -100,12 +105,12 @@ def apply(store: ProjectStore, canvas_id: str, session_id: str | None, plan: dic
             t = bound_text(e, work)
             put(_bump(e))
             put(_bump(t, text=op["text"], originalText=op["text"]))
-        summary.append(f"改文字 {f'「{prev}」' if prev else e['id']} → 「{op['text']}」")
+        summary.append(tr(f"改文字 {f'「{prev}」' if prev else e['id']} → 「{op['text']}」", f"Changed text {f'“{prev}”' if prev else e['id']} → “{op['text']}”"))
     out = [work.get(e["id"], e) if e.get("id") in work else e for e in elements]
     try:
         store.write("canvas", canvas_id, {**data, "elements": out}, base=file_version)
     except Conflict:
-        return {"status": "stale", "stale": watched, "errors": ["画布刚刚被改动了：`agora canvas read` 再读一次"]}
+        return {"status": "stale", "stale": watched, "errors": [tr("画布刚刚被改动了：`agora canvas read` 再读一次", "The canvas just changed: run `agora canvas read` again")]}
     batch_id = f"b-{secrets.token_hex(4)}"
     turn_id = _record(store, session_id, canvas_id, note, summary, batch_id, before, {i: work[i]["version"] for i in touched}, len(watched))
     return {"status": "applied", "source": "server-fallback", "summary": summary, "turnId": turn_id, "batchId": batch_id, "note": note}
@@ -129,16 +134,16 @@ def _record(store: ProjectStore, session_id: str | None, canvas_id: str, note: s
         "sessionId": session_id,
         "canvasId": canvas_id,
         "origin": {"kind": "agent"},
-        "request": note or f"改图 · {len(summary)} 个操作",
+        "request": note or tr(f"改图 · {len(summary)} 个操作", f"Edit · {len(summary)} ops"),
         "refs": [],
         "startedAt": now,
         "endedAt": now,
         "status": "applied",
         "steps": [
-            step("check", "校验 + 新鲜度", f"schema ✓ · 引用 ✓ · {watched} 个元素版本未变 ✓"),
-            step("apply", "服务端直接改文件（没有页面能执行；1 次可撤销修改）", f"{len(summary)} 处修改 · {len(after)} 个元素"),
+            step("check", tr("校验 + 新鲜度", "Validation + freshness"), tr(f"schema ✓ · 引用 ✓ · {watched} 个元素版本未变 ✓", f"schema ✓ · references ✓ · {watched} element versions unchanged ✓")),
+            step("apply", tr("服务端直接改文件（没有页面能执行；1 次可撤销修改）", "Edited the file on the server (no page could run it; 1 undoable change)"), tr(f"{len(summary)} 处修改 · {len(after)} 个元素", f"{len(summary)} changes · {len(after)} elements")),
         ],
-        "reply": {"text": f"已修改 {len(summary)} 处{f'：{note}' if note else ''}（由服务端直接改文件）", "changes": summary, "batchId": batch_id},
+        "reply": {"text": tr(f"已修改 {len(summary)} 处{f'：{note}' if note else ''}（由服务端直接改文件）", f"Made {len(summary)} changes{f': {note}' if note else ''} (the server edited the file directly)"), "changes": summary, "batchId": batch_id},
     }
     records = [
         {"t": "session", "session": {**session, "turnIds": [*(session.get("turnIds") or []), turn_id]}},

@@ -32,6 +32,7 @@ from server.canvas.share import PROJECT_TITLE, SCOPE_PROJECT, ShareError, ShareM
 from server.canvas.trash import Trash, TrashError, canvas_sessions
 from server.canvas.runner import DEFAULT_BACKEND, DEFAULT_MODEL, EFFORTS, ExecOptions
 from server.canvas.version import running_version
+from server.i18n import LangMiddleware, tr
 from server.paths import WEB
 
 
@@ -57,13 +58,14 @@ def conflict(e: Conflict) -> JSONResponse:
 
 def gone(e: Gone) -> JSONResponse:
     """The project directory moved away while this server ran: 410, never a write at the old path."""
-    return JSONResponse(status_code=410, content={"gone": True, "error": f"{e}。在项目的新位置运行 `agora up`；这个页面里没保存的改动还在，先别关掉它。"})
+    return JSONResponse(status_code=410, content={"gone": True, "error": tr(f"{e}。在项目的新位置运行 `agora up`；这个页面里没保存的改动还在，先别关掉它。", f"{e}. Run `agora up` where the project is now; unsaved changes in this page are still here, so don't close it yet.")})
 
 
 def write_failed(e: OSError, store: ProjectStore) -> JSONResponse:
     """A write the disk refused (full, read-only, permissions): say which file and why. The old
     file is intact (writes are atomic)."""
-    why = {errno.ENOSPC: "磁盘空间不足", errno.EACCES: "没有写入权限", errno.EPERM: "没有写入权限", errno.EROFS: "文件系统是只读的", errno.EDQUOT: "超出磁盘配额"}.get(e.errno or 0, e.strerror or type(e).__name__)
+    no_write = tr("没有写入权限", "no write permission")
+    why = {errno.ENOSPC: tr("磁盘空间不足", "the disk is full"), errno.EACCES: no_write, errno.EPERM: no_write, errno.EROFS: tr("文件系统是只读的", "the file system is read-only"), errno.EDQUOT: tr("超出磁盘配额", "the disk quota is exceeded")}.get(e.errno or 0, e.strerror or type(e).__name__)
     file = e.filename
     try:
         if file:
@@ -72,7 +74,7 @@ def write_failed(e: OSError, store: ProjectStore) -> JSONResponse:
             file = str((p.parent / m.group(1) if m else p).relative_to(store.dir))
     except ValueError:
         pass
-    return JSONResponse(status_code=507 if e.errno in (errno.ENOSPC, errno.EDQUOT) else 500, content={"error": f"保存失败：{why}", "file": file, "errno": e.errno})
+    return JSONResponse(status_code=507 if e.errno in (errno.ENOSPC, errno.EDQUOT) else 500, content={"error": tr(f"保存失败：{why}", f"Save failed: {why}"), "file": file, "errno": e.errno})
 
 
 class Merge(BaseModel):
@@ -374,7 +376,7 @@ def create_share_router(store: ProjectStore, shares: ShareManager, events: Event
             check_max_opens(body.maxOpens)
             if body.scope == SCOPE_PROJECT:
                 if not project_summary(store)["canvases"]:
-                    raise ValueError("这个项目里还没有画布")
+                    raise ValueError(tr("这个项目里还没有画布", "This project has no canvases yet"))
             elif store.read("canvas", body.canvasId) is None:
                 raise ValueError(f"no canvas {body.canvasId!r} in this project")
         except ValueError as e:
@@ -385,7 +387,7 @@ def create_share_router(store: ProjectStore, shares: ShareManager, events: Event
             if body.domain and not body.quick:
                 shares.choose_domain(body.domain)
             project = body.scope == SCOPE_PROJECT
-            share, url = shares.create("" if project else body.canvasId, body.ttl, PROJECT_TITLE if project else title_of(body.canvasId), max_opens=body.maxOpens, quick=body.quick, build_replay=body.buildReplay, scope=body.scope)
+            share, url = shares.create("" if project else body.canvasId, body.ttl, tr(PROJECT_TITLE, "Whole project") if project else title_of(body.canvasId), max_opens=body.maxOpens, quick=body.quick, build_replay=body.buildReplay, scope=body.scope)
         except ValueError as e:  # a zone the account does not have
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:  # ShareError, Cloudflare / cf failures: in plain words, with the next step, keep serving
@@ -432,6 +434,10 @@ NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>Agora</title>
 <body style="font:14px system-ui;padding:40px;max-width:560px">
 <h3>前端还没有构建</h3><p>在 Agora 仓库里运行 <code>cd web &amp;&amp; npm run build</code>，
 或用 <code>agora up --dev</code> 走 vite 开发服务器。项目 API 已在 <code>/api/project</code> 就绪。</p>"""
+NOT_BUILT_EN = """<!doctype html><meta charset="utf-8"><title>Agora</title>
+<body style="font:14px system-ui;padding:40px;max-width:560px">
+<h3>The front end has not been built yet</h3><p>In the Agora repository run <code>cd web &amp;&amp; npm run build</code>,
+or use <code>agora up --dev</code> for the vite dev server. The project API is ready at <code>/api/project</code>.</p>"""
 
 
 SWEEP_S = 5.0
@@ -558,6 +564,7 @@ def create_project_app(
     dist = dist or WEB / "dist"
     gateway_app = create_gateway_app(store, shares, events, dist=dist)
     gateway_app.add_middleware(shutdown.CloseStreamsOnShutdown)
+    gateway_app.add_middleware(LangMiddleware, remember=False)  # a guest's words follow the guest's page, never the owner's
 
     trash = Trash(store)
     # Safety nets outside the project: earlier versions of committed files, daily local backups.
@@ -624,6 +631,7 @@ def create_project_app(
     # its own name to 127.0.0.1 must not reach it). The share gateway is a separate app, unaffected.
     app.add_middleware(LocalHostOnly)
     app.add_middleware(shutdown.CloseStreamsOnShutdown)  # event streams end when the server is told to stop (shutdown.py)
+    app.add_middleware(LangMiddleware)  # the language of what the server writes for a person (server/i18n.py)
     app.state.store = store
     app.state.hub = hub
     app.state.shares = shares
@@ -656,7 +664,7 @@ def create_project_app(
 
         @app.get("/", response_class=HTMLResponse)
         def not_built():
-            return NOT_BUILT
+            return tr(NOT_BUILT, NOT_BUILT_EN)
 
     return app
 

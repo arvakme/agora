@@ -55,6 +55,7 @@ from server.canvas.adapters.pi import PiStream, pi_usage
 from server.canvas.adapters.pi import dir_name as pi_dir_name
 from server.canvas.adapters.pi import migrate_log as _migrate_pi_log
 from server.canvas.adapters.pi import sessions_dir as _pi_sessions  # noqa: F401
+from server.i18n import tr
 from server.paths import BIN, SKILLS
 
 
@@ -173,7 +174,7 @@ def duplicates_note(kind: str, native_id: str, lookup: LogLookup) -> dict[str, A
         "blocking": False,
         "nativeId": native_id,
         "candidates": [str(lookup.path), *others],
-        "message": f"{NAMES.get(kind, kind)} 的原生会话 {native_id} 另有 {len(others)} 份同 id 的记录；Agora 跟随的是这个项目目录下的那份（也是 CLI 续接的那份）。",
+        "message": tr(f"{NAMES.get(kind, kind)} 的原生会话 {native_id} 另有 {len(others)} 份同 id 的记录；Agora 跟随的是这个项目目录下的那份（也是 CLI 续接的那份）。", f"{NAMES.get(kind, kind)} native session {native_id} has {len(others)} other records with the same id; Agora follows the one under this project folder (the one the CLI resumes)."),
     }
 
 
@@ -181,12 +182,15 @@ def native_problem(kind: str, native_id: str, lookup: LogLookup) -> str:
     name = NAMES.get(kind, kind)
     if lookup.state == "missing":
         days = getattr(adapters.get(kind), "prunes_logs_after_days", None)
-        why = f"可能被 {name} 的 {days} 天自动清理删掉了，或者这个项目是从别的机器拿来的。" if days else "日志可能被删除或移走了，或者这个项目是从别的机器拿来的。"
-        return f"{name} 的原生会话 {native_id} 在这台机器上找不到了。{why}Agora 不会用同一个 id 新开对话。"
+        if days:
+            why = tr(f"可能被 {name} 的 {days} 天自动清理删掉了，或者这个项目是从别的机器拿来的。", f"{name} may have deleted it in its {days}-day cleanup, or this project came from another machine. ")
+        else:
+            why = tr("日志可能被删除或移走了，或者这个项目是从别的机器拿来的。", "The log may have been deleted or moved, or this project came from another machine. ")
+        return tr(f"{name} 的原生会话 {native_id} 在这台机器上找不到了。{why}Agora 不会用同一个 id 新开对话。", f"{name} native session {native_id} can't be found on this machine. {why}Agora won't start a new conversation under the same id.")
     if lookup.state == "ambiguous":
-        return f"{name} 的原生会话 {native_id} 找到了 {len(lookup.candidates)} 份记录，Agora 不确定该跟哪一份，先不续接。"
+        return tr(f"{name} 的原生会话 {native_id} 找到了 {len(lookup.candidates)} 份记录，Agora 不确定该跟哪一份，先不续接。", f"{name} native session {native_id} has {len(lookup.candidates)} records and Agora can't tell which one to follow, so it won't resume it yet.")
     if lookup.state == "elsewhere":
-        return f"{name} 的原生会话 {native_id} 在别的目录下（项目移动过？），在这里续接会新开一个空会话，所以先不续接。"
+        return tr(f"{name} 的原生会话 {native_id} 在别的目录下（项目移动过？），在这里续接会新开一个空会话，所以先不续接。", f"{name} native session {native_id} is under another folder (was the project moved?). Resuming it here would start an empty session, so it won't resume it yet.")
     return ""
 
 
@@ -596,8 +600,8 @@ def check_binding(kind: str, model: str, effort: str, root: Path | None = None) 
     if allowed is None:  # a model the catalog does not list: the CLI's own vocabulary
         allowed = entry.get("efforts") or []
     if effort not in allowed:
-        choices = "、".join(allowed) if allowed else "（这个模型没有强度选项）"
-        raise ValueError(f"{NAMES[kind]} 的 {model or '默认模型'} 不支持强度 {effort}；可选：{choices}")
+        choices = tr("、", ", ").join(allowed) if allowed else tr("（这个模型没有强度选项）", "(this model has no effort options)")
+        raise ValueError(tr(f"{NAMES[kind]} 的 {model or '默认模型'} 不支持强度 {effort}；可选：{choices}", f"{NAMES[kind]} {model or 'default model'} does not support effort {effort}; choose from: {choices}"))
 
 
 __all__ = [

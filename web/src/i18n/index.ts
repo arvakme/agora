@@ -65,3 +65,14 @@ export function setLangForTest(next: Lang) {
 export const langTag = (): string => (current === "en" ? "en" : "zh-CN");
 
 if (typeof document !== "undefined") document.documentElement.lang = langTag();
+
+// What the server writes itself (error messages, notices in a session, the build replay's sentences, a dispatch's
+// receipt) follows the page: every request carries this cookie (fetch, EventSource and the page load alike), and the
+// owner's server also keeps the last one for what it says on its own (server/i18n.py).
+if (typeof document !== "undefined") {
+  try {
+    document.cookie = `agora_lang=${current}; path=/; max-age=31536000; samesite=lax`;
+  } catch {
+    /* cookies blocked: the server falls back to the browser's Accept-Language */
+  }
+}

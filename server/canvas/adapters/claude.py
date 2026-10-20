@@ -41,6 +41,7 @@ from server.canvas.adapters.common import (
     user_item,
 )
 from server.canvas.runner import claude_message_usage, claude_result_usage
+from server.i18n import tr
 
 
 class ClaudeStream(StreamMapper):
@@ -129,10 +130,10 @@ def answer_response(request_id: str, tool_input: dict[str, Any], answers: dict[s
         labels = [str(x) for x in (picked if isinstance(picked, list) else [picked]) if x not in (None, "")]
         options = {str(o.get("label")) for o in q.get("options") or []}
         if not labels:
-            raise ValueError(f"没有回答：{text}")
+            raise ValueError(tr(f"没有回答：{text}", f"No answer: {text}"))
         bad = [x for x in labels if x not in options]
         if bad:
-            raise ValueError(f"「{bad[0]}」不是这个问题的选项：{text}")
+            raise ValueError(tr(f"「{bad[0]}」不是这个问题的选项：{text}", f"“{bad[0]}” is not an option of this question: {text}"))
         given[text] = ", ".join(labels)
     return _reply(request_id, {"behavior": "allow", "updatedInput": {**tool_input, "answers": given}})
 
@@ -351,7 +352,7 @@ class ClaudeAdapter(Adapter):
     tested = VersionRange(">=2.1.267,<2.2")
     max_tier = "T1"
     icon = "claude"
-    log_hint = "~/.claude/projects/<目录>/<id>.jsonl"
+    log_hint = "~/.claude/projects/<dir>/<id>.jsonl"
     log_dir = "~/.claude/projects/"
     has_cost = True  # headless turns only (the result line)
     waits = "native"
@@ -473,7 +474,7 @@ class ClaudeAdapter(Adapter):
             o = outcomes.get(tuid or "", {})
             parent_aid = meta.get("parentAgentId")
             parent_run = f"claude:{ref.native_id}/{parent_aid}" if parent_aid else ref.run_id
-            ev = f"父日志的 Agent 调用 {tuid} = 子会话 meta.toolUseId" if meta.get("toolUseId") else (f"父日志的 Agent 结果 agentId = {aid}" if tuid else "子会话在父会话的 subagents/ 目录下")
+            ev = tr(f"父日志的 Agent 调用 {tuid} = 子会话 meta.toolUseId", f"Agent call {tuid} in the parent log = the child session's meta.toolUseId") if meta.get("toolUseId") else (tr(f"父日志的 Agent 结果 agentId = {aid}", f"agentId = {aid} in the parent log's Agent result") if tuid else tr("子会话在父会话的 subagents/ 目录下", "the child session is in the parent's subagents/ folder"))
             out.append(NativeRef(
                 "claude",
                 f"{ref.native_id}/{aid}",

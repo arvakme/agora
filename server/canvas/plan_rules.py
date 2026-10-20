@@ -18,6 +18,7 @@ from functools import lru_cache
 from typing import Any
 
 from server.canvas.model_view import library_meta, version_of
+from server.i18n import tr
 from server.paths import WEB
 
 RULES_FILE = WEB / "generated" / "plan.rules.json"
@@ -34,7 +35,7 @@ def _is_number(v: Any) -> bool:
 
 
 def validate_plan(raw: Any, kind: Callable[[str], str | None], library_item: Callable[[str], bool] | None = None) -> list[str]:
-    """Schema-level and referential problems of a plan (empty = valid). Same messages, same order as the page's ``validatePlan``.
+    """Schema-level and referential problems of a plan (empty = valid). Same messages (in the same language), same order as the page's ``validatePlan``.
 
     ``kind(id)``: "shape" | "arrow" | "frame" | "library" for a live element, else None; ``library_item(id)``: the library has it."""
     rules = load()
@@ -42,11 +43,11 @@ def validate_plan(raw: Any, kind: Callable[[str], str | None], library_item: Cal
     ref_re = re.compile(rules["ref"])
     ref_text = f"/{rules['ref']}/"
     if not isinstance(raw, dict) or not isinstance(raw.get("ops"), list):
-        return ["缺少 ops 数组"]
+        return [tr("缺少 ops 数组", "missing ops array")]
     ops = raw["ops"]
     errors: list[str] = []
     if not ops:
-        errors.append("ops 为空")
+        errors.append(tr("ops 为空", "ops is empty"))
     created: dict[str, str] = {}
     deleted: set[str] = set()
 
@@ -59,56 +60,56 @@ def validate_plan(raw: Any, kind: Callable[[str], str | None], library_item: Cal
     for i, op in enumerate(ops):
         at = f"ops[{i}]"
         if not isinstance(op, dict):
-            errors.append(f"{at} 不是对象")
+            errors.append(tr(f"{at} 不是对象", f"{at} is not an object"))
             continue
         name = op.get("op")
         spec = ops_rules.get(name) if isinstance(name, str) else None
         if spec is None:
-            errors.append(f"{at}.op 未知：{_js_string(name)}")
+            errors.append(tr(f"{at}.op 未知：{_js_string(name)}", f"{at}.op unknown: {_js_string(name)}"))
             continue
         for k in op:
             if k != "op" and k not in spec["req"] and k not in spec["opt"]:
-                errors.append(f"{at} 多余字段 {k}")
+                errors.append(tr(f"{at} 多余字段 {k}", f"{at} has extra field {k}"))
         for k in spec["req"]:
             if k not in op:
-                errors.append(f"{at} 缺少 {k}")
+                errors.append(tr(f"{at} 缺少 {k}", f"{at} is missing {k}"))
         for k, v in op.items():
             if k in ("op", "near", "at"):
                 continue
             if k in rules["numeric"]:
                 if not _is_number(v):
-                    errors.append(f"{at}.{k} 不是有限数字")
+                    errors.append(tr(f"{at}.{k} 不是有限数字", f"{at}.{k} is not a finite number"))
                 elif k in ("width", "height") and (v < rules["size"]["min"] or v > rules["size"]["max"]):
-                    errors.append(f"{at}.{k} 超出 {rules['size']['min']}–{rules['size']['max']}")
+                    errors.append(tr(f"{at}.{k} 超出 {rules['size']['min']}–{rules['size']['max']}", f"{at}.{k} is outside {rules['size']['min']}–{rules['size']['max']}"))
                 elif abs(v) > rules["coordinateMax"]:
-                    errors.append(f"{at}.{k} 超出画布范围")
+                    errors.append(tr(f"{at}.{k} 超出画布范围", f"{at}.{k} is outside the canvas"))
             elif k in rules["booleans"]:
                 if not isinstance(v, bool):
-                    errors.append(f"{at}.{k} 不是布尔值")
+                    errors.append(tr(f"{at}.{k} 不是布尔值", f"{at}.{k} is not a boolean"))
             elif k == "path":
                 if v is None and name == "route":
                     continue  # back to the plain straight arrow
                 lo, hi = rules["path"]["min"], rules["path"]["max"]
                 if not isinstance(v, list) or not lo <= len(v) <= hi or not all(isinstance(p, list) and len(p) == 2 for p in v):
-                    errors.append(f"{at}.path 需要 {lo}–{hi} 个 [x, y] 点")
+                    errors.append(tr(f"{at}.path 需要 {lo}–{hi} 个 [x, y] 点", f"{at}.path needs {lo}–{hi} [x, y] points"))
                 elif not all(_is_number(n) and abs(n) <= rules["coordinateMax"] for p in v for n in p):
-                    errors.append(f"{at}.path 的坐标要是有限数字，绝对值不超过 {rules['coordinateMax']}")
+                    errors.append(tr(f"{at}.path 的坐标要是有限数字，绝对值不超过 {rules['coordinateMax']}", f"{at}.path coordinates must be finite numbers with absolute value at most {rules['coordinateMax']}"))
             elif not isinstance(v, str) or not v.strip() or len(v) > rules["stringMax"]:
-                errors.append(f"{at}.{k} 不是非空字符串")
+                errors.append(tr(f"{at}.{k} 不是非空字符串", f"{at}.{k} is not a non-empty string"))
 
         def need(id_: Any, allowed: list[str], field: str = "id") -> None:
             k = kind_of(id_) if isinstance(id_, str) else None
             if not k:
-                errors.append(f"{at}.{field} 指向不存在的元素 {_js_string(id_)}")
+                errors.append(tr(f"{at}.{field} 指向不存在的元素 {_js_string(id_)}", f"{at}.{field} points to a missing element {_js_string(id_)}"))
             elif k not in allowed:
-                errors.append(f"{at}.{field} 类型 {k} 不支持 {name}")
+                errors.append(tr(f"{at}.{field} 类型 {k} 不支持 {name}", f"{at}.{field} of type {k} does not support {name}"))
 
         def add_ref(ref: Any, k: str) -> None:
             if not isinstance(ref, str) or not ref_re.search(ref):
-                errors.append(f"{at}.ref 需匹配 {ref_text}")
+                errors.append(tr(f"{at}.ref 需匹配 {ref_text}", f"{at}.ref must match {ref_text}"))
                 return
             if kind_of(ref) or ref in created:
-                errors.append(f"{at}.ref {ref} 与已有元素重名")
+                errors.append(tr(f"{at}.ref {ref} 与已有元素重名", f"{at}.ref {ref} clashes with an existing element"))
                 return
             created[ref] = k
 
@@ -120,7 +121,7 @@ def validate_plan(raw: Any, kind: Callable[[str], str | None], library_item: Cal
                 deleted.add(op["id"])
         elif name == "add_shape":
             if op.get("shape") not in rules["shapes"]:
-                errors.append(f"{at}.shape 非法")
+                errors.append(tr(f"{at}.shape 非法", f"{at}.shape is invalid"))
             if op.get("frameId") is not None:
                 need(op["frameId"], targets("add_shape", "frameId"), "frameId")
             add_ref(op.get("ref"), spec["creates"])
@@ -128,7 +129,7 @@ def validate_plan(raw: Any, kind: Callable[[str], str | None], library_item: Cal
             need(op.get("from"), targets("add_arrow", "from"), "from")
             need(op.get("to"), targets("add_arrow", "to"), "to")
             if op.get("from") == op.get("to"):
-                errors.append(f"{at} 起止相同")
+                errors.append(tr(f"{at} 起止相同", f"{at} starts and ends at the same element"))
             if op.get("ref") is not None:
                 add_ref(op["ref"], spec["creates"])
         elif name == "add_junction":
@@ -138,19 +139,19 @@ def validate_plan(raw: Any, kind: Callable[[str], str | None], library_item: Cal
         elif name == "insert_library_item":
             item = op.get("item")
             if not isinstance(item, str) or not (library_item and library_item(item)):
-                errors.append(f"{at}.item 不是素材库里的组件 id：{_js_string(item)}（先用 search_library 查）")
+                errors.append(tr(f"{at}.item 不是素材库里的组件 id：{_js_string(item)}（先用 search_library 查）", f"{at}.item is not a library component id: {_js_string(item)} (look it up with search_library first)"))
             near, pos = op.get("near"), op.get("at")
             if (near is None) == (pos is None):
-                errors.append(f"{at} 需要 near 或 at 其中之一")
+                errors.append(tr(f"{at} 需要 near 或 at 其中之一", f"{at} needs exactly one of near or at"))
             if near is not None and isinstance(near, dict):
                 need(near.get("id"), targets("insert_library_item", "near.id"), "near.id")
                 if near.get("side") not in rules["sides"]:
-                    errors.append(f"{at}.near.side 非法")
+                    errors.append(tr(f"{at}.near.side 非法", f"{at}.near.side is invalid"))
                 gap = near.get("gap")
                 if gap is not None and (not isinstance(gap, int | float) or isinstance(gap, bool) or gap < 0 or gap > rules["gapMax"]):
-                    errors.append(f"{at}.near.gap 超出 0–{rules['gapMax']}")
+                    errors.append(tr(f"{at}.near.gap 超出 0–{rules['gapMax']}", f"{at}.near.gap is outside 0–{rules['gapMax']}"))
             if pos is not None and (not isinstance(pos, dict) or not _is_number(pos.get("x")) or not _is_number(pos.get("y"))):
-                errors.append(f"{at}.at 需要有限的 x/y")
+                errors.append(tr(f"{at}.at 需要有限的 x/y", f"{at}.at needs finite x/y"))
             if op.get("frameId") is not None:
                 need(op["frameId"], targets("insert_library_item", "frameId"), "frameId")
             add_ref(op.get("ref"), spec["creates"])

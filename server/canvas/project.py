@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from server.canvas import buildlog
+from server.i18n import tr
 
 DIRNAME = ".agora"
 FORMAT = 1
@@ -307,18 +308,18 @@ class ProjectStore:
         under a running server is its own case (the project did not move)."""
         now = self._identity()
         if now is None:
-            return f"项目目录 {self.root} 不在了（被移走、改名或删除）"
+            return tr(f"项目目录 {self.root} 不在了（被移走、改名或删除）", f"The project folder {self.root} is gone (moved, renamed or deleted)")
         if self._ident is None:
             self._ident = now
             self._pid = self._project_id()
         elif now[1] != self._ident[1]:
-            return f"项目目录 {self.root} 已经换成了另一个目录（原来的被移走或改名）"
+            return tr(f"项目目录 {self.root} 已经换成了另一个目录（原来的被移走或改名）", f"The project folder {self.root} is now a different folder (the original was moved or renamed)")
         elif now[0] != self._ident[0]:
             if self._pid is None or self._project_id() != self._pid:
-                return f"项目目录 {self.root} 已经换成了另一个目录（设备变了，项目 id 也对不上）"
+                return tr(f"项目目录 {self.root} 已经换成了另一个目录（设备变了，项目 id 也对不上）", f"The project folder {self.root} is now a different folder (another device, and the project id does not match)")
             self._ident = now  # remounted: same directory, same project
         if not self.dir.is_dir():
-            return f"{self.dir} 被删除了（项目目录还在）：这个服务不会重建它；重新运行 `agora up`（会重建 .agora/，已提交的内容用 git 找回）"
+            return tr(f"{self.dir} 被删除了（项目目录还在）：这个服务不会重建它；重新运行 `agora up`（会重建 .agora/，已提交的内容用 git 找回）", f"{self.dir} was deleted (the project folder is still there): this server won't recreate it. Run `agora up` again (it recreates .agora/; get committed content back from git)")
         return None
 
     def check_alive(self) -> None:
