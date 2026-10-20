@@ -54,7 +54,7 @@ export function TrashPanel({ focus, canvasTitles, onRestore, onDismiss }: Props)
         <header className="lp-head">
           <IconTrash size={18} />
           <h2>{tr("回收站", "Trash")}</h2>
-          <span className="lp-sub">{tr("删除的画布和会话保留 30 天，刷新、重启后都能恢复", "Deleted canvases and sessions are kept for 30 days and can be restored after a reload or restart")}</span>
+          <span className="lp-sub">{tr("删除的画布和会话保留 30 天，刷新、重启后都能恢复", "Kept for 30 days, through reloads and restarts")}</span>
           <button className="icon-btn sm muted" aria-label={tr("关闭", "Close")} onClick={onDismiss}><IconClose size={16} /></button>
         </header>
         {note && <p className="notice lp-note" role="status"><span>{note}</span></p>}
