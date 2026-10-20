@@ -90,7 +90,7 @@ const poster = reel ? await getImage({ src: reel.poster, format: "webp", width: 
 						<svg preserveAspectRatio="none" viewBox="0 0 100 100">
 							<rect x="0.5" y="0.5" width="99" height="99" rx="4" pathLength="1" vector-effect="non-scaling-stroke" />
 						</svg>
-						<span class:list={["mark-label", { below: mark.y < 14 }]}>{mark.label[lang]}</span>
+						<span class:list={["mark-label", { below: mark.y < 18, end: mark.x + mark.w > 85 }]}>{mark.label[lang]}</span>
 					</div>
 				)
 			}
@@ -246,6 +246,12 @@ const poster = reel ? await getImage({ src: reel.poster, format: "webp", width: 
 		font-weight: 650;
 		white-space: nowrap;
 		box-shadow: 0 6px 18px -8px oklch(0.3 0.08 60 / 0.6);
+	}
+
+	/* 靠右边的框：标签贴右对齐，不伸出截图 */
+	.mark-label.end {
+		left: auto;
+		right: -4px;
 	}
 
 	.mark-label.below {
