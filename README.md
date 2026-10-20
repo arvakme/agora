@@ -22,7 +22,7 @@ Type `agora` in a project directory and your browser opens an architecture diagr
   <a href="docs/media/agora-promo.en.mp4"><img src="docs/assets/demo.en.gif" alt="Promo clip: an agent draws the architecture diagram station by station; scrolling into a node opens its sub-diagram" width="80%"></a>
 </p>
 
-> The UI is in Chinese for now; an English UI is planned.
+> The UI comes in English and Chinese. It follows your browser language; switch it in the top bar’s View and layout menu.
 
 ## How it works
 
@@ -122,7 +122,7 @@ No Cloudflare account? `agora share create --quick` opens a temporary trycloudfl
 - Deleted canvases and sessions go to the trash and can be restored for 30 days (across reloads and restarts too). At the bottom of "All canvases" there's "Session history", where you can find sessions by time, agent, topic or canvas, and re-import native sessions found on this machine.
 - Moving the repository, copying it with `cp -r` or cloning it again are all handled: after a move, Pi session logs move along; sessions in a copy are read-only and can be forked to continue; sessions created on another machine show as read-only cards. Local data wiped by `git clean -fdx` (session bindings, edit records, trash) is backed by a daily backup outside the repository and a local registry: `agora doctor --fix`.
 
-![Canvas and session side by side: the architecture diagram with comment pins on the left, Claude Code's avatar on the API node writing a file there; the live session on the right](docs/media/overview.png)
+![Canvas and session side by side: the architecture diagram with comment pins on the left, Claude Code's avatar on the API node writing a file there; the live session on the right](docs/media/overview.en.png)
 
 ### 2. Your own coding agent, side by side, session-locked
 
@@ -130,25 +130,25 @@ Each session picks an agent when it starts, locked together with its model and e
 
 Binding a session installs the `agora` skill for that agent automatically (an old `agora-canvas` link is replaced); you can also run `agora skill install --agent <agent>|all` by hand (for example Claude Code links into `.claude/skills/`, Codex into `.agents/skills/`, and Pi gets `--skill` on every launch; links are written to `.git/info/exclude`, and no global config is changed).
 
-![A new session picks agent, model and effort first; they can't be changed afterwards](docs/media/choose-agent.png)
+![A new session picks agent, model and effort first; they can't be changed afterwards](docs/media/choose-agent.en.png)
 
 ### 3. Continue in the terminal in one click, synced both ways
 
 "Open in terminal" starts the interactive CLI on the same native session id (for example `claude --resume`, `pi --session-id`, `codex resume`) inside this project's own tmux server, then opens a window in Ghostty (or Kitty, or Terminal.app). What you say in the terminal, the agent's replies and its tool calls all show up in the panel; messages sent from the panel wait until the agent's turn ends and nobody holds the terminal's input (taken over, or a writable window attached), then get pasted in. The queue never drops anything.
 
-![The session open in a terminal: the panel says the terminal window is open and queues your messages; that turn is tagged “terminal”](docs/media/terminal.png)
+![The session open in a terminal: the panel says the terminal window is open and queues your messages; that turn is tagged “terminal”](docs/media/terminal.en.png)
 
 ### 4. Progress pointer: which part of the architecture the AI is changing
 
 Link nodes to code paths (globs, stored in the element's `customData.codePaths` and committed with the diagram), by hand or by letting the agent link them in bulk from the directory layout. Whatever file the agent reads or writes, its figure walks to the node that file belongs to (the figure is the pointer, see [workstation view](web/docs/workstation.md); when two nodes are joined by an arrow it glides along the arrow, otherwise it crouches and hops over on a parabola). Files that belong to no node are listed under the “off the diagram” chip. Changes made in the terminal drive it the same way. Mapping rules: [progress pointer](web/docs/progress-pointer.md).
 
-![Replaying a turn: the avatar's route over the diagram, numbered stops, +N files changed on each node, and the turn's summary of nodes and files changed](docs/media/pointer.png)
+![Replaying a turn: the avatar's route over the diagram, numbered stops, +N files changed on each node, and the turn's summary of nodes and files changed](docs/media/pointer.en.png)
 
 ### 5. Step-by-step trajectories
 
 Two views, "Conversation / Trajectory" (information structure taken from DeepSeek Harness): model, effort, input / output / cached tokens, duration and cost per turn; a timeline overview; and every tool call expands to its full input, output, changed files and start and end times.
 
-![Trajectory view: timeline, per-turn usage, and an expanded Edit call showing its full input](docs/media/trajectory.png)
+![Trajectory view: timeline, per-turn usage, and an expanded Edit call showing its full input](docs/media/trajectory.en.png)
 
 ### 6. Read-only sharing with comments
 
@@ -156,7 +156,7 @@ Two views, "Conversation / Trajectory" (information structure taken from DeepSee
 
 | Author: pick a canvas and an expiry | Guest: read-only canvas, can comment |
 |---|---|
-| ![Share popover](docs/media/share.png) | ![Guest page](docs/media/guest.png) |
+| ![Share popover](docs/media/share.en.png) | ![Guest page](docs/media/guest.en.png) |
 
 ### Architecture in detail
 
@@ -273,7 +273,7 @@ site/                 the website (Astro), English at / and Chinese at /zh
 - **The pointer only sees writes by edit tools.** Shell writes such as `sed -i` or `cat > x` aren't recognised; reading files or running tests doesn't move the pointer; a file belongs only to the most specific node.
 - **Only tested on macOS.** Terminal windows open in Ghostty, Kitty or Terminal.app (first installed one in that order, or set `AGORA_TERMINAL=ghostty|kitty|terminal|auto`); with none, the panel gives a `tmux attach` command; "Copy open command" in the menu gives a command that runs in any terminal.
 
-Possible directions (unscheduled): real-time multi-user editing, terminal windows on Linux, an English UI, and more kinds of writes recognised by the progress pointer.
+Possible directions (unscheduled): real-time multi-user editing, terminal windows on Linux, more UI languages, and more kinds of writes recognised by the progress pointer.
 
 ## Development
 

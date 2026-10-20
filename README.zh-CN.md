@@ -22,6 +22,8 @@
   <a href="docs/media/agora-promo.zh.mp4"><img src="docs/assets/demo.gif" alt="宣传片片段：agent 一站一站画出架构图；滚轮放大节点，进到子图" width="80%"></a>
 </p>
 
+> 界面有中文和英文两种，默认跟随浏览器语言，可以在顶栏的「视图与布局」菜单里切换。
+
 ## 它怎么工作
 
 ![你的 coding agent 写原生会话日志，本项目的 agora 服务每 0.4 秒跟随，并把改动经 HTTP + SSE 推到浏览器里的画布；六个会话 agent 各自能用到哪些能力](docs/assets/how-it-works.svg)
@@ -271,7 +273,7 @@ site/                 官网（Astro），英文在 /，中文在 /zh
 - **指针只看编辑工具的写入。** `sed -i`、`cat > x` 这类 shell 写入不会被识别；读文件、跑测试不移动指针；一个文件只属于最具体的那个节点。
 - **只在 macOS 上实测过。** 终端窗口用 Ghostty、Kitty 或 Terminal.app 打开（按这个顺序找已安装的，环境变量 `AGORA_TERMINAL=ghostty|kitty|terminal|auto` 可指定）；都没有时面板给出 `tmux attach` 命令；下拉里的「复制打开命令」给出可在任意终端里运行的命令。
 
-可能的方向（未排期）：多人实时协同编辑、Linux 上的终端窗口、英文界面、进度指针识别更多写入方式。
+可能的方向（未排期）：多人实时协同编辑、Linux 上的终端窗口、更多界面语言、进度指针识别更多写入方式。
 
 ## 开发
 
