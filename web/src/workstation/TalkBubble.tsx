@@ -7,6 +7,7 @@
 // really shows up in the session, not when it is sent (./talk.ts `watchDelivery`). Mount it in the
 // overlay's layer (screen coordinates of the canvas pane); it follows the selected figure's feet in
 // the one frame loop. `data-esc-local`: the app's global Esc leaves it alone.
+import { tr } from "../i18n";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { viewport } from "../canvas/viewport";
 import { agentName, agents, steerOf } from "../session/agents";
@@ -138,7 +139,7 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
       setAsk(false);
       talkSent.start({ runId: f.run.id, nodId: to.id, sessionId: sid, words, sentAt, agent, state });
     } catch (e) {
-      setErr(`没发出去：${(e as Error).message}`);
+      setErr(tr(`没发出去：${(e as Error).message}`, `Not sent: ${(e as Error).message}`));
     } finally {
       setBusy(false);
     }
@@ -149,7 +150,7 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
         <p className="ws-talk-note" role="status" data-state={sent.state}>{deliveryNote(sent.agent, sent.state)}</p>
       ) : (
       ask ? (
-        <div className="ws-talk-ways" role="group" aria-label="这一轮还在跑，你的话怎么说" onKeyDown={(e) => e.key === "Escape" && (e.stopPropagation(), setAsk(false))}>
+        <div className="ws-talk-ways" role="group" aria-label={tr("这一轮还在跑，你的话怎么说", "This turn is still running — how should your words go?")} onKeyDown={(e) => e.key === "Escape" && (e.stopPropagation(), setAsk(false))}>
           <p className="ws-talk-sub">{whyNoSteer(agentName(agents.get().bindings[to.sessionId ?? ""]?.agent), steerOf(agents.get().bindings[to.sessionId ?? ""]?.agent, agents.get().status[to.sessionId ?? ""]).noSteer)}</p>
           <p className="ws-talk-sub">
             {CHOICES.map((c) => (
@@ -165,7 +166,7 @@ function Talk({ f, canvasId, obstacles }: { f: FlatRun; canvasId: string; obstac
         value={text}
         placeholder={fitEllipsis(target.placeholder, boxW.current - 28)}
         title={target.placeholder}
-        aria-label={`对 ${f.run.name} 说`}
+        aria-label={tr(`对 ${f.run.name} 说`, `Talk to ${f.run.name}`)}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Escape") {

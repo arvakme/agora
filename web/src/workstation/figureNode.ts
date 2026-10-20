@@ -9,6 +9,7 @@
 // one. The far limbs are filled a shade toward the ink. Colours are the --fig-* tokens (light and dark).
 // Gestures (./gestures.ts) arrive with the joints: a landing's scale and lift, the head's look (on its
 // own spring here: the head turns first), the save flash and a command's verdict on the screen.
+import { tr } from "../i18n";
 import codex128 from "../app/agents/codex-128.png";
 import grok128 from "../app/agents/grok-128.png";
 import { focus } from "./focus";
@@ -401,7 +402,7 @@ export class PeekNode {
     mark(agent, RIG.head * 0.9, this.inner);
     // resting in the sub-diagram: a small word beside the head says so (the full words are in the title); a halo of paper keeps it readable over a line
     this.note = el("text", { x: PEEK_NOTE.x, y: -PEEK_UP + 3, "font-size": PEEK_NOTE.size, fill: "var(--fg-muted)", stroke: "var(--surface)", "stroke-width": 2.4, "paint-order": "stroke", "stroke-linejoin": "round", "pointer-events": "none", display: "none" }, this.g);
-    this.note.textContent = "在子图 · 空闲";
+    this.note.textContent = tr("在子图 · 空闲", "In sub-diagram · idle");
     this.g.addEventListener("pointerdown", (e) => e.stopPropagation());
     this.g.addEventListener("click", (e) => (e.stopPropagation(), onFollow(id)));
     this.g.addEventListener("keydown", (e) => e.key === "Enter" && onFollow(id));

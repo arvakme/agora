@@ -6,7 +6,9 @@ import type { Box } from "../canvas/clearance";
 const GAP = 4;
 
 /** The pill's size in screen px for `text`: about 11 px a character (the note is CJK), 6 px padding each side, one line, at most 240 wide. */
-export const pillSize = (text: string): { w: number; h: number } => ({ w: Math.min(240, 12 + Math.ceil(text.length * 10.5)), h: 16 });
+/** At 10.5px a CJK character is a full em wide, the rest (English, digits, punctuation) about 0.6 em. */
+const charW = (ch: string) => ((ch.codePointAt(0) ?? 0) >= 0x2e80 ? 10.5 : 6.3);
+export const pillSize = (text: string): { w: number; h: number } => ({ w: Math.min(240, 12 + Math.ceil([...text].reduce((w, ch) => w + charW(ch), 0))), h: 16 });
 
 const hit = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 

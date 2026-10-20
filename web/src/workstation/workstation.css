@@ -80,6 +80,8 @@
 /* at most --bub-max wide (= bubbles.ts BUBBLE_MAX_W; the selected one adds its buttons beside the words): the long parts (path, command,
  * place, the words a step says, the question) share what is left and end in …; hovering shows the words in full */
 .ws-bub { --bub-max: 260px; }
+/* English words run about a third wider than the Chinese ones (「读」 → Reading): the same parts, the same order of giving way, a little more room (= BUBBLE_MAX_W in English) */
+.ws-bub:lang(en) { --bub-max: 300px; }
 .ws-bub-in { max-width: calc(var(--bub-max) - 14px); min-width: 0; }
 .ws-bub[data-sub] .ws-bub-in { max-width: calc(var(--bub-max) - 11px); }
 .ws-bub-in > .f, .ws-bub-in > .q, .ws-bub-in > .portal, .ws-bub-in > span:not([class]), .ws-bub-in > .el { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
