@@ -2,9 +2,10 @@
 // (干活中 / 在想 / 等你 / 空闲), how many sub-agents it has. Which are shown and in what order. Pure.
 import { isWorking } from "../workstation/liveCamera";
 import type { WorkRun } from "../workstation/runs/types";
+import { tr } from "../i18n";
 
 export type TagState = "working" | "waiting" | "thinking" | "idle";
-export const TAG_STATE_NAME: Record<TagState, string> = { working: "干活中", waiting: "等你", thinking: "在想", idle: "空闲" };
+export const TAG_STATE_NAME: Record<TagState, string> = { working: tr("干活中", "Working"), waiting: tr("等你", "Waiting for you"), thinking: tr("在想", "Thinking"), idle: tr("空闲", "Idle") };
 export type AgentTag = { runId: string; sessionId?: string; agent: string; name: string; state: TagState; kids: number; lastAt: number; /** waiting: since when (the wait segment's start) */ waitSince?: number };
 
 /** 「At work」 is `isWorking` (the camera's standard too); at work, a question asked of the person is 等你, thinking or between calls is 在想. */

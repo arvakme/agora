@@ -2,10 +2,11 @@
 // what is done so far. This is the model both the card and the bar above the composer read, so there is one account of "what it is doing".
 // Pure apart from the per-session 「过程：简洁 / 详细」 choice and the turns the person left expanded (this browser only).
 import { ACTIVITY_NOW, toolActivity, type Activity, type TrajRecord, type TrajTurn } from "./trajectoryModel";
+import { tr } from "../i18n";
 
 export type Bucket = "command" | "read" | "edit" | "subagent" | "other";
 const BUCKET: Record<Activity, Bucket> = { commands: "command", read: "read", search: "read", write: "edit", edit: "edit", subagents: "subagent", webSearch: "other", webFetch: "other", plan: "other", questions: "other", tools: "other" };
-const LABEL: Record<Bucket, string> = { command: "命令", read: "读", edit: "改", subagent: "子代理", other: "其他" };
+const LABEL: Record<Bucket, string> = { command: tr("命令", "commands"), read: tr("读", "reads"), edit: tr("改", "edits"), subagent: tr("子代理", "sub-agents"), other: tr("其他", "other") };
 const ORDER: Bucket[] = ["command", "read", "edit", "subagent", "other"];
 
 export type ActivityModel = {
@@ -29,8 +30,9 @@ export type ActivityModel = {
 
 export function statsLine(counts: Record<Bucket, number>): string {
   const done = ORDER.reduce((n, b) => n + counts[b], 0);
-  if (!done) return "还没有动作";
-  return `已完成 ${done} 个动作：${ORDER.filter((b) => counts[b]).map((b) => `${LABEL[b]} ${counts[b]}`).join(" · ")}`;
+  if (!done) return tr("还没有动作", "No actions yet");
+  const parts = ORDER.filter((b) => counts[b]);
+  return tr(`已完成 ${done} 个动作：${parts.map((b) => `${LABEL[b]} ${counts[b]}`).join(" · ")}`, `${done} action${done === 1 ? "" : "s"} done: ${parts.map((b) => `${counts[b]} ${LABEL[b]}`).join(" · ")}`);
 }
 
 export function activityModel(turn: TrajTurn, o: { waiting?: boolean } = {}): ActivityModel {
@@ -47,9 +49,9 @@ export function activityModel(turn: TrajTurn, o: { waiting?: boolean } = {}): Ac
     counts,
     current,
     failed: tools.filter((r) => r.isError),
-    title: waiting ? "等你回答" : ACTIVITY_NOW[current ? toolActivity(current.item) : "thinking"],
+    title: waiting ? tr("等你回答", "Waiting for your answer") : ACTIVITY_NOW[current ? toolActivity(current.item) : "thinking"],
     stats: statsLine(counts),
-    now: waiting ? "等你回答" : (current?.text ?? "正在想…"),
+    now: waiting ? tr("等你回答", "Waiting for your answer") : (current?.text ?? tr("正在想…", "Thinking…")),
   };
 }
 
