@@ -30,11 +30,11 @@ Agora 是给 coding agent（Pi、Claude Code、Codex 等）用的**控制平面*
 
 **1. Linux 上死服务留下的进程没被结束。** 服务重启时，靠「pid 仍在跑登记的那条命令」才动手（pid 会被复用）。Linux 的 `ps` 输出到管道时把命令行截到 `$COLUMNS`（pytest 下是 80），长命令比对不相等，就不动手，孤儿留着。修法是所有 `ps` 带 `-ww`，并加了测试。提交 `89298f1`；`tests/test_proctree.py::test_the_command_of_a_process_is_whole_even_when_the_terminal_is_narrow`；代码 `server/canvas/proctree.py`。
 
-**2. 重启时把早已送达的回执又发了一遍。** 「重启后补发没送到的回执」上线后，把两条早已送达的派发回执重发了，两个会话各多跑了一轮。原因：这些记录早于回执标记格式，派活方日志里本来就没有标记，被当成没送到。修法：发通知时在记录里写下 `notice.mark`，只对「记录写明带过标记、日志里却找不到」的补发，老记录一律不补；并新增一条规则——凡是改了「重启时自动做事」的逻辑，先拿现有记录空跑一遍。提交 `4965adf`（引入）、`993cd89`（修复）；`tests/test_dispatch.py::test_an_old_record_without_the_marker_field_is_not_told_again_after_a_restart`；`.agents/acceptance/common-mistakes.md` 的 P13。
+**2. 重启时把早已送达的回执又发了一遍。** 「重启后补发没送到的回执」上线后，把两条早已送达的派发回执重发了，两个会话各多跑了一轮。原因：这些记录早于回执标记格式，派活方日志里本来就没有标记，被当成没送到。修法：发通知时在记录里写下 `notice.mark`，只对「记录写明带过标记、日志里却找不到」的补发，老记录一律不补；并新增一条规则——凡是改了「重启时自动做事」的逻辑，先拿现有记录空跑一遍。提交 `4965adf`（引入）、`993cd89`（修复）；`tests/test_dispatch.py::test_an_old_record_without_the_marker_field_is_not_told_again_after_a_restart`。
 
 **3. 页面开着时，服务收到 SIGTERM 停不下来。** uvicorn 关闭时等所有连接自己断开，而页面的事件流（SSE）永远不会自己断；第二个 SIGTERM 对 uvicorn 也不起作用。修法：收到信号后由服务端主动结束事件流，收尾每一步有时间上限，20 秒看门狗兜底。提交 `3d9065b`；`tests/test_shutdown.py::test_a_server_with_pages_open_exits_on_the_first_sigterm`；代码 `server/canvas/shutdown.py`。
 
-*同类的一个教训（决策 3 的来历）：被冻住的后台标签、或验收时连到正式后端的旁路页面，会抢到用户会话的改图却不回报——`afcdfc4`、`.agents/acceptance/common-mistakes.md` 的 P12。*
+*同类的一个教训（决策 3 的来历）：被冻住的后台标签、或验收时连到正式后端的旁路页面，会抢到用户会话的改图却不回报——`afcdfc4`。*
 
 ## 会被追问的问题，和诚实的回答
 
@@ -46,7 +46,7 @@ Agora 是给 coding agent（Pi、Claude Code、Codex 等）用的**控制平面*
 | 怎么判断 sub agent 做对了？ | 判断不了，也没假装：Agora 记录的是事实（接没接、回合结束没、回执是什么），`done` 只表示对方自己说完成且回合结束了。检查工作是派发方 agent 的事。 |
 | 什么时候派发、怎么拆任务？ | 由 agent 自己决定，Agora 只提供通路和记录。依赖图派发、验收循环、预算、编排评测都是没做的方向（见 [生命周期](orchestration.md) 第 5 节）。 |
 | 两个 agent 同时改同一个文件怎么办？ | 没有文件级锁。画布改图有乐观并发（`base` 令牌，读后被改过就 `stale`，`tests/test_plan_rules.py::test_freshness_names_the_elements_changed_since_the_read`）；代码文件冲突靠 agent 和 git。设计上默认是一个主 agent 编排多个子 agent（[CLI 适配层 §8](../web/docs/cli-adapters.md)）。 |
-| 权限和安全呢？ | 沿用各 CLI 自己的配置，`--scope` 只是提示不是沙箱；Grok、Cursor、Devin 以「不加边界」的方式启动（`server/canvas/dispatch.py::PERMISSION`），Claude 无头默认 auto——auto 是 CLI 内部的分类器，不是沙箱。一次在真机上的权限实验清掉过构建缓存，此后这类实验只在隔离 HOME 里跑（`.agents/acceptance/common-mistakes.md` 的 P11）。 |
+| 权限和安全呢？ | 沿用各 CLI 自己的配置，`--scope` 只是提示不是沙箱；Grok、Cursor、Devin 以「不加边界」的方式启动（`server/canvas/dispatch.py::PERMISSION`），Claude 无头默认 auto——auto 是 CLI 内部的分类器，不是沙箱。一次在真机上的权限实验清掉过构建缓存，此后这类实验只在隔离 HOME 里跑。 |
 | 怎么测的？有多可信？ | 状态机、恢复、队列用假终端和录制的日志在 CI 里跑，不需要外部服务；真 tmux 的用例在 `tests/test_terminal_input.py`；真实 CLI 的端到端靠临时项目里的人工验收，不在 CI 里。 |
 | CLI 升级把你搞坏了怎么办？ | 每个适配器声明测过的版本，带按版本录制的样本和契约测试；`agora doctor --agents` 报告版本漂移和不认识的日志记录，目前只提示、不自动降级（[CLI 适配层 §6](../web/docs/cli-adapters.md)）。 |
 | 规模和性能？ | 没有编排层的压测数据，不编数字。它是单机、单项目、每个项目一个服务；只在 macOS 上实测过（README「限制」）。 |
