@@ -50,12 +50,14 @@
   .big { position: absolute; left: 0; right: 0; text-align: center; font-family: var(--disp); white-space: nowrap; line-height: 1.04; }
   .zh .big { font-weight: 900; letter-spacing: .01em; }
   .en .big { font-weight: 400; letter-spacing: -.012em; line-height: .96; }
-  /* 遮罩：每个词（中文每个字）一个，从下沿升上来。内边距给下伸部、意大利体右悬和回弹留地方，负外边距抵掉，字距不变 */
-  .m { display: inline-block; overflow: hidden; vertical-align: top; padding: .12em .1em .22em; margin: -.12em -.1em -.22em; }
+  /* 遮罩：每个词（中文每个字）一个，从下沿升上来。不用 overflow 硬裁：上面留 .42em（升部、回弹）、左右 .3em（意大利体右悬）、
+     下面 .62em（降部），只在最下面 .5em 用渐变软边，字从软边里浮上来，任何一帧都不会被切出一道硬边；负外边距抵掉，字距不变 */
+  .m { display: inline-block; vertical-align: top; padding: .42em .3em .62em; margin: -.42em -.3em -.62em;
+    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - .5em), transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - .5em), transparent 100%); }
   .m > .w { display: inline-block; transform-origin: 0 100%; }
   .em { position: relative; display: inline-block; color: var(--accent); }
   .en .em { font-style: italic; }
-  .en .em .m { padding-right: .18em; margin-right: -.18em; }
   /* 中文行里的拉丁词（agent、CLI、Agora）：去掉手打的整格空格，换成 .2em 的字间空 */
   .lat { display: inline-block; margin: 0 .2em; letter-spacing: 0; }
   /* 强调词下面一道手绘下划线（和画布上的手绘线一个笔性），揭示完的下一拍画出来 */
@@ -109,7 +111,6 @@
   /* 字标：Instrument Serif，古典的衬线和横幅里的柱廊一个时代；落日光上叠一层暖色辉光，底下压一层暗影保证读得清 */
   .wordmark { position: absolute; left: 0; right: 0; top: 560px; text-align: center; color: #fff; font-family: "Instrument Serif", serif; font-weight: 400;
     font-size: 250px; letter-spacing: -.01em; line-height: 1; text-shadow: 0 0 60px rgba(255, 196, 150, .35), 0 6px 40px rgba(8, 6, 20, .55); }
-  .wordmark .m { padding: .1em .04em .24em; margin: -.1em -.04em -.24em; }
   .endsub { position: absolute; left: 0; right: 0; top: 846px; text-align: center; color: #f6ead8; font-family: var(--disp);
     text-shadow: 0 2px 18px rgba(8, 6, 20, .7); white-space: nowrap; }
   .zh .endsub { font-size: 42px; font-weight: 600; letter-spacing: .14em; text-indent: .14em; }
@@ -153,21 +154,21 @@
 
   <!-- ===== 实录 ===== -->
   <div class="shot" id="sReveal" data-om-id="reveal"><div class="inner" id="iReveal">
-    <video id="vReveal" src="assets/clips/reveal.webm" data-start="4" data-duration="6" data-media-start="1.0" data-playback-rate="1.6" data-track-index="1" muted playsinline></video></div></div>
+    <video id="vReveal" src="assets/clips/reveal.zh.webm" data-start="4" data-duration="6" data-media-start="1.0" data-playback-rate="1.6" data-track-index="1" muted playsinline></video></div></div>
   <div class="shot" id="sHop" data-om-id="hop"><div class="inner" id="iHop">
-    <video id="vHop" src="assets/clips/hop.webm" data-start="10" data-duration="4" data-media-start="0.2" data-playback-rate="1.3" data-track-index="1" muted playsinline></video></div></div>
+    <video id="vHop" src="assets/clips/hop.zh.webm" data-start="10" data-duration="4" data-media-start="0.2" data-playback-rate="1.3" data-track-index="1" muted playsinline></video></div></div>
   <div class="shot" id="sWheel" data-om-id="wheel"><div class="inner">
-    <video id="vWheel" src="assets/clips/wheel.webm" data-start="16" data-duration="4" data-media-start="0.2" data-playback-rate="0.7" data-track-index="1" muted playsinline></video></div></div>
+    <video id="vWheel" src="assets/clips/zoom.zh.webm" data-start="16" data-duration="4" data-media-start="0.15" data-track-index="1" muted playsinline></video></div></div>
 
   <!-- 蒙太奇：一拍一个镜头 -->
-  <div class="shot m" id="m0" data-om-id="m-library"><div class="inner"><video id="vLib" src="assets/clips/library.webm" data-start="20" data-duration="0.5" data-media-start="9" data-playback-rate="2" data-track-index="1" muted playsinline></video></div></div>
-  <div class="shot m" id="m1" data-om-id="m-agents"><div class="inner"><video id="vAgents2" src="assets/clips/hop.webm" data-start="20.5" data-duration="0.5" data-media-start="13.1" data-track-index="1" muted playsinline></video></div></div>
-  <div class="shot m" id="m2" data-om-id="m-pointer"><div class="inner"><video id="vPointer" src="assets/clips/hop.webm" data-start="21" data-duration="0.5" data-media-start="6.3" data-track-index="1" muted playsinline style="transform:scale(1.35);transform-origin:62% 45%"></video></div></div>
-  <div class="shot m" id="m3" data-om-id="m-trajectory"><div class="inner"><img src="assets/stills/trajectory.png" alt=""></div></div>
-  <div class="shot m" id="m4" data-om-id="m-terminal"><div class="inner"><img class="contain" src="assets/stills/terminal.png" alt=""></div></div>
-  <div class="shot m" id="m5" data-om-id="m-share"><div class="inner"><img src="assets/stills/share.png" alt=""></div></div>
-  <div class="shot m" id="m6" data-om-id="m-guest"><div class="inner"><img src="assets/stills/guest.png" alt=""></div></div>
-  <div class="shot m" id="m7" data-om-id="m-glide"><div class="inner"><video id="vGlide" src="assets/clips/hop.webm" data-start="23.5" data-duration="0.5" data-media-start="8.4" data-playback-rate="1.6" data-track-index="1" muted playsinline style="transform:scale(2);transform-origin:55% 24%"></video></div></div>
+  <div class="shot m" id="m0" data-om-id="m-library"><div class="inner"><video id="vLib" src="assets/clips/library.zh.webm" data-start="20" data-duration="0.5" data-media-start="9" data-playback-rate="2" data-track-index="1" muted playsinline></video></div></div>
+  <div class="shot m" id="m1" data-om-id="m-agents"><div class="inner"><video id="vAgents2" src="assets/clips/hop.zh.webm" data-start="20.5" data-duration="0.5" data-media-start="13.1" data-track-index="1" muted playsinline></video></div></div>
+  <div class="shot m" id="m2" data-om-id="m-pointer"><div class="inner"><video id="vPointer" src="assets/clips/hop.zh.webm" data-start="21" data-duration="0.5" data-media-start="6.3" data-track-index="1" muted playsinline style="transform:scale(1.35);transform-origin:62% 45%"></video></div></div>
+  <div class="shot m" id="m3" data-om-id="m-trajectory"><div class="inner"><img src="assets/stills/trajectory.zh.png" alt=""></div></div>
+  <div class="shot m" id="m4" data-om-id="m-terminal"><div class="inner"><img class="contain" src="assets/stills/terminal.zh.png" alt=""></div></div>
+  <div class="shot m" id="m5" data-om-id="m-share"><div class="inner"><img src="assets/stills/share.zh.png" alt=""></div></div>
+  <div class="shot m" id="m6" data-om-id="m-guest"><div class="inner"><img src="assets/stills/guest.zh.png" alt=""></div></div>
+  <div class="shot m" id="m7" data-om-id="m-glide"><div class="inner"><video id="vGlide" src="assets/clips/hop.zh.webm" data-start="23.5" data-duration="0.5" data-media-start="8.4" data-playback-rate="1.6" data-track-index="1" muted playsinline style="transform:scale(2);transform-origin:55% 24%"></video></div></div>
 
   <!-- 字幕带（卡片下方） -->
   <div class="cap" id="c3" data-om-id="cap-draw" data-copy="byStation"></div>
@@ -193,7 +194,7 @@
 
   <!-- ===== mech：README 示意图的上半部分 ===== -->
   <section id="mech" class="layer" data-om-id="mech" style="visibility:hidden">
-    <img id="flow" src="assets/stills/flow.svg" alt="" style="position:absolute;left:100px;top:180px;width:1720px;height:auto;border-radius:22px;box-shadow:0 0 0 1.5px #e2dbcf" data-om-id="flow">
+    <img id="flow" src="assets/stills/flow.zh.svg" alt="" style="position:absolute;left:100px;top:180px;width:1720px;height:auto;border-radius:22px;box-shadow:0 0 0 1.5px #e2dbcf" data-om-id="flow">
     <div id="packet" style="position:absolute;left:0;top:0;width:26px;height:26px;border-radius:13px;background:var(--accent);box-shadow:0 0 0 6px rgba(112,72,180,.18)"></div>
     <div class="cap" id="c8" data-om-id="cap-native" style="top:800px" data-copy="native"></div>
   </section>
@@ -392,7 +393,12 @@ C,,^F,, [C,,^D,,]^F,, C,,^F,, [C,,^D,,]^F,, | C,,^F,, [C,,^D,,]^F,, C,,^F,, [C,,
   document.querySelectorAll('[data-copy]').forEach((el) => { el.innerHTML = lineHTML(COPY[el.dataset.copy], el.hasAttribute('data-ul')); });
   $('#wm').innerHTML = [...'Agora'].map(unit).join('');
   $('#t3c').textContent = COPY.termNote;
-  gsap.set('.w', { yPercent: 118 });
+  $('#flow').src = `assets/stills/flow.${LANG}.svg`;
+  // 实录按语言各一份（build.sh 的 prep 出 assets/clips/<名>.<lang>.webm；某种语言还没录时用中文那份顶上）
+  for (const [sel, name] of [['#vReveal', 'reveal'], ['#vHop', 'hop'], ['#vWheel', 'zoom'], ['#vLib', 'library'], ['#vAgents2', 'hop'], ['#vPointer', 'hop'], ['#vGlide', 'hop']])
+    $(sel).setAttribute('src', `assets/clips/${name}.${LANG}.webm`);
+  for (const [i, s] of [[3, 'trajectory'], [4, 'terminal'], [5, 'share'], [6, 'guest']]) $(`#m${i} img`).src = `assets/stills/${s}.${LANG}.png`;   // 截图同样按语言
+  gsap.set('.w', { yPercent: 140, opacity: 0 });
   gsap.set('.ul', { clipPath: 'inset(-50% 100% -50% 0%)' });
   gsap.set(['#c4 .chip', '#cM .label', '#eu'], { opacity: 0 });
 
@@ -410,14 +416,15 @@ C,,^F,, [C,,^D,,]^F,, C,,^F,, [C,,^D,,]^F,, | C,,^F,, [C,,^D,,]^F,, C,,^F,, [C,,
   function reveal(el, at, o = {}) {
     const ws = [...el.querySelectorAll('.w')];
     const st = o.stagger ?? (LANG === 'en' ? SUB : SUB / 2), dur = o.dur ?? 0.62;
-    tl.fromTo(ws, { yPercent: 118, rotation: o.rot ?? 0 }, { yPercent: 0, rotation: 0, duration: dur, ease: o.ease ?? 'back.out(1.3)', stagger: st, immediateRender: false }, at);
+    tl.fromTo(ws, { yPercent: 140, rotation: o.rot ?? 0 }, { yPercent: 0, rotation: 0, duration: dur, ease: o.ease ?? 'back.out(1.3)', stagger: st, immediateRender: false }, at);
+    tl.fromTo(ws, { opacity: 0 }, { opacity: 1, duration: dur * 0.4, ease: 'power1.out', stagger: st, immediateRender: false }, at);
     const end = at + st * (ws.length - 1) + dur * 0.6;
     el.querySelectorAll('.ul').forEach((u) => tl.fromTo(u, { clipPath: 'inset(-50% 100% -50% 0%)' }, { clipPath: 'inset(-50% 0% -50% 0%)', duration: 0.4, ease: 'power2.inOut', immediateRender: false }, o.ulAt ?? end));
     return end;
   }
-  // 离场：整行一起沉进遮罩（读的时候是一眼，走的时候也是一个整体）
+  // 离场：整行一起往上飘走、淡掉（读的时候是一眼，走的时候也是一个整体）
   function leave(el, at, dur = 0.3) {
-    tl.to(el.querySelectorAll('.w'), { yPercent: -118, duration: dur, ease: 'power3.in' }, at);
+    tl.to(el.querySelectorAll('.w'), { yPercent: -30, opacity: 0, duration: dur, ease: 'power2.in' }, at);
     const ul = el.querySelectorAll('.ul'); if (ul.length) tl.to(ul, { opacity: 0, duration: dur * 0.8 }, at);
   }
   const cap = (sel, inAt, outAt) => { const el = $(sel); show(el, inAt); reveal(el, inAt, { dur: 0.55, ease: 'back.out(1.15)' }); leave(el, outAt - 0.3); hide(el, outAt); };
@@ -518,7 +525,8 @@ C,,^F,, [C,,^D,,]^F,, C,,^F,, [C,,^D,,]^F,, | C,,^F,, [C,,^D,,]^F,, C,,^F,, [C,,
 
   // ---------- drop 16–20 s ----------
   tl.addLabel('scene:drop', B(32));
-  // 一个镜头：滚轮从根图放大进 /api 节点，再进它的子图（0.7 倍速，4 s 只有这一刀，不再接 fly；停在推进订单服务、子图正浮现的半路，带着运动切进蒙太奇）
+  // 一个镜头，两轮进子图：从总架构放大进「后端 API」，子图接过画面后不停，再放大进「订单服务」，落在第三层的整张图上。
+  // 实录是 web/scripts/promo-capture.ts 逐帧步进录的真 60 fps，原速播放（片子也按 60 fps 渲染），画面里只有画布
   show('#sWheel', B(32));
   const inset = (a, r) => `inset(${a}px 0px ${a}px 0px round ${r}px)`;
   tl.fromTo('#sWheel', { clipPath: inset(118, 61) }, { clipPath: inset(0, 18), duration: 0.6, ease: 'power3.out', immediateRender: false }, B(32));

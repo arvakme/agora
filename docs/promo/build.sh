@@ -38,21 +38,40 @@ prep() {
   cp "$HERE/film/treatment.md" "$BUILD/tools/treatment.md"
 
   # 实录片段（VP9 WebM：Playwright 的 Chromium 不带 H.264 解码）：统一成 30 fps、无声、1440×900（1.6:1，与卡片同比例）；hop 的录像顶上有一行说明文字，裁掉。只用 #53 之后的实录（小人沿箭头滑行或跳过去）：glide/after.mp4 和 agora-motion.mp4 里还有已删掉的脚手架爬梯，不用。
-  clip() { # name src crop
-    ffmpeg -v error -y -i "$FOOTAGE/$2" -an -vf "$3,scale=1440:900:flags=lanczos,fps=30,format=yuv420p" \
+  clip() { # name src crop [fps]
+    ffmpeg -v error -y -i "$FOOTAGE/$2" -an -vf "$3,scale=1440:900:flags=lanczos,fps=${4:-30},format=yuv420p" \
       -c:v libvpx-vp9 -crf 24 -b:v 0 -deadline good -cpu-used 4 -row-mt 1 -g 15 "$BUILD/assets/clips/$1.webm"
   }
-  clip reveal  reveal/after.mp4        "crop=1280:800:0:0"
-  clip library reveal/library.mp4      "crop=1280:800:0:0"
-  clip wheel   semantic-zoom/wheel.mp4 "crop=1280:800:0:0"
-  clip hop     hop/after.mp4           "crop=1488:930:56:90"
+  # 每段实录按语言各一份：assets/clips/<名>.<lang>.webm。录制脚本带 --lang en 录的（页面开 ?lang=en，图上标签也是英文）放在
+  # promo-bilingual/footage/<名>.<lang>.mp4，原尺寸录、不裁；某种语言还没有，就用中文那份顶上（原来的实录，带它原来的裁切）
+  langclip() { # name zh-src zh-crop
+    local l f
+    for l in zh en; do
+      f="promo-bilingual/footage/$1.$l.mp4"
+      if [ -f "$FOOTAGE/$f" ]; then clip "$1.$l" "$f" null
+      elif [ $l = zh ]; then clip "$1.zh" "$2" "$3"
+      else cp "$BUILD/assets/clips/$1.zh.webm" "$BUILD/assets/clips/$1.en.webm"; fi
+    done
+  }
+  langclip reveal  reveal/after.mp4    "crop=1280:800:0:0"    # web/scripts/reveal-capture.ts [--lang en]
+  langclip library reveal/library.mp4  "crop=1280:800:0:0"    # 同上，--library
+  langclip hop     hop/after.mp4       "crop=1488:930:56:90"  # web/scripts/motion-capture.ts（?mock=runs 的脚本场景）[--lang en]
+  # 两轮进子图：web/scripts/promo-capture.ts 录的 60 fps（setup 搭两层子图，zoom 逐帧步进；画面里只有画布），中英文各一条
+  for l in zh en; do clip "zoom.$l" "promo-bilingual/footage/zoom.$l.mp4" "crop=1440:900:0:0" 60; done
 
-  # README 里的截图（docs/media/），蒙太奇用
-  for s in trajectory terminal share guest choose-agent; do cp "$REPO/docs/media/$s.png" "$BUILD/assets/stills/"; done
+  # 蒙太奇里的截图：docs/media/<名>.png 是中文版；英文版 <名>.en.png（web/scripts/readme-shots.ts --lang en 拍的）还没有就用中文的
+  for s in trajectory terminal share guest; do
+    cp "$REPO/docs/media/$s.png" "$BUILD/assets/stills/$s.zh.png"
+    if [ -f "$REPO/docs/media/$s.en.png" ]; then cp "$REPO/docs/media/$s.en.png" "$BUILD/assets/stills/$s.en.png"
+    else cp "$REPO/docs/media/$s.png" "$BUILD/assets/stills/$s.en.png"; fi
+  done
   cp "$REPO/docs/assets/banner.png" "$BUILD/assets/stills/banner.png"
-  # README 示意图的上半部分（数据流），只改 viewBox 裁出来
-  sed -e '1s/width="1600" height="1130" viewBox="0 0 1600 1130"/width="1520" height="410" viewBox="40 80 1520 410"/' \
-    "$REPO/docs/assets/how-it-works.svg" > "$BUILD/assets/stills/flow.svg"
+  # README 示意图的上半部分（数据流），只改 viewBox 裁出来；中英文各一张（how-it-works.py 同时写出两份）
+  for l in zh en; do
+    local suf=""; [ $l = en ] && suf=".en"
+    sed -e '1s/width="1600" height="1130" viewBox="0 0 1600 1130"/width="1520" height="410" viewBox="40 80 1520 410"/' \
+      "$REPO/docs/assets/how-it-works$suf.svg" > "$BUILD/assets/stills/flow.$l.svg"
+  done
   cp /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf "$BUILD/assets/fonts/"   # 终端里的等宽字（DejaVu，自由许可）
 
   # earshot 音效（库里的程序化声音，按画面时刻对准；不需要模型）
@@ -72,7 +91,7 @@ render() { # lang
   om set "lang=$1" "$BUILD"
   om sound "$BUILD"        # prep 拷进来的 index.html 不带 <audio id="om-sound">，先重写配乐再渲染
   om check "$BUILD"
-  om render "$BUILD"
+  om render "$BUILD" --fps 60   # 60 fps：子图那段实录是 60 fps，原速播放
   om qa "$BUILD"
   finish "$1"
 }
@@ -100,7 +119,7 @@ finish() { # lang
   # README 动图：逐站画出来（4–10 s）接缩放进子图（16–20 s），无声，960 宽 15 fps，≤ 3.5 MB；
   # demo.zh.gif → docs/assets/demo.gif，demo.en.gif → docs/assets/demo.en.gif
   ffmpeg -v error -y -i "$full" -filter_complex \
-    "[0:v]trim=4:10,setpts=PTS-STARTPTS[a];[0:v]trim=16:20,setpts=PTS-STARTPTS[b];[a][b]concat=n=2:v=1[c];[c]fps=15,scale=960:-1:flags=lanczos,split[x][y];[x]palettegen=max_colors=128:stats_mode=diff[p];[y][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" \
+    "[0:v]trim=4:10,setpts=PTS-STARTPTS[a];[0:v]trim=16:20,setpts=PTS-STARTPTS[b];[a][b]concat=n=2:v=1[c];[c]fps=15,scale=960:-1:flags=lanczos,split[x][y];[x]palettegen=max_colors=96:stats_mode=diff[p];[y][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle" \
     "$out/demo.$lang.gif"
   ls -la "$out"
 }
