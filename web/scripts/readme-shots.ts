@@ -76,12 +76,12 @@ const T = {
     readme: "# shop-demo\n\nA tiny shop: React front end, FastAPI, SQLite, a Redis job queue and a notification worker.\n",
     notes: "# Notes\n\n- Orders are created through `POST /api/orders`.\n",
     turns: [
-      "Link the diagram to the code by its structure: each node gets its directory. Reply in English, in a sentence or two.",
-      "Reply in English. Add order cancelling: handle order_cancelled in worker/main.py, cancel_order in db/repo.py, POST /orders/{id}/cancel in api/routes/orders.py that enqueues order_cancelled, a cancel button in web/src/api.ts and web/src/pages/Orders.tsx; finally one line in docs/notes.md. Change them one by one in this order with the edit tools, then sum up in a list.",
-      "Reply in English. Add refunds: a new api/routes/refunds.py with POST /orders/{id}/refund (404 when the order does not exist, cancelled orders cannot be refunded), registered in api/server.py. Use the edit tools, not the shell, to write files. Sum up in two or three sentences.",
-      "Reply in English. Wire refunds into the front end: refundOrder(id) in web/src/api.ts and a Refund button on every row in web/src/pages/Orders.tsx. Use the edit tools. Sum up in a sentence or two.",
+      "Link the diagram to the code by its structure: each node gets its directory. Sum up in a sentence or two.",
+      "Add order cancelling: handle order_cancelled in worker/main.py, cancel_order in db/repo.py, POST /orders/{id}/cancel in api/routes/orders.py that enqueues order_cancelled, a cancel button in web/src/api.ts and web/src/pages/Orders.tsx; finally one line in docs/notes.md. Change them one by one in this order with the edit tools, then sum up in a list.",
+      "Add refunds: a new api/routes/refunds.py with POST /orders/{id}/refund (404 when the order does not exist, cancelled orders cannot be refunded), registered in api/server.py. Use the edit tools, not the shell, to write files. Sum up in two or three sentences.",
+      "Wire refunds into the front end: refundOrder(id) in web/src/api.ts and a Refund button on every row in web/src/pages/Orders.tsx. Use the edit tools. Sum up in a sentence or two.",
     ],
-    retryTurn: "Reply in English. Add an amount check to the refund endpoint in api/routes/refunds.py (the amount must be above 0, else 422). Use the edit tools. Sum up in a sentence or two.",
+    retryTurn: "Add an amount check to the refund endpoint in api/routes/refunds.py (the amount must be above 0, else 422). Use the edit tools. Sum up in a sentence or two.",
     terminalTurn: "In one sentence, how does worker/main.py handle jobs now? Do not change any file.",
     comments: { db: "Should production move to Postgres? SQLite won't take concurrent writes.", queue: "What happens when the queue fills up? Add a dead-letter queue?" },
     guest: "Alex",
@@ -225,10 +225,8 @@ async function turn(text: string, during?: () => Promise<void>) {
  *  was in the frame before. Frames are taken all through the turn and the best one is written when it ends. */
 async function whenWriting(n: string, prefix: string, node: string) {
   const at = await nodeAt(first(node));
-  let last: string | null = null;
-  let best: { buf: Buffer; still: boolean } | null = null;
   const seen = new Set<string>();
-  while (await page.locator(".sp-stop").count()) {
+  const probe = async () => {
     const now = await page.evaluate((prefix) => {
       const ps = [...document.querySelectorAll<HTMLElement>(".ws-bub-pos")].filter((p) => p.style.visibility !== "hidden");
       const kinds = ps.map((p) => `${p.querySelector(".ws-bub")?.getAttribute("data-k")}:${p.innerText.replace(/\s+/g, " ").slice(0, 50)}`);
@@ -236,15 +234,22 @@ async function whenWriting(n: string, prefix: string, node: string) {
       const r = p?.getBoundingClientRect();
       return { at: r ? `${Math.round(r.x / 2)},${Math.round(r.y / 2)}` : null, cx: r ? r.x + r.width / 2 : 0, kinds };
     }, prefix);
-    // and standing on that node: the bubble names the file before the walk there is over
-    if (Math.abs(now.cx - at.x) > at.right - at.x) now.at = null;
     now.kinds.filter((k) => !k.startsWith("think:")).forEach((k) => seen.add(k.replace(/\d+(\.\d+)? 秒|\d+(\.\d+)?s\b/g, "")));
+    // and standing on that node: the bubble names the file before the walk there is over
+    return Math.abs(now.cx - at.x) > at.right - at.x ? null : now.at;
+  };
+  let last: string | null = null;
+  let best: { buf: Buffer; still: boolean } | null = null;
+  while (await page.locator(".sp-stop").count()) {
+    const before = await probe();
     const buf = await page.screenshot();
-    if (now.at) {
-      const still = now.at === last;
+    // the same write bubble, in the same place, on both sides of the screenshot: not a frame where it is changing over
+    const after = await probe();
+    if (before && before === after) {
+      const still = before === last;
       if (!best || (still && !best.still) || still === best.still) best = { buf, still };
     }
-    last = now.at;
+    last = after;
   }
   if (!best) return console.log(`(${n}: no write under ${prefix} seen; bubbles were: ${[...seen].slice(0, 30).join(" | ")})`);
   await shot(n, best.buf);
