@@ -70,10 +70,10 @@ export type Highlight = { x: number; y: number; w: number; h: number; label: Rec
 // 截图上要引人看的那一块（百分比坐标，按图片文件名登记）。换了截图（比如加了 overview.en.png）而这里没登记，
 // 就不画高亮，不会框错地方
 export const highlights: Record<string, Highlight> = {
-	"overview.png": { x: 1, y: 45, w: 15.5, h: 11.5, label: { en: "Claude Code · App.tsx", zh: "Claude Code · App.tsx" } },
-	"trajectory.png": { x: 60.5, y: 66.2, w: 39, h: 23, label: { en: "One Edit call, full input", zh: "一次 Edit 调用的完整输入" } },
-	"choose-agent.png": { x: 64.2, y: 48.6, w: 31.4, h: 9.4, label: { en: "Locked once chosen", zh: "选定后不能更改" } },
-	"terminal.png": { x: 1.2, y: 25.4, w: 97.6, h: 6.4, label: { en: "tmux attach", zh: "tmux attach" } },
-	"share.png": { x: 42.3, y: 5.6, w: 28.9, h: 32.4, label: { en: "Canvas + expiry", zh: "画布 + 有效期" } },
-	"guest.png": { x: 80.6, y: 9.8, w: 19.2, h: 27, label: { en: "Guest comments", zh: "访客评论" } },
+	"overview.png": { x: 30.4, y: 37.8, w: 18.8, h: 20.4, label: { en: "Claude Code writing in api/", zh: "Claude Code 在「API 服务」上写文件" } },
+	"trajectory.png": { x: 66.3, y: 58, w: 33.2, h: 33.4, label: { en: "One Edit call, full input", zh: "一次 Edit 调用的完整输入" } },
+	"choose-agent.png": { x: 64.2, y: 38.2, w: 31.4, h: 7.2, label: { en: "Locked once chosen", zh: "选定后不能更改" } },
+	"terminal.png": { x: 1, y: 81.8, w: 37.6, h: 5, label: { en: "Terminal open · your message waits", zh: "终端开着，你的话在排队" } },
+	"share.png": { x: 67.8, y: 14.8, w: 28.2, h: 26, label: { en: "Canvas + expiry", zh: "画布 + 有效期" } },
+	"guest.png": { x: 73, y: 14.5, w: 26.3, h: 24.2, label: { en: "Guest comments", zh: "访客评论" } },
 };

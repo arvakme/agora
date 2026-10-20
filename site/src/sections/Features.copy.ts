@@ -14,7 +14,7 @@ export const copy = {
 					"Run <code>agora</code> in a project and it sets up <code>.agora/</code> right there, with its own local server. Canvases are plain <code>.excalidraw</code> files and comments are JSON with sorted keys, so they commit, clone and branch with your code — and the diffs stay readable.",
 					"Session records, runtime state and share records stay out of git by default. Deleted canvases and sessions sit in a trash for 30 days.",
 				],
-				alt: "Agora with the architecture canvas and comment pins on the left and a Claude Code session on the right",
+				alt: "Canvas and session side by side: the architecture diagram with comment pins on the left, Claude Code’s avatar on the API node writing a file there; the live session on the right",
 			},
 			{
 				// web/docs/workstation.md「分站揭示」
@@ -39,7 +39,8 @@ export const copy = {
 				kicker: "04 · Progress pointers",
 				title: "See which part of the architecture the AI is changing.",
 				body: [
-					"Attach code paths (globs) to nodes — by hand, or let the agent map them from the directory layout. When the agent edits a file, its figure walks to the node that file belongs to: gliding along an arrow when the two nodes are connected, hopping across when they aren’t. Edits made in the terminal move it too.",
+					"Attach code paths (globs) to nodes — by hand, or let the agent map them from the directory layout. When the agent edits a file, its figure walks to the node that file belongs to: gliding along an arrow when the two nodes are connected, hopping across when they aren’t. Files that belong to no node are listed under the “off the diagram” chip, and edits made in the terminal move it too.",
+					"Replay a turn and the diagram shows the avatar’s route, numbered stops and +N files changed on each node.",
 					"Several sessions get one pointer each, and Agora flags a possible conflict when two agents touch the same file.",
 				],
 				alt: "Claude Code and Pi each have a pointer; as they edit files, their figures move to the matching nodes, gliding along arrows or hopping across",
@@ -66,7 +67,7 @@ export const copy = {
 				// README §3
 				title: "Back to the terminal in one click",
 				body: "“Open in terminal” resumes the very same native session (<code>claude --resume</code>, <code>codex resume</code>, <code>pi --session-id</code>) in a project-scoped tmux, in Ghostty, Kitty or Terminal.app. What happens in the terminal shows up in the panel, and panel messages queue until the terminal is free.",
-				alt: "Terminal taken over: the panel shows the tmux attach command while the conversation keeps syncing",
+				alt: "The session open in a terminal: the panel says the terminal window is open and queues your messages; that turn is tagged “terminal”",
 			},
 		],
 		share: {
@@ -93,7 +94,7 @@ export const copy = {
 					"在项目里敲 <code>agora</code>，就在当前目录建好 <code>.agora/</code>，起本项目专属的本地服务。画布是标准 <code>.excalidraw</code> 文件，评论是键排序的 JSON：跟代码一起提交、克隆、切分支，git diff 可读。",
 					"会话记录、运行状态和分享记录默认不提交。删掉的画布和会话进回收站，30 天内可恢复。",
 				],
-				alt: "画布与会话并排：左边是项目的架构图和评论钉，右边是 Claude Code 会话",
+				alt: "画布与会话并排：左边是架构图和评论钉，Claude Code 的小人站在「API 服务」上写文件；右边是正在干活的会话",
 			},
 			{
 				kicker: "02 · 逐站画图",
@@ -111,7 +112,8 @@ export const copy = {
 				kicker: "04 · 进度指针",
 				title: "看得见 AI 正在改架构图的哪一块",
 				body: [
-					"给节点关联代码路径（glob），可以手动设，也可以让 agent 按目录结构批量关联。agent 改哪个文件，它的小人就走到这个文件所属的节点：两个节点有箭头相连就沿箭头滑过去，否则跳过去。终端里的改动同样驱动它。",
+					"给节点关联代码路径（glob），可以手动设，也可以让 agent 按目录结构批量关联。agent 改哪个文件，它的小人就走到这个文件所属的节点：两个节点有箭头相连就沿箭头滑过去，否则跳过去。不属于任何节点的文件列在「图外 · 改了 N 个文件」里；终端里的改动同样驱动它。",
+					"回放一轮，图上标出小人走过的路线、按先后编号的站点和每个节点上改了几个文件（+N）。",
 					"几个会话各有一个指针；两个 agent 改到同一个文件时，Agora 会提示可能冲突。",
 				],
 				alt: "Claude Code 和 Pi 各有一个指针：改到哪个文件，小人就沿箭头滑过去或跳到对应的节点",
@@ -135,7 +137,7 @@ export const copy = {
 			{
 				title: "一键回到终端，双向同步",
 				body: "「在终端打开」用同一个原生会话起交互式 CLI（<code>claude --resume</code>、<code>codex resume</code>、<code>pi --session-id</code>），跑在本项目专属的 tmux 里，用 Ghostty、Kitty 或 Terminal.app 打开。终端里发生的事都出现在面板上；面板发的消息排队，等终端空下来再送进去。",
-				alt: "终端已接管：面板显示 tmux attach 命令，对话继续同步",
+				alt: "在终端里打开会话：面板提示终端窗口开着、你的话在排队，这一轮带「终端」标签",
 			},
 		],
 		share: {
