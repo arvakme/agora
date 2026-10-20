@@ -43,6 +43,7 @@ from server.canvas.adapters.common import MAX_TEXT, LogLookup, Out, State, Strea
 from server.canvas.adapters.shell_files import shell_tool
 from server.canvas.adapters.tools import activity_of
 from server.canvas.runner import Usage, _int, _num, empty_usage
+from server.i18n import tr
 
 TICKS = 1e10
 KIND_ACTIVITY = {"read": "read", "edit": "edit", "write": "write", "delete": "edit", "move": "edit", "execute": "commands", "search": "search", "fetch": "webFetch", "think": "plan", "plan": "plan", "task": "subagents"}
@@ -286,12 +287,13 @@ def project(rec: dict[str, Any], st: State) -> Out:
 class GrokAdapter(Adapter):
     kind = "grok"
     no_steer = "Grok 的 `-p` 只收启动时的一条提示，这一轮开始后没有输入口"
+    no_steer_en = "Grok's `-p` takes a single prompt at start; once the turn begins there is no way in"
     name = "Grok"
     binaries = ("grok",)
     tested = VersionRange(">=1.0.40,<1.1")
     max_tier = "T1"
     icon = "grok"
-    log_hint = "~/.grok/sessions/<URL 编码的目录>/<id>/updates.jsonl"
+    log_hint = "~/.grok/sessions/<URL-encoded dir>/<id>/updates.jsonl"
     log_dir = "~/.grok/sessions/"
     delete_hint = "grok sessions delete {id}"
     has_cost = True
@@ -410,12 +412,12 @@ class GrokAdapter(Adapter):
         out = []
         for cid, s in spawned.items():
             look = self.locate(cid, None, home)
-            why = ["父 updates.jsonl 的 subagent_spawned.child_session_id"] if s.get("at") else []
+            why = [tr("父 updates.jsonl 的 subagent_spawned.child_session_id", "subagent_spawned.child_session_id in the parent updates.jsonl")] if s.get("at") else []
             if s.get("meta_file"):
-                why.append("父会话 subagents/<id>/meta.json")
+                why.append(tr("父会话 subagents/<id>/meta.json", "the parent session's subagents/<id>/meta.json"))
             out.append(NativeRef(
                 "grok", cid, look.path, s.get("cwd") or (session_cwd(look.path.parent) if look.path else ref.cwd),
-                ParentLink("native", ref.run_id, tool_call_id=s.get("callId"), evidence="、".join(why)),
+                ParentLink("native", ref.run_id, tool_call_id=s.get("callId"), evidence=tr("、", ", ").join(why)),
                 label=str(s.get("label") or cid), meta={"role": s.get("role"), "model": s.get("model"), "dispatchedAt": s.get("at"), "doneAt": s.get("doneAt"), "state": s.get("state") or ("running" if s.get("at") else None), "depth": 1},
             ))
         return out

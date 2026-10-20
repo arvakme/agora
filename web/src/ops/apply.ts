@@ -21,6 +21,7 @@ import {
   type Scene,
   type ShapeKind,
 } from "../canvas/scene";
+import { tr } from "../i18n";
 
 export type Batch = {
   /** Pre-batch copy of every element this batch changed; null = created by the batch. */
@@ -94,7 +95,7 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
   };
 
   const describeArrow = (a: El) =>
-    isArrow(a) ? `箭头 ${a.startBinding ? name(a.startBinding.elementId) : "?"} → ${a.endBinding ? name(a.endBinding.elementId) : "?"}` : a.id;
+    isArrow(a) ? tr("箭头 ", "arrow ") + `${a.startBinding ? name(a.startBinding.elementId) : "?"} → ${a.endBinding ? name(a.endBinding.elementId) : "?"}` : a.id;
 
   /** Library components move / disappear as a whole (root + members). */
   const shiftLibrary = (root: El, dx: number, dy: number) => {
@@ -120,7 +121,7 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
         } else if (el.type === "frame") put({ ...el, name: o.text });
         else if (isArrow(el)) rebuildArrow(el, o.text);
         else rebuildShape(el, { label: o.text });
-        summary.push(`改文字 ${prev ? `「${prev}」` : describeArrow(el)} → 「${o.text}」`);
+        summary.push(tr(`改文字 ${prev ? `「${prev}」` : describeArrow(el)} → 「${o.text}」`, `Changed text ${prev ? `“${prev}”` : describeArrow(el)} → “${o.text}”`));
         break;
       }
       case "move": {
@@ -132,7 +133,7 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
           put({ ...el, x: o.x, y: o.y });
           for (const c of [...work.values()]) if (c.frameId === el.id && isShape(c) && !c.isDeleted) rebuildShape(c, { x: c.x + dx, y: c.y + dy });
         } else rebuildShape(el, { x: o.x, y: o.y });
-        summary.push(`移动 ${name(o.id)} → (${Math.round(o.x)}, ${Math.round(o.y)})`);
+        summary.push(tr(`移动 ${name(o.id)} → (${Math.round(o.x)}, ${Math.round(o.y)})`, `Moved ${name(o.id)} → (${Math.round(o.x)}, ${Math.round(o.y)})`));
         break;
       }
       case "resize": {
@@ -140,7 +141,7 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
         for (const a of arrowsOf(el.id, [...work.values()])) routed.delete(a.id);
         if (el.type === "frame") put({ ...el, width: o.width, height: o.height });
         else rebuildShape(el, { width: o.width, height: o.height });
-        summary.push(`调整尺寸 ${name(o.id)} → ${Math.round(o.width)}×${Math.round(o.height)}`);
+        summary.push(tr(`调整尺寸 ${name(o.id)} → ${Math.round(o.width)}×${Math.round(o.height)}`, `Resized ${name(o.id)} → ${Math.round(o.width)}×${Math.round(o.height)}`));
         break;
       }
       case "add_shape": {
@@ -160,8 +161,8 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
         });
         for (const e of els) put({ ...e, frameId: o.frameId ?? null } as El);
         geometryChanged.add(o.ref);
-        const moved = at.x !== o.x || at.y !== o.y ? `（为留出间距移到 (${Math.round(at.x)}, ${Math.round(at.y)})）` : "";
-        summary.push(`新增 ${o.text}${o.frameId ? `（在 ${name(o.frameId)} 内）` : ""}${moved}`);
+        const moved = at.x !== o.x || at.y !== o.y ? tr(`（为留出间距移到 (${Math.round(at.x)}, ${Math.round(at.y)})）`, ` (moved to (${Math.round(at.x)}, ${Math.round(at.y)}) to leave space)`) : "";
+        summary.push(tr(`新增 ${o.text}${o.frameId ? `（在 ${name(o.frameId)} 内）` : ""}${moved}`, `Added ${o.text}${o.frameId ? ` (in ${name(o.frameId)})` : ""}${moved}`));
         break;
       }
       case "add_arrow": {
@@ -170,12 +171,12 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
         const built = buildArrow({ id, from: work.get(o.from)!, to: work.get(o.to)!, label: o.text, bothEnds: o.bothEnds, plain: o.plain, path: o.path });
         for (const e of built) put(e);
         if (o.path) routed.add(id);
-        summary.push(`新增箭头 ${name(o.from)} ${o.plain ? "—" : o.bothEnds ? "↔" : "→"} ${name(o.to)}${o.text ? `「${o.text}」` : ""}`);
+        summary.push(tr("新增箭头 ", "Added arrow ") + `${name(o.from)} ${o.plain ? "—" : o.bothEnds ? "↔" : "→"} ${name(o.to)}${o.text ? tr(`「${o.text}」`, ` “${o.text}”`) : ""}`);
         break;
       }
       case "add_junction": {
         for (const e of buildJunction({ id: o.ref, x: o.x, y: o.y })) put(e);
-        summary.push("新增汇合点");
+        summary.push(tr("新增汇合点", "Added junction"));
         break;
       }
       case "route": {
@@ -183,7 +184,7 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
         rebuildArrow(a, labelOf(a, work), o.path ?? undefined);
         if (o.path) routed.add(a.id);
         else routed.delete(a.id);
-        summary.push(`${describeArrow(a)} ${o.path ? "改走折线" : "改回直线"}`);
+        summary.push(`${describeArrow(a)} ${o.path ? tr("改走折线", "rerouted as elbow line") : tr("改回直线", "back to straight")}`);
         break;
       }
       case "insert_library_item": {
@@ -192,9 +193,11 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
         for (const e of els) put(e);
         geometryChanged.add(o.ref);
         const meta = libraryMeta(els[0])!;
-        const where = o.near ? `（${name(o.near.id)} ${{ right: "右侧", left: "左侧", above: "上方", below: "下方" }[o.near.side]}）` : "";
-        const caption = meta.label ? `标注「${o.label}」` : meta.droppedLabel ? `（组件自带文字，未加标注「${meta.droppedLabel}」）` : "";
-        summary.push(`插入素材「${item.name || item.library}」${caption}${where} · ${item.library}`);
+        const where = o.near
+          ? tr(`（${name(o.near.id)} ${{ right: "右侧", left: "左侧", above: "上方", below: "下方" }[o.near.side]}）`, ` (${{ right: "right of", left: "left of", above: "above", below: "below" }[o.near.side]} ${name(o.near.id)})`)
+          : "";
+        const caption = meta.label ? tr(`标注「${o.label}」`, ` labeled “${o.label}”`) : meta.droppedLabel ? tr(`（组件自带文字，未加标注「${meta.droppedLabel}」）`, ` (the component has its own text; label “${meta.droppedLabel}” not added)`) : "";
+        summary.push(tr(`插入素材「${item.name || item.library}」${caption}${where} · ${item.library}`, `Inserted “${item.name || item.library}”${caption}${where} · ${item.library}`));
         break;
       }
       case "delete": {
@@ -202,7 +205,7 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
         const label = name(o.id);
         if (libraryMeta(el)) for (const m of libraryMembers(el, work.values())) put({ ...m, isDeleted: true });
         remove(o.id);
-        if (isArrow(el)) summary.push(`删除${describeArrow(el)}${label === el.id ? "" : `「${label}」`}`);
+        if (isArrow(el)) summary.push(tr(`删除${describeArrow(el)}${label === el.id ? "" : `「${label}」`}`, `Deleted ${describeArrow(el)}${label === el.id ? "" : ` “${label}”`}`));
         else {
           if (el.type === "frame") for (const c of [...work.values()]) if (c.frameId === el.id) put({ ...c, frameId: null });
           // Arrows stay (like deleting in the editor) but lose the binding to the deleted end.
@@ -212,7 +215,7 @@ export function applyPlan(scene: Scene, plan: Plan, library: Map<string, Library
               startBinding: a.startBinding?.elementId === el.id ? null : a.startBinding,
               endBinding: a.endBinding?.elementId === el.id ? null : a.endBinding,
             } as El);
-          summary.push(`删除 ${label}`);
+          summary.push(tr(`删除 ${label}`, `Deleted ${label}`));
         }
         break;
       }

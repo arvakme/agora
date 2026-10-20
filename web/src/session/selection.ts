@@ -5,12 +5,13 @@ import { exportToBlob, exportToSvg } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { elementNames } from "../canvas/anchors";
 import { byId, live, type El, type Scene } from "../canvas/scene";
+import { tr } from "../i18n";
 
 export type SelEl = { id: string; name: string };
 /** What goes to the server with the message (agent_router.py `SelectionIn`). */
 export type SelectionPayload = { canvasId: string; elements: SelEl[]; svg: string; png: string | null };
 
-export const selectionLabel = (n: number) => `选区 · ${n} 个元素`;
+export const selectionLabel = (n: number) => tr(`选区 · ${n} 个元素`, `Selection · ${n} element${n === 1 ? "" : "s"}`);
 
 /** The elements a set of selected ids stands for: a label counts with its box, what is gone is left out. */
 export function selectionElements(scene: readonly El[], selectedIds: readonly string[]): SelEl[] {

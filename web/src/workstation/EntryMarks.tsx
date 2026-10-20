@@ -6,6 +6,7 @@
 // so where that head is the only one in there and nothing waits, this mark would say the same thing twice: it is left out.
 // Mounted inside the canvas overlay (./Overlay.tsx `.ws-layer`, which clips it); rebuilt ≤ 4 Hz,
 // moved by the frame loop with the view.
+import { tr } from "../i18n";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { CanvasViewState } from "../canvas/CanvasView";
 import type { Box } from "../canvas/clearance";
@@ -91,12 +92,12 @@ export function EntryMarks({ view, peeks }: { view: CanvasViewState; peeks?: Rea
             if (el) (marks.current.set(d.node, el), place(d.node, el));
             else marks.current.delete(d.node);
           }}
-          title={d.waiting.length ? `等你回复 · ${d.waiting.join("、")}` : `在子图「${d.title || "未命名画布"}」里：${d.ids.map((id) => byId.get(id)?.run.name ?? id).join("、")}`}
+          title={d.waiting.length ? tr(`等你回复 · ${d.waiting.join("、")}`, `Waiting for you · ${d.waiting.join(", ")}`) : tr(`在子图「${d.title || "未命名画布"}」里：${d.ids.map((id) => byId.get(id)?.run.name ?? id).join("、")}`, `In sub-diagram “${d.title || "Untitled canvas"}”: ${d.ids.map((id) => byId.get(id)?.run.name ?? id).join(", ")}`)}
         >
           {d.ids.slice(0, SHOWN).map((id) => {
             const x = byId.get(id);
             return x ? (
-              <button key={id} onPointerDown={(e) => e.stopPropagation()} onClick={() => liveFollow.follow(id)} aria-label={`跟随 ${x.run.name}`}>
+              <button key={id} onPointerDown={(e) => e.stopPropagation()} onClick={() => liveFollow.follow(id)} aria-label={tr(`跟随 ${x.run.name}`, `Follow ${x.run.name}`)}>
                 <RunAvatar agent={x.run.agent} size={18} />
               </button>
             ) : null;

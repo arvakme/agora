@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client";
+import "../i18n";
 import "./tokens.css";
 import "./theme";
 import "./viewport";
@@ -6,6 +7,7 @@ import "@excalidraw/excalidraw/index.css";
 import "./styles.css";
 import { App, prepareBoot, type Boot, type WorkspaceState } from "./App";
 import { IconTerminal } from "./icons";
+import { tr } from "../i18n";
 import { connect, PERSIST } from "../persist";
 import { sessions } from "../session/store";
 import { setIdentity } from "../comments/threads";
@@ -45,18 +47,18 @@ function Offline({ error }: { error: unknown }) {
     <div className="offline">
       <main>
         <IconTerminal size={56} />
-        <h1>{answered ? "项目服务出错了" : "没有连上项目服务"}</h1>
+        <h1>{answered ? tr("项目服务出错了", "The project server hit an error") : tr("没有连上项目服务", "Not connected to the project server")}</h1>
         {answered ? (
-          <p>项目服务在运行，但读取项目时出错了。看下面的错误，或查看 <code>.agora/run/server.log</code>。</p>
+          <p>{tr("项目服务在运行，但读取项目时出错了。看下面的错误，或查看 ", "The project server is running but failed to read the project. See the error below, or check ")}<code>.agora/run/server.log</code>{tr("。", ".")}</p>
         ) : (
           <>
-            <p>画布、评论和会话存在项目目录的 <code>.agora/</code> 里，由这个项目自己的 Agora 服务读写。在项目目录运行</p>
+            <p>{tr("画布、评论和会话存在项目目录的 ", "Canvases, comments and sessions live in ")}<code>.agora/</code>{tr(" 里，由这个项目自己的 Agora 服务读写。在项目目录运行", " in the project folder, read and written by the project's own Agora server. In the project folder, run")}</p>
             <pre>agora up</pre>
-            <p>再打开它给出的地址（或用 <code>agora open</code>）。</p>
+            <p>{tr("再打开它给出的地址（或用 ", "then open the address it prints (or use ")}<code>agora open</code>{tr("）。", ").")}</p>
           </>
         )}
         <p className="offline-detail">{String(error)}</p>
-        <a href="?fresh">不保存，直接试用 →</a>
+        <a href="?fresh">{tr("不保存，直接试用 →", "Try it without saving →")}</a>
       </main>
     </div>
   );

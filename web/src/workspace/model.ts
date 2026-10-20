@@ -2,6 +2,7 @@
 // which are open as tabs, and the naming / placement rules. Pure functions only.
 import { SHARES } from "./twoColumns.ts";
 import { activate, addTab, group, groupOf, groups, moveTab, removeTab, type Group, type Node } from "./layout.ts";
+import { tr } from "../i18n/index.ts";
 
 /** `reviewedAt`: a child canvas the person checked against the code at that time (docs/nested-canvas.md §5). */
 export type CanvasDoc = { id: string; kind: "canvas"; title: string; reviewedAt?: number };
@@ -21,11 +22,11 @@ export type Doc = CanvasDoc | SessionDoc;
 export type DocKind = Doc["kind"];
 export type GroupKind = DocKind | "mixed";
 
-export const UNTITLED_CANVAS = "未命名画布";
-export const SAMPLE_CANVAS = "示例架构图";
-export const SESSION = "会话";
+export const UNTITLED_CANVAS = tr("未命名画布", "Untitled canvas");
+export const SAMPLE_CANVAS = tr("示例架构图", "Sample architecture");
+export const SESSION = tr("会话", "Session");
 /** A session with no agent chosen yet: a draft, kept in memory until the agent is picked. */
-export const DRAFT_SESSION = "新会话";
+export const DRAFT_SESSION = tr("新会话", "New session");
 /** Names older builds gave every session ("会话 3"); they count as automatic, not as the person's choice. */
 const LEGACY_SESSION = /^会话 \d+$/;
 
@@ -315,7 +316,7 @@ export function relinkChild<E extends { customData?: Record<string, unknown> | n
 }
 
 /** Title of a canvas found on disk without an entry in workspace.json (recovery mode). */
-export const RECOVERED_CANVAS = "已恢复画布";
+export const RECOVERED_CANVAS = tr("已恢复画布", "Recovered canvas");
 
 /**
  * Recovery mode: `workspace.json` is missing, empty or unreadable but the project has canvases on
@@ -326,7 +327,7 @@ export const RECOVERED_CANVAS = "已恢复画布";
 export function recoverWorkspace(canvasIds: string[], sessionList: { id: string; canvasId: string }[], unreadable: string[] = []): { v: 2; docs: Doc[]; root: Node; focused: string } {
   const ids = [...canvasIds].sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
   const docs: Doc[] = [
-    ...ids.map((id): CanvasDoc => ({ id, kind: "canvas", title: `${RECOVERED_CANVAS} ${id}${unreadable.includes(id) ? "（文件读不了）" : ""}` })),
+    ...ids.map((id): CanvasDoc => ({ id, kind: "canvas", title: `${RECOVERED_CANVAS} ${id}${unreadable.includes(id) ? tr("（文件读不了）", " (unreadable)") : ""}` })),
     ...sessionList.map((s): SessionDoc => ({ id: sessionDocId(s.id), kind: "session", sessionId: s.id, title: "" })),
   ];
   return { v: 2, docs, root: group(ids.slice(0, 1), ids[0] ?? ""), focused: ids[0] ?? "" };

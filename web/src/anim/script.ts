@@ -1,6 +1,7 @@
 // Algorithm-animation script: initial nodes + steps of parallel primitives. Engine-agnostic
 // (no canvas-engine imports).
 // The model returns one of these; nothing runs before validateScript accepts it.
+import { tr } from "../i18n/index.ts";
 import { z } from "zod";
 
 const Id = z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/, "id: lowercase, [a-z0-9_-], ≤32");
@@ -67,14 +68,14 @@ export function validateScript(raw: unknown): { script?: AnimScript; errors: str
   const errors: string[] = [];
   const ids = new Set<string>();
   for (const n of s.nodes) {
-    if (ids.has(n.id)) errors.push(`nodes: 重复 id ${n.id}`);
+    if (ids.has(n.id)) errors.push(tr(`nodes: 重复 id ${n.id}`, `nodes: duplicate id ${n.id}`));
     ids.add(n.id);
   }
-  const known = (at: string, id: string) => ids.has(id) || void errors.push(`${at}: 未知节点 ${id}`);
+  const known = (at: string, id: string) => ids.has(id) || void errors.push(tr(`${at}: 未知节点 ${id}`, `${at}: unknown node ${id}`));
   s.edges?.forEach((e, i) => {
     known(`edges[${i}].from`, e.from);
     known(`edges[${i}].to`, e.to);
-    if (e.from === e.to) errors.push(`edges[${i}]: 起止相同`);
+    if (e.from === e.to) errors.push(tr(`edges[${i}]: 起止相同`, `edges[${i}]: from and to are the same`));
   });
   s.steps.forEach((step, i) => {
     // Primitives in one step run in parallel, so each node may be moved and styled at most once.
@@ -84,7 +85,7 @@ export function validateScript(raw: unknown): { script?: AnimScript; errors: str
     const labelled = new Set<string>();
     let captions = 0;
     const once = (set: Set<string>, id: string, what: string, at: string) => {
-      if (set.has(id)) errors.push(`${at}: 同一步里 ${id} 被${what}两次`);
+      if (set.has(id)) errors.push(tr(`${at}: 同一步里 ${id} 被${what}两次`, `${at}: ${id} is ${what} twice in one step`));
       set.add(id);
     };
     step.actions.forEach((a, j) => {
@@ -93,26 +94,26 @@ export function validateScript(raw: unknown): { script?: AnimScript; errors: str
         case "swap":
           known(at, a.a);
           known(at, a.b);
-          if (a.a === a.b) errors.push(`${at}: swap 两端相同`);
-          once(moved, a.a, "移动", at);
-          once(moved, a.b, "移动", at);
+          if (a.a === a.b) errors.push(tr(`${at}: swap 两端相同`, `${at}: swap has the same node on both ends`));
+          once(moved, a.a, tr("移动", "moved"), at);
+          once(moved, a.b, tr("移动", "moved"), at);
           break;
         case "move":
           known(at, a.id);
-          once(moved, a.id, "移动", at);
+          once(moved, a.id, tr("移动", "moved"), at);
           break;
         case "highlight":
-          a.ids.forEach((id) => (known(at, id), once(styled, id, "着色", at)));
+          a.ids.forEach((id) => (known(at, id), once(styled, id, tr("着色", "colored"), at)));
           break;
         case "unhighlight":
-          a.ids?.forEach((id) => (known(at, id), once(cleared, id, "清除颜色", at)));
+          a.ids?.forEach((id) => (known(at, id), once(cleared, id, tr("清除颜色", "cleared"), at)));
           break;
         case "set_label":
           known(at, a.id);
-          once(labelled, a.id, "改标签", at);
+          once(labelled, a.id, tr("改标签", "relabelled"), at);
           break;
         case "caption":
-          if (++captions > 1) errors.push(`${at}: 一步只能有一条 caption`);
+          if (++captions > 1) errors.push(tr(`${at}: 一步只能有一条 caption`, `${at}: only one caption per step`));
           break;
       }
     });

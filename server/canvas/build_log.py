@@ -33,6 +33,7 @@ from server.canvas.adapters import registry
 from server.canvas.model_view import bound_text, child_canvas, code_paths, label_of, library_meta
 from server.canvas.project import ProjectStore
 from server.canvas.share import canvas_titles, guest_elements
+from server.i18n import tr
 
 FORMAT = "agora-build-timeline"
 VERSION = 1
@@ -54,7 +55,7 @@ def _alive(e: Element | None) -> bool:
 
 
 def _quote(s: str) -> str:
-    return f"「{s}」" if s else "一个元素"
+    return tr(f"「{s}」" if s else "一个元素", f"“{s}”" if s else "an element")
 
 
 class _Scene:
@@ -153,9 +154,9 @@ def _describe(cid: str, pre: dict[str, Element | None], post: dict[str, Element 
     nodes = [e for e in added if _is_node(e) and not inside_library(e)]
     for n in nodes:
         lab = _label(n, scene)
-        what = "分区" if n.get("type") == "frame" else "节点"
+        what = tr("分区", "frame") if n.get("type") == "frame" else tr("节点", "node")
         lib = library_meta(n)
-        say = f"加了「{lab}」" if lib and lab else f"加了{what}{_quote(lab)}" if lab else f"加了一个{what}"
+        say = tr(f"加了「{lab}」", f"Added “{lab}”") if lib and lab else tr(f"加了{what}{_quote(lab)}", f"Added {what} {_quote(lab)}") if lab else tr(f"加了一个{what}", f"Added a {what}")
         # a library component is its root plus the shapes grouped with it
         parts = with_text(n) + [e for e in added if inside_library(e) and set(e.get("groupIds") or []) & {library_meta(n).get("group")}] if lib else with_text(n)
         out.push("add-node", say, place=n["id"], ids=[e["id"] for e in parts], add=parts)
@@ -175,13 +176,13 @@ def _describe(cid: str, pre: dict[str, Element | None], post: dict[str, Element 
         more = len([n for n in names if n]) - len(listed)
         head = _label(src_e, scene) if src_e is not None else ""
         if head and listed:
-            say = f"连了 {head} → " + "、".join(listed) + (f" 等 {len(names)} 处" if more > 0 else "")
+            say = tr(f"连了 {head} → " + "、".join(listed) + (f" 等 {len(names)} 处" if more > 0 else ""), f"Connected {head} → " + ", ".join(listed) + (f" ({len(names)} in all)" if more > 0 else ""))
             if len(group) == 1:
                 t = bound_text(group[0], by)
                 if t is not None and t.get("text"):
-                    say += f"「{' '.join(str(t['text']).split())}」"
+                    say += tr(f"「{' '.join(str(t['text']).split())}」", f" “{' '.join(str(t['text']).split())}”")
         else:
-            say = "画了一条线" if len(group) == 1 else f"画了 {len(group)} 条线"
+            say = tr("画了一条线", "Drew a line") if len(group) == 1 else tr(f"画了 {len(group)} 条线", f"Drew {len(group)} lines")
         parts = [x for a in group for x in with_text(a)]
         out.push("add-arrows", say, place=src if src_e is not None else None, ids=[e["id"] for e in parts], add=parts)
     # anything else drawn: text on its own, freehand, images
@@ -189,40 +190,40 @@ def _describe(cid: str, pre: dict[str, Element | None], post: dict[str, Element 
     for e in rest:
         if e.get("type") == "text":
             txt = " ".join(str(e.get("text") or "").split())
-            out.push("note", f"写了文字{_quote(txt[:24])}", place=None, ids=[e["id"]], add=[e])
+            out.push("note", tr(f"写了文字{_quote(txt[:24])}", f"Wrote text {_quote(txt[:24])}"), place=None, ids=[e["id"]], add=[e])
         else:
-            out.push("note", "画了一笔", place=None, ids=[e["id"]], add=[e])
+            out.push("note", tr("画了一笔", "Drew a stroke"), place=None, ids=[e["id"]], add=[e])
     # what an existing element became
     links: list[Element] = []
     for p, q in changed:
         lab = _label(q, scene) or _label(p, scene)
         cp, cq = child_canvas(p), child_canvas(q)
         if cq and cq != cp and cq in children:
-            out.push("expand", f"把{_quote(lab)}展开成子图", place=q["id"], ids=[q["id"]], change=[q], child=cq)
+            out.push("expand", tr(f"把{_quote(lab)}展开成子图", f"Expanded {_quote(lab)} into a sub-diagram"), place=q["id"], ids=[q["id"]], change=[q], child=cq)
         elif q.get("type") == "text" and p.get("text") != q.get("text") and not q.get("containerId"):
-            out.push("rename", f"把文字{_quote(str(p.get('text') or '')[:20])}改成{_quote(str(q.get('text') or '')[:20])}", place=None, ids=[q["id"]], change=[q])
+            out.push("rename", tr(f"把文字{_quote(str(p.get('text') or '')[:20])}改成{_quote(str(q.get('text') or '')[:20])}", f"Changed text {_quote(str(p.get('text') or '')[:20])} to {_quote(str(q.get('text') or '')[:20])}"), place=None, ids=[q["id"]], change=[q])
         elif q.get("type") == "text" and p.get("text") != q.get("text"):
             owner = scene.get(q.get("containerId"))
             old = " ".join(str(p.get("text") or "").split())
             new = " ".join(str(q.get("text") or "").split())
             place = owner["id"] if owner is not None and _is_node(owner) else None
-            out.push("rename", f"把{_quote(old)}改名为{_quote(new)}", place=place, ids=[q["id"]], change=[q])
+            out.push("rename", tr(f"把{_quote(old)}改名为{_quote(new)}", f"Renamed {_quote(old)} to {_quote(new)}"), place=place, ids=[q["id"]], change=[q])
         elif code_paths(p) != code_paths(q):
             links.append(q)
         elif not _same(p, q, GEOMETRY) and not q.get("containerId"):
-            out.push("move", f"挪了{_quote(lab)}", place=q["id"] if _is_node(q) else None, ids=[q["id"]], change=[q])
+            out.push("move", tr(f"挪了{_quote(lab)}", f"Moved {_quote(lab)}"), place=q["id"] if _is_node(q) else None, ids=[q["id"]], change=[q])
         elif not _same(p, q, PAINT) and not q.get("containerId"):
-            out.push("restyle", f"调整了{_quote(lab)}的样子", place=q["id"] if _is_node(q) else None, ids=[q["id"]], change=[q])
+            out.push("restyle", tr(f"调整了{_quote(lab)}的样子", f"Restyled {_quote(lab)}"), place=q["id"] if _is_node(q) else None, ids=[q["id"]], change=[q])
     if links:
         names = [_label(e, scene) for e in links if _label(e, scene)]
-        say = f"把{_quote(names[0])}关联到代码" if len(links) == 1 else f"把 {len(links)} 个节点关联到代码"
+        say = tr(f"把{_quote(names[0])}关联到代码", f"Linked {_quote(names[0])} to code") if len(links) == 1 else tr(f"把 {len(links)} 个节点关联到代码", f"Linked {len(links)} nodes to code")
         out.push("link", say, place=links[0]["id"] if _is_node(links[0]) else None, ids=[e["id"] for e in links], change=links, quiet=True)
     # deletions
     for e in removed:
         if e.get("containerId") or inside_library(e):
             continue
         lab = _label(e, scene)
-        say = f"删掉了{_quote(lab)}" if e.get("type") not in ARROW_TYPES else "删掉了一条线"
+        say = tr(f"删掉了{_quote(lab)}", f"Deleted {_quote(lab)}") if e.get("type") not in ARROW_TYPES else tr("删掉了一条线", "Deleted a line")
         out.push("delete", say, place=e["id"] if _is_node(e) else None, ids=[e["id"]], remove=[x["id"] for x in [e, *([bound_text(e, by)] if bound_text(e, by) else [])]])
     return out.items
 
@@ -349,7 +350,7 @@ def _derived_steps(store: ProjectStore, cid: str, children: set[str], current: d
             post = {e["id"]: e}
             scene_now[e["id"]] = e
             out = _Items(cid, _Scene(post, scene_now, current), children)
-            out.push("restyle", f"调整了{_quote(lab)}", place=e["id"] if _is_node(e) else None, ids=[e["id"]], change=[e], quiet=True)
+            out.push("restyle", tr(f"调整了{_quote(lab)}", f"Adjusted {_quote(lab)}"), place=e["id"] if _is_node(e) else None, ids=[e["id"]], change=[e], quiet=True)
             items = out.items
             actor = {"kind": "you"}
         if items:

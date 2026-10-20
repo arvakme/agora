@@ -12,6 +12,7 @@ import { buildFixture } from "../eval/fixture";
 import { sampleRequests } from "../session/firstDraw";
 import { IconClose, IconComment, IconHint, IconList, IconPlus, IconPointer, IconWorkspace } from "./icons";
 import { ViewMenu } from "./ViewMenu";
+import { tr } from "../i18n";
 import { ackChange, adoptCanvas, adoptSession, dropCanvas, flushSaves, loadCanvas, onCanvasRefused, PERSIST, project, reloadFromDisk, save, slotFile, type LocalChange } from "../persist";
 import { createSaveGate } from "../canvas/saveGate";
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
@@ -235,7 +236,7 @@ export function App({ boot }: { boot: Boot }) {
   const sessionCanvas = (d: SessionDoc) => sessions.get().sessions[d.sessionId]?.canvasId ?? "";
   const sessionSubtitle = (d: SessionDoc) => {
     const c = sessionCanvas(d);
-    return c ? (titleOf(c) ?? "画布已删除") : "未关联画布";
+    return c ? (titleOf(c) ?? tr("画布已删除", "Canvas deleted")) : tr("未关联画布", "No canvas linked");
   };
   // Session names follow their agent and first message (docs/workspace-model.md §2).
   useSyncExternalStore(agents.subscribe, bindingKey);
@@ -596,7 +597,7 @@ export function App({ boot }: { boot: Boot }) {
       setRemoved(null);
       setPanel(null); // back in the workspace: the trash panel has done its job
     } catch (e) {
-      setRemoved({ title: "", error: `恢复失败：${(e as Error).message}` });
+      setRemoved({ title: "", error: tr(`恢复失败：${(e as Error).message}`, `Couldn't restore: ${(e as Error).message}`) });
     }
   };
   // The toast lasts a while; after that the item stays in 回收站 (restorable from there).
@@ -971,12 +972,14 @@ export function App({ boot }: { boot: Boot }) {
         {recoveredNote && (
           <div className="notice save-banner" role="status" data-tone="caution">
             <IconHint size={16} />
-            <b>已恢复列表</b>
+            <b>{tr("已恢复列表", "List recovered")}</b>
             <span>
-              {recoveredNote.why === "unreadable" ? ".agora/workspace.json 读不了" : "没有找到 .agora/workspace.json"}
-              ：按磁盘上的 {recoveredNote.canvases} 块画布和 {recoveredNote.sessions} 个会话重建了列表，没有改动任何画布。画布名是临时的，可以改名；布局需要重新摆。
+              {tr(
+                `${recoveredNote.why === "unreadable" ? ".agora/workspace.json 读不了" : "没有找到 .agora/workspace.json"}：按磁盘上的 ${recoveredNote.canvases} 块画布和 ${recoveredNote.sessions} 个会话重建了列表，没有改动任何画布。画布名是临时的，可以改名；布局需要重新摆。`,
+                `${recoveredNote.why === "unreadable" ? "Couldn't read .agora/workspace.json" : "No .agora/workspace.json found"}: rebuilt the list from the ${recoveredNote.canvases} ${recoveredNote.canvases === 1 ? "canvas" : "canvases"} and ${recoveredNote.sessions} ${recoveredNote.sessions === 1 ? "session" : "sessions"} on disk; no canvas was changed. Canvas names are placeholders you can rename, and the layout needs arranging again.`,
+              )}
             </span>
-            <button className="btn sm ghost" onClick={() => setRecoveredNote(undefined)}>知道了</button>
+            <button className="btn sm ghost" onClick={() => setRecoveredNote(undefined)}>{tr("知道了", "Got it")}</button>
           </div>
         )}
 
@@ -1002,11 +1005,11 @@ export function App({ boot }: { boot: Boot }) {
           renderEmpty={(g) => (
             <div className="wm-empty">
               <span className="dither-field" aria-hidden />
-              <p>这里没有打开的画布或会话</p>
+              <p>{tr("这里没有打开的画布或会话", "No canvas or session open here")}</p>
               <div className="wm-empty-actions">
-                <button className="btn primary" onClick={() => onNew(g, "canvas")}><IconPlus size={16} />新建画布</button>
-                <button className="btn ghost" onClick={() => onNew(g, "session")}>新建会话</button>
-                <button className="btn ghost" onClick={() => setListOpen({})}>打开已有的</button>
+                <button className="btn primary" onClick={() => onNew(g, "canvas")}><IconPlus size={16} />{tr("新建画布", "New canvas")}</button>
+                <button className="btn ghost" onClick={() => onNew(g, "session")}>{tr("新建会话", "New session")}</button>
+                <button className="btn ghost" onClick={() => setListOpen({})}>{tr("打开已有的", "Open existing")}</button>
               </div>
             </div>
           )}
@@ -1053,26 +1056,26 @@ export function App({ boot }: { boot: Boot }) {
                 disabled={!!evalProgress && !evalProgress.done}
                 onClick={() => runEval(handle.api, handle.store, { runs: EVAL_RUNS, only: EVAL_ONLY, onProgress: setEvalProgress, reset: handle.reset })}
               >
-                {evalProgress && !evalProgress.done ? `评测中 ${evalProgress.index}/${evalProgress.total}` : `运行评测 ${EVAL_ONLY?.length ?? TASKS.length}×${EVAL_RUNS}`}
+                {evalProgress && !evalProgress.done ? tr(`评测中 ${evalProgress.index}/${evalProgress.total}`, `Evaluating ${evalProgress.index}/${evalProgress.total}`) : tr(`运行评测 ${EVAL_ONLY?.length ?? TASKS.length}×${EVAL_RUNS}`, `Run eval ${EVAL_ONLY?.length ?? TASKS.length}×${EVAL_RUNS}`)}
               </button>
             ) : null
           }
         />
         {mode === "comment" && (
           <motion.div className="mode-hint" style={dockAt ? { left: dockAt.x, bottom: dockAt.bottom + 50 } : undefined} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
-            <IconComment size={14} />在「<b>{canvasDoc.title}</b>」上点一个元素钉评论 · Esc 退出
+            <IconComment size={14} />{tr("在「", "Click an element on ")}<b>{canvasDoc.title}</b>{tr("」上点一个元素钉评论 · Esc 退出", " to pin a comment · Esc to exit")}
           </motion.div>
         )}
         </>}
         {removed && (
           <motion.div className="toast" role={removed.error ? "alert" : "status"} data-tone={removed.error ? "error" : undefined} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
             {removed.error ? (
-              <span>{removed.title ? `没能删除「${removed.title}」：` : ""}{removed.error}</span>
+              <span>{removed.title ? tr(`没能删除「${removed.title}」：`, `Couldn't delete “${removed.title}”: `) : ""}{removed.error}</span>
             ) : (
-              <span>已移到回收站「{removed.title}」</span>
+              <span>{tr(`已移到回收站「${removed.title}」`, `Moved “${removed.title}” to trash`)}</span>
             )}
-            {removed.trashId && <button className="btn sm ghost" onClick={() => void restore(removed.trashId!)}>撤销</button>}
-            <button className="icon-btn sm muted" aria-label="关闭提示" onClick={() => setRemoved(null)}><IconClose size={14} /></button>
+            {removed.trashId && <button className="btn sm ghost" onClick={() => void restore(removed.trashId!)}>{tr("撤销", "Undo")}</button>}
+            <button className="icon-btn sm muted" aria-label={tr("关闭提示", "Dismiss")} onClick={() => setRemoved(null)}><IconClose size={14} /></button>
           </motion.div>
         )}
         {panel === "trash" && <TrashPanel focus={panelFocus} titles={names} canvasTitles={canvasTitles} onRestore={(id) => void restore(id)} onDismiss={() => setPanel(null)} />}
@@ -1096,9 +1099,12 @@ export function App({ boot }: { boot: Boot }) {
 
         {lost && !removed && (
           <motion.div className="toast" role="status" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
-            <span>「{titleOf(lost.parent) ?? "画布"}」里打开子图的节点没了：子图「{titleOf(lost.child) ?? lost.child}」仍在所有画布里，只是断开了链接（⌘Z 可恢复）</span>
-            <button className="btn sm ghost" onClick={() => (openDoc(lost.child), setLost(null))}>打开子图</button>
-            <button className="icon-btn sm muted" aria-label="关闭提示" onClick={() => setLost(null)}><IconClose size={14} /></button>
+            <span>{tr(
+              `「${titleOf(lost.parent) ?? "画布"}」里打开子图的节点没了：子图「${titleOf(lost.child) ?? lost.child}」仍在所有画布里，只是断开了链接（⌘Z 可恢复）`,
+              `The node in “${titleOf(lost.parent) ?? "canvas"}” that opened a sub-diagram is gone: the sub-diagram “${titleOf(lost.child) ?? lost.child}” is still in All canvases, just unlinked (⌘Z to undo)`,
+            )}</span>
+            <button className="btn sm ghost" onClick={() => (openDoc(lost.child), setLost(null))}>{tr("打开子图", "Open sub-diagram")}</button>
+            <button className="icon-btn sm muted" aria-label={tr("关闭提示", "Dismiss")} onClick={() => setLost(null)}><IconClose size={14} /></button>
           </motion.div>
         )}
         {evalProgress && <pre className="eval-log">{evalProgress.log.slice(-14).join("\n")}</pre>}
@@ -1123,19 +1129,19 @@ function Dock({ at, mode, setMode, drawerOpen, toggleDrawer, store, evalButton }
   const { threads } = useThreads(store);
   const open = threads.filter((t) => !t.resolved).length;
   return (
-    <div className="dock" role="toolbar" aria-label="画布工具" style={at ? { left: at.x, bottom: at.bottom } : undefined}>
-      <div className="seg dock-seg" role="radiogroup" aria-label="模式">
-        {([["browse", IconPointer, "浏览", "V"], ["comment", IconComment, "评论", "C"]] as const).map(([m, Icon, label, key]) => (
-          <button key={m} role="radio" aria-checked={mode === m} data-on={mode === m} onClick={() => setMode(m)} title={`${label} · ${key}${m === "comment" ? "（先选中元素再按，评论这组选区）" : ""}`}>
+    <div className="dock" role="toolbar" aria-label={tr("画布工具", "Canvas tools")} style={at ? { left: at.x, bottom: at.bottom } : undefined}>
+      <div className="seg dock-seg" role="radiogroup" aria-label={tr("模式", "Mode")}>
+        {([["browse", IconPointer, tr("浏览", "Browse"), "V"], ["comment", IconComment, tr("评论", "Comment"), "C"]] as const).map(([m, Icon, label, key]) => (
+          <button key={m} role="radio" aria-checked={mode === m} data-on={mode === m} onClick={() => setMode(m)} title={`${label} · ${key}${m === "comment" ? tr("（先选中元素再按，评论这组选区）", " (select elements first to comment on the selection)") : ""}`}>
             {mode === m && <motion.span layoutId="dock-on" className="seg-bg" transition={SPRING} />}
             <Icon size={14} />
             <span className="dock-label">{label}</span>
           </button>
         ))}
       </div>
-      <button className="dock-count" data-on={drawerOpen} aria-pressed={drawerOpen} onClick={toggleDrawer} title="评论列表" aria-label={`评论列表 · ${open} 条进行中`}>
+      <button className="dock-count" data-on={drawerOpen} aria-pressed={drawerOpen} onClick={toggleDrawer} title={tr("评论列表", "Comments")} aria-label={tr(`评论列表 · ${open} 条进行中`, `Comments · ${open} open`)}>
         <IconList size={14} />
-        <span className="dock-label">评论</span>
+        <span className="dock-label">{tr("评论", "Comments")}</span>
         {open > 0 && <em>{open}</em>}
       </button>
       {evalButton}
@@ -1158,10 +1164,10 @@ function SaveBanner({ docTitle, scene }: { docTitle: (id: string) => string | un
     return (
       <div className="notice save-banner" role="alert" data-tone="error">
         <IconHint size={16} />
-        <b>项目目录不在了</b>
+        <b>{tr("项目目录不在了", "Project folder is gone")}</b>
         <span>{gone.message}</span>
-        {unsaved.length > 0 && <button className="btn sm quiet" onClick={() => download(unsaved)}>下载为 .excalidraw{unsaved.length > 1 ? `（${unsaved.length} 块）` : ""}</button>}
-        <button className="btn sm ghost" onClick={() => void project.retry()}>重试</button>
+        {unsaved.length > 0 && <button className="btn sm quiet" onClick={() => download(unsaved)}>{tr("下载为 .excalidraw", "Download as .excalidraw")}{unsaved.length > 1 ? tr(`（${unsaved.length} 块）`, ` (${unsaved.length})`) : ""}</button>}
+        <button className="btn sm ghost" onClick={() => void project.retry()}>{tr("重试", "Retry")}</button>
       </div>
     );
   const failed = st.failed[0];
@@ -1170,27 +1176,32 @@ function SaveBanner({ docTitle, scene }: { docTitle: (id: string) => string | un
     return (
       <div className="notice save-banner" role="alert" data-tone="error">
         <IconHint size={16} />
-        <b>保存失败</b>
+        <b>{tr("保存失败", "Save failed")}</b>
         <span>
-          {failed.message.replace(/^保存失败：/, "")}
-          {st.failed.length > 1 ? `（另有 ${st.failed.length - 1} 个文件）` : ""} · <code>.agora/{file}</code> · 改动还在这个页面里
+          {failed.message.replace(/^(保存失败：|Save failed: )/, "")}
+          {st.failed.length > 1 ? tr(`（另有 ${st.failed.length - 1} 个文件）`, ` (+${st.failed.length - 1} more ${st.failed.length > 2 ? "files" : "file"})`) : ""} · <code>.agora/{file}</code> · {tr("改动还在这个页面里", "your changes are still in this page")}
         </span>
-        {unsaved.length > 0 && <button className="btn sm ghost" onClick={() => download(unsaved)}>下载为 .excalidraw</button>}
-        <button className="btn sm quiet" onClick={() => void project.retry()}>重试</button>
+        {unsaved.length > 0 && <button className="btn sm ghost" onClick={() => download(unsaved)}>{tr("下载为 .excalidraw", "Download as .excalidraw")}</button>}
+        <button className="btn sm quiet" onClick={() => void project.retry()}>{tr("重试", "Retry")}</button>
       </div>
     );
   }
   const slot = st.conflicts[0];
   if (slot) {
     const [kind, id] = slot.split(":");
-    const what = kind === "workspace" ? "画布清单与布局" : kind === "session" ? "会话记录" : `「${docTitle(id) ?? id}」${kind === "threads" ? "的评论" : ""}`;
+    const what =
+      kind === "workspace"
+        ? tr("画布清单与布局", "The canvas list and layout")
+        : kind === "session"
+          ? tr("会话记录", "The session record")
+          : tr(`「${docTitle(id) ?? id}」${kind === "threads" ? "的评论" : ""}`, `${kind === "threads" ? "Comments on " : ""}“${docTitle(id) ?? id}”`);
     return (
       <div className="notice save-banner" role="alert" data-tone="error">
         <IconHint size={16} />
-        <b>有冲突</b>
-        <span>{what}在别处被改过（另一个窗口、编辑器或 git），这里的改动还没保存 · <code>.agora/{slotFile(slot)}</code></span>
-        <button className="btn sm quiet" onClick={reloadFromDisk}>载入磁盘上的版本</button>
-        <button className="btn sm ghost" onClick={() => void project.resolve(slot, "overwrite")}>用这里的覆盖</button>
+        <b>{tr("有冲突", "Conflict")}</b>
+        <span>{tr(`${what}在别处被改过（另一个窗口、编辑器或 git），这里的改动还没保存`, `${what} changed elsewhere (another window, an editor or git); changes here aren't saved yet`)} · <code>.agora/{slotFile(slot)}</code></span>
+        <button className="btn sm quiet" onClick={reloadFromDisk}>{tr("载入磁盘上的版本", "Load the version on disk")}</button>
+        <button className="btn sm ghost" onClick={() => void project.resolve(slot, "overwrite")}>{tr("用这里的覆盖", "Overwrite with this one")}</button>
       </div>
     );
   }
@@ -1198,19 +1209,22 @@ function SaveBanner({ docTitle, scene }: { docTitle: (id: string) => string | un
     return (
       <div className="notice save-banner" role="alert" data-tone="caution">
         <IconHint size={16} />
-        <b>文件读不了</b>
+        <b>{tr("文件读不了", "Can't read a file")}</b>
         <span>
-          {st.blocked.map((b) => b.reason).join("；")}。这个文件先不保存，其余照常；在编辑器里解决后刷新页面。
+          {tr(
+            `${st.blocked.map((b) => b.reason).join("；")}。这个文件先不保存，其余照常；在编辑器里解决后刷新页面。`,
+            `${st.blocked.map((b) => b.reason).join("; ")}. This file won't be saved for now; everything else saves as usual. Fix it in an editor, then reload the page.`,
+          )}
         </span>
-        <button className="btn sm quiet" onClick={() => location.reload()}>刷新</button>
+        <button className="btn sm quiet" onClick={() => location.reload()}>{tr("刷新", "Reload")}</button>
       </div>
     );
   if (st.offline)
     return (
       <div className="notice save-banner" role="status" data-tone="caution">
         <IconHint size={16} />
-        <b>未连接</b>
-        <span>项目服务连不上，改动暂存在这个页面里，恢复后自动写入。</span>
+        <b>{tr("未连接", "Offline")}</b>
+        <span>{tr("项目服务连不上，改动暂存在这个页面里，恢复后自动写入。", "Can't reach the project server. Changes are kept in this page and written once it's back.")}</span>
       </div>
     );
   return null;
@@ -1237,20 +1251,29 @@ function ChangeBanner({ change, onDismiss }: { change: LocalChange; onDismiss: (
   const [title, text] =
     change.kind === "moved"
       ? [
-          "项目移动过",
-          `从 ${change.from} 移到了这里。Claude Code 和 Codex 的会话照常续接${change.migrated?.length ? `；${change.migrated.length} 个 Pi 会话的日志已迁到新目录（旧文件留了 .agora-moved.bak）` : ""}${failed.length ? `；${failed.length} 个 Pi 会话没迁移：${failed.map((f) => f.error).join("；")}` : ""}。`,
+          tr("项目移动过", "Project moved"),
+          tr(
+            `从 ${change.from} 移到了这里。Claude Code 和 Codex 的会话照常续接${change.migrated?.length ? `；${change.migrated.length} 个 Pi 会话的日志已迁到新目录（旧文件留了 .agora-moved.bak）` : ""}${failed.length ? `；${failed.length} 个 Pi 会话没迁移：${failed.map((f) => f.error).join("；")}` : ""}。`,
+            `Moved here from ${change.from}. Claude Code and Codex sessions resume as usual${change.migrated?.length ? `; logs of ${change.migrated.length} Pi ${change.migrated.length === 1 ? "session" : "sessions"} moved to the new folder (the old files are kept as .agora-moved.bak)` : ""}${failed.length ? `; ${failed.length} Pi ${failed.length === 1 ? "session wasn't" : "sessions weren't"} moved: ${failed.map((f) => f.error).join("; ")}` : ""}.`,
+          ),
         ]
       : change.kind === "copied"
-        ? ["这是一份副本", `从 ${change.from} 复制而来：带过来的 ${change.sessions?.length ?? 0} 个会话在这里只读（原来那份还在用它们），可以在会话里「在这里分叉继续」。`]
+        ? [
+            tr("这是一份副本", "This is a copy"),
+            tr(
+              `从 ${change.from} 复制而来：带过来的 ${change.sessions?.length ?? 0} 个会话在这里只读（原来那份还在用它们），可以在会话里「在这里分叉继续」。`,
+              `Copied from ${change.from}: the ${change.sessions?.length ?? 0} ${(change.sessions?.length ?? 0) === 1 ? "session" : "sessions"} it brought along are read-only here (the original still uses them); fork one from inside the session to continue here.`,
+            ),
+          ]
         : change.kind === "fresh"
-          ? ["会话不在这台机器上", "这份项目是新 clone、换了机器或本机记录被清掉了：带着的会话显示为只读卡片，能在本机找回的会给出「恢复」。"]
-          : ["已认回这份项目", "本机记录（.agora/local）不见了，已按本机注册表认回；会话绑定可以在会话里恢复，或运行 agora doctor。"];
+          ? [tr("会话不在这台机器上", "Sessions aren't on this machine"), tr("这份项目是新 clone、换了机器或本机记录被清掉了：带着的会话显示为只读卡片，能在本机找回的会给出「恢复」。", "This project is a fresh clone, on another machine, or its local records were cleared: its sessions show as read-only cards, and any that can be found on this machine offer Restore.")]
+          : [tr("已认回这份项目", "Project recognized again"), tr("本机记录（.agora/local）不见了，已按本机注册表认回；会话绑定可以在会话里恢复，或运行 agora doctor。", "The local records (.agora/local) were missing, so the project was recognized from this machine's registry; restore session bindings from inside each session, or run agora doctor.")];
   return (
     <div className="notice save-banner" role="status" data-tone={failed.length ? "caution" : undefined}>
       <IconHint size={16} />
       <b>{title}</b>
       <span>{text}</span>
-      <button className="btn sm ghost" onClick={onDismiss}>知道了</button>
+      <button className="btn sm ghost" onClick={onDismiss}>{tr("知道了", "Got it")}</button>
     </div>
   );
 }

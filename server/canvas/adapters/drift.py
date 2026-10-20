@@ -27,8 +27,10 @@ from typing import Any
 
 from server.canvas.adapters.base import Adapter, Projector, lower_tier
 from server.canvas.adapters.registry import ADAPTERS, cached_version, implemented_tier
+from server.i18n import tr
 
 UNKNOWN_RATIO = 0.05  # unknown records above this share of a log → would degrade
+UNKNOWN_EN = "Unrecognized record types: "  # (a note starting with it, or 不认识, is about unknown records)
 SAMPLE_LOGS = 12  # newest logs per CLI scanned by the probe
 SAMPLE_BYTES = 8 * 1024 * 1024  # bytes read per sampled log
 
@@ -203,21 +205,23 @@ def probe(a: Adapter, *, home: Path | None = None, root: Path | str | None = Non
     ratio = unknown_n / total if total else 0.0
     tier = implemented_tier(a)
     reasons = []
-    if installed and version and ok is False:
-        reasons.append(f"本机 {a.name} {version} 不在测过的范围 {a.tested.label()} 内")
+    untested = bool(installed and version and ok is False)
+    if untested:
+        reasons.append(tr(f"本机 {a.name} {version} 不在测过的范围 {a.tested.label()} 内", f"{a.name} {version} here is outside the tested range {a.tested.label()}"))
     if installed and not version:
-        reasons.append(f"读不出 {a.name} 的版本（{a.binaries[0]} --version）")
+        reasons.append(tr(f"读不出 {a.name} 的版本（{a.binaries[0]} --version）", f"can't read the {a.name} version ({a.binaries[0]} --version)"))
     if ratio > UNKNOWN_RATIO:
-        reasons.append(f"最近的日志里 {ratio:.0%} 的记录类型 Agora 不认识")
+        reasons.append(tr(f"最近的日志里 {ratio:.0%} 的记录类型 Agora 不认识", f"Agora doesn't recognize {ratio:.0%} of the record types in recent logs"))
     if rt and rt["records"] and sum(rt["unknown"].values()) / rt["records"] > UNKNOWN_RATIO:
-        reasons.append("跟随中的会话出现了较多不认识的记录")
+        reasons.append(tr("跟随中的会话出现了较多不认识的记录", "followed sessions show many unrecognized records"))
     trusted = trust(root).get(a.kind, False)
-    degraded = {"from": tier, "to": lower_tier(tier), "reason": "；".join(reasons), "trusted": trusted, "enforced": False} if reasons and installed else None
+    degraded = {"from": tier, "to": lower_tier(tier), "reason": tr("；", "; ").join(reasons), "trusted": trusted, "enforced": False} if reasons and installed else None
     notes = []
+    sep = tr("、", ", ")
     if unknown:
-        notes.append("不认识的记录类型：" + "、".join(f"{t} ×{n}" for t, n in unknown.most_common(8)) + "（轨迹里被跳过）")
+        notes.append(tr("不认识的记录类型：", UNKNOWN_EN) + sep.join(f"{t} ×{n}" for t, n in unknown.most_common(8)) + tr("（轨迹里被跳过）", " (skipped in the trajectory)"))
     if gaps:
-        notes.append("认识但还没处理的记录：" + "、".join(f"{t} ×{n}" for t, n in gaps.most_common(6)))
+        notes.append(tr("认识但还没处理的记录：", "Recognized but not yet handled records: ") + sep.join(f"{t} ×{n}" for t, n in gaps.most_common(6)))
     return {
         "kind": a.kind,
         "name": a.name,
@@ -236,7 +240,7 @@ def probe(a: Adapter, *, home: Path | None = None, root: Path | str | None = Non
         "runtime": rt,
         "degraded": degraded,
         "notes": notes,
-        "fix": _fix(a, degraded, unknown, gaps),
+        "fix": _fix(a, bool(degraded) and untested, unknown, gaps),
     }
 
 
@@ -246,13 +250,16 @@ def _vkey(v: str) -> tuple:
     return parse_version(v) or ()
 
 
-def _fix(a: Adapter, degraded: dict | None, unknown: Counter, gaps: Counter) -> str:
-    if degraded and "不在测过的范围" in degraded["reason"]:
-        return f"在 /tmp 里录一份新样本并跑契约测试：`agora doctor --agents --record {a.kind}`；确认没问题后放宽 {a.kind} 适配器的 tested，或在 .agora/agents.toml 写 [{a.kind}] trust_untested = true"
+def _fix(a: Adapter, untested: bool, unknown: Counter, gaps: Counter) -> str:
+    if untested:
+        return tr(
+            f"在 /tmp 里录一份新样本并跑契约测试：`agora doctor --agents --record {a.kind}`；确认没问题后放宽 {a.kind} 适配器的 tested，或在 .agora/agents.toml 写 [{a.kind}] trust_untested = true",
+            f"Record a new sample in /tmp and run the contract tests: `agora doctor --agents --record {a.kind}`; once it checks out, widen the {a.kind} adapter's tested range, or set [{a.kind}] trust_untested = true in .agora/agents.toml",
+        )
     if unknown:
-        return f"看一眼这些新记录是什么（样本：tests/fixtures/agents/{a.kind}/），在适配器里处理或列进 ignored_types"
+        return tr(f"看一眼这些新记录是什么（样本：tests/fixtures/agents/{a.kind}/），在适配器里处理或列进 ignored_types", f"Look at what these new records are (samples: tests/fixtures/agents/{a.kind}/), then handle them in the adapter or list them in ignored_types")
     if gaps:
-        return "旧版本日志的这些记录还没投影：老会话的轨迹不全"
+        return tr("旧版本日志的这些记录还没投影：老会话的轨迹不全", "These records of older log versions are not projected yet: old sessions' trajectories are incomplete")
     return ""
 
 
@@ -268,7 +275,7 @@ def adapter_infos(root: Path | str | None = None, *, with_versions: bool = True,
     from server.canvas.adapters import registry
 
     out = registry.adapter_infos(root, with_versions=with_versions, with_catalog=with_catalog)
-    tr = trust(root)
+    trusted = trust(root)
     for d in out:
         a = ADAPTERS[d["kind"]]
         key = f"{a.kind}:{with_versions}"
@@ -279,7 +286,7 @@ def adapter_infos(root: Path | str | None = None, *, with_versions: bool = True,
         p = hit[1]
         deg = p["degraded"]
         if deg is not None:
-            deg = {**deg, "trusted": tr.get(a.kind, False)}
+            deg = {**deg, "trusted": trusted.get(a.kind, False)}
         d["degraded"] = deg
         d["drift"] = {"unknown": p["unknown"], "records": p["sampled"]["records"], "versionOk": p["versionOk"], "runtime": runtime(a.kind)}
     return out
@@ -287,19 +294,23 @@ def adapter_infos(root: Path | str | None = None, *, with_versions: bool = True,
 
 def table(rows: list[dict[str, Any]]) -> str:
     """The ``agora doctor --agents`` table (plain text)."""
-    head = ["CLI", "安装", "版本", "测过的范围", "档位", "日志格式", "抽样", "不认识的记录", "提示"]
+    head = tr("CLI|安装|版本|测过的范围|档位|日志格式|抽样|不认识的记录|提示", "CLI|Installed|Version|Tested range|Tier|Log format|Sampled|Unrecognized|Note").split("|")
+    sep = tr("、", ", ")
     lines = []
     for r in rows:
-        tier = r["tier"] if not r["degraded"] else f"{r['tier']}（会降为 {r['degraded']['to']}，只提示{'，已信任' if r['degraded']['trusted'] else ''}）"
-        unk = "、".join(f"{t}×{n}" for t, n in list(r["unknown"].items())[:4]) or "—"
+        if not r["degraded"]:
+            tier = r["tier"]
+        else:
+            tier = tr(f"{r['tier']}（会降为 {r['degraded']['to']}，只提示{'，已信任' if r['degraded']['trusted'] else ''}）", f"{r['tier']} (would drop to {r['degraded']['to']}, notice only{', trusted' if r['degraded']['trusted'] else ''})")
+        unk = sep.join(f"{t}×{n}" for t, n in list(r["unknown"].items())[:4]) or "—"
         lines.append([
             r["name"],
-            "是" if r["installed"] else "否",
+            tr("是", "yes") if r["installed"] else tr("否", "no"),
             r["version"] or "—",
             r["tested"],
             tier,
             ",".join(f"v{f}" for f in r["logFormats"]) or "—",
-            f"{r['sampled']['logs']} 份 / {r['sampled']['records']} 条",
+            tr(f"{r['sampled']['logs']} 份 / {r['sampled']['records']} 条", f"{r['sampled']['logs']} logs / {r['sampled']['records']} records"),
             unk,
             (r["degraded"] or {}).get("reason") or "",
         ])
@@ -309,12 +320,12 @@ def table(rows: list[dict[str, Any]]) -> str:
     for r in rows:
         for n in r["notes"]:
             below = r["unknown"] and not r["degraded"]
-            out.append(f"· {r['name']}：{n}" + ("（低于 5% 阈值：只提示，不影响退出码）" if below and n.startswith("不认识") else ""))
+            out.append(tr(f"· {r['name']}：{n}", f"· {r['name']}: {n}") + (tr("（低于 5% 阈值：只提示，不影响退出码）", " (under the 5% threshold: a notice only, the exit code is unaffected)") if below and n.startswith(("不认识", UNKNOWN_EN)) else ""))
         if r["fix"]:
-            out.append(f"  怎么办：{r['fix']}")
+            out.append(tr(f"  怎么办：{r['fix']}", f"  What to do: {r['fix']}"))
         old = {v: d for v, d in r["byVersion"].items() if d["gaps"] or d["unknown"]}
         if old:
-            out.append("  按版本：" + "；".join(f"{v} " + "、".join(f"{t}×{n}" for t, n in {**d["unknown"], **d["gaps"]}.items()) for v, d in list(old.items())[:8]))
+            out.append(tr("  按版本：", "  By version: ") + tr("；", "; ").join(f"{v} " + sep.join(f"{t}×{n}" for t, n in {**d["unknown"], **d["gaps"]}.items()) for v, d in list(old.items())[:8]))
     return "\n".join(out)
 
 

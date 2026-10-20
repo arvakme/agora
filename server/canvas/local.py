@@ -32,6 +32,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from server.i18n import tr
+
 LOCAL_DIR = "local"
 
 
@@ -303,7 +305,7 @@ class Local:
             if src is None:
                 continue
             if alive is not None and alive(sid):
-                failed.append({"sessionId": sid, "nativeId": b["nativeId"], "error": "终端里还开着这个会话：关掉终端后重新 `agora up`"})
+                failed.append({"sessionId": sid, "nativeId": b["nativeId"], "error": tr("终端里还开着这个会话：关掉终端后重新 `agora up`", "This session is still open in a terminal: close it, then run `agora up` again")})
                 continue
             try:
                 dst = a.migrate(src, self.store.root)

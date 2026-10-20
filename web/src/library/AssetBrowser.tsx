@@ -8,10 +8,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { instantiate, type LibraryItem } from "./libraryInsert";
 import type { El } from "../canvas/scene";
 import { IconBack, IconCheck, IconChevron, IconSearch } from "../app/icons";
+import { tr } from "../i18n";
 
 type Hit = { id: string; name: string; library: string; source: string; license: string; size: { w: number; h: number } };
 type Lib = { key: string; source: string; name: string; license: string; items: number; file: string };
-const SOURCE_NAMES: Record<string, string> = { official: "Excalidraw 官方库", lucide: "Lucide 图标" };
+const SOURCE_NAMES: Record<string, string> = { official: tr("Excalidraw 官方库", "Excalidraw official libraries"), lucide: tr("Lucide 图标", "Lucide icons") };
 
 const fileCache = new Map<string, Promise<{ items: { id: string; name: string; elements: unknown[] }[] }>>();
 const loadFile = (file: string) => {
@@ -60,13 +61,13 @@ export function AssetBrowser({ api }: { api: ExcalidrawImperativeAPI }) {
     <div className="assets" onKeyDown={(e) => e.stopPropagation()}>
       <label className="assets-search">
         <IconSearch size={16} />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索素材：redis、aws lambda、用户…" aria-label="搜索素材" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr("搜索素材：redis、aws lambda、用户…", "Search the library: redis, aws lambda, user…")} aria-label={tr("搜索素材", "Search the library")} />
       </label>
       <div className="assets-body">
-        {flash && <div className="assets-flash" role="status"><IconCheck size={14} />已插入「{flash}」</div>}
+        {flash && <div className="assets-flash" role="status"><IconCheck size={14} />{tr(`已插入「${flash}」`, `Inserted “${flash}”`)}</div>}
         {hits ? (
           <>
-            <div className="assets-head">{hits.length ? `${hits.length} 个结果` : "没有匹配的素材"}</div>
+            <div className="assets-head">{hits.length ? tr(`${hits.length} 个结果`, `${hits.length} ${hits.length === 1 ? "result" : "results"}`) : tr("没有匹配的素材", "No matching items")}</div>
             <Grid ids={hits.map((h) => ({ id: h.id, title: `${h.name} · ${h.library} · ${h.license}` }))} onPick={insert} />
           </>
         ) : openLib ? (
@@ -74,7 +75,7 @@ export function AssetBrowser({ api }: { api: ExcalidrawImperativeAPI }) {
             <button className="assets-back" onClick={() => setOpenLib(null)}>
               <IconBack size={16} />
               <b>{openLib.name}</b>
-              <span>{openLib.items} 个 · {openLib.license}</span>
+              <span>{tr(`${openLib.items} 个`, `${openLib.items} ${openLib.items === 1 ? "item" : "items"}`)} · {openLib.license}</span>
             </button>
             <LibGrid lib={openLib} onPick={insert} />
           </>
@@ -86,7 +87,7 @@ export function AssetBrowser({ api }: { api: ExcalidrawImperativeAPI }) {
                   <IconChevron size={12} />
                   <span className="assets-src">
                     <b>{SOURCE_NAMES[source] ?? source}</b>
-                    <span>{ls.length} 个库 · {ls.reduce((n, l) => n + l.items, 0)} 个组件 · {ls[0].license}</span>
+                    <span>{tr(`${ls.length} 个库`, `${ls.length} ${ls.length === 1 ? "library" : "libraries"}`)} · {tr(`${ls.reduce((n, l) => n + l.items, 0)} 个组件`, `${ls.reduce((n, l) => n + l.items, 0)} components`)} · {ls[0].license}</span>
                   </span>
                 </summary>
                 <ul>

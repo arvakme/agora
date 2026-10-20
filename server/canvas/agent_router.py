@@ -20,6 +20,7 @@ from server.canvas.project import Gone, Locked, NotFound
 from server.canvas.selection import Selections
 from server.canvas.sessions import AgentHub, Busy, Copied, NoPage, agora_prompt, canvas_names
 from server.canvas.terminal import TerminalError
+from server.i18n import tr
 
 
 class Bind(BaseModel):
@@ -196,7 +197,7 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
                 state = derive_state(d)
                 child = NativeRef(
                     kind, nid, look.path if look else None, str(store.root),
-                    ParentLink("dispatch", ref.run_id, task_id=d.id, evidence=f"派发记录 {d.id}（.agora/dispatch/{d.id}.json）"),
+                    ParentLink("dispatch", ref.run_id, task_id=d.id, evidence=tr(f"派发记录 {d.id}（.agora/dispatch/{d.id}.json）", f"dispatch record {d.id} (.agora/dispatch/{d.id}.json)")),
                     label=adapters.need(kind).name,
                     meta={"record": True, "sessionId": d.target["sessionId"], "state": state, "role": d.task.get("summary"), "model": tb.get("model") or None, "dispatchedAt": d.created_at, "acceptedAt": next((h["at"] for h in d.history if h["state"] in ("running", "waiting")), None), "doneAt": d.updated_at if is_final(state) else None},
                 )
@@ -393,7 +394,7 @@ def create_agent_router(hub: AgentHub) -> APIRouter:
             hub.binding(sid)
             hub.answer_request(sid, rid, body.model_dump())
         except KeyError:
-            return JSONResponse(status_code=404, content={"error": "这个请求已经不在了：它被回答过、被撤回，或者这一轮已经结束。"})
+            return JSONResponse(status_code=404, content={"error": tr("这个请求已经不在了：它被回答过、被撤回，或者这一轮已经结束。", "This request is gone: it was answered or withdrawn, or the turn has ended.")})
         except Exception as e:
             return fail(e)
         return {"ok": True}

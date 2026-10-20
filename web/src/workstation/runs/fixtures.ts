@@ -4,6 +4,7 @@
 // and by the dev mock (`?mock=runs`), so the sub-agent UI can be seen before the adapter layer serves
 // real run trees. Paths match the sample diagram's code links (web/**, server/**, server/db/**,
 // server/cache/**, server/payments/**; its API 服务 sub-diagram: server/app.py, server/users.py).
+import { tr } from "../../i18n";
 import type { RunState } from "../../session/agents";
 import type { WorkRun, Receipt, RunSeg, SegKind, TurnComment } from "./types";
 
@@ -14,14 +15,14 @@ function segs(at: number, list: S[]): RunSeg[] {
   return list.map(([kind, s, e, x = {}]) => {
     const label =
       kind === "think"
-        ? "思考"
+        ? tr("思考", "Thinking")
         : kind === "wait"
-          ? "等你回复"
+          ? tr("等你回复", "Waiting for you")
           : kind === "delegate"
-            ? `派 ${x.label ?? "子代理"}`
+            ? `${tr("派", "Dispatch")} ${x.label ?? tr("子代理", "sub-agent")}`
             : kind === "exec"
-              ? `${x.verifies ? "验收 " : ""}跑 ${(x.cmd ?? "").split(" ")[0]}`
-              : `${x.verifies ? "验收 " : ""}${kind === "write" ? "写" : "读"} ${base(x.path ?? "")}`;
+              ? `${x.verifies ? tr("验收 ", "Verify ") : ""}${tr("跑", "Running")} ${(x.cmd ?? "").split(" ")[0]}`
+              : `${x.verifies ? tr("验收 ", "Verify ") : ""}${kind === "write" ? tr("写", "Writing") : tr("读", "Reading")} ${base(x.path ?? "")}`;
     return { kind, start: at + s * 1000, end: at + e * 1000, turn: x.turn ?? 1, ...x, label };
   });
 }
@@ -29,7 +30,7 @@ const rc = (at: number, list: [number, RunState | "accepted"][]): Receipt[] => l
 
 /** The comment Pi works on from 58 s: #3 on Redis (element `redis` in the sample diagram, web/scripts/
  * fidelity/setup.ts). The dev mock shows its pin (comments/CommentLayer.tsx; never saved). */
-export const MOCK_COMMENT = { n: 3, anchor: ["redis"], text: "缓存过期时间是不是太短？" } as const;
+export const MOCK_COMMENT = { n: 3, anchor: ["redis"], text: tr("缓存过期时间是不是太短？", "Is the cache TTL too short?") } as const;
 const C3: TurnComment = { n: MOCK_COMMENT.n, anchor: [...MOCK_COMMENT.anchor] };
 
 /** The prototype's scenario at `at` (ms). `now` decides which runs are still running. */
@@ -42,7 +43,7 @@ export function scenario(at: number, now = at + 46_000): WorkRun[] {
     parentId: "mock-pi",
     via: "native",
     evidence: "native",
-    task: "给 users 接口补测试",
+    task: tr("给 users 接口补测试", "Add tests for the users API"),
     segs: segs(at, [
       ["read", 21.6, 24, { path: "server/users.py" }],
       ["write", 24, 30, { path: "tests/test_users.py" }],
@@ -68,7 +69,7 @@ export function scenario(at: number, now = at + 46_000): WorkRun[] {
     parentId: "mock-pi",
     via: "native",
     evidence: "native",
-    task: "查限流方案",
+    task: tr("查限流方案", "Look into rate-limiting options"),
     coarse: true,
     segs: [],
     receipts: rc(at, [
@@ -98,7 +99,7 @@ export function scenario(at: number, now = at + 46_000): WorkRun[] {
       ["delegate", 19, 20, { child: "sub:T-41", label: "Codex" }],
       ["delegate", 20, 20.8, { child: "sub:T-42", label: "worker-3" }],
       ["think", 20.8, 27],
-      ["wait", 27, 33, { question: "POST /users 要不要登录才能调？" }],
+      ["wait", 27, 33, { question: tr("POST /users 要不要登录才能调？", "Should POST /users require login?") }],
       ["write", 33, 38, { path: "server/users.py", turn: 2 }],
       ["read", 38, 40.5, { path: "tests/test_users.py", verifies: "sub:T-41", turn: 2 }],
       ["exec", 40.5, 44, { cmd: "pytest tests/test_users.py", verifies: "sub:T-41", turn: 2 }],
@@ -121,11 +122,11 @@ export function scenario(at: number, now = at + 46_000): WorkRun[] {
   const sub: WorkRun = {
     id: "claude:agent-7f3",
     agent: "claude",
-    name: "子代理",
+    name: tr("子代理", "Sub-agent"),
     parentId: "mock-cc",
     via: "task",
     evidence: "native",
-    task: "查回调签名约定",
+    task: tr("查回调签名约定", "Check the webhook signature convention"),
     segs: segs(at, [
       ["read", 28.9, 30.8, { path: "docs/payments.md" }],
       ["read", 30.8, 32.6, { path: "server/payments/client.py" }],
@@ -155,7 +156,7 @@ export function scenario(at: number, now = at + 46_000): WorkRun[] {
       ["write", 14.5, 18.5, { path: "server/users.py" }],
       ["write", 18.5, 24, { path: "server/payments/webhook.py" }],
       ["exec", 24, 28, { cmd: "pytest tests/payments" }],
-      ["delegate", 28, 28.8, { child: "claude:agent-7f3", label: "子代理" }],
+      ["delegate", 28, 28.8, { child: "claude:agent-7f3", label: tr("子代理", "sub-agent") }],
       ["think", 28.8, 33],
       ["write", 33, 38.5, { path: "server/cache/session.py" }],
       ["think", 38.5, 40],
@@ -182,7 +183,7 @@ export function crowd(at: number, nodes: string[], n = 18): WorkRun[] {
       agent: ["pi", "claude", "codex"][i % 3],
       name: `Agent ${i + 1}`,
       sessionId: `crowd-${i}`,
-      segs: segs(at - 5000, [[kind, 0, 600, { path: `${node}/f${i}.py`, cmd: "pytest", question: "要不要继续？" }]]),
+      segs: segs(at - 5000, [[kind, 0, 600, { path: `${node}/f${i}.py`, cmd: "pytest", question: tr("要不要继续？", "Keep going?") }]]),
       receipts: [],
       running: true,
       lastAt: at,
@@ -213,7 +214,7 @@ export function longWindow(now: number, days = 5, subs = 100): WorkRun[] {
       parentId: top.id,
       via: "native",
       evidence: "native",
-      task: `任务 ${i + 1}`,
+      task: tr(`任务 ${i + 1}`, `Task ${i + 1}`),
       segs: segs(at, [["read", start + 5, start + 60, { path: files[i % files.length] }], ["write", start + 60, start + 200, { path: files[(i + 2) % files.length] }], ["exec", start + 200, start + 230, { cmd: "pytest -q" }]]),
       receipts: rc(at, [[start, "running"], [start + 240, "accepted"]]),
       spawnAt: at + start * 1000,

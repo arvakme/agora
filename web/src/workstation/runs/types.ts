@@ -4,6 +4,7 @@
 // web/docs/cli-adapters.md §5), converted once in ./derive.ts (`fromTree`). The receipt states are
 // the server's unified `RunState`; what the page says for them (已返回结果 vs 验收通过)
 // is `receiptView`.
+import { tr } from "../../i18n";
 import type { RunState } from "../../session/agents";
 
 /** What a worker is doing in one stretch of time. `delegate` = handing work to a sub-agent. */
@@ -78,25 +79,25 @@ export type ReceiptState =
   | "unknown";
 
 export const RECEIPT_NAMES: Record<ReceiptState, string> = {
-  dispatched: "已派发",
-  acknowledged: "已读",
-  running: "运行中",
-  waiting: "等回复",
-  idle_no_reply: "停了，没交回执",
-  interrupted: "已中断",
-  claimed: "声明完成",
-  accepted: "验收通过",
-  returned: "已返回结果",
-  failed: "失败",
-  blocked: "受阻",
-  exited: "无回复退出",
-  unknown: "状态不明",
+  dispatched: tr("已派发", "Dispatched"),
+  acknowledged: tr("已读", "Seen"),
+  running: tr("运行中", "Running"),
+  waiting: tr("等回复", "Waiting for reply"),
+  idle_no_reply: tr("停了，没交回执", "Stopped without a receipt"),
+  interrupted: tr("已中断", "Interrupted"),
+  claimed: tr("声明完成", "Says done"),
+  accepted: tr("验收通过", "Accepted"),
+  returned: tr("已返回结果", "Returned result"),
+  failed: tr("失败", "Failed"),
+  blocked: tr("受阻", "Blocked"),
+  exited: tr("无回复退出", "Exited without reply"),
+  unknown: tr("状态不明", "Unknown"),
 };
 /**
  * The words for a receipt on a sub-agent: sent but not yet taken says who has to take it (no tick, no
  * "idle": nothing has been done yet); the rest are `RECEIPT_NAMES`.
  */
-export const receiptText = (run: Pick<WorkRun, "name" | "parentId">, r: ReceiptState): string => (r === "dispatched" && run.parentId ? `等 ${run.name} 接手` : RECEIPT_NAMES[r]);
+export const receiptText = (run: Pick<WorkRun, "name" | "parentId">, r: ReceiptState): string => (r === "dispatched" && run.parentId ? tr(`等 ${run.name} 接手`, `Waiting for ${run.name} to start`) : RECEIPT_NAMES[r]);
 
 /** One point of a run's lifecycle: the server's unified state, and whether the work was verified. */
 export type Receipt = { at: number; state: RunState; accepted?: boolean };

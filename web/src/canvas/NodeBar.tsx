@@ -18,6 +18,7 @@ import { placeBar, placePop, toggleOpen, type NodePop } from "./nodeBarLayout";
 import { nodeBox, selectedNode } from "./nodes";
 import { codePathsOf, labelOf, type El } from "./scene";
 import "./nodeBar.css";
+import { tr } from "../i18n";
 
 type Size = { w: number; h: number };
 const GUESS: Record<NodePop, Size> = { code: { w: 336, h: 236 }, child: { w: 236, h: 110 } };
@@ -78,7 +79,7 @@ export function NodeBar({ api, view, canvasId, open, onOpen, hard, soft, chrome,
   const popAt = open && size ? placePop(at, node, size.w, size.h, firm, drawing, viewBox) : null;
 
   const paths = codePathsOf(target);
-  const name = labelOf(target, view.map).replace(/\s+/g, " ").trim() || "未命名节点";
+  const name = labelOf(target, view.map).replace(/\s+/g, " ").trim() || tr("未命名节点", "Untitled node");
   const draft = text.split("\n").map((l) => l.trim()).filter(Boolean);
   const preview =
     open === "code"
@@ -103,10 +104,10 @@ export function NodeBar({ api, view, canvasId, open, onOpen, hard, soft, chrome,
             if (open !== "code") setText(paths.join("\n"));
             onOpen(toggleOpen(open, "code"));
           }}
-          title={paths.length ? paths.join("\n") : "让这个节点代表一部分代码，进度指针就能落在它上面"}
+          title={paths.length ? paths.join("\n") : tr("让这个节点代表一部分代码，进度指针就能落在它上面", "Make this node stand for part of the code, so the progress pointer can land on it")}
         >
           <IconCode size={14} />
-          {paths.length ? `代码路径 · ${paths.length}` : "关联代码路径"}
+          {paths.length ? tr(`代码路径 · ${paths.length}`, `Code paths · ${paths.length}`) : tr("关联代码路径", "Link code paths")}
         </button>
         <ChildPill target={target} busy={busy} open={open === "child"} onClick={() => onOpen(toggleOpen(open, "child"))} />
       </div>
@@ -125,8 +126,8 @@ export function NodeBar({ api, view, canvasId, open, onOpen, hard, soft, chrome,
           {open === "code" ? (
             <div className="ptr-editor">
               <div className="ptr-pop-head">
-                <b>「{name}」代表的代码</b>
-                <span>相对项目根目录，一行一个，如 server/** 或 web/src/api/*.ts</span>
+                <b>{tr(`「${name}」代表的代码`, `Code that “${name}” stands for`)}</b>
+                <span>{tr("相对项目根目录，一行一个，如 server/** 或 web/src/api/*.ts", "Relative to the project root, one per line, e.g. server/** or web/src/api/*.ts")}</span>
               </div>
               <textarea
                 autoFocus
@@ -138,20 +139,22 @@ export function NodeBar({ api, view, canvasId, open, onOpen, hard, soft, chrome,
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save(draft);
                 }}
                 spellCheck={false}
-                aria-label="代码路径"
+                aria-label={tr("代码路径", "Code paths")}
               />
-              {draft.length > 0 && <p className="ptr-hint">{preview.length ? `会话改过的 ${preview.length} 个文件会落到这里：${preview.slice(0, 3).join("、")}${preview.length > 3 ? " …" : ""}` : "会话里还没有改过匹配的文件"}</p>}
+              {draft.length > 0 && <p className="ptr-hint">{preview.length
+                    ? tr(`会话改过的 ${preview.length} 个文件会落到这里：${preview.slice(0, 3).join("、")}${preview.length > 3 ? " …" : ""}`, `${preview.length} ${preview.length === 1 ? "file" : "files"} changed in sessions will land here: ${preview.slice(0, 3).join(", ")}${preview.length > 3 ? " …" : ""}`)
+                    : tr("会话里还没有改过匹配的文件", "No matching files changed in sessions yet")}</p>}
               <div className="ptr-actions">
                 {paths.length > 0 && (
                   <button className="ptr-quiet" onClick={() => save([])}>
-                    清除
+                    {tr("清除", "Clear")}
                   </button>
                 )}
                 <button className="ptr-quiet" onClick={() => onOpen(null)}>
-                  取消
+                  {tr("取消", "Cancel")}
                 </button>
                 <button className="ptr-primary" onClick={() => save(draft)}>
-                  保存
+                  {tr("保存", "Save")}
                 </button>
               </div>
             </div>
@@ -169,7 +172,7 @@ function ChildPill({ target, busy, open, onClick }: { target: El; busy: string |
   return (
     <button className="ptr-pill" aria-expanded={open} aria-haspopup="menu" onClick={onClick} title={p.title}>
       <IconNested size={14} />
-      {!p.has && busy === "ai" ? "已交给 Agent" : p.text}
+      {!p.has && busy === "ai" ? tr("已交给 Agent", "Handed to agent") : p.text}
     </button>
   );
 }

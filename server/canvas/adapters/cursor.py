@@ -48,6 +48,7 @@ from server.canvas.adapters.common import MAX_TEXT, LogLookup, Out, State, Strea
 from server.canvas.adapters.shell_files import shell_tool
 from server.canvas.adapters.tools import activity_of, patch_files
 from server.canvas.runner import _int, empty_usage
+from server.i18n import tr
 
 STEP_MS = 20_000  # inferred time between two records of a turn, at most
 TICKET_PAD_S = 120  # a worker's transcript is written to after its ticket was created (minus this)
@@ -333,12 +334,13 @@ def cursor_catalog(ids: list[str], names: dict[str, str], default: str, source: 
 class CursorAdapter(Adapter):
     kind = "cursor"
     no_steer = "Cursor 的 `-p` 只收启动时的一条提示，这一轮开始后没有输入口"
+    no_steer_en = "Cursor's `-p` takes a single prompt at start; once the turn begins there is no way in"
     name = "Cursor"
     binaries = ("cursor-agent",)
     tested = VersionRange(">=2026.09.26,<2026.11")
     max_tier = "T1"
     icon = "cursor"
-    log_hint = "~/.cursor/projects/<工作区>/agent-transcripts/<id>/<id>.jsonl"
+    log_hint = "~/.cursor/projects/<workspace>/agent-transcripts/<id>/<id>.jsonl"
     log_dir = "~/.cursor/projects/"
     delete_hint = ""
     has_cost = False
@@ -466,13 +468,13 @@ class CursorAdapter(Adapter):
                 used.add(call["id"])
             last = recs[-1] if recs else {}
             state = ("done" if last.get("status") == "success" else "failed") if last.get("type") == "turn_ended" else None
-            why = ["父会话目录下的 subagents/<id>.jsonl"] + (["子会话的第一条提示 = 父会话 Task 调用的 prompt"] if call else [])
+            why = [tr("父会话目录下的 subagents/<id>.jsonl", "subagents/<id>.jsonl in the parent session's folder")] + ([tr("子会话的第一条提示 = 父会话 Task 调用的 prompt", "the child session's first prompt = the prompt of the parent's Task call")] if call else [])
             try:
                 done_at = int(f.stat().st_mtime * 1000) if state else None
             except OSError:
                 done_at = None
             out.append(NativeRef(
-                "cursor", f.stem, f, ref.cwd, ParentLink("native", ref.run_id, tool_call_id=call.get("id"), evidence="、".join(why)),
+                "cursor", f.stem, f, ref.cwd, ParentLink("native", ref.run_id, tool_call_id=call.get("id"), evidence=tr("、", ", ").join(why)),
                 label=str(call.get("label") or f.stem), meta={"role": call.get("role"), "model": call.get("model"), "dispatchedAt": call.get("at"), "doneAt": done_at, "state": state, "depth": 1},
             ))
         return out
@@ -481,7 +483,7 @@ class CursorAdapter(Adapter):
     def headless_args(self, cmd: list[str], req: Any, *, log_exists: Callable[[str], bool] | bool = False, skill_dir: Path | None = None) -> list[str]:
         o = req.options
         if o.fork_from:
-            raise ValueError("Cursor 没有分叉会话的命令")
+            raise ValueError(tr("Cursor 没有分叉会话的命令", "Cursor has no command to fork a session"))
         args = [*cmd, "-p", "--output-format", "stream-json", "--force", "--trust"]
         if o.session:
             args += ["--resume", o.session]
@@ -491,7 +493,7 @@ class CursorAdapter(Adapter):
 
     # ——— Interactive ———
     def fork_argv(self, fork: dict[str, Any]) -> list[str]:
-        raise ValueError("Cursor 没有分叉会话的命令")
+        raise ValueError(tr("Cursor 没有分叉会话的命令", "Cursor has no command to fork a session"))
 
     def interactive_argv(self, native_id: str | None, model: str | None, effort: str | None, *, new: bool = False, has_log: Callable[[], bool] | bool = False, skill_dir: Path | None = None) -> list[str]:
         args = ["cursor-agent", "--force", "--trust"]

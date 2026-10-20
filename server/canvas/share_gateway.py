@@ -39,6 +39,7 @@ from server.canvas import build_log, nested
 from server.canvas.events import Events
 from server.canvas.project import ID_RE, NotFound, NotYours, ProjectStore
 from server.canvas.share import MAX_NAME, MAX_TEXT, SCOPE_PROJECT, RateLimiter, Share, ShareManager, canvas_titles, clean_anchor, clean_moment, clean_text, export_bundle, finite, guest_canvas, guest_elements, guest_threads, landing, project_tree, reach as share_reach, scope_signature, slug
+from server.i18n import tr
 
 SHARE_COOKIE = "agora_share"
 GUEST_COOKIE = "agora_guest"
@@ -60,24 +61,39 @@ SECURITY_HEADERS = {
     "content-security-policy": "frame-ancestors 'none'",
 }
 
-GONE_PAGE = """<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="robots" content="noindex, nofollow">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>链接已失效 · Agora</title>
+_STATUS_PAGE = """<!doctype html><html lang="{lang}"><meta charset="utf-8"><meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>{title} · Agora</title>
 <style>
-:root{--bg:#fff;--fg:#2c3136;--muted:#5e686d;--accent:#7048b4}
-@media (prefers-color-scheme:dark){:root{--bg:#202428;--fg:#d9dee2;--muted:#a0a8ad;--accent:#bea5f5}}
-body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);
+:root{{--bg:#fff;--fg:#2c3136;--muted:#5e686d;--accent:#7048b4}}
+@media (prefers-color-scheme:dark){{:root{{--bg:#202428;--fg:#d9dee2;--muted:#a0a8ad;--accent:#bea5f5}}}}
+body{{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);
 font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",system-ui,sans-serif;
-background-image:radial-gradient(circle,var(--accent) .9px,transparent 1px);background-size:7px 7px;background-blend-mode:normal}
-main{background:var(--bg);padding:28px 32px;max-width:360px;margin:16px;box-shadow:0 0 0 32px var(--bg)}
-h1{font-size:20px;font-weight:600;margin:0 0 8px}p{margin:0;color:var(--muted)}
+background-image:radial-gradient(circle,var(--accent) .9px,transparent 1px);background-size:7px 7px;background-blend-mode:normal}}
+main{{background:var(--bg);padding:28px 32px;max-width:360px;margin:16px;box-shadow:0 0 0 32px var(--bg)}}
+h1{{font-size:20px;font-weight:600;margin:0 0 8px}}p{{margin:0;color:var(--muted)}}
 </style>
-<main><h1>这个分享链接已失效</h1><p>它可能已经到期、被作者撤销，或者链接不完整。需要继续查看的话，请向作者要一个新链接。</p></main></html>"""
+<main><h1>{head}</h1><p>{body}</p></main></html>"""
 
 
-FULL_PAGE = GONE_PAGE.replace("<title>链接已失效", "<title>打开次数已用完").replace(
-    "<h1>这个分享链接已失效</h1><p>它可能已经到期、被作者撤销，或者链接不完整。需要继续查看的话，请向作者要一个新链接。</p>",
-    "<h1>这个分享链接的打开次数已用完</h1><p>作者给它设了最多能被几个人打开，名额已经满了。已经打开过它的浏览器还能继续看；需要查看的话，请向作者要一个新链接。</p>",
-)
+def _status_page(title: str, head: str, body: str) -> str:
+    return _STATUS_PAGE.format(lang=tr("zh-CN", "en"), title=title, head=head, body=body)
+
+
+def gone_page() -> str:
+    """What a guest sees for a link that no longer opens anything (in the guest's browser language)."""
+    return _status_page(
+        tr("链接已失效", "Link expired"),
+        tr("这个分享链接已失效", "This share link no longer works"),
+        tr("它可能已经到期、被作者撤销，或者链接不完整。需要继续查看的话，请向作者要一个新链接。", "It may have expired, been revoked by its author, or been copied incompletely. To keep viewing, ask the author for a new link."),
+    )
+
+
+def full_page() -> str:
+    return _status_page(
+        tr("打开次数已用完", "No opens left"),
+        tr("这个分享链接的打开次数已用完", "This share link has reached its limit"),
+        tr("作者给它设了最多能被几个人打开，名额已经满了。已经打开过它的浏览器还能继续看；需要查看的话，请向作者要一个新链接。", "Its author limited how many people can open it, and that many already have. Browsers that opened it before can keep viewing; to view it, ask the author for a new link."),
+    )
 
 
 class GuestFeed:
@@ -122,7 +138,7 @@ def open_count(store: ProjectStore, cid: str) -> int:
 def forbidden(request: Request, status: int = 403) -> Response:
     if request.url.path.startswith("/api/"):
         return JSONResponse({"error": "forbidden"}, status_code=status)
-    return HTMLResponse(GONE_PAGE, status_code=status)
+    return HTMLResponse(gone_page(), status_code=status)
 
 
 def client_addr(request: Request) -> str:
@@ -174,7 +190,7 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
         guest = guest_of(request)
         gid = guest or secrets.token_hex(8)
         if not shares.admit(share, gid):
-            return HTMLResponse(FULL_PAGE, status_code=403)
+            return HTMLResponse(full_page(), status_code=403)
         shares.note_visit(share, new_guest=guest is None)
         resp = RedirectResponse("/", status_code=303)
         max_age = None if share.expiresAt is None else max(1, (share.expiresAt - shares.now_ms()) // 1000)
@@ -188,7 +204,7 @@ def create_gateway_app(store: ProjectStore, shares: ShareManager, events: Events
             return forbidden(request)
         index = dist / "index.html"
         if not index.exists():
-            return HTMLResponse("<!doctype html><meta name=robots content=noindex><p>前端还没有构建。</p>", status_code=503)
+            return HTMLResponse("<!doctype html><meta name=robots content=noindex><p>" + tr("前端还没有构建。", "The front end has not been built yet.") + "</p>", status_code=503)
         html = index.read_text().replace(
             "<head>",
             '<head>\n    <meta name="robots" content="noindex, nofollow" />\n    <meta name="agora-guest" content="1" />',

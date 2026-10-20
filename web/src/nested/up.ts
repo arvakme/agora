@@ -1,6 +1,7 @@
 // Going back up from a child canvas (docs/nested-canvas.md §2): the parent it goes to, the
 // keyboard shortcut (⌘↑ on a Mac, Ctrl+↑ elsewhere) and the one-time "you are in a child canvas"
 // hint. Pure (type-only imports), so it runs under vitest in node.
+import { tr } from "../i18n";
 import type { El } from "../canvas/scene";
 import type { ParentRef } from "./graph";
 
@@ -82,7 +83,7 @@ export function markBackHintSeen(s: Store | undefined = storage()) {
 
 /** 「可能过时」 shows as a dot by the sub-diagram's name in the breadcrumb (its words and 「让 AI 更新」 open on hover). */
 export const staleDot = (files: number) => files > 0;
-export const staleNote = (files: readonly string[]) => `可能过时：子图画好之后改过 ${files.length} 个文件`;
+export const staleNote = (files: readonly string[]) => tr(`可能过时：子图画好之后改过 ${files.length} 个文件`, `May be out of date: ${files.length} ${files.length === 1 ? "file" : "files"} changed since this sub-diagram was drawn`);
 
 /** The hint is once per browser: after it has been on screen this long it counts as seen (a refresh does not bring it back). */
 export const BACK_HINT_MS = 8000;

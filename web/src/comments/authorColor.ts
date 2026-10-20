@@ -5,6 +5,7 @@
 import { useMemo } from "react";
 import { identity, isOwner, useThreads, type Message, type Thread, type ThreadStore } from "./threads";
 import "./authors.css";
+import { tr } from "../i18n";
 
 export const AUTHOR_SLOTS = 5;
 export type AuthorSlot = "self" | 1 | 2 | 3 | 4 | 5;
@@ -65,5 +66,5 @@ export function useAuthorColors(store: ThreadStore): { ofMessage: (m: Pick<Messa
 /** Who to call the author of a thread: 你, their name, or (an old comment seen by someone else) the owner. */
 export function threadAuthorName(t: Pick<Thread, "messages">): string {
   const m = t.messages.find((x) => !x.deleted) ?? t.messages[0];
-  return authorSlot(m?.by, identity(), isOwner()) === "self" ? "你" : (m?.by?.name ?? "项目所有者");
+  return authorSlot(m?.by, identity(), isOwner()) === "self" ? tr("你", "You") : (m?.by?.name ?? tr("项目所有者", "Project owner"));
 }

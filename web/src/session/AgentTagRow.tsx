@@ -12,6 +12,7 @@ import { waitLabel } from "./requestModel";
 import { sessions } from "./store";
 import { ui } from "./ui";
 import "./agentTags.css";
+import { tr } from "../i18n";
 
 const TAG_W = 150;
 const MORE_W = 44;
@@ -56,11 +57,11 @@ export function AgentTags() {
     const where = whereIs(run, now);
     const doing = run.segs.find((s) => s.start <= now && now < s.end)?.label;
     return (
-      <button key={t.runId} className="agent-tag" data-state={t.state} data-listed={listed || undefined} onClick={() => (t.sessionId && ui.openSession(t.sessionId), setMenu(false))} title={`${t.name} · ${stateText(t, now)}${doing && t.state !== "idle" ? ` · ${doing}` : ""}${where ? `\n在 ${where}` : ""}${t.kids ? `\n${t.kids} 个子代理` : ""}`}>
+      <button key={t.runId} className="agent-tag" data-state={t.state} data-listed={listed || undefined} onClick={() => (t.sessionId && ui.openSession(t.sessionId), setMenu(false))} title={`${t.name} · ${stateText(t, now)}${doing && t.state !== "idle" ? ` · ${doing}` : ""}${where ? tr(`\n在 ${where}`, `\nAt ${where}`) : ""}${t.kids ? tr(`\n${t.kids} 个子代理`, `\n${t.kids} sub-agent${t.kids === 1 ? "" : "s"}`) : ""}`}>
         <RunAvatar agent={t.agent} size={18} />
         <span className="at-name">{label(t)}</span>
         <span className="at-state"><i className="at-dot" />{t.state !== "idle" && stateText(t, now)}</span>
-        {t.kids > 0 && <span className="at-kids" aria-label={`${t.kids} 个子代理`}>+{t.kids}</span>}
+        {t.kids > 0 && <span className="at-kids" aria-label={tr(`${t.kids} 个子代理`, `${t.kids} sub-agent${t.kids === 1 ? "" : "s"}`)}>+{t.kids}</span>}
       </button>
     );
   };
@@ -69,7 +70,7 @@ export function AgentTags() {
       {shown.map((t) => tag(t))}
       {more.length > 0 && (
         <div className="at-more">
-          <button className="agent-tag at-more-btn" aria-expanded={menu} onClick={() => setMenu((v) => !v)} title={more.map((t) => t.name).join("、")}>+{more.length}</button>
+          <button className="agent-tag at-more-btn" aria-expanded={menu} onClick={() => setMenu((v) => !v)} title={more.map((t) => t.name).join(tr("、", ", "))}>+{more.length}</button>
           {menu && <div className="menu at-menu">{more.map((t) => tag(t, true))}</div>}
         </div>
       )}
