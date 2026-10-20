@@ -23,6 +23,7 @@ import { writeChildLink } from "../nested/writeChild";
 import { touches, touchNodesOf, type TouchEl } from "../workstation/runs/touch";
 import { holdReveal } from "../workstation/RevealLayer";
 import type { RevealEl } from "../workstation/reveal";
+import { tr } from "../i18n";
 
 const all = (api: ExcalidrawImperativeAPI) => api.getSceneElementsIncludingDeleted() as Scene;
 
@@ -68,42 +69,42 @@ export async function applyFromAgent(req: { canvasId: string; sessionId?: string
   if (!c) return { status: "error", errors: [`canvas ${req.canvasId} is not in this workspace`] };
   const { api } = c;
   const note = req.plan.note;
-  const rec = recordFor(req.sessionId, req.canvasId, note || `改图 · ${req.plan.ops?.length ?? 0} 个操作`);
+  const rec = recordFor(req.sessionId, req.canvasId, note || tr(`改图 · ${req.plan.ops?.length ?? 0} 个操作`, `Edit · ${req.plan.ops?.length ?? 0} op${req.plan.ops?.length === 1 ? "" : "s"}`));
   const T = rec?.turnId;
   const step = (s: Parameters<typeof sessions.step>[1]) => (T ? sessions.step(T, s) : "");
   const endStep = (id: string, p: Parameters<typeof sessions.endStep>[2]) => T && id && sessions.endStep(T, id, p);
 
-  const check = step({ kind: "check", title: "校验 + 新鲜度" });
+  const check = step({ kind: "check", title: tr("校验 + 新鲜度", "Validate + freshness") });
   const library = await fetchLibraryItems(req.plan);
   const now = all(api);
   const { plan, errors } = validatePlan(req.plan, { ...sceneIndex(now), libraryItem: (id) => library.has(id) });
   if (!plan) {
     if (Array.isArray(req.plan.ops) && req.plan.ops.length === 0) {
-      endStep(check, { detail: "没有操作" });
-      end(T, "empty", { text: note ? `没有修改：${note}` : "没有修改" });
+      endStep(check, { detail: tr("没有操作", "No operations") });
+      end(T, "empty", { text: note ? tr(`没有修改：${note}`, `No changes: ${note}`) : tr("没有修改", "No changes") });
       return { status: "empty", note, turnId: T };
     }
-    endStep(check, { status: "error", detail: errors.join("；") });
-    end(T, "invalid", { text: `操作未通过校验，未执行：\n${errors.join("\n")}`, tone: "error" });
+    endStep(check, { status: "error", detail: errors.join(tr("；", "; ")) });
+    end(T, "invalid", { text: tr(`操作未通过校验，未执行：\n${errors.join("\n")}`, `Operations failed validation and were not applied:\n${errors.join("\n")}`), tone: "error" });
     return { status: "invalid", errors, turnId: T };
   }
   const nowMap = byId(now);
   const watched = [...new Set(referencedIds(plan))];
   const stale = staleIds({ versions: req.versions }, watched, now);
   if (stale.length) {
-    const names = stale.map((id) => (nowMap.get(id) ? nameOf(nowMap.get(id)!, nowMap) : id)).join("、");
-    endStep(check, { status: "error", detail: `${names} 在读取后被改动`, elements: stale });
-    end(T, "stale", { text: `已拒绝执行：${names} 在 Agent 读取画布后被改动过。`, tone: "warn" });
+    const names = stale.map((id) => (nowMap.get(id) ? nameOf(nowMap.get(id)!, nowMap) : id)).join(tr("、", ", "));
+    endStep(check, { status: "error", detail: tr(`${names} 在读取后被改动`, `${names} changed after being read`), elements: stale });
+    end(T, "stale", { text: tr(`已拒绝执行：${names} 在 Agent 读取画布后被改动过。`, `Refused: ${names} changed after the agent read the canvas.`), tone: "warn" });
     return { status: "stale", stale, errors: [`changed since your read: ${stale.join(", ")} — run \`agora canvas read\` again`], turnId: T };
   }
-  endStep(check, { detail: `schema ✓ · 引用 ✓ · ${watched.length} 个元素版本未变 ✓${library.size ? ` · 素材 ${library.size} 个 ✓` : ""}` });
+  endStep(check, { detail: tr(`schema ✓ · 引用 ✓ · ${watched.length} 个元素版本未变 ✓${library.size ? ` · 素材 ${library.size} 个 ✓` : ""}`, `schema ✓ · refs ✓ · ${watched.length} element versions unchanged ✓${library.size ? ` · ${library.size} library items ✓` : ""}`) });
 
-  const apply = step({ kind: "apply", title: "应用到画布（1 次可撤销修改）" });
+  const apply = step({ kind: "apply", title: tr("应用到画布（1 次可撤销修改）", "Apply to canvas (1 undoable change)") });
   const result = applyPlan(now, plan, library);
   // the 工位视图 is told before the picture changes: the figure goes to the nodes this drew (./workstation/runs/touch.ts), and what the batch adds
   // appears on the page as it gets to each of them (../workstation/RevealLayer.tsx; the scene, undo and the saved file have it all at once)
   const afterMap = byId(result.scene as Scene);
-  const at = announce(rec?.sid, req.canvasId, result.batch.after.keys(), afterMap, note?.slice(0, 24) || "改图");
+  const at = announce(rec?.sid, req.canvasId, result.batch.after.keys(), afterMap, note?.slice(0, 24) || tr("改图", "Editing"));
   if (at != null) holdReveal(req.canvasId, at, [...result.batch.after.keys()].filter((id) => live(afterMap.get(id)) && !live(nowMap.get(id))), afterMap as unknown as Map<string, RevealEl>);
   api.updateScene({ elements: result.scene, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
   await settle();
@@ -115,8 +116,8 @@ export async function applyFromAgent(req: { canvasId: string; sessionId?: string
     const e = settled.get(id);
     return live(e) && e.type !== "text" && (libraryMeta(e) || !e.groupIds.some((g) => libGroups.has(g)));
   });
-  endStep(apply, { detail: `${result.summary.length} 处修改 · ${touched.length} 个元素`, elements: touched });
-  end(T, "applied", { text: `已修改 ${result.summary.length} 处${note ? `：${note}` : ""}`, changes: result.summary, batchId });
+  endStep(apply, { detail: tr(`${result.summary.length} 处修改 · ${touched.length} 个元素`, `${result.summary.length} change${result.summary.length === 1 ? "" : "s"} · ${touched.length} element${touched.length === 1 ? "" : "s"}`), elements: touched });
+  end(T, "applied", { text: tr(`已修改 ${result.summary.length} 处${note ? `：${note}` : ""}`, `Made ${result.summary.length} change${result.summary.length === 1 ? "" : "s"}${note ? `: ${note}` : ""}`), changes: result.summary, batchId });
   return { status: "applied", summary: result.summary, turnId: T, batchId, note };
 }
 
@@ -124,31 +125,31 @@ export async function animFromAgent(req: { canvasId: string; sessionId?: string;
   const c = await ui.ensureCanvas(req.canvasId);
   if (!c) return { status: "error", errors: [`canvas ${req.canvasId} is not in this workspace`] };
   const v = validateScript(req.script);
-  const title = (req.script as { title?: string })?.title ?? "动画";
-  const rec = recordFor(req.sessionId, req.canvasId, `动画「${title}」`);
+  const title = (req.script as { title?: string })?.title ?? tr("动画", "Animation");
+  const rec = recordFor(req.sessionId, req.canvasId, tr(`动画「${title}」`, `Animation “${title}”`));
   const T = rec?.turnId;
-  const check = T ? sessions.step(T, { kind: "check", title: "校验动画脚本" }) : "";
+  const check = T ? sessions.step(T, { kind: "check", title: tr("校验动画脚本", "Validate animation script") }) : "";
   if (!v.script) {
-    if (T) sessions.endStep(T, check, { status: "error", detail: v.errors.slice(0, 3).join("；") });
-    end(T, "invalid", { text: `动画脚本没通过校验，未上画布：\n${v.errors.slice(0, 6).join("\n")}`, tone: "error" });
+    if (T) sessions.endStep(T, check, { status: "error", detail: v.errors.slice(0, 3).join(tr("；", "; ")) });
+    end(T, "invalid", { text: tr(`动画脚本没通过校验，未上画布：\n${v.errors.slice(0, 6).join("\n")}`, `The animation script failed validation and wasn't added to the canvas:\n${v.errors.slice(0, 6).join("\n")}`), tone: "error" });
     return { status: "invalid", errors: v.errors, turnId: T };
   }
   const script = v.script;
-  if (T) sessions.endStep(T, check, { detail: `${script.nodes.length} 个节点 · ${script.edges?.length ?? 0} 条边 · ${script.steps.length} 步 · 结构与引用 ✓` });
+  if (T) sessions.endStep(T, check, { detail: tr(`${script.nodes.length} 个节点 · ${script.edges?.length ?? 0} 条边 · ${script.steps.length} 步 · 结构与引用 ✓`, `${script.nodes.length} nodes · ${script.edges?.length ?? 0} edges · ${script.steps.length} steps · structure and refs ✓`) });
   const host = animHosts.get(c.api);
   if (!host) {
-    end(T, "error", { text: "画布的动画播放器还没准备好", tone: "error" });
+    end(T, "error", { text: tr("画布的动画播放器还没准备好", "The canvas's animation player isn't ready yet"), tone: "error" });
     return { status: "error", errors: ["animation host not ready"], turnId: T };
   }
-  const mount = T ? sessions.step(T, { kind: "apply", title: "挂载播放器" }) : "";
+  const mount = T ? sessions.step(T, { kind: "apply", title: tr("挂载播放器", "Mount player") }) : "";
   const before = new Set(c.api.getSceneElementsIncludingDeleted().map((e) => e.id));
   host(script);
   const added = c.api.getSceneElements().filter((e) => !before.has(e.id));
   const region = added.filter((e) => e.type !== "text").map((e) => e.id);
-  announce(rec?.sid, req.canvasId, region, byId(c.api.getSceneElements() as Scene), `动画「${title}」`.slice(0, 24));
+  announce(rec?.sid, req.canvasId, region, byId(c.api.getSceneElements() as Scene), tr(`动画「${title}」`, `Animation “${title}”`).slice(0, 24));
   if (added.length) c.api.scrollToContent(added, { fitToContent: true, animate: true });
-  if (T) sessions.endStep(T, mount, { detail: `区域「${script.title}」· ${script.nodes.length} 个元素 · ${script.steps.length} 步 · 播放器在区域下方`, elements: region });
-  end(T, "applied", { text: `已生成动画「${script.title}」：${script.nodes.length} 个元素、${script.steps.length} 步，用区域下方的播放器播放。`, changes: [`新建动画区域「${script.title}」`] });
+  if (T) sessions.endStep(T, mount, { detail: tr(`区域「${script.title}」· ${script.nodes.length} 个元素 · ${script.steps.length} 步 · 播放器在区域下方`, `Region “${script.title}” · ${script.nodes.length} elements · ${script.steps.length} steps · player below the region`), elements: region });
+  end(T, "applied", { text: tr(`已生成动画「${script.title}」：${script.nodes.length} 个元素、${script.steps.length} 步，用区域下方的播放器播放。`, `Created animation “${script.title}”: ${script.nodes.length} elements, ${script.steps.length} steps; play it with the player below the region.`), changes: [tr(`新建动画区域「${script.title}」`, `New animation region “${script.title}”`)] });
   return { status: "mounted", title: script.title, nodes: script.nodes.length, steps: script.steps.length, turnId: T };
 }
 
@@ -173,11 +174,11 @@ export async function linkFromAgent(req: { canvasId: string; sessionId?: string;
   const linked = [...updates].map(([id, codePaths]) => ({ id, label: nameOf(map.get(id)!, map), codePaths }));
   const batch = writeCodePaths(c.api, updates);
   if (!batch) return { status: "linked", linked, unchanged: true };
-  const title = `关联代码路径：${linked.map((l) => `${l.label} → ${l.codePaths.join(" ") || "（清除）"}`).join("；")}`;
-  const rec = recordFor(req.sessionId, req.canvasId, title.length > 120 ? `关联代码路径 · ${linked.length} 个元素` : title);
+  const title = tr(`关联代码路径：${linked.map((l) => `${l.label} → ${l.codePaths.join(" ") || "（清除）"}`).join("；")}`, `Link code paths: ${linked.map((l) => `${l.label} → ${l.codePaths.join(" ") || "(cleared)"}`).join("; ")}`);
+  const rec = recordFor(req.sessionId, req.canvasId, title.length > 120 ? tr(`关联代码路径 · ${linked.length} 个元素`, `Link code paths · ${linked.length} elements`) : title);
   const batchId = sessions.saveBatch(batch);
-  end(rec?.turnId, "applied", { text: `已关联 ${linked.length} 个元素的代码路径`, changes: linked.map((l) => `${l.label}：${l.codePaths.join("、") || "已清除"}`), batchId });
-  if (rec) sessions.step(rec.turnId, { kind: "apply", title: "写进元素的 customData.codePaths", elements: linked.map((l) => l.id), status: "done" });
+  end(rec?.turnId, "applied", { text: tr(`已关联 ${linked.length} 个元素的代码路径`, `Linked code paths for ${linked.length} element${linked.length === 1 ? "" : "s"}`), changes: linked.map((l) => tr(`${l.label}：${l.codePaths.join("、") || "已清除"}`, `${l.label}: ${l.codePaths.join(", ") || "cleared"}`)), batchId });
+  if (rec) sessions.step(rec.turnId, { kind: "apply", title: tr("写进元素的 customData.codePaths", "Written to the elements' customData.codePaths"), elements: linked.map((l) => l.id), status: "done" });
   return { status: "linked", linked, turnId: rec?.turnId };
 }
 
@@ -213,13 +214,13 @@ export async function childFromAgent(req: { op: "create" | "link" | "unlink"; ca
   }
   const batch = writeChildLink(c.api, el.id, child);
   const title =
-    req.op === "create" ? `展开「${label}」为子图「${name(child!)}」` : req.op === "link" ? `「${label}」打开子图「${name(child!)}」` : `断开「${label}」的子图（子图保留）`;
+    req.op === "create" ? tr(`展开「${label}」为子图「${name(child!)}」`, `Expand “${label}” into sub-diagram “${name(child!)}”`) : req.op === "link" ? tr(`「${label}」打开子图「${name(child!)}」`, `“${label}” opens sub-diagram “${name(child!)}”`) : tr(`断开「${label}」的子图（子图保留）`, `Unlink “${label}”'s sub-diagram (the sub-diagram is kept)`);
   const rec = batch ? recordFor(req.sessionId, req.canvasId, title) : null;
-  if (rec && batch) announce(rec.sid, req.canvasId, [el.id], byId(all(c.api)), req.op === "unlink" ? "改图" : "展开成子图");
+  if (rec && batch) announce(rec.sid, req.canvasId, [el.id], byId(all(c.api)), req.op === "unlink" ? tr("改图", "Editing") : tr("展开成子图", "Expanding into sub-diagram"));
   if (rec && batch) {
     const batchId = sessions.saveBatch(batch);
     end(rec.turnId, "applied", { text: title, changes: [title], batchId });
-    sessions.step(rec.turnId, { kind: "apply", title: "写进节点的 customData.childCanvas", elements: [el.id], status: "done" });
+    sessions.step(rec.turnId, { kind: "apply", title: tr("写进节点的 customData.childCanvas", "Written to the node's customData.childCanvas"), elements: [el.id], status: "done" });
   }
   const status = req.op === "create" ? "created" : req.op === "link" ? "linked" : "unlinked";
   return { status, node: { id: el.id, label }, ...(child ? { canvas: { id: child, name: name(child) } } : { previous: current }), turnId: rec?.turnId };

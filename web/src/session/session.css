@@ -224,7 +224,7 @@ label.sp-cv .sp-cv-t { flex: none; }
 .sp-cards button:hover:not(:disabled) { background: var(--raised); }
 .sp-cards button[data-on="true"] { background: var(--accent-wash); box-shadow: inset 0 0 0 1.5px var(--accent); }
 .sp-cards button:disabled { opacity: 0.5; }
-.sp-cards em { margin-left: auto; font-style: normal; color: var(--fg-subtle); font-size: var(--text-xs); }
+.sp-cards em { margin-left: auto; font-style: normal; color: var(--fg-subtle); font-size: var(--text-xs); white-space: nowrap; flex-shrink: 0; }
 .sp-card-t { display: flex; flex-direction: column; min-width: 0; line-height: 1.4; }
 .sp-card-t b { font-weight: var(--weight-strong); font-size: var(--text-md); }
 .sp-card-t span { color: var(--fg-muted); font-size: var(--text-xs); }

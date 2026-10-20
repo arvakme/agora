@@ -9,6 +9,7 @@
 // selection's end with it (and an edge the person moved off the end does not).
 import { valueAt, xOf, type Layout } from "./timelineLayout";
 import type { Span, TimelineModel } from "./trajectoryModel";
+import { tr } from "../i18n";
 
 export type Sel = { from: number; to: number; tail: boolean };
 /** The model's records twice: `spans` by position on the axis (what the pointer meets; `pos` is where a record sits there) and `ordered` by record
@@ -91,7 +92,8 @@ export function keepTurns(d: Domain, sel: Sel): Set<number> {
 /** What the badge says: 「第 a–b 轮 · N 条」. */
 export function caption(d: Domain, sel: Sel): string {
   const [a, b] = turnsOf(d, sel);
-  return `${a === b ? `第 ${a} 轮` : `第 ${a}–${b} 轮`} · ${count(d, sel)} 条`;
+  const n = count(d, sel);
+  return tr(`${a === b ? `第 ${a} 轮` : `第 ${a}–${b} 轮`} · ${n} 条`, `${a === b ? `turn ${a}` : `turns ${a}–${b}`} · ${n} record${n === 1 ? "" : "s"}`);
 }
 
 // ——— on the strip ———
