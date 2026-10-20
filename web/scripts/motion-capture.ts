@@ -1,6 +1,6 @@
 // Motion evidence for the 工位视图 (web/docs/workstation.md §动效).
 //
-//   node scripts/motion-capture.ts <page url> <out dir> [--dark] [--reduced]
+//   node scripts/motion-capture.ts <page url> <out dir> [--dark] [--reduced] [--lang en]
 //
 // Opens `<url>/?mock=runs&perf` (the prototype's scripted scenario: one main agent, a Seedmux
 // worker with tool calls, a receipts-only worker, a Claude Task sub-agent) in Playwright's
@@ -27,6 +27,8 @@ import { join } from "node:path";
 const [url, out = "evidence/focus/motion"] = process.argv.slice(2);
 const dark = process.argv.includes("--dark");
 const reduced = process.argv.includes("--reduced");
+// --lang en: the page opened with ?lang=en (the English interface), for the promo film's English cut (docs/promo/)
+const langQ = process.argv.includes("--lang") && process.argv[process.argv.indexOf("--lang") + 1] === "en" ? "&lang=en" : "";
 if (!url) {
   console.error("usage: node scripts/motion-capture.ts <url> [out dir] [--dark] [--reduced]");
   process.exit(2);
@@ -128,7 +130,7 @@ const ctx = await browser.newContext({
 });
 const page = await ctx.newPage();
 const t0 = Date.now();
-await page.goto(`${url.replace(/\/$/, "")}/?mock=runs&perf&canvas=c1`);
+await page.goto(`${url.replace(/\/$/, "")}/?mock=runs&perf&canvas=c1${langQ}`);
 await page.waitForFunction(() => (window as unknown as { __mockBase?: number }).__mockBase, undefined, { timeout: 30_000 });
 const base = await page.evaluate(() => (window as unknown as { __mockBase: number }).__mockBase);
 const at = async (sec: number) => {
