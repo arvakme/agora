@@ -7,7 +7,7 @@
 - **是什么**：每个项目自带的本地控制面。你自己装、自己登录的 coding agent（Claude Code、Codex、Pi，以及 Grok、Cursor、Devin）在项目的 Excalidraw 架构图上干活；agent 是图上的小人，读写哪块代码就走到哪个节点。
 - **一件事**：agent 改代码时，你能在架构图上看见它在哪、画了什么。
 - **性格**：精确 +1、偏有活力 +1、亲和 0、技术 +2、新 +2——「手绘感的开发工具，克制、会动」。
-- **真材料**：`/mnt/project-files/agora-motion-video/` 的实录（逐站揭示、缩放进子图、多 agent 跳和滑行；按语言各录一份的放在 `promo-bilingual/footage/<名>.<lang>.mp4`，没有就用中文那份），`docs/media/` 的产品截图，README 横幅，README 示意图。屏上每句话都能对上 README 或 `web/docs/`。
+- **真材料**：`/mnt/project-files/agora-motion-video/` 的实录（逐站揭示、缩放进子图、多 agent 跳和滑行；按语言各录一份的放在 `promo-bilingual/footage/<名>.<lang>.mp4`，没有就用中文那份。英文版全部是英文界面（`?lang=en`）、英文标签的画布：zoom / hop 用 web/scripts/promo-capture.ts（hop 是 `?mock=runs` 的脚本场景，搭在 `scripts/fidelity/setup.ts --lang en` 的项目上），reveal / library 用 reveal-capture.ts --lang en，都不跑真 agent；蒙太奇的英文截图 docs/media/*.en.png），`docs/media/` 的产品截图，README 横幅，README 示意图。屏上每句话都能对上 README 或 `web/docs/`。
 - **投放**：README 链接、X / 小红书（16:9 主版 + 9:16），先静音也能看懂。
 - **口播**：没有。只有音乐和音效。
 
