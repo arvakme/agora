@@ -1,3 +1,3 @@
 import { markdown, readmeMarkdown } from "../../repo";
 
-export const GET = () => markdown(readmeMarkdown());
+export const GET = () => markdown(readmeMarkdown("zh"));
