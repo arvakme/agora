@@ -10,7 +10,8 @@ Four things are not something the person said and are not drawn as a chat bubble
   (``selection.py``), named in the footer by ``agora-sel-<id>``, and, in messages from before pictures, a
   trailing ``（当前选区：…）`` note in the text.
 
-The builders and the parsers live here side by side, so the wording is defined once. ``adapters/common.py``
+The builders and the parsers live here side by side, so the wording is defined once. Each is written in the
+person's interface language (``server/i18n.py``: Chinese or English) and the parsers read both. ``adapters/common.py``
 ``user_item`` calls ``read`` for every user message of every CLI's log — old logs included, which is why the
 parsers also accept what earlier versions wrote. (The canvas-comment hand-off is parsed by the page, next to its
 builder in ``web/src/comments/handoff.ts``.)
@@ -22,24 +23,41 @@ import re
 from pathlib import Path
 from typing import Any
 
+from server.i18n import lang, tr
+
 # The word a receipt gives for each state a dispatch ended in (the wording B's giver reads).
 RECEIPT_HEAD = {"done": "完成了", "failed": "失败了", "blocked": "受阻", "idle_no_reply": "对方这一轮结束了，但没有交回执"}
-_STATE_OF = {v: k for k, v in RECEIPT_HEAD.items()}
+RECEIPT_HEAD_EN = {"done": "done", "failed": "failed", "blocked": "blocked", "idle_no_reply": "their turn ended without a receipt"}
+_STATE_OF = {v: k for heads in (RECEIPT_HEAD, RECEIPT_HEAD_EN) for k, v in heads.items()}
 NO_ANSWER = "没有答复内容"
 RECORD_AT = "（记录 "
+RECORD_AT_EN = " (record "
+_ANSWER = ("答复：", "Answer: ")
 
 # More than this many elements in a note are counted, not listed (the picture and the saved record have them all).
 NOTE_MAX = 60
 
 
 def receipt_text(rid: str, target: str, state: str, answer: str, folder: Path) -> str:
+    if lang() == "en":
+        more = f"{_ANSWER[1]}{answer}" if answer else "No answer given."
+        return (
+            f"[Agora dispatch receipt {rid[:8]}] The task you gave {target}: {RECEIPT_HEAD_EN.get(state, state)}. {more}{RECORD_AT_EN}{folder}; "
+            f"`agora dispatch status {rid}` to view) (This is a notice: no reply needed; act only if there is a next step.)"
+        )
     head = RECEIPT_HEAD.get(state, state)
-    more = f"答复：{answer}" if answer else NO_ANSWER
+    more = f"{_ANSWER[0]}{answer}" if answer else NO_ANSWER
     return f"[Agora 派发回执 {rid[:8]}] 你派给 {target} 的任务：{head}。{more}{RECORD_AT}{folder}；`agora dispatch status {rid}` 查看）（这是通知，不需要回复；有下一步再做。）"
 
 
 def envelope(rid: str, source_name: str, task_path: Path, scope: list[str]) -> str:
     """The one line B reads first (the task itself is in the file)."""
+    if lang() == "en":
+        where = f"Scope: {', '.join(scope)}. " if scope else ""
+        return (
+            f"[Agora dispatch {rid[:8]}] From {source_name}: first read the task file {task_path}. {where}"
+            f"When done, run `agora reply --request {rid} --status done|failed|blocked -f <your answer file>` to send a receipt (blocked when you are stuck, failed when it can't be done; explain in a sentence or two)."
+        )
     where = f"范围：{'、'.join(scope)}。" if scope else ""
     return (
         f"[Agora 派发 {rid[:8]}] 来自 {source_name}：先读任务文件 {task_path}。{where}"
@@ -47,9 +65,16 @@ def envelope(rid: str, source_name: str, task_path: Path, scope: list[str]) -> s
     )
 
 
+def session_name(agent: str, sid: str) -> str:
+    """How a receipt or an envelope names a session (``_WHO`` reads it back)."""
+    return tr(f"{agent} 会话 {sid}", f"{agent} session {sid}")
+
+
 _RECEIPT = re.compile(r"\[Agora 派发回执 ([0-9a-f]{8})\] 你派给 (.+?) 的任务：([^。]+)。", re.S)
+_RECEIPT_EN = re.compile(r"\[Agora dispatch receipt ([0-9a-f]{8})\] The task you gave (.+?): ([^.]+)\. ", re.S)
 _ENVELOPE = re.compile(r"\[Agora 派发 ([0-9a-f]{8})\] 来自 (.+?)：先读任务文件 .+?。(?:范围：(.*?)。)?做完后运行 ", re.S)
-_WHO = re.compile(r"^(.+?) 会话 (s-[0-9a-z]+)$")  # ids are s- and a short token (the page makes base36 ones, dispatch hex ones)
+_ENVELOPE_EN = re.compile(r"\[Agora dispatch ([0-9a-f]{8})\] From (.+?): first read the task file .+?\. (?:Scope: (.*?)\. )?When done, run ", re.S)
+_WHO = re.compile(r"^(.+?) (?:会话|session) (s-[0-9a-z]+)$")  # ids are s- and a short token (the page makes base36 ones, dispatch hex ones)
 
 
 def _who(name: str) -> dict[str, str]:
@@ -60,19 +85,23 @@ def _who(name: str) -> dict[str, str]:
 def card(body: str, receipt_state: str | None = None) -> dict[str, Any] | None:
     """The card a message stands for, or None for the person's own words. ``receipt_state`` is the state in the
     footer's marker (newer receipts), used when the head words are not one this module knows."""
-    m = _RECEIPT.match(body)
-    if m:
+    for en, rx in enumerate((_RECEIPT, _RECEIPT_EN)):
+        m = rx.match(body)
+        if not m:
+            continue
         head = m.group(3)
         rest = body[m.end() :]
         answer = ""
-        if rest.startswith("答复："):
-            at = rest.rfind(RECORD_AT)
-            answer = rest[len("答复：") : at if at >= 0 else None].strip()
+        if rest.startswith(_ANSWER[en]):
+            at = rest.rfind(RECORD_AT_EN if en else RECORD_AT)
+            answer = rest[len(_ANSWER[en]) : at if at >= 0 else None].strip()
         return {"kind": "receipt", "id": m.group(1), "state": _STATE_OF.get(head) or receipt_state or head, **_who(m.group(2)), "answer": answer}
-    m = _ENVELOPE.match(body)
-    if m:
+    for en, rx in enumerate((_ENVELOPE, _ENVELOPE_EN)):
+        m = rx.match(body)
+        if not m:
+            continue
         who = _who(m.group(2))
-        return {"kind": "task", "id": m.group(1), "from": m.group(2), **({"session": who["session"]} if who else {}), "scope": [s for s in (m.group(3) or "").split("、") if s]}
+        return {"kind": "task", "id": m.group(1), "from": m.group(2), **({"session": who["session"]} if who else {}), "scope": [s for s in (m.group(3) or "").split(", " if en else "、") if s]}
     return None
 
 
@@ -101,17 +130,20 @@ SEL_MARK = re.compile(r"agora-sel-(sel-[0-9a-f]{10})")
 
 
 def _named(els: list[dict[str, str]]) -> str:
+    if lang() == "en":
+        shown = [f"{e['name']} ({e['id']})" if e.get("name") and e["name"] != e["id"] else e["id"] for e in els[:NOTE_MAX]]
+        return ", ".join(shown) + (f" … {len(els)} in all" if len(els) > NOTE_MAX else "")
     shown = [f"{e['name']}（{e['id']}）" if e.get("name") and e["name"] != e["id"] else e["id"] for e in els[:NOTE_MAX]]
     return "、".join(shown) + (f" 等共 {len(els)} 个" if len(els) > NOTE_MAX else "")
 
 
 def selection_note(els: list[dict[str, str]]) -> str:
     """What the agent reads of the selection: name and id of each element (the picture, when its CLI takes one, comes with it)."""
-    return f"当前选区（{len(els)} 个元素）：{_named(els)}" if els else ""
+    return tr(f"当前选区（{len(els)} 个元素）：{_named(els)}", f"Current selection ({len(els)} elements): {_named(els)}") if els else ""
 
 
 def refs_note(refs: list[dict[str, str]]) -> str:
-    return f"引用的画布元素：{_named(refs)}" if refs else ""
+    return tr(f"引用的画布元素：{_named(refs)}", f"Referenced canvas elements: {_named(refs)}") if refs else ""
 
 
 # Pi writes a file it was given as ``@path`` into the message as ``<file name="…"></file>``: not the person's words.

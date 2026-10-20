@@ -15,7 +15,8 @@ import sys
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
-from server.canvas.fallback import NEEDS_PAGE
+from server.canvas.fallback import needs_page
+from server.i18n import tr
 
 if TYPE_CHECKING:
     from server.canvas.sessions import AgentHub
@@ -60,7 +61,7 @@ def default_opener(url: str) -> None:
 
 
 def _steps(notes: list[str]) -> str:
-    return "；".join(notes)
+    return tr("；", "; ").join(notes)
 
 
 async def edit(hub: AgentHub, kind: str, payload: dict[str, Any], fallback: Callable[[], Awaitable[dict[str, Any]]] | None = None) -> dict[str, Any]:
@@ -78,23 +79,23 @@ async def edit(hub: AgentHub, kind: str, payload: dict[str, Any], fallback: Call
         raise  # a page took it: the edit may already be on its canvas — never a second copy from somewhere else
     except NoPage as e:
         n = len(hub.executors())
-        notes.append("没有打开的 Agora 页面" if not n else f"开着的页面（{n} 个）都没有认领这次改图（各等了 {hub.page_reply_s:g} 秒）")
+        notes.append(tr("没有打开的 Agora 页面", "no Agora page was open") if not n else tr(f"开着的页面（{n} 个）都没有认领这次改图（各等了 {hub.page_reply_s:g} 秒）", f"none of the {n} open pages took the edit (waited {hub.page_reply_s:g} s each)"))
         del e
 
     # 2. a page of our own
     if not auto_open_enabled(hub):
-        notes.append("自动打开页面被你在偏好里关掉了")
+        notes.append(tr("自动打开页面被你在偏好里关掉了", "opening a page automatically is turned off in your preferences"))
     elif hub.opener is None or page_url(hub) is None:
-        notes.append("这台机器上没法自动打开页面（没有打开命令或项目地址）")
+        notes.append(tr("这台机器上没法自动打开页面（没有打开命令或项目地址）", "this machine can't open a page on its own (no open command or project address)"))
     elif hub._last_open is not None and hub.clock() - hub._last_open < OPEN_EVERY_S:
-        notes.append("两分钟内已经自动打开过一次页面，这次不再打开")
+        notes.append(tr("两分钟内已经自动打开过一次页面，这次不再打开", "a page was already opened automatically in the last two minutes; not opening another"))
     else:
         url = page_url(hub) or ""
         before = {s.id for s in hub.subs}
         try:
             hub.opener(url)
         except Exception as e:  # no open command, no desktop
-            notes.append(f"想自己打开页面没有成功：{e}")
+            notes.append(tr(f"想自己打开页面没有成功：{e}", f"opening a page failed: {e}"))
         else:
             hub._last_open = hub.clock()
             loop = asyncio.get_running_loop()
@@ -102,22 +103,22 @@ async def edit(hub: AgentHub, kind: str, payload: dict[str, Any], fallback: Call
             while loop.time() < end and not any(s.id not in before and s.executor for s in hub.subs):
                 await asyncio.sleep(0.05)
             if not any(s.id not in before and s.executor for s in hub.subs):
-                notes.append(f"自己打开了页面 {url}，等了 {hub.open_wait_s:g} 秒它没有连上来")
+                notes.append(tr(f"自己打开了页面 {url}，等了 {hub.open_wait_s:g} 秒它没有连上来", f"opened {url}; it did not connect within {hub.open_wait_s:g} s"))
             else:
-                notes.append(f"自己打开了页面 {url}，新页面连上来了")
+                notes.append(tr(f"自己打开了页面 {url}，新页面连上来了", f"opened {url}; the new page connected"))
                 try:
                     return done(await hub.bridge(kind, payload, timeout=min(OPENED_TIMEOUT_S, hub.bridge_timeout_s), reply_s=hub.page_reply_s))
                 except PageTookIt:
                     raise
                 except NoPage:
-                    notes.append("新页面没有认领这次改图")
+                    notes.append(tr("新页面没有认领这次改图", "the new page did not take the edit"))
 
     # 3. the server writes the file itself
     if fallback is not None:
-        notes.append("改由服务端直接改画布文件")
+        notes.append(tr("改由服务端直接改画布文件", "the server edited the canvas file instead"))
         result = await fallback()
         if result.get("status") == "needs-page":
-            result["errors"] = [f"{result['errors'][0]}（已经试过：{_steps(notes)}）"]
+            result["errors"] = [tr(f"{result['errors'][0]}（已经试过：{_steps(notes)}）", f"{result['errors'][0]} (already tried: {_steps(notes)})")]
         return done(result)
-    notes.append(f"服务端直接改文件也做不了这一种：{NEEDS_PAGE}")
-    raise NoPage(f"改图没能落下。已经试过：{_steps(notes)}。请把 Agora 页面切到前台再试一次（或先 `agora open`）。")
+    notes.append(tr(f"服务端直接改文件也做不了这一种：{needs_page()}", f"the server can't edit the file for this kind either: {needs_page()}"))
+    raise NoPage(tr(f"改图没能落下。已经试过：{_steps(notes)}。请把 Agora 页面切到前台再试一次（或先 `agora open`）。", f"The edit did not land. Already tried: {_steps(notes)}. Bring the Agora page to the front and try again (or run `agora open` first)."))

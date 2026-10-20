@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from server.canvas.share import CfProcess, cf_command, cf_cwd
+from server.i18n import tr
 
 LOGIN_HINT = "not logged in to Cloudflare: run `npx cf auth login` first"
 CLEANUP_TRIES = 4
@@ -53,13 +54,13 @@ def humanize(e: BaseException) -> str:
     """What to tell the person: the next step, in plain words, never an exception's class name."""
     cause = e if isinstance(e, CloudflareError) else e.__cause__
     if isinstance(cause, NotLoggedIn):
-        return "还没登录 Cloudflare：在终端运行 `npx cf auth login`，完成后再点一次"
+        return tr("还没登录 Cloudflare：在终端运行 `npx cf auth login`，完成后再点一次", "Not logged in to Cloudflare: run `npx cf auth login` in a terminal, then click again")
     if isinstance(cause, CfMissing):
-        return "没找到 cf，也拉不到 npx cf：检查网络，或者先装 cf"
+        return tr("没找到 cf，也拉不到 npx cf：检查网络，或者先装 cf", "cf was not found and npx cf could not be fetched: check the network, or install cf first")
     if isinstance(cause, ZoneChoice):
-        return f"账号里有多个域名（{'、'.join(cause.zones)}）：先选一个（命令行用 --domain）"
-    reason = str(cause if isinstance(cause, CloudflareError) else e).strip().splitlines()[0][:200] if str(e).strip() else "原因不明"
-    return f"{reason}。可以先用临时链接"
+        return tr(f"账号里有多个域名（{'、'.join(cause.zones)}）：先选一个（命令行用 --domain）", f"The account has several domains ({', '.join(cause.zones)}): pick one first (--domain on the command line)")
+    reason = str(cause if isinstance(cause, CloudflareError) else e).strip().splitlines()[0][:200] if str(e).strip() else tr("原因不明", "Unknown reason")
+    return tr(f"{reason}。可以先用临时链接", f"{reason}. You can use a temporary link for now")
 
 
 class CfCli:
@@ -108,7 +109,7 @@ class CfCli:
             return self._domain
         zones = self.zones()
         if not zones:
-            raise CloudflareError("这个 Cloudflare 账号里没有域名")
+            raise CloudflareError(tr("这个 Cloudflare 账号里没有域名", "This Cloudflare account has no domains"))
         if len(zones) > 1:
             raise ZoneChoice(zones)
         self._domain = zones[0]

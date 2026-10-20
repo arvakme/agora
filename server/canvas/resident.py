@@ -32,6 +32,7 @@ from server.canvas.adapters.codex import CodexAppStream, CodexStream
 from server.canvas.adapters.pi import PiStream
 from server.canvas.runner import STDOUT_LIMIT, RunRequest, now_ms
 from server.canvas.turn_clock import TurnClock
+from server.i18n import tr
 
 IDLE_S = float(os.environ.get("AGORA_RESIDENT_IDLE_S") or 600)
 MAX_PROCS = int(os.environ.get("AGORA_RESIDENT_MAX") or 8)
@@ -341,7 +342,7 @@ class ResidentBackend(agents._CliBackend):
             try:
                 await p.start()
             except OSError as exc:
-                raise Unavailable(f"起不来：{exc}") from exc
+                raise Unavailable(tr(f"起不来：{exc}", f"won't start: {exc}")) from exc
             try:
                 async with asyncio.timeout(BOOT_TIMEOUT_S):
                     await self.boot(p, req)
@@ -350,7 +351,7 @@ class ResidentBackend(agents._CliBackend):
                 if isinstance(exc, (Unavailable, asyncio.CancelledError)):
                     raise
                 if isinstance(exc, (TimeoutError, Died)):
-                    raise Unavailable(f"{'没有回应' if isinstance(exc, TimeoutError) else '起来就退出了'}：{p.stderr_tail() or exc}") from exc
+                    raise Unavailable(tr(f"{'没有回应' if isinstance(exc, TimeoutError) else '起来就退出了'}：{p.stderr_tail() or exc}", f"{'no answer' if isinstance(exc, TimeoutError) else 'exited right after starting'}: {p.stderr_tail() or exc}")) from exc
                 raise
             return p
 
@@ -386,7 +387,7 @@ class ResidentBackend(agents._CliBackend):
             except TimeoutError:
                 error = clock.message()
             except Died:
-                error = f"{self.name} 的常驻进程中途退出了：{proc.stderr_tail() or '没有留下说明'}（退出码 {proc.proc.returncode if proc.proc else '?'}）"
+                error = tr(f"{self.name} 的常驻进程中途退出了：{proc.stderr_tail() or '没有留下说明'}（退出码 {proc.proc.returncode if proc.proc else '?'}）", f"{self.name}'s resident process exited mid-turn: {proc.stderr_tail() or 'no explanation left'} (exit code {proc.proc.returncode if proc.proc else '?'})")
             else:
                 healthy = mapper.done and proc.alive
                 if mapper.error and not getattr(mapper, "interrupted", False):
@@ -467,7 +468,7 @@ class CodexResidentBackend(ResidentBackend):
             r = await self.call(proc, "thread/start", params)
         proc.thread = str((r.get("thread") or {}).get("id") or o.session or "") or None
         if not proc.thread:
-            raise Unavailable("app-server 没有给出会话 id", sticky=False)
+            raise Unavailable(tr("app-server 没有给出会话 id", "app-server gave no session id"), sticky=False)
 
     async def turn(self, proc: Proc, req: RunRequest, mapper: CodexAppStream, st: _Turn) -> AsyncIterator[dict[str, Any]]:
         params: dict[str, Any] = {"threadId": proc.thread, "input": [{"type": "text", "text": req.prompt}]}
@@ -532,7 +533,7 @@ class PiResidentBackend(ResidentBackend):
                 raise Died()
             if m.get("type") == "response" and m.get("id") == rid:
                 if not m.get("success"):
-                    raise Unavailable(f"rpc 模式没有答应：{m.get('error')}")
+                    raise Unavailable(tr(f"rpc 模式没有答应：{m.get('error')}", f"rpc mode was refused: {m.get('error')}"))
                 break
             self._answer_ui(proc, m)
         proc.thread = req.options.session

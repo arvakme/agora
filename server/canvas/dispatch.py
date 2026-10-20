@@ -53,13 +53,15 @@ from native_protocol import (
     withdraw,
 )
 from server.canvas import adapters, agents
-from server.canvas.agora_msg import envelope, receipt_text
+from server.canvas.agora_msg import envelope, receipt_text, session_name
 from server.canvas.dispatch_store import REPLY_STATUSES, Dispatch, DispatchStore, derive_state, is_final
 from server.canvas.project import NotFound
 from server.canvas.sessions import AgentHub, agora_prompt, canvas_names
+from server.i18n import tr
 
 NS = UUID("6f0b1e52-3a7c-4d1e-9b8a-2c5d7e9f0a13")
 ADAPTER = {"claude": "claude_code", "codex": "codex", "pi": "pi", "devin": "devin", "cursor": "cursor", "grok": "grok"}
+NOT_TOLD_EN = "The notice was not sent"  # (and 通知没有发出: a note that starts with either is cleared once it goes out)
 REPLY_MAX = 600  # characters of the receipt told to the source; the rest is in reply.md
 PERMISSION = {
     "claude": {"mode": "headless", "detail": "claude -p: only `agora canvas|reply|dispatch` run without asking; other tools follow the user's Claude settings"},
@@ -203,7 +205,7 @@ class Dispatches:
         folder = self.files.folder(rid)
         task_path = self.files.write_text(rid, "task.md", task if task.endswith("\n") else task + "\n")
         locator = sid
-        name = self._name(src_sid) if src_sid else (source.get("kind") == "comment" and f"画布评论 #{source.get('threadN')}") or "你"
+        name = self._name(src_sid) if src_sid else (source.get("kind") == "comment" and tr(f"画布评论 #{source.get('threadN')}", f"canvas comment #{source.get('threadN')}")) or tr("你", "you")
         body = task.strip() if inline else envelope(rid, name, task_path, scope or [])
         request = DeliveryRequest(
             request_id=UUID(rid),
@@ -259,7 +261,7 @@ class Dispatches:
 
     def _name(self, sid: str | None) -> str:
         b = (self.store.read_binding(sid) if sid else None) or {}
-        return f"{agents.NAMES.get(b.get('agent'), '会话')} 会话 {sid}" if sid else "你"
+        return session_name(agents.NAMES.get(b.get("agent")) or tr("会话", "Session"), sid) if sid else tr("你", "you")
 
     def _send(self, d: Dispatch, body: str, name: str, folder: Path) -> None:
         sid = d.target["sessionId"]
@@ -515,13 +517,13 @@ class Dispatches:
                 with self.lock:
                     d = self.files.read(rid)
                     if d is not None:
-                        d.delivery = replace(d.delivery, note=f"通知没有发出（{state}）：{e}")
+                        d.delivery = replace(d.delivery, note=tr(f"通知没有发出（{state}）：{e}", f"{NOT_TOLD_EN} ({state}): {e}"))
                         self.files.write(d)
                 return
             with self.lock:
                 d = self.files.read(rid)
                 if d is not None:
-                    d.delivery = d.delivery if not (d.delivery.note or "").startswith("通知没有发出") else replace(d.delivery, note=None)
+                    d.delivery = d.delivery if not (d.delivery.note or "").startswith(("通知没有发出", NOT_TOLD_EN)) else replace(d.delivery, note=None)
                     d.notified = state
                     if d.source.get("kind") == "session":  # (a comment's answer is posted into its thread: no marker)
                         d.notice = {"state": state, "mark": True, "at": _ms()}
@@ -563,7 +565,7 @@ class Dispatches:
     def _bind_thread(self, src: dict[str, Any], sid: str, agent: str, *, if_absent: bool = False) -> None:
         """Write the binding into the thread's own record (``handoff``), the only place it lives; replies
         without an @ go to ``sid`` from now on, until the person ends the hand-off."""
-        handoff = {"sessionId": sid, "agent": agent, "name": str(src.get("name") or f"评论 #{src.get('threadN')}")}
+        handoff = {"sessionId": sid, "agent": agent, "name": str(src.get("name") or tr(f"评论 #{src.get('threadN')}", f"Comment #{src.get('threadN')}"))}
         try:
             data, version, _ = self.store.thread_op(src["canvasId"], {"op": "bind", "threadId": src["threadId"], "handoff": handoff, **({"ifAbsent": True} if if_absent else {})})
         except NotFound:
@@ -575,9 +577,10 @@ class Dispatches:
     def _post_thread(self, d: Dispatch, state: str, answer: str) -> None:
         src = d.source
         ok = state in ("done",)
-        text = answer if ok else (f"Agent 没有完成：{answer or state}" if state != "idle_no_reply" else answer or "（Agent 没有文字答复）")
+        no_words = tr("（Agent 没有文字答复）", "(The agent gave no written answer)")
+        text = answer if ok else (tr(f"Agent 没有完成：{answer or state}", f"The agent did not finish: {answer or state}") if state != "idle_no_reply" else answer or no_words)
         if ok and not text:
-            text = "（Agent 没有文字答复）"
+            text = no_words
         msg = {
             "id": f"m-{d.id[:8]}",
             "author": "agent" if ok or state == "idle_no_reply" else "system",

@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 
 from agora_cli.canvas import call, out, server_url
+from server.i18n import tr
 
 
 def session_agents() -> list[str]:
@@ -33,7 +34,7 @@ STATES_DONE = ("done", "failed", "blocked", "idle_no_reply", "interrupted")
 def cmd_dispatch(p, a) -> int:
     base = server_url(p)
     if not base:
-        return out({"error": "Agora 服务没在运行：先在项目里 `agora up`（派发经服务端记录和投递）。"}, 3)
+        return out({"error": tr("Agora 服务没在运行：先在项目里 `agora up`（派发经服务端记录和投递）。", "The Agora server is not running: run `agora up` in the project first (dispatches are recorded and delivered by the server).")}, 3)
     if a.action in ("status", "wait", "interrupt"):
         if not a.rid:
             return out({"error": f"usage: agora dispatch {a.action} <id>"}, 2)
@@ -91,7 +92,7 @@ def cmd_reply(p, a) -> int:
 
     ProjectStore._atomic(folder / "reply.md", text.encode())
     ProjectStore._atomic(folder / "reply.status", a.status.encode())
-    return out({"queued": True, "note": "Agora 服务没在运行：回执已写进项目，服务下次看这条派发时接收。", "dir": str(folder)}, 3)
+    return out({"queued": True, "note": tr("Agora 服务没在运行：回执已写进项目，服务下次看这条派发时接收。", "The Agora server is not running: the receipt is written into the project, and the server takes it the next time it looks at this dispatch."), "dir": str(folder)}, 3)
 
 
 def add_parsers(sub) -> None:
