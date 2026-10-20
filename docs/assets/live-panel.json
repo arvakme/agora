@@ -1,0 +1,679 @@
+{
+ "meta": {
+  "title": "AGORA · 一个项目一个",
+  "lang": "zh",
+  "source": "README 的「运行中的 Agora」动图。用 live-panel（MIT，https://github.com/ythx-101/live-panel-skill，动法学自 @thedelost https://x.com/thedelost/status/2105398038026195279）渲染：python3 scripts/render.py --config <本文件> --out live-panel.mp4，再用 ffmpeg 转成 12 fps、720 宽的动画 WebP。没用它的 Smiley Sans 字体和 Lucide 图标。轮次、turn id 和时间都是示意；状态名 pending / in_flight / accepted / completed 取自 native_protocol.py::TurnState。"
+ },
+ "canvas": {
+  "preset": "1:1",
+  "duration": 30,
+  "fps": 30,
+  "preroll": 12
+ },
+ "theme": {
+  "preset": "terminal-dark",
+  "fontSize": 19,
+  "lineHeight": 28,
+  "colors": {
+   "mute": "#aab1c0",
+   "rd": "#f07178"
+  }
+ },
+ "machines": {
+  "turns": {
+   "type": "counter",
+   "start": 128,
+   "rate": 0.4,
+   "format": "comma"
+  },
+  "claudecode_l": {
+   "type": "lane",
+   "period": 7.0,
+   "run": 4.8,
+   "off": 0.0,
+   "busy": "一轮在跑",
+   "done": [
+    "completed"
+   ],
+   "phase": 0,
+   "log": {
+    "who": "claude code",
+    "c": "bl",
+    "msgs": [
+     [
+      "turn t-7c2e · in_flight → accepted",
+      ""
+     ],
+     [
+      "turn t-7c2e · completed",
+      ""
+     ],
+     [
+      "子代理画成小人",
+      ""
+     ]
+    ]
+   }
+  },
+  "codex_l": {
+   "type": "lane",
+   "period": 8.0,
+   "run": 5.4,
+   "off": 0.7,
+   "busy": "一轮在跑",
+   "done": [
+    "completed"
+   ],
+   "phase": 1,
+   "log": {
+    "who": "codex",
+    "c": "gr",
+    "msgs": [
+     [
+      "canvas apply · 一批改图已落地",
+      ""
+     ],
+     [
+      "turn t-91ab · pending → in_flight",
+      ""
+     ],
+     [
+      "turn t-91ab · completed",
+      ""
+     ]
+    ]
+   }
+  },
+  "pi_l": {
+   "type": "lane",
+   "period": 9.0,
+   "run": 6.1,
+   "off": 1.4,
+   "busy": "一轮在跑",
+   "done": [
+    "completed"
+   ],
+   "phase": 2,
+   "log": {
+    "who": "pi",
+    "c": "pu",
+    "msgs": [
+     [
+      "小人沿箭头滑到「API 服务」",
+      ""
+     ],
+     [
+      "一轮还在跑时插话 · accepted",
+      ""
+     ],
+     [
+      "turn t-0d4f · completed",
+      ""
+     ]
+    ]
+   }
+  },
+  "rail": {
+   "type": "triggers",
+   "color": "pu",
+   "period": 4.5,
+   "on": 3.0,
+   "t0": -1.6,
+   "callsStart": 1,
+   "tokens": {
+    "start": 129,
+    "step": 93,
+    "unit": "k"
+   },
+   "items": [
+    {
+     "name": "在终端打开",
+     "adv": [
+      "» 同一个原生会话 id",
+      "» tmux 里接着说"
+     ]
+    },
+    {
+     "name": "滚轮放大节点",
+     "adv": [
+      "» 子图在节点里浮现",
+      "» 无缝切进去"
+     ]
+    },
+    {
+     "name": "分享链接",
+     "adv": [
+      "» 访客只读画布",
+      "» 可以评论"
+     ]
+    }
+   ],
+   "onText": "介入中",
+   "offText": "待命",
+   "log": {
+    "who": "按需",
+    "c": "pu",
+    "start": {
+     "m": "{name} · 触发"
+    },
+    "end": {
+     "m": "{name} · 完成"
+    }
+   }
+  }
+ },
+ "elements": [
+  {
+   "type": "box",
+   "x": 727,
+   "y": 146,
+   "w": 313,
+   "h": 651,
+   "color": "pu",
+   "pad": [
+    13,
+    7,
+    7
+   ],
+   "lines": [
+    {
+     "t": "按需",
+     "c": "pu",
+     "b": 1
+    },
+    {
+     "t": "你点了才发生",
+     "c": "pu"
+    },
+    {
+     "trigger": [
+      "rail",
+      0
+     ]
+    },
+    "",
+    {
+     "t": "会发生：",
+     "c": "dim",
+     "align": "left",
+     "indent": 8
+    },
+    {
+     "runs": [
+      {
+       "v": "rail.adv0",
+       "c": "pu",
+       "b": 1
+      }
+     ],
+     "align": "left",
+     "indent": 8
+    },
+    {
+     "runs": [
+      {
+       "v": "rail.adv1",
+       "c": "pu",
+       "b": 1
+      }
+     ],
+     "align": "left",
+     "indent": 8
+    },
+    {
+     "items": [
+      {
+       "w": 175,
+       "runs": [
+        {
+         "t": "次数（示意）",
+         "c": "dim"
+        }
+       ]
+      },
+      {
+       "w": 87,
+       "align": "right",
+       "runs": [
+        {
+         "v": "rail.calls",
+         "c": "pu",
+         "b": 1
+        }
+       ]
+      }
+     ],
+     "indent": 8
+    },
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    {
+     "trigger": [
+      "rail",
+      1
+     ]
+    },
+    {
+     "trigger": [
+      "rail",
+      2
+     ]
+    }
+   ]
+  },
+  {
+   "type": "text",
+   "x": 0,
+   "w": 1080,
+   "y": 84,
+   "align": "center",
+   "size": 22,
+   "c": "wh",
+   "b": 1,
+   "t": "AGORA · 一个项目一个"
+  },
+  {
+   "type": "rule",
+   "x": 34,
+   "y": 112,
+   "w": 1012
+  },
+  {
+   "type": "text",
+   "x": 0,
+   "w": 1080,
+   "y": 1036,
+   "align": "center",
+   "size": 13,
+   "c": "dim",
+   "t": "轮次、turn id 和时间都是示意"
+  },
+  {
+   "type": "text",
+   "x": 34,
+   "w": 1012,
+   "y": 1004,
+   "runs": [
+    {
+     "t": "轮次 ",
+     "c": "dim"
+    },
+    {
+     "t": "[",
+     "c": "gr",
+     "b": 1
+    },
+    {
+     "v": "turns",
+     "c": "gr",
+     "b": 1
+    },
+    {
+     "t": "]",
+     "c": "gr",
+     "b": 1
+    }
+   ]
+  },
+  {
+   "type": "path",
+   "points": [
+    [
+     140,
+     255
+    ],
+    [
+     140,
+     329
+    ],
+    [
+     362,
+     329
+    ],
+    [
+     362,
+     401
+    ]
+   ],
+   "color": "line",
+   "r": 0,
+   "width": 2,
+   "flow": {
+    "period": 1.8,
+    "offsets": [
+     0,
+     0.9
+    ],
+    "color": "bl"
+   }
+  },
+  {
+   "type": "path",
+   "points": [
+    [
+     361,
+     255
+    ],
+    [
+     361,
+     329
+    ],
+    [
+     362,
+     329
+    ],
+    [
+     362,
+     401
+    ]
+   ],
+   "color": "line",
+   "r": 0,
+   "width": 2,
+   "flow": {
+    "period": 2.1,
+    "offsets": [
+     0,
+     0.9
+    ],
+    "color": "bl"
+   }
+  },
+  {
+   "type": "path",
+   "points": [
+    [
+     583,
+     255
+    ],
+    [
+     583,
+     329
+    ],
+    [
+     362,
+     329
+    ],
+    [
+     362,
+     401
+    ]
+   ],
+   "color": "line",
+   "r": 0,
+   "width": 2,
+   "flow": {
+    "period": 2.4,
+    "offsets": [
+     0,
+     0.9
+    ],
+    "color": "bl"
+   }
+  },
+  {
+   "type": "path",
+   "points": [
+    [
+     362,
+     540
+    ],
+    [
+     362,
+     686
+    ]
+   ],
+   "color": "line",
+   "r": 0,
+   "width": 2,
+   "flow": {
+    "period": 2.7,
+    "offsets": [
+     0,
+     0.9
+    ],
+    "color": "bl"
+   }
+  },
+  {
+   "type": "box",
+   "x": 40,
+   "y": 146,
+   "w": 200,
+   "h": 109,
+   "color": "bl",
+   "pad": [
+    13,
+    14
+   ],
+   "lines": [
+    {
+     "t": "Claude Code",
+     "c": "fg",
+     "b": 1
+    },
+    {
+     "t": "子代理画成小人",
+     "c": "mute"
+    },
+    {
+     "runs": [
+      {
+       "v": "claudecode_l"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "box",
+   "x": 262,
+   "y": 146,
+   "w": 200,
+   "h": 109,
+   "color": "gr",
+   "pad": [
+    13,
+    14
+   ],
+   "lines": [
+    {
+     "t": "Codex",
+     "c": "fg",
+     "b": 1
+    },
+    {
+     "t": "终端里接着说",
+     "c": "mute"
+    },
+    {
+     "runs": [
+      {
+       "v": "codex_l"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "box",
+   "x": 483,
+   "y": 146,
+   "w": 200,
+   "h": 109,
+   "color": "pu",
+   "pad": [
+    13,
+    14
+   ],
+   "lines": [
+    {
+     "t": "Pi",
+     "c": "fg",
+     "b": 1
+    },
+    {
+     "t": "一轮里也能插话",
+     "c": "mute"
+    },
+    {
+     "runs": [
+      {
+       "v": "pi_l"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "box",
+   "x": 177,
+   "y": 403,
+   "w": 369,
+   "h": 137,
+   "color": "ye",
+   "pad": [
+    13,
+    14
+   ],
+   "lines": [
+    {
+     "t": "本项目的 agora 服务",
+     "c": "ye",
+     "b": 1
+    },
+    {
+     "t": "127.0.0.1 · <project>/.agora/",
+     "c": "mute"
+    },
+    {
+     "t": "每 0.4 s 跟随原生 JSONL",
+     "c": "mute"
+    },
+    {
+     "t": "跟随 {turns} 轮（示意）",
+     "c": "mute"
+    }
+   ]
+  },
+  {
+   "type": "box",
+   "x": 183,
+   "y": 688,
+   "w": 357,
+   "h": 109,
+   "color": "cy",
+   "pad": [
+    13,
+    14
+   ],
+   "lines": [
+    {
+     "t": "浏览器里的画布",
+     "c": "cy",
+     "b": 1
+    },
+    {
+     "t": "HTTP + SSE · 小人 · 进度指针",
+     "c": "mute"
+    },
+    {
+     "t": "逐站画出改动 · 可撤销",
+     "c": "mute"
+    }
+   ]
+  },
+  {
+   "type": "tarrow",
+   "machine": "rail",
+   "i": 0,
+   "from": [
+    687,
+    229
+   ],
+   "to": [
+    723,
+    229
+   ]
+  },
+  {
+   "type": "tarrow",
+   "machine": "rail",
+   "i": 1,
+   "from": [
+    544,
+    733
+   ],
+   "to": [
+    723,
+    733
+   ]
+  },
+  {
+   "type": "tarrow",
+   "machine": "rail",
+   "i": 2,
+   "from": [
+    544,
+    761
+   ],
+   "to": [
+    723,
+    761
+   ]
+  },
+  {
+   "type": "log",
+   "x": 40,
+   "y": 831,
+   "w": 1000,
+   "rows": 4,
+   "padTop": 16,
+   "padBottom": 29,
+   "padLeft": 20,
+   "title": "会话日志",
+   "titleX": 38,
+   "titleW": 131,
+   "cols": [
+    {
+     "key": "time",
+     "x": 0
+    },
+    {
+     "key": "who",
+     "x": 112
+    },
+    {
+     "key": "m",
+     "x": 261
+    },
+    {
+     "key": "g",
+     "x": 700
+    }
+   ]
+  }
+ ],
+ "clock": {
+  "start": "23:48:04",
+  "rate": 3
+ },
+ "titlebar": {
+  "text": "~/code/my-service — agora"
+ },
+ "credit": {
+  "text": "made with live-panel (MIT, github.com/ythx-101/live-panel-skill) · 动法学自 @thedelost",
+  "y": 1064,
+  "size": 12
+ }
+}

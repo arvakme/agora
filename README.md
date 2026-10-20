@@ -26,6 +26,12 @@
 
 会话 agent 有六个：**Pi、Claude Code、Codex、Grok、Cursor、Devin**。都能在画布上看到小人、进度指针和逐站画图，都能在面板发消息、在终端接着同一个会话。图下半部分的两处差别来自 CLI 本身：Grok、Cursor、Devin 的 `-p` 模式一轮开始后不接收输入，所以没法在一轮还在跑时插话；Pi 和 Devin 没有原生子代理。
 
+跑起来大概是这样：三个 agent 各自一轮一轮地跑，服务跟随它们的原生日志，改动推到画布；右边是你点了才会发生的事。轮次、turn id 和时间是示意，状态名 `pending → in_flight → accepted → completed` 是 Agora 记录每一轮的真实状态。
+
+<p align="center">
+  <img src="docs/assets/live-panel.webp" alt="终端风格的动态面板：Claude Code、Codex、Pi 三个会话连到本项目的 agora 服务，再连到浏览器里的画布；底下的会话日志在滚动" width="560">
+</p>
+
 ## 选哪种方式
 
 | 你想 | 用 |
@@ -278,6 +284,8 @@ cd web && npx tsc -p . && npx vitest run && npm run build && npm run eval:replay
 本项目以 [MIT](LICENSE) 许可发布。第三方内容：
 
 - **Excalidraw**（MIT）：画布编辑器。
+- **live-panel**（[ythx-101/live-panel-skill](https://github.com/ythx-101/live-panel-skill)，MIT）：渲染 README 里的「运行中」面板动图（`docs/assets/live-panel.json` 是配置，代码没有放进本仓库；没用它带的 Smiley Sans 字体和 Lucide 图标）。面板的样式和动法学自 [@thedelost](https://x.com/thedelost/status/2105398038026195279)。
+- **横幅动画**：`docs/assets/banner-ink.svg` 的墨迹揭示做法借自 [browser-use/browser-harness](https://github.com/browser-use/media) 的 banner-ink.svg，图和参数是本项目自己的。
 - **素材库**（`web/libraries/`）：来自 excalidraw-libraries 等来源的组件。各自的作者、许可和原始地址见 [NOTICE.md](web/libraries/NOTICE.md) 与 [SOURCES.md](web/libraries/SOURCES.md)，许可全文在 `web/libraries/licenses/`。其中的产品名称和标志归各自所有者，仅用于在图中指代对应产品。
 - **Dither Icons**（[`@unlocalhosted/dither-icons`](https://dithered.dev)，MIT，© 2026 Unlocalhosted）：界面图标。
 - **dither-extra 图标**（`web/src/app/dither-extra/`）：本项目作者为 Marginalia 按 Dither Icons 的构造规则绘制的 17 个补充图标（`eye-off` 复用 Dither Icons 的眼睛几何），随本项目以 MIT 发布，并附 Dither Icons 的许可原文（[LICENSE-dither-icons.txt](web/src/app/dither-extra/LICENSE-dither-icons.txt)）。
