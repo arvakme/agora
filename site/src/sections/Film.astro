@@ -27,7 +27,7 @@ const poster = await getImage({ src: posterSrc, format: "webp", width: 1600, qua
 				reel ? (
 					<>
 						<video src={reel.url} poster={poster.src} preload="none" muted loop playsinline width="1920" height="1080" aria-label={t.videoLabel} />
-						<button type="button" class="play" data-play>
+						<button type="button" class="play" data-play aria-label={t.play}>
 							<span class="disc" aria-hidden="true">
 								<svg viewBox="0 0 24 24" fill="currentColor">
 									<path d="M8 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 8 5.5Z" />
@@ -92,7 +92,7 @@ const poster = await getImage({ src: posterSrc, format: "webp", width: 1600, qua
 		gap: 12px;
 		padding: clamp(14px, 2.4vw, 28px);
 		border: 0;
-		background: linear-gradient(transparent 60%, oklch(0.15 0.02 290 / 0.35));
+		background: linear-gradient(transparent 75%, oklch(0.15 0.02 290 / 0.18));
 		color: #fff;
 		font: inherit;
 		cursor: pointer;
@@ -158,7 +158,7 @@ const poster = await getImage({ src: posterSrc, format: "webp", width: 1600, qua
 		}
 
 		.label {
-			font-size: 13.5px;
+			display: none;
 		}
 	}
 </style>

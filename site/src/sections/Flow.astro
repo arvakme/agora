@@ -1,6 +1,6 @@
 ---
 import type { Lang } from "../i18n";
-import { asset } from "../media";
+import { localized } from "../media";
 import { copy } from "./Flow.copy";
 
 interface Props {
@@ -61,7 +61,7 @@ const AGENTS = ["Pi", "Claude Code", "Codex", "Grok", "Cursor", "Devin"];
 				<p class="note" set:html={t.agentsNote} />
 			</div>
 			<figure class="panel">
-				<img src={asset("assets/live-panel.webp")} alt={t.panelAlt} width="720" height="720" loading="lazy" decoding="async" />
+				<img src={localized("assets/live-panel.webp", lang)} alt={t.panelAlt} width="720" height="720" loading="lazy" decoding="async" />
 				<figcaption>{t.panelCaption}</figcaption>
 			</figure>
 		</div>

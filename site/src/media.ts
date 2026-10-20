@@ -29,3 +29,12 @@ export function film(lang: Lang): { url: string; localized: boolean } | null {
 	const any = urls["../../docs/media/agora-promo.mp4"];
 	return any ? { url: any, localized: false } : null;
 }
+
+/** 有英文版的素材（如 live-panel.en.webp）在英文页优先用英文版；中文版是不带语言后缀的那份 */
+export function localized(path: string, lang: Lang): string {
+	if (lang === "en") {
+		const en = urls[`../../docs/${path.replace(/(\.[^.]+)$/, ".en$1")}`];
+		if (en) return en;
+	}
+	return asset(path);
+}
