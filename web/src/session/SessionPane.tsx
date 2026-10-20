@@ -130,7 +130,7 @@ function OriginCard({ sessionId, origin, canvasTitles }: { sessionId: string; or
             <p className="sp-meta">
               <span className="sp-lock"><IconLock size={12} />{origin.model || tr("默认模型", "Default model")}{origin.effort ? ` · ${origin.effort}` : ""}</span>
               <span className="sp-sep" aria-hidden>·</span>
-              <span>{canvas ? tr(`画布「${canvas}」`, `Canvas “${canvas}”`) : canvasId ? tr("画布不在这个工作区", "Canvas not in this workspace") : tr("未关联画布", "No linked canvas")}</span>
+              <span>{canvas ? tr(`画布「${canvas}」`, `Canvas “${canvas}”`) : canvasId ? tr("画布不在这个工作区", "Canvas not in this workspace") : tr("未关联画布", "No canvas linked")}</span>
               {origin.nativeId && <code className="sp-native" title={tr("原生会话 id", "Native session id")}>{origin.nativeId.slice(0, 8)}</code>}
             </p>
           </div>
@@ -141,7 +141,7 @@ function OriginCard({ sessionId, origin, canvasTitles }: { sessionId: string; or
         </p>
         {err && <p className="sp-warn">{err}</p>}
         <div className="sp-choose-go">
-          {origin.state === "recoverable" && <button className="btn primary" disabled={busy} onClick={() => void restore()}>{tr("恢复这个会话", "Restore this session")}</button>}
+          {origin.state === "recoverable" && <button className="btn primary" disabled={busy} onClick={() => void restore()}>{tr("恢复这个会话", "Restore")}</button>}
           {origin.state === "other-copy" && <button className="btn primary" disabled={busy} onClick={() => void fork()}>{tr("在这里分叉继续", "Fork here and continue")}</button>}
           <button className={origin.state === "foreign" ? "btn primary" : "btn ghost"} disabled={busy} onClick={() => void fresh()}>{tr("在这里开新会话", "Start a new session here")}</button>
         </div>
@@ -173,7 +173,7 @@ function CanvasChoice({ canvasId, canvasTitles, onPick }: { canvasId: string; ca
       <span className="sp-cv-t">{tr("画在：", "Canvas: ")}</span>
       <select value={gone ? canvasId : top} onChange={(e) => onPick(e.target.value)} aria-label={tr("这个会话画在哪张图上", "Which diagram this session draws on")}>
         {choices.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
-        {gone && <option value={canvasId}>{canvasId ? tr("已删除的画布", "Deleted canvas") : tr("未关联画布", "No linked canvas")}</option>}
+        {gone && <option value={canvasId}>{canvasId ? tr("已删除的画布", "Deleted canvas") : tr("未关联画布", "No canvas linked")}</option>}
       </select>
     </label>
   );
@@ -545,7 +545,7 @@ function AgentSession({ sessionId, canvasTitles, onRename }: { sessionId: string
                   <dd>{totalMs != null ? fmtDuration(totalMs) : "—"}</dd>
                   <dt>{tr("花费", "Cost")}</dt>
                   <dd>{fmtCost(total.cost)}</dd>
-                  <dt>tokens</dt>
+                  <dt>{tr("tokens", "Tokens")}</dt>
                   <dd>{fmtTokens(total.input)} {tr("入", "in")} · {fmtTokens(total.output)} {tr("出", "out")}{total.cacheRead != null && total.input ? ` · ${tr("缓存", "cached")} ${Math.round((total.cacheRead / (total.input + total.cacheRead)) * 100)}%` : ""}</dd>
                   <dt>{tr("会话 id", "Session id")}</dt>
                   <dd className="mono">{binding.nativeId ? binding.nativeId.slice(0, 8) : tr("第一轮后生成", "After the first turn")}</dd>

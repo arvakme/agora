@@ -367,7 +367,7 @@ export function TrajectoryView({ sessionId, turns, focusTurn, focusItem, agent, 
           ))}
         </div>
         <button className="ds-text-btn" disabled={!!play} onClick={() => setCollapsed(allOpen ? new Set(turns.map((t) => t.n)) : new Set())}>
-          {allOpen ? tr("收起所有轮次", "Collapse all turns") : tr("展开所有轮次", "Expand all turns")}
+          {allOpen ? tr("收起所有轮次", "Collapse all") : tr("展开所有轮次", "Expand all")}
         </button>
         <label className="ds-search">
           <IconSearch size={14} />

@@ -23,7 +23,7 @@ export type Cls = (typeof CLASSES)[number];
 export type Look = { cls: Cls; token: string; fill: "solid" | "hollow"; cross: boolean; lane: 0 | 1 | 2 };
 export const CLASS_NAME: Record<Cls, string> = {
   user: tr("用户", "User"),
-  message: tr("助手消息", "Assistant message"),
+  message: tr("助手消息", "Message"),
   read: tr("读文件", "Reading"),
   write: tr("改文件", "Writing"),
   run: tr("命令", "Command"),
