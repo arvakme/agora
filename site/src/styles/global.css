@@ -74,10 +74,15 @@
 	margin: 0;
 }
 
-/* 中文只在标点、空格处换行，不在词中间折；实在放不下才折开，不撑破容器 */
+/* 中文照常逐字换行（keep-all 会让段落在逗号处提前断行、整句标题没有断点），只禁止标点出现在行首；
+   标题的断行交给 text-wrap: balance。小标签不折开 */
 html:lang(zh) {
-	word-break: keep-all;
+	line-break: strict;
 	overflow-wrap: break-word;
+}
+
+html:lang(zh) :is(.eyebrow, .kicker) {
+	word-break: keep-all;
 }
 
 html {

@@ -45,9 +45,9 @@ const cardShots = ["choose-agent", "terminal"];
 			{
 				t.cards.map((card, i) => (
 					<article class="card">
+						<Shot name={cardShots[i]} alt={card.alt} sizes="(max-width: 900px) 100vw, 560px" />
 						<h3 class="item-title">{card.title}</h3>
 						<p class="body" set:html={card.body} />
-						<Shot name={cardShots[i]} alt={card.alt} sizes="(max-width: 900px) 100vw, 560px" />
 					</article>
 				))
 			}
@@ -141,16 +141,11 @@ const cardShots = ["choose-agent", "terminal"];
 	}
 
 	.card .item-title {
+		margin-top: 28px;
+	}
+
+	.wide .item-title {
 		margin-top: 0;
-	}
-
-	.card > :global(.frame) {
-		margin-top: auto;
-		translate: 0 0;
-	}
-
-	.card .body {
-		margin-bottom: 28px;
 	}
 
 	.wide {
@@ -159,10 +154,6 @@ const cardShots = ["choose-agent", "terminal"];
 		grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
 		gap: clamp(24px, 4vw, 56px);
 		align-items: center;
-	}
-
-	.wide .body {
-		margin-bottom: 0;
 	}
 
 	.pair {
