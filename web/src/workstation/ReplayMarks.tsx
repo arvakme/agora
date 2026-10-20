@@ -5,6 +5,7 @@
 // picture of the sub-diagram shows its own nodes. At the end, the summary (「这一轮改了 X 个节点、Y 个文件」)
 // as a badge over the node last written, off the connectors' labels. Mounted while a turn plays
 // (./Overlay.tsx); rebuilt ≤ 4 Hz, moved by the frame loop with the view. Reduced motion: the frame and the number, no fade.
+import { tr } from "../i18n";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { excalidrawEl, occupiedOf } from "./replayDom";
 import { placeBadge } from "./replayFit";
@@ -33,7 +34,7 @@ export function ReplayMarks({ view, ctx }: { view: CanvasViewState; ctx: Ctx }) 
   }) : new Map<string, number>();
   // The summary at the end is on the whole diagram, over the node the turn wrote last.
   const total = run && win && win.end != null && t >= win.end ? plays.summary() : null;
-  const sumText = total ? `这一轮改了 ${total.nodes} 个节点、${total.files} 个文件` : null;
+  const sumText = total ? tr(`这一轮改了 ${total.nodes} 个节点、${total.files} 个文件`, `This turn changed ${total.nodes} ${total.nodes === 1 ? "node" : "nodes"} and ${total.files} ${total.files === 1 ? "file" : "files"}`) : null;
   // the node the turn wrote last on this diagram (a write off it, in notes/ say, has no node)
   const lastWrite = run && win && sumText ? turnWrites(run, win).sort((a, b) => b.start - a.start).find((w) => {
     const at = ctx.locate(w.path)?.place;
@@ -118,7 +119,7 @@ export function ReplayMarks({ view, ctx }: { view: CanvasViewState; ctx: Ctx }) 
             if (el) (marks.current.set(d.id, el), place(d.id, el));
             else marks.current.delete(d.id);
           }}
-          title={`这一轮到这一刻改了这里的 ${d.n} 个文件`}
+          title={tr(`这一轮到这一刻改了这里的 ${d.n} 个文件`, `${d.n} ${d.n === 1 ? "file" : "files"} changed here so far this turn`)}
         >
           +{d.n}
         </span>

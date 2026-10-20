@@ -2,6 +2,7 @@
 // The message may wait behind the agent's running turn, so the figure nods when it really arrives — a user
 // item with those words shows up in the session (`watchDelivery`) — not when it is sent. `at` is wall-clock
 // ms; the frame loop compares it with its own time, so nothing here renders anything per frame.
+import { tr } from "../i18n";
 import { agents } from "../session/agents";
 import { pageLead } from "../session/pageMessage";
 
@@ -12,7 +13,10 @@ export function sendState(sessionId: string): "sent" | "queued" {
   return s && (s.running || s.busy || s.queued > 0) ? "queued" : "sent";
 }
 export const deliveryNote = (agent: string, state: SendState) =>
-  state === "steered" ? `已插话给 ${agent}` : state === "steerRead" ? `已插话给 ${agent} · 它已读到` : state === "interrupted" ? `已停下 ${agent} 的这一轮，改说这句` : `已发给 ${agent}${state === "queued" ? " · 会在这一轮结束后送达" : state === "delivered" ? " · 已送达" : ""}`;
+  tr(
+    state === "steered" ? `已插话给 ${agent}` : state === "steerRead" ? `已插话给 ${agent} · 它已读到` : state === "interrupted" ? `已停下 ${agent} 的这一轮，改说这句` : `已发给 ${agent}${state === "queued" ? " · 会在这一轮结束后送达" : state === "delivered" ? " · 已送达" : ""}`,
+    state === "steered" ? `Sent to ${agent} mid-turn` : state === "steerRead" ? `Sent to ${agent} mid-turn · read` : state === "interrupted" ? `Stopped ${agent}'s turn to say this instead` : `Sent to ${agent}${state === "queued" ? " · arrives when this turn ends" : state === "delivered" ? " · delivered" : ""}`,
+  );
 
 /** Calls `done` once, when a user item containing `words` and newer than `sentAt` is in the session's transcript. Returns the stop. */
 export function watchDelivery(sessionId: string, words: string, sentAt: number, done: () => void): () => void {
@@ -64,9 +68,21 @@ export function pickTalkHost(views: readonly TalkView[], prev: string | null): s
  * and one grey line under the box says so. `working`: a turn is running, the words wait for its end.
  */
 export function talkTarget(o: { name: string; hasSession: boolean; rootName: string; working: boolean; plan?: "steer" | "choose" }): { direct: boolean; placeholder: string; prefix: string; note: string | null } {
-  const tail = o.working ? (o.plan === "steer" ? "（直接插进这一轮）" : o.plan === "choose" ? "（回车后选：停下改说 / 等做完）" : "（这一轮结束后送达）") : "";
-  if (o.hasSession) return { direct: true, placeholder: `对 ${o.name} 说…${tail || "（回车发送）"}`, prefix: "", note: null };
-  return { direct: false, placeholder: `对 ${o.rootName} 说（关于 ${o.name}）…${tail}`, prefix: `${pageLead({ source: "小人", title: `关于你派的 ${o.name}` })}关于你派的 ${o.name}：`, note: `${o.name} 是 ${o.rootName} 派的，话会发给 ${o.rootName}` };
+  const tail = o.working
+    ? o.plan === "steer"
+      ? tr("（直接插进这一轮）", " (goes straight into this turn)")
+      : o.plan === "choose"
+        ? tr("（回车后选：停下改说 / 等做完）", " (after Enter: stop and say it / wait until done)")
+        : tr("（这一轮结束后送达）", " (arrives when this turn ends)")
+    : "";
+  if (o.hasSession) return { direct: true, placeholder: tr(`对 ${o.name} 说…${tail || "（回车发送）"}`, `Talk to ${o.name}…${tail || " (Enter to send)"}`), prefix: "", note: null };
+  const about = tr(`关于你派的 ${o.name}`, `About ${o.name}, which you dispatched`);
+  return {
+    direct: false,
+    placeholder: tr(`对 ${o.rootName} 说（关于 ${o.name}）…${tail}`, `Talk to ${o.rootName} (about ${o.name})…${tail}`),
+    prefix: `${pageLead({ source: tr("小人", "Avatar"), title: about })}${about}${tr("：", ": ")}`,
+    note: tr(`${o.name} 是 ${o.rootName} 派的，话会发给 ${o.rootName}`, `${o.rootName} dispatched ${o.name}, so your words go to ${o.rootName}`),
+  };
 }
 
 /** The box's width in a pane: its own (`natural`), or the area's when the area is narrower — never under 120 (the input needs something to be typed into). */

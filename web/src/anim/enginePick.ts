@@ -3,6 +3,7 @@
 // choose — the session only shows this step when the request raises the asset-library
 // question. Pure rules, no model call. Animations are not routed here: making one is a
 // capability of the agora-canvas skill that the session's agent uses when asked.
+import { tr } from "../i18n";
 export type Engine = "excalidraw";
 export type EnginePick = {
   engine: Engine;
@@ -23,7 +24,7 @@ export function pickEngine(input: {
   const reason = !wantsAssets
     ? ""
     : input.libraryHits > 0
-      ? `素材库命中 ${input.libraryHits} 个，由 Agent 搜索并选用组件`
-      : "素材库未命中，Agent 可换关键词再搜，找不到就画基础形状";
+      ? tr(`素材库命中 ${input.libraryHits} 个，由 Agent 搜索并选用组件`, `${input.libraryHits} ${input.libraryHits === 1 ? "match" : "matches"} in the library; the agent searches and picks components`)
+      : tr("素材库未命中，Agent 可换关键词再搜，找不到就画基础形状", "No library match; the agent can search other keywords, or draw basic shapes");
   return { engine: "excalidraw", wantsAssets, reason };
 }
