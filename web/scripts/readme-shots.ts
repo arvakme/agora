@@ -58,6 +58,7 @@ const T = {
       "全程用中文回复。加退款接口：新建 api/routes/refunds.py，实现 POST /orders/{id}/refund（订单不存在返回 404，已取消的不能退款），再在 api/server.py 里注册这个路由。用编辑工具改文件，不要用 shell 写文件。改完用两三句话总结。",
       "全程用中文回复。前端接上退款：在 web/src/api.ts 加 refundOrder(id)，再在 web/src/pages/Orders.tsx 每行加一个「退款」按钮。用编辑工具改文件。改完用一两句话总结。",
     ],
+    retryTurn: "全程用中文回复。给 api/routes/refunds.py 的退款接口加一个金额校验（金额必须大于 0，否则返回 422）。用编辑工具改文件。一两句话总结。",
     terminalTurn: "用中文一句话说说 worker/main.py 现在怎么处理任务，不要改文件。",
     comments: { db: "生产环境要换成 Postgres 吗？SQLite 扛不住并发写。", queue: "队列满了怎么办？要不要加个死信队列。" },
     guest: "小王",
@@ -74,6 +75,7 @@ const T = {
       "Reply in English. Add refunds: a new api/routes/refunds.py with POST /orders/{id}/refund (404 when the order does not exist, cancelled orders cannot be refunded), registered in api/server.py. Use the edit tools, not the shell, to write files. Sum up in two or three sentences.",
       "Reply in English. Wire refunds into the front end: refundOrder(id) in web/src/api.ts and a Refund button on every row in web/src/pages/Orders.tsx. Use the edit tools. Sum up in a sentence or two.",
     ],
+    retryTurn: "Reply in English. Add an amount check to the refund endpoint in api/routes/refunds.py (the amount must be above 0, else 422). Use the edit tools. Sum up in a sentence or two.",
     terminalTurn: "In one sentence, how does worker/main.py handle jobs now? Do not change any file.",
     comments: { db: "Should production move to Postgres? SQLite won't take concurrent writes.", queue: "What happens when the queue fills up? Add a dead-letter queue?" },
     guest: "Alex",
@@ -141,10 +143,11 @@ const wait = (ms: number) => page.waitForTimeout(ms);
 const procs: ChildProcess[] = [];
 let tmuxSock = "";
 
-async function shot(n: string, p: Page = page) {
+async function shot(n: string, p: Page | Buffer = page) {
   if (!want(n)) return;
   const raw = join(TMP, `${n}.raw.png`);
-  await p.screenshot({ path: raw });
+  if (Buffer.isBuffer(p)) writeFileSync(raw, p);
+  else await p.screenshot({ path: raw });
   mkdirSync(OUT, { recursive: true });
   try {
     // 256 colours, no dithering: UI flats stay flat and the file is about a third of the size
@@ -177,6 +180,20 @@ async function fit() {
   await wait(1200);
 }
 
+/** ⋯ → 布局: 0 单窗, or -1 恢复默认布局 (canvases left, sessions right). The workspace keeps it, so a later run starts from it. */
+async function layout(i: number) {
+  const menu = await page.evaluate(() => {
+    const b = [...document.querySelectorAll("button.icon-btn")].filter((e) => (e as HTMLElement).offsetParent && e.getBoundingClientRect().y < 54).sort((a, b) => b.getBoundingClientRect().x - a.getBoundingClientRect().x)[0];
+    const r = b.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await page.mouse.click(menu.x, menu.y);
+  await wait(400);
+  await (i < 0 ? page.locator(".vm-restore") : page.locator(".vm-seg").first().locator("button").nth(i)).click();
+  await page.keyboard.press("Escape");
+  await wait(800);
+}
+
 /** Send a message from the composer; resolves once the turn has ended. `during` runs while it works. */
 async function turn(text: string, during?: () => Promise<void>) {
   const box = page.locator(".sp-composer textarea");
@@ -189,31 +206,32 @@ async function turn(text: string, during?: () => Promise<void>) {
   await wait(2000);
 }
 
-/** While a turn works: the figure writing a file under `prefix` (its bubble says so), standing still. */
-async function whenWriting(prefix: string, then: () => Promise<void>, limitMs = 240_000) {
-  const t0 = Date.now();
-  while (Date.now() - t0 < limitMs && (await page.locator(".sp-stop").count())) {
-    // a write bubble naming the file, and its figure standing still (a bubble rides on its figure's feet: walking to the
-    // node is a write too, said as 「走去 …」, so the place has to stop changing)
-    const at = () =>
-      page.evaluate((prefix) => {
-        const p = [...document.querySelectorAll(".ws-bub-pos")].find((p) => (p as HTMLElement).style.visibility !== "hidden" && !!p.querySelector('.ws-bub[data-k="write"]') && (p.textContent ?? "").includes(prefix));
-        const r = p?.getBoundingClientRect();
-        return r ? `${Math.round(r.x)},${Math.round(r.y)}` : null;
-      }, prefix);
-    const a = await at();
-    if (a) {
-      await wait(450);
-      const b = await at();
-      if (b === a) {
-        await wait(250);
-        if ((await at()) === a) return then();
-      }
-      continue;
+/** While a turn works: frames with the figure writing a file under `prefix` (its bubble says so) and standing still — a bubble
+ *  rides on its figure's feet, and walking to the node is a write too (「走去 …」), so a frame counts when the bubble is where it
+ *  was in the frame before. Frames are taken all through the turn and the best one is written when it ends. */
+async function whenWriting(n: string, prefix: string) {
+  let last: string | null = null;
+  let best: { buf: Buffer; still: boolean } | null = null;
+  const seen = new Set<string>();
+  while (await page.locator(".sp-stop").count()) {
+    const now = await page.evaluate((prefix) => {
+      const ps = [...document.querySelectorAll<HTMLElement>(".ws-bub-pos")].filter((p) => p.style.visibility !== "hidden");
+      const kinds = ps.map((p) => `${p.querySelector(".ws-bub")?.getAttribute("data-k")}:${p.innerText.replace(/\s+/g, " ").slice(0, 50)}`);
+      const p = ps.find((p) => !!p.querySelector('.ws-bub[data-k="write"]') && p.innerText.includes(prefix));
+      const r = p?.getBoundingClientRect();
+      return { at: r ? `${Math.round(r.x / 2)},${Math.round(r.y / 2)}` : null, kinds };
+    }, prefix);
+    now.kinds.forEach((k) => seen.add(k));
+    const buf = await page.screenshot();
+    if (now.at) {
+      const still = now.at === last;
+      if (!best || (still && !best.still) || still === best.still) best = { buf, still };
     }
-    await wait(120);
+    last = now.at;
   }
-  console.log(`(no write under ${prefix} seen)`);
+  if (!best) return console.log(`(${n}: no write under ${prefix} seen; bubbles were: ${[...seen].slice(0, 12).join(" | ")})`);
+  await shot(n, best.buf);
+  return true;
 }
 
 try {
@@ -267,11 +285,16 @@ try {
   await turn(T.turns[1]); // a feature across the diagram, and docs/ off it
   await fit();
   let overview = false;
-  await turn(T.turns[2], () => whenWriting("api/", async () => ((overview = true), await shot("overview"))));
-  if (!overview) console.log("overview: the figure was never caught writing in api/; re-run with --only overview");
+  await turn(T.turns[2], async () => void (overview = !!(await whenWriting("overview", "api/"))));
+  if (!overview) console.log("overview: the figure was never caught writing in api/; again with --reuse <dir> --only overview");
   await turn(T.turns[3]);
   await wait(1500);
-  } else await fit();
+  } else {
+    await layout(-1);
+    await fit();
+    // --reuse --only overview: one more small change in api/, for another try at catching the figure there
+    if (want("overview") && ONLY) await turn(T.retryTurn, async () => void (await whenWriting("overview", "api/")));
+  }
 
   // share: the popover
   if (want("share")) {
@@ -287,7 +310,9 @@ try {
     await page.locator(".ds-trace-btn").nth(1).scrollIntoViewIfNeeded();
     await page.locator(".ds-trace-btn").nth(1).click();
     await page.locator(".ws-play-sum").first().waitFor({ timeout: 180_000 });
-    await wait(1500);
+    // the figure done with the turn's last stop too (its bubble back to idle), the route and the counts left on the diagram
+    for (let i = 0; i < 60 && (await page.locator('.ws-bub-pos .ws-bub:not([data-k="idle"])').count()); i++) await wait(250);
+    await wait(1200);
     await shot("pointer");
     await page.keyboard.press("Escape");
     await wait(1500);
@@ -298,8 +323,8 @@ try {
     await page.locator(".sp-composer").hover();
     await page.locator(".sp-head1 button.icon-btn.sm").nth(0).click(); // 轨迹
     await wait(1200);
-    const row = page.locator(".ds-rec-line", { hasText: /Edit\s+\S*web\/src\/api\.ts/ }).last();
-    await (await row.count() ? row : page.locator(".ds-rec-line", { hasText: /Edit\s+\// }).last()).click();
+    // the turn's last Edit: by then the figure has reached the node it writes in
+    await page.locator(".ds-rec-line", { hasText: /Edit\s+\// }).last().click();
     await wait(1500);
     await shot("trajectory");
     await page.keyboard.press("Escape");
@@ -334,22 +359,14 @@ try {
     for (let i = 0; i < 240 && (await page.locator(".sp-stop").count()); i++) await wait(500);
     await wait(6000);
     // only the session, at 800×600
-    await page.locator(".sp-composer").click({ position: { x: 5, y: 5 } }).catch(() => {});
-    const menu = await page.evaluate(() => {
-      const b = [...document.querySelectorAll("button.icon-btn")].filter((e) => (e as HTMLElement).offsetParent && e.getBoundingClientRect().y < 54).sort((a, b) => b.getBoundingClientRect().x - a.getBoundingClientRect().x)[0];
-      const r = b.getBoundingClientRect();
-      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-    });
-    await page.mouse.click(menu.x, menu.y);
-    await wait(400);
-    await page.locator(".vm-seg").first().locator("button").nth(0).click(); // 单窗
-    await page.keyboard.press("Escape");
+    await layout(0);
     await page.setViewportSize({ width: 800, height: 600 });
     await wait(1500);
     if (await page.locator(".sp-jump").count()) await page.locator(".sp-jump").first().click().catch(() => {});
     await wait(1000);
     await shot("terminal");
     await page.setViewportSize(VIEW);
+    await layout(-1);
   }
 
   // guest: the share gateway over this project (Cloudflare stood in), in a browser of its own
