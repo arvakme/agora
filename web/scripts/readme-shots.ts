@@ -1,6 +1,6 @@
 // The README screenshots (docs/media/*.png), shot from the current build on a fresh demo project with a real Claude Code session.
 //
-//   node scripts/readme-shots.ts [--lang zh|en] [--out <dir>] [--keep] [--real-home] [--only a,b]
+//   node scripts/readme-shots.ts [--lang zh|en] [--out <dir>] [--keep] [--reuse <kept dir>] [--real-home] [--only a,b]
 //
 // Needs: web/dist built (`npm run build`), `claude` logged in, tmux, uv; ffmpeg (optional) to shrink the PNGs to a 256-colour palette.
 // Chromium is Playwright's, or `CHROMIUM=<path>`.
@@ -14,9 +14,9 @@
 //      comments are pinned, turn 2 adds a feature across db/api/worker/web and docs/ (off the diagram)
 //   4. turn 3 adds a refund endpoint in api/: shot while the figure stands on 「API」 writing                → overview
 //   5. turn 4 wires the refund button in web/                                                                         —
-//   6. ▶ replays turn 2 to its end: route, stations, +N files per node, the summary                                   → pointer
-//   7. trajectory view, one Edit call of turn 4 expanded                                                               → trajectory
-//   8. the share popover                                                                                              → share
+//   6. the share popover                                                                                              → share
+//   7. ▶ replays turn 2 to its end: route, stations, +N files per node, the summary                                   → pointer
+//   8. trajectory view, one Edit call of turn 4 expanded (which also replays the turn up to that call)               → trajectory
 //   9. 「open in terminal」: a tmux client attaches (taking the terminal over), a turn is typed in the TUI; single-pane
 //      layout at 800×600                                                                                               → terminal
 //  10. the guest page of a share, served by the real share gateway with Cloudflare stood in (scripts/readme-shots/guest.py) → guest
@@ -36,7 +36,9 @@ const LANG = opt("--lang", "zh") as "zh" | "en";
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const OUT = resolve(opt("--out", join(REPO, "docs/media")));
 const ONLY = args.includes("--only") ? new Set(opt("--only", "").split(",")) : null;
-const KEEP = args.includes("--keep");
+const KEEP = args.includes("--keep") || args.includes("--reuse");
+/** --reuse <dir>: a project a --keep run left; only the shots after the turns are taken again (pointer onwards). */
+const REUSE = opt("--reuse", "");
 const REAL_HOME = args.includes("--real-home");
 const AGORA = join(REPO, "bin/agora");
 const VIEW = { width: 1440, height: 900 };
@@ -52,7 +54,7 @@ const T = {
     notes: "# 备忘\n\n- 订单通过 `POST /api/orders` 创建。\n",
     turns: [
       "按代码结构给架构图关联路径：每个节点对应它的目录，做完用一两句话说明。",
-      "全程用中文回复。加一个取消订单的功能：db/repo.py 加 cancel_order，api/routes/orders.py 加 POST /orders/{id}/cancel 并把 order_cancelled 入队，worker/main.py 处理 order_cancelled，web/src/api.ts 和 web/src/pages/Orders.tsx 加取消按钮；最后在 docs/notes.md 记一行。按这个顺序一个一个改，用编辑工具改文件，改完用列表总结。",
+      "全程用中文回复。加一个取消订单的功能：worker/main.py 处理 order_cancelled，db/repo.py 加 cancel_order，api/routes/orders.py 加 POST /orders/{id}/cancel 并把 order_cancelled 入队，web/src/api.ts 和 web/src/pages/Orders.tsx 加取消按钮；最后在 docs/notes.md 记一行。按这个顺序一个一个改，用编辑工具改文件，改完用列表总结。",
       "全程用中文回复。加退款接口：新建 api/routes/refunds.py，实现 POST /orders/{id}/refund（订单不存在返回 404，已取消的不能退款），再在 api/server.py 里注册这个路由。用编辑工具改文件，不要用 shell 写文件。改完用两三句话总结。",
       "全程用中文回复。前端接上退款：在 web/src/api.ts 加 refundOrder(id)，再在 web/src/pages/Orders.tsx 每行加一个「退款」按钮。用编辑工具改文件。改完用一两句话总结。",
     ],
@@ -68,7 +70,7 @@ const T = {
     notes: "# Notes\n\n- Orders are created through `POST /api/orders`.\n",
     turns: [
       "Link the diagram to the code by its structure: each node gets its directory. Reply in English, in a sentence or two.",
-      "Reply in English. Add order cancelling: cancel_order in db/repo.py, POST /orders/{id}/cancel in api/routes/orders.py that enqueues order_cancelled, handle order_cancelled in worker/main.py, a cancel button in web/src/api.ts and web/src/pages/Orders.tsx; finally one line in docs/notes.md. Change them one by one in this order with the edit tools, then sum up in a list.",
+      "Reply in English. Add order cancelling: handle order_cancelled in worker/main.py, cancel_order in db/repo.py, POST /orders/{id}/cancel in api/routes/orders.py that enqueues order_cancelled, a cancel button in web/src/api.ts and web/src/pages/Orders.tsx; finally one line in docs/notes.md. Change them one by one in this order with the edit tools, then sum up in a list.",
       "Reply in English. Add refunds: a new api/routes/refunds.py with POST /orders/{id}/refund (404 when the order does not exist, cancelled orders cannot be refunded), registered in api/server.py. Use the edit tools, not the shell, to write files. Sum up in two or three sentences.",
       "Reply in English. Wire refunds into the front end: refundOrder(id) in web/src/api.ts and a Refund button on every row in web/src/pages/Orders.tsx. Use the edit tools. Sum up in a sentence or two.",
     ],
@@ -81,8 +83,10 @@ const name = (n: string) => join(OUT, LANG === "zh" ? `${n}.png` : `${n}.${LANG}
 const want = (n: string) => !ONLY || ONLY.has(n);
 
 // ——— the demo project ———
-const TMP = mkdtempSync(join(tmpdir(), "agora-readme-shots-"));
-const PROJ = join(TMP, "shop-demo");
+const TMP = REUSE ? resolve(REUSE) : mkdtempSync(join(tmpdir(), "agora-readme-shots-"));
+// the project's path shows in the trajectory: <tmp>/shop-demo when it is free, else inside TMP
+const PROJ = REUSE ? readFileSync(join(TMP, "project.txt"), "utf8").trim() : !existsSync(join(tmpdir(), "shop-demo")) ? join(tmpdir(), "shop-demo") : join(TMP, "shop-demo");
+if (!REUSE) writeFileSync(join(TMP, "project.txt"), PROJ);
 const HOME = REAL_HOME ? process.env.HOME! : join(TMP, "home");
 const env: NodeJS.ProcessEnv = { ...process.env, HOME, AGORA_STATE_DIR: join(TMP, "state"), PATH: `${join(REPO, "bin")}:${process.env.PATH}`, AGORA_SHARE_DOMAIN: "example.com", UV_CACHE_DIR: process.env.UV_CACHE_DIR ?? join(process.env.HOME!, ".cache/uv") };
 delete env.TMUX;
@@ -100,15 +104,17 @@ const FILES: Record<string, string> = {
   "queue/client.py": `import json\nimport redis\n\nr = redis.Redis()\n\n\ndef enqueue(kind: str, payload: dict) -> None:\n    r.rpush("jobs", json.dumps({"kind": kind, "payload": payload}))\n`,
   "worker/main.py": `import json\nimport redis\n\nr = redis.Redis()\n\n\ndef handle(job: dict) -> None:\n    if job["kind"] == "order_created":\n        print("send confirmation for order", job["payload"]["id"])\n\n\nif __name__ == "__main__":\n    while True:\n        _, raw = r.blpop("jobs")\n        handle(json.loads(raw))\n`,
 };
-for (const [p, s] of Object.entries(FILES)) {
+for (const [p, s] of REUSE ? [] : Object.entries(FILES)) {
   mkdirSync(dirname(join(PROJ, p)), { recursive: true });
   writeFileSync(join(PROJ, p), s);
 }
 const run = (cmd: string, a: string[], o: { input?: string; cwd?: string } = {}) => execFileSync(cmd, a, { cwd: o.cwd ?? PROJ, env, input: o.input, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
-run("git", ["init", "-q"]);
-run("git", ["add", "-A"]);
-run("git", ["-c", "user.name=demo", "-c", "user.email=demo@example.com", "commit", "-qm", "shop"]);
-if (!REAL_HOME) {
+if (!REUSE) {
+  run("git", ["init", "-q"]);
+  run("git", ["add", "-A"]);
+  run("git", ["-c", "user.name=demo", "-c", "user.email=demo@example.com", "commit", "-qm", "shop"]);
+}
+if (!REAL_HOME && !REUSE) {
   mkdirSync(join(HOME, ".claude"), { recursive: true });
   const cred = join(process.env.HOME!, ".claude/.credentials.json");
   if (existsSync(cred)) copyFileSync(cred, join(HOME, ".claude/.credentials.json"));
@@ -187,10 +193,23 @@ async function turn(text: string, during?: () => Promise<void>) {
 async function whenWriting(prefix: string, then: () => Promise<void>, limitMs = 240_000) {
   const t0 = Date.now();
   while (Date.now() - t0 < limitMs && (await page.locator(".sp-stop").count())) {
-    const ok = await page.evaluate((prefix) => [...document.querySelectorAll(".ws-bub-pos")].some((p) => (p as HTMLElement).style.visibility !== "hidden" && !!p.querySelector('.ws-bub[data-k="write"]') && (p.textContent ?? "").includes(prefix)), prefix);
-    if (ok) {
-      await wait(700); // settled on the node: the bubble has slid into place
-      return then();
+    // a write bubble naming the file, and its figure standing still (a bubble rides on its figure's feet: walking to the
+    // node is a write too, said as 「走去 …」, so the place has to stop changing)
+    const at = () =>
+      page.evaluate((prefix) => {
+        const p = [...document.querySelectorAll(".ws-bub-pos")].find((p) => (p as HTMLElement).style.visibility !== "hidden" && !!p.querySelector('.ws-bub[data-k="write"]') && (p.textContent ?? "").includes(prefix));
+        const r = p?.getBoundingClientRect();
+        return r ? `${Math.round(r.x)},${Math.round(r.y)}` : null;
+      }, prefix);
+    const a = await at();
+    if (a) {
+      await wait(450);
+      const b = await at();
+      if (b === a) {
+        await wait(250);
+        if ((await at()) === a) return then();
+      }
+      continue;
     }
     await wait(120);
   }
@@ -202,6 +221,7 @@ try {
   await page.waitForFunction(() => !!(window as unknown as { __agora?: unknown }).__agora, null, { timeout: 30_000 });
   await wait(2000);
 
+  if (!REUSE) {
   // the diagram, drawn the way an agent draws it (the page executes it); the first run has opened a new session's picker
   const N = T.nodes;
   const ops = [
@@ -251,6 +271,16 @@ try {
   if (!overview) console.log("overview: the figure was never caught writing in api/; re-run with --only overview");
   await turn(T.turns[3]);
   await wait(1500);
+  } else await fit();
+
+  // share: the popover
+  if (want("share")) {
+    await page.locator(".share > button.btn").click();
+    await wait(1800);
+    await shot("share");
+    await page.keyboard.press("Escape");
+    await wait(600);
+  }
 
   // pointer: ▶ replay turn 2 to its end
   if (want("pointer")) {
@@ -268,23 +298,14 @@ try {
     await page.locator(".sp-composer").hover();
     await page.locator(".sp-head1 button.icon-btn.sm").nth(0).click(); // 轨迹
     await wait(1200);
-    const row = page.locator(".ds-payload", { hasText: /Edit\s+\S*web\/src\/api\.ts/ }).last();
-    await (await row.count() ? row : page.locator(".ds-payload", { hasText: /Edit\s+\// }).last()).click();
+    const row = page.locator(".ds-rec-line", { hasText: /Edit\s+\S*web\/src\/api\.ts/ }).last();
+    await (await row.count() ? row : page.locator(".ds-rec-line", { hasText: /Edit\s+\// }).last()).click();
     await wait(1500);
     await shot("trajectory");
     await page.keyboard.press("Escape");
     await wait(800);
     await page.locator(".sp-head1 button.icon-btn.sm").nth(0).click(); // back to the conversation
     await wait(800);
-  }
-
-  // share: the popover
-  if (want("share")) {
-    await page.locator(".share > button.btn").click();
-    await wait(1800);
-    await shot("share");
-    await page.keyboard.press("Escape");
-    await wait(600);
   }
 
   // terminal: open it, take it over with a tmux client, type a turn in the TUI
@@ -349,8 +370,15 @@ try {
     await gp.locator("input").first().fill(T.guest);
     await gp.keyboard.press("Enter");
     await gp.waitForTimeout(1000);
-    await gp.locator(".dock-count").click();
-    await gp.waitForTimeout(1500);
+    await gp.locator(".dock .dock-btn:has(.dock-badge)").first().click(); // 所有评论
+    await gp.waitForTimeout(1200);
+    // the diagram fitted, then slid left of the comment drawer
+    await gp.mouse.click(60, 700);
+    await gp.keyboard.press("Shift+1");
+    await gp.waitForTimeout(800);
+    await gp.mouse.move(400, 500);
+    await gp.mouse.wheel(260, 0);
+    await gp.waitForTimeout(1200);
     await shot("guest", gp);
     await gctx.close();
   }
@@ -360,6 +388,9 @@ try {
   try { run("tmux", ["-L", "agora-shots-outer", "kill-server"]); } catch {}
   if (tmuxSock) try { run("tmux", ["-L", tmuxSock, "kill-server"]); } catch {}
   try { run(AGORA, ["down"]); } catch {}
-  if (KEEP) console.log("kept", TMP);
-  else rmSync(TMP, { recursive: true, force: true });
+  if (KEEP) console.log("kept", TMP, "(again: --reuse", TMP + ")");
+  else {
+    rmSync(TMP, { recursive: true, force: true });
+    if (!PROJ.startsWith(TMP)) rmSync(PROJ, { recursive: true, force: true });
+  }
 }
