@@ -3,6 +3,7 @@
 // the badge over the node has no clear place, and 「跟随小人」 after the person has taken the camera. Mounted in the canvas
 // overlay (./Overlay.tsx). After the play (or a trace of a turn) the route stays on the canvas, and TraceBar says whose it is:
 // 「第 N 轮的路线」 with 「关闭」 (Esc too), and what the numbers mean.
+import { tr } from "../i18n";
 import { focus } from "./focus";
 import { plays, usePlay } from "./replayMode";
 import { ROUTE_LEGEND, routeBarText } from "./traceText";
@@ -12,10 +13,10 @@ export function ReplayBar() {
   const p = st.play;
   if (!p) return null;
   return (
-    <div className="ws-banner ws-play-bar" role="status" title={`${p.name} · 第 ${p.n} 轮（Esc 退出）`}>
-      <b className="k">回放中 · 第 {p.n} 轮</b>
+    <div className="ws-banner ws-play-bar" role="status" title={tr(`${p.name} · 第 ${p.n} 轮（Esc 退出）`, `${p.name} · turn ${p.n} (Esc to exit)`)}>
+      <b className="k">{tr(`回放中 · 第 ${p.n} 轮`, `Replaying · turn ${p.n}`)}</b>
       {st.barNote && <b className="k">{st.barNote}</b>}
-      {st.manual && <button className="btn sm primary" onClick={() => plays.resumeFollow()}>跟随小人</button>}
+      {st.manual && <button className="btn sm primary" onClick={() => plays.resumeFollow()}>{tr("跟随小人", "Follow avatar")}</button>}
     </div>
   );
 }
@@ -25,7 +26,7 @@ export function TraceBar({ turn }: { turn: number | null }) {
     <div className="ws-trace-bar" role="status">
       <div className="ws-trace-head">
         <b className="k">{routeBarText(turn)}</b>
-        <button className="btn sm ghost" onClick={() => focus.trace(null)} title="关闭路线（Esc）">关闭</button>
+        <button className="btn sm ghost" onClick={() => focus.trace(null)} title={tr("关闭路线（Esc）", "Close route (Esc)")}>{tr("关闭", "Close")}</button>
       </div>
       <p className="ws-trace-legend">{ROUTE_LEGEND}</p>
     </div>

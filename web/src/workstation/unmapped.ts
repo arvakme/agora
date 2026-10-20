@@ -3,6 +3,7 @@
 // with more than two becomes a suggestion to draw it in. Deepest folders first, each file counted
 // once; top-level files, reads and files outside the project (absolute paths) never count (reading docs/ is not a reason to redraw the diagram).
 // Shown by ./TrayHint.tsx, which only copies the words: nothing changes the diagram. Pure.
+import { tr } from "../i18n";
 import { outsideProject, type Locate } from "./place";
 import type { WorkRun } from "./runs/types";
 
@@ -35,7 +36,7 @@ export function drawInHints(runs: readonly WorkRun[], locate: Locate): DrawInHin
     const mine = under.get(dir)!.filter((f) => !taken.has(f));
     if (mine.length <= MIN) continue;
     for (const f of mine) taken.add(f);
-    out.push({ dir, files: mine.sort(), text: `${dir} 有 ${mine.length} 个新文件，要画进图里吗？` });
+    out.push({ dir, files: mine.sort(), text: tr(`${dir} 有 ${mine.length} 个新文件，要画进图里吗？`, `${dir} has ${mine.length} new files — add them to the diagram?`) });
   }
   return out.sort((a, b) => b.files.length - a.files.length || (a.dir < b.dir ? -1 : 1));
 }

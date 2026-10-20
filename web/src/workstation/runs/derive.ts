@@ -1,10 +1,13 @@
 // Runs for the 工位视图, pure: top-level runs from the transcripts already on the page (the CLI's own
 // logs, followed live by the server), and their sub-agents from the server's run tree (`fromTree`).
 import type { Item, RunTree } from "../../session/agents";
+import { tr } from "../../i18n";
 import { buildLane, type Seg } from "../lanes";
 import type { Receipt, RunSeg, WorkRun } from "./types";
 
 const base = (p: string) => p.split("/").pop() || p;
+/** The verb a dispatch segment's label starts with (the bubble takes it off again: ../Overlay.tsx). */
+export const DISPATCH = tr("派", "Dispatch");
 
 /** A lane segment as a run segment (labels in the words the canvas uses). */
 export function toRunSeg(s: Seg): RunSeg {
@@ -15,10 +18,10 @@ export function toRunSeg(s: Seg): RunSeg {
   if (s.comment) out.comment = s.comment;
   if (s.kind === "exec" && s.input) out.cmd = s.input;
   if (s.kind === "wait" && s.input && !s.input.startsWith("{")) out.question = s.input;
-  if (s.kind === "delegate" && s.input) out.label = `派 ${s.input.length > 24 ? `${s.input.slice(0, 24)}…` : s.input}`;
-  if (s.kind === "write" || s.kind === "read") out.label = `${s.kind === "write" ? "写" : "读"} ${s.path ? base(s.path) : ""}`.trim();
-  if (s.kind === "exec") out.label = `跑 ${(s.input ?? "").split(" ")[0] || "命令"}`;
-  if (s.kind === "wait") out.label = "等你回复";
+  if (s.kind === "delegate" && s.input) out.label = `${DISPATCH} ${s.input.length > 24 ? `${s.input.slice(0, 24)}…` : s.input}`;
+  if (s.kind === "write" || s.kind === "read") out.label = `${s.kind === "write" ? tr("写", "Writing") : tr("读", "Reading")} ${s.path ? base(s.path) : ""}`.trim();
+  if (s.kind === "exec") out.label = `${tr("跑", "Running")} ${(s.input ?? "").split(" ")[0] || tr("命令", "command")}`;
+  if (s.kind === "wait") out.label = tr("等你回复", "Waiting for you");
   return out;
 }
 

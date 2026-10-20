@@ -5,6 +5,7 @@
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { IconBack, IconEnter, IconHint, IconNested, IconSparkles } from "../app/icons";
+import { lang, tr } from "../i18n";
 import type { CanvasViewState } from "../canvas/CanvasView";
 import { codePathsOf, isShape, labelOf, live, type El } from "../canvas/scene";
 import { nodeBox } from "../canvas/nodes";
@@ -64,12 +65,15 @@ export function ChildMarkers({ view, canvasId, info, onEnter, chrome = [] }: { v
             data-stale={stale || undefined}
             style={{ transform: `translate(${Math.round(x - MARK_SIZE / 2 - 2)}px, ${Math.round(y - MARK_SIZE / 2)}px)`, minWidth: MARK_SIZE, height: MARK_SIZE }}
             onClick={() => onEnter(child, e.id)}
-            title={`进入子图「${i.title}」${i.open ? ` · ${i.open} 条未解决评论` : ""}${stale ? ` · 可能过时：${i.stale!.files.length} 次改动发生在子图画好之后` : ""}（选中节点后 ${ENTER_KEY_LABEL}）`}
-            aria-label={`进入子图 ${i.title}`}
+            title={tr(
+              `进入子图「${i.title}」${i.open ? ` · ${i.open} 条未解决评论` : ""}${stale ? ` · 可能过时：${i.stale!.files.length} 次改动发生在子图画好之后` : ""}（选中节点后 ${ENTER_KEY_LABEL}）`,
+              `Enter sub-diagram “${i.title}”${i.open ? ` · ${i.open} unresolved ${i.open === 1 ? "comment" : "comments"}` : ""}${stale ? ` · may be out of date: ${i.stale!.files.length} ${i.stale!.files.length === 1 ? "change" : "changes"} since it was drawn` : ""} (select the node, then ${ENTER_KEY_LABEL})`,
+            )}
+            aria-label={tr(`进入子图 ${i.title}`, `Enter sub-diagram ${i.title}`)}
           >
             <IconEnter size={14} />
             {i.open > 0 && <em>{i.open}</em>}
-            {stale && <span className="nest-dot" aria-label="可能过时" />}
+            {stale && <span className="nest-dot" aria-label={tr("可能过时", "May be out of date")} />}
           </button>
         );
       })}
@@ -112,14 +116,14 @@ export function Breadcrumb({ path, current, onGo, extra, keyLabel, hint, mark }:
   if (path.length < 2) return null;
   const at = path.findIndex((p) => p.id === current);
   const up = path[(at < 0 ? path.length - 1 : at) - 1];
-  const name = (t: string) => t || "未命名画布";
+  const name = (t: string) => t || tr("未命名画布", "Untitled canvas");
   return (
-    <nav className="nest-crumbs" aria-label="画布层级">
+    <nav className="nest-crumbs" aria-label={tr("画布层级", "Canvas levels")}>
       {up && (
         <span className="nest-back-wrap">
-          <button className="nest-back" onClick={() => onGo(up.id)} title={`返回上一级「${name(up.title)}」${keyLabel ? `（${keyLabel}）` : ""}`} aria-keyshortcuts={keyLabel === "⌘↑" ? "Meta+ArrowUp" : keyLabel ? "Control+ArrowUp" : undefined}>
+          <button className="nest-back" onClick={() => onGo(up.id)} title={tr(`返回上一级「${name(up.title)}」${keyLabel ? `（${keyLabel}）` : ""}`, `Back up to “${name(up.title)}”${keyLabel ? ` (${keyLabel})` : ""}`)} aria-keyshortcuts={keyLabel === "⌘↑" ? "Meta+ArrowUp" : keyLabel ? "Control+ArrowUp" : undefined}>
             <IconBack size={14} />
-            <span>返回 {name(up.title)}</span>
+            <span>{tr(`返回 ${name(up.title)}`, `Back to ${name(up.title)}`)}</span>
           </button>
           {hint}
         </span>
@@ -131,7 +135,7 @@ export function Breadcrumb({ path, current, onGo, extra, keyLabel, hint, mark }:
             {p.id === current ? (
               <b aria-current="page">{name(p.title)}</b>
             ) : (
-              <button onClick={() => onGo(p.id)} title={`回到「${name(p.title)}」`}>
+              <button onClick={() => onGo(p.id)} title={tr(`回到「${name(p.title)}」`, `Go to “${name(p.title)}”`)}>
                 {name(p.title)}
               </button>
             )}
@@ -160,9 +164,9 @@ function BackHint({ keyLabel }: { keyLabel: string }) {
   if (!visible) return null;
   return (
     <span className="nest-hint" role="status">
-      在子图里。点左上角返回，或按 {keyLabel}
+      {tr(`在子图里。点左上角返回，或按 ${keyLabel}`, `In a sub-diagram. Go back with the top-left button, or press ${keyLabel}`)}
       <button className="nest-act quiet" onClick={() => markBackHintSeen()}>
-        知道了
+        {tr("知道了", "Got it")}
       </button>
     </span>
   );
@@ -208,10 +212,10 @@ export function OwnerBreadcrumb({ canvasId }: { canvasId: string }) {
                 }}
               >
                 <IconSparkles size={14} />
-                {sent ? "已交给 Agent" : "让 AI 更新"}
+                {sent ? tr("已交给 Agent", "Handed to agent") : tr("让 AI 更新", "Ask AI to update")}
               </button>
-              <button className="nest-act quiet" onClick={() => nav.review(canvasId, Date.now())} title="子图和代码仍然一致：清掉这个标记">
-                已核对
+              <button className="nest-act quiet" onClick={() => nav.review(canvasId, Date.now())} title={tr("子图和代码仍然一致：清掉这个标记", "The sub-diagram still matches the code: clear this mark")}>
+                {tr("已核对", "Still accurate")}
               </button>
             </span>
           </span>
@@ -241,6 +245,14 @@ async function askAgent(canvasId: string, text: string) {
 
 const expandPrompt = (canvasId: string, el: El, label: string) => {
   const paths = codePathsOf(el);
+  if (lang() === "en")
+    return [
+      `Expand node “${label}” into a sub-diagram that shows its inner structure one level deeper.`,
+      `1. \`agora canvas child create --parent ${canvasId} --node ${el.id}\` creates the child canvas (if one exists, keep the one it returns).`,
+      `2. Read the code it stands for: ${paths.length ? paths.join(", ") : "this node has no linked code paths yet; find the matching code in the repo by the node's name"}.`,
+      "3. In the child canvas (`--canvas <child canvas id>`), draw the inner modules and the calls between them; link nodes that map to code to finer paths with `agora canvas link`. A level further down can be code logic or a call flow.",
+      "Write commands as `agora canvas …` (agora is on PATH). Finish with a sentence or two on what the sub-diagram shows.",
+    ].join("\n");
   return [
     `把节点「${label}」展开成子图，画出它内部更细一层的结构。`,
     `1. \`agora canvas child create --parent ${canvasId} --node ${el.id}\` 建子画布（已有就沿用它返回的那一块）。`,
@@ -250,7 +262,14 @@ const expandPrompt = (canvasId: string, el: El, label: string) => {
   ].join("\n");
 };
 const updatePrompt = (canvasId: string, title: string, files: string[]) =>
-  [
+  lang() === "en"
+    ? [
+        files.length
+          ? `Sub-diagram “${title}” (canvas=${canvasId}) may be out of date: these files changed after it was drawn: ${files.slice(0, 12).join(", ")}${files.length > 12 ? " …" : ""}.`
+          : `Check sub-diagram “${title}” (canvas=${canvasId}) against the current code: is it still accurate?`,
+        `Read \`agora canvas read --canvas ${canvasId}\` and that code, update only what changed (nodes, arrows, code paths), then say what you changed.`,
+      ].join("\n")
+    : [
     files.length
       ? `子图「${title}」（canvas=${canvasId}）可能过时：它画好之后，这些文件改过：${files.slice(0, 12).join("、")}${files.length > 12 ? " …" : ""}。`
       : `对照现在的代码检查子图「${title}」（canvas=${canvasId}）是否还准确。`,
@@ -263,14 +282,14 @@ export function useChildPill(target: El): { has: boolean; text: string; title: s
   const child = childOf(target);
   const has = !!child && st.scenes.has(child);
   return has
-    ? { has, text: `子图 · ${st.titles[child!] ?? ""}`, title: `这个节点打开子图「${st.titles[child!] ?? child}」` }
-    : { has, text: "子图", title: "把这个节点展开成一张子画布" };
+    ? { has, text: `${tr("子图", "Sub-diagram")} · ${st.titles[child!] ?? ""}`, title: tr(`这个节点打开子图「${st.titles[child!] ?? child}」`, `This node opens sub-diagram “${st.titles[child!] ?? child}”`) }
+    : { has, text: tr("子图", "Sub-diagram"), title: tr("把这个节点展开成一张子画布", "Expand this node into a child canvas") };
 }
 
 /** The 「子图」 menu of the selected node: make a blank child, let the agent expand it, enter it, or unlink it. */
 export function ChildMenu({ api, view, canvasId, target, onAct }: { api: ExcalidrawImperativeAPI; view: CanvasViewState; canvasId: string; target: El; onAct: (what: string) => void }) {
   const st = useNested();
-  const label = labelOf(target, view.map).replace(/\s+/g, " ").trim() || "未命名节点";
+  const label = labelOf(target, view.map).replace(/\s+/g, " ").trim() || tr("未命名节点", "Untitled node");
   const firstLine = labelOf(target, view.map).split("\n").map((l) => l.trim()).find(Boolean) ?? label;
   const child = childOf(target);
   const has = !!child && st.scenes.has(child);
@@ -283,30 +302,30 @@ export function ChildMenu({ api, view, canvasId, target, onAct }: { api: Excalid
       {has ? (
         <>
           <button role="menuitem" onClick={() => act("enter", () => nav.fly(canvasId, child!, target.id))}>
-            <IconEnter size={14} />进入子图<kbd>{ENTER_KEY_LABEL}</kbd>
+            <IconEnter size={14} />{tr("进入子图", "Enter sub-diagram")}<kbd>{ENTER_KEY_LABEL}</kbd>
           </button>
           {st.scenes.get(child!)?.some((e) => live(e)) ? (
             <button role="menuitem" onClick={() => act("ai", () => askAgent(child!, updatePrompt(child!, st.titles[child!] ?? child!, [])))}>
-              <IconSparkles size={14} />让 AI 更新子图
+              <IconSparkles size={14} />{tr("让 AI 更新子图", "Ask AI to update sub-diagram")}
             </button>
           ) : (
             <button role="menuitem" onClick={() => act("ai", () => askAgent(canvasId, expandPrompt(canvasId, target, label)))}>
-              <IconSparkles size={14} />让 AI 画子图
-              <span className="nest-sub">子图还是空的：读代码，画出下一层</span>
+              <IconSparkles size={14} />{tr("让 AI 画子图", "Ask AI to draw sub-diagram")}
+              <span className="nest-sub">{tr("子图还是空的：读代码，画出下一层", "The sub-diagram is empty: read the code, draw the next level")}</span>
             </button>
           )}
-          <button role="menuitem" onClick={() => act("unlink", () => writeChildLink(api, target.id, null))} title="节点不再打开它；子画布本身留在「所有画布」里">
-            <IconHint size={14} />断开（子图保留）
+          <button role="menuitem" onClick={() => act("unlink", () => writeChildLink(api, target.id, null))} title={tr("节点不再打开它；子画布本身留在「所有画布」里", "The node stops opening it; the child canvas stays in “All canvases”")}>
+            <IconHint size={14} />{tr("断开（子图保留）", "Unlink (keep sub-diagram)")}
           </button>
         </>
       ) : (
         <>
           <button role="menuitem" onClick={() => act("ai", () => askAgent(canvasId, expandPrompt(canvasId, target, label)))}>
-            <IconSparkles size={14} />让 AI 展开
-            <span className="nest-sub">读{codePathsOf(target).length ? "关联的" : "对应的"}代码，画出下一层</span>
+            <IconSparkles size={14} />{tr("让 AI 展开", "Ask AI to expand")}
+            <span className="nest-sub">{tr(`读${codePathsOf(target).length ? "关联的" : "对应的"}代码，画出下一层`, `Read the ${codePathsOf(target).length ? "linked" : "matching"} code, draw the next level`)}</span>
           </button>
           <button role="menuitem" onClick={() => act("blank", () => blankChild(canvasId, firstLine.slice(0, 60), (id) => writeChildLink(api, target.id, id)))}>
-            <IconNested size={14} />新建空白子图
+            <IconNested size={14} />{tr("新建空白子图", "New blank sub-diagram")}
           </button>
         </>
       )}

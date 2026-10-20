@@ -4,6 +4,7 @@
 // a session; it never changes the diagram. Mount it inside the tray (Overlay).
 import { useMemo, useState } from "react";
 import { IconCopy } from "../app/icons";
+import { tr } from "../i18n";
 import type { Locate } from "./place";
 import { useRuns } from "./runs/store";
 import { drawInHints, shortDir } from "./unmapped";
@@ -18,16 +19,16 @@ export function TrayHint({ locate }: { locate: Locate }) {
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(`${h.text}\n${h.files.map((f) => `- ${f}`).join("\n")}`);
-      setNote("已复制，可以贴进评论或会话");
+      setNote(tr("已复制，可以贴进评论或会话", "Copied — paste it into a comment or a session"));
     } catch {
-      setNote("没能复制（浏览器不让）");
+      setNote(tr("没能复制（浏览器不让）", "Couldn't copy (the browser blocked it)"));
     }
     setTimeout(() => setNote(null), 1800);
   };
   return (
     <button className="ws-tray-hint" title={h.files.join("\n")} onPointerDown={(e) => e.stopPropagation()} onClick={() => void copy()}>
       <IconCopy size={12} />
-      <span>{note ?? `${shortDir(h.dir)} 有 ${h.files.length} 个新文件，要画进图里吗？`}</span>
+      <span>{note ?? tr(`${shortDir(h.dir)} 有 ${h.files.length} 个新文件，要画进图里吗？`, `${shortDir(h.dir)} has ${h.files.length} new files — add them to the diagram?`)}</span>
       {!note && hints.length > 1 && <em>+{hints.length - 1}</em>}
     </button>
   );

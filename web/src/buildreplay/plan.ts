@@ -2,6 +2,7 @@
 // idle time is gone, each beat is "walk to the node, draw", and the canvas changes when the figure has got there.
 // A beat's figure work is an ordinary WorkRun segment (so the walking, the bridges, the ladders and the doors of
 // the 工位视图 do the rest: ../workstation/place.ts); its words are the segment's `say`. Pure, so it runs under vitest.
+import { tr } from "../i18n";
 import type { El } from "../canvas/scene";
 import { CUT_MS } from "../workstation/place";
 import { DOOR_MS } from "../workstation/rig";
@@ -143,7 +144,7 @@ export function planBuild(tl: BuildTimeline, opts: PlanOptions = {}): Plan {
   let t = OPENING_MS;
   for (const s of tl.steps) {
     const key = actorKey(s.actor);
-    if (!actors.has(key)) actors.set(key, { key, agent: s.actor.kind === "you" ? (opts.author ? "author" : "you") : s.actor.agent, name: s.actor.kind === "you" ? (opts.author ? "作者" : "你") : s.actor.name });
+    if (!actors.has(key)) actors.set(key, { key, agent: s.actor.kind === "you" ? (opts.author ? "author" : "you") : s.actor.agent, name: s.actor.kind === "you" ? (opts.author ? tr("作者", "Author") : tr("你", "You")) : s.actor.name });
     const from = where.get(key);
     const ordered = nearestFirst(s.items, from?.canvas === s.canvas ? from.place : null, (id) => at.get(`${s.canvas}/${id}`));
     for (let idx = 0; idx < ordered.length; idx++) {
@@ -292,7 +293,7 @@ function nearestFirst(items: readonly BuildItem[], start: string | null, centre:
 /** The sentence for a run of quiet beats: the one sentence, or how many. */
 function tick(prev: Beat, it: BuildItem): string {
   const n = prev.change.length + (it.change?.length ?? 1);
-  return it.kind === "link" && (prev.kind === "tick" || prev.kind === "link") ? `把 ${n} 个节点关联到代码` : `调整了 ${n} 处`;
+  return it.kind === "link" && (prev.kind === "tick" || prev.kind === "link") ? tr(`把 ${n} 个节点关联到代码`, `Linked ${n} nodes to code`) : tr(`调整了 ${n} 处`, `Made ${n} adjustments`);
 }
 
 /** Every canvas as it is after the last step: the geometry the walking is measured on (nothing is ever where it was not at the end, bar what was deleted). */
