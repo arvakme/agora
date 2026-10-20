@@ -37,6 +37,7 @@ from typing import Any
 from server.canvas.adapters.base import NativeRef, Subagents
 from server.canvas.adapters.common import State, read_jsonl
 from server.canvas.adapters.registry import ADAPTERS, implemented_tier
+from server.i18n import tr
 
 RUNNING_S = 120  # a log written to this recently counts as running
 MIN_TOOL_MS = 300
@@ -220,7 +221,7 @@ def timeline(kind: str, path: Path | None, root: str | None, *, child: bool = Fa
         reads = tool.get("reads") or []
         p = (files[0]["path"] if files else None) if kind_ == "write" else (reads[0] if kind_ == "read" and reads else (files[0]["path"] if files else (tool.get("on") or [None])[0]))
         end = it.get("endAt") or it["at"]
-        seg = {"kind": kind_, "start": it["at"], "end": max(end, it["at"] + MIN_TOOL_MS), "itemId": it["id"], "turn": turn_of(it["at"]), "label": f"{tool.get('name') or '工具'} {str(tool.get('input') or '')[:80]}".strip()}
+        seg = {"kind": kind_, "start": it["at"], "end": max(end, it["at"] + MIN_TOOL_MS), "itemId": it["id"], "turn": turn_of(it["at"]), "label": f"{tool.get('name') or tr('工具', 'tool')} {str(tool.get('input') or '')[:80]}".strip()}
         if p:
             seg["path"] = p
         if tool.get("spawn"):

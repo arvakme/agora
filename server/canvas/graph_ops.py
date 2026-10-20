@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from server.i18n import tr
+
 from .graph_geom import fit_size
 from .graph_layout import apply_layout, layout
 from .graph_lint import lint
@@ -77,7 +79,7 @@ def _expand(scene: dict[str, Any], ops: list[dict[str, Any]]) -> tuple[list[dict
     if not marks:
         return ops, None, None
     if marks != [len(ops) - 1]:
-        raise ValueError("layout 要放在这一批 ops 的最后一条，而且只能有一条：它排的是前面这些 ops 画出来的东西。")
+        raise ValueError(tr("layout 要放在这一批 ops 的最后一条，而且只能有一条：它排的是前面这些 ops 画出来的东西。", "layout must be the last op of the batch, and there can be only one: it lays out what the ops before it drew."))
     spec = ops[-1]
     body = ops[:-1]
     sim, new, lines = _simulate(scene, body)
@@ -85,7 +87,7 @@ def _expand(scene: dict[str, Any], ops: list[dict[str, Any]]) -> tuple[list[dict
     have = {n["id"] for n in sim["nodes"]}
     for i in reflow:
         if i not in have:
-            raise ValueError(f"layout.reflow 里的 {i} 不在画布上：先 `agora canvas read` 看现有的 id。")
+            raise ValueError(tr(f"layout.reflow 里的 {i} 不在画布上：先 `agora canvas read` 看现有的 id。", f"{i} in layout.reflow is not on the canvas: run `agora canvas read` first to see the ids there."))
     nodes_by_ref = {n["id"]: n for n in sim["nodes"]}
     movable = set(new) | set(reflow)
     ends = lambda a: {(a.get("start") or {}).get("id"), (a.get("end") or {}).get("id")}  # noqa: E731
@@ -124,7 +126,7 @@ def plan_reflow(scene: dict[str, Any], ids: list[str] | None) -> dict[str, Any]:
     chosen = every if ids is None else list(ids)
     for i in chosen:
         if i not in every:
-            raise ValueError(f"{i} 不在这张画布上。")
+            raise ValueError(tr(f"{i} 不在这张画布上。", f"{i} is not on this canvas."))
     ops, info, res = _expand(scene, [{"op": LAYOUT, "reflow": chosen}])
     old = {n["id"]: n for n in scene["nodes"]}
     moves = [{"id": i, "label": _label(old[i]), "from": [old[i]["x"], old[i]["y"]], "to": [res["nodes"][i]["x"], res["nodes"][i]["y"]]} for i in (info or {}).get("moved", [])]
