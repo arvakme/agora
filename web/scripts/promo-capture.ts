@@ -1,6 +1,6 @@
 // 宣传片（docs/promo/）用的实录：逐帧步进，真 60 fps，画面里只有画布。
 //
-//   node scripts/promo-capture.ts <dev page url> <out dir> <setup|zoom> [--lang zh|en] [--fps 60]
+//   node scripts/promo-capture.ts <dev page url> <out dir> <setup|zoom|hop> [--lang zh|en] [--fps 60]
 //
 // 页面装上 Playwright 的假时钟（Date、setTimeout、requestAnimationFrame、performance.now 都归它管）并停住；之后每一帧：
 // 先按这一帧的时刻摆好镜头，时钟走 1/fps 秒，再截一张图。录下来的每一帧都是页面在那个时刻真正画出来的样子，
@@ -14,6 +14,9 @@
 //          其余全走人用 ⌘/Ctrl+滚轮放大时的那条路：每一层开头在节点上滚一格（ZoomLayer 认出这扇门，备好子图的缩略图），
 //          之后每帧报一次「还在放大」（zoomNav.noteZoomGesture），缩略图浮现、其余部分被遮住、占满到 ENTER_FILL 时换进子图，
 //          都是 ZoomLayer 自己按 fill 做的；换过去之后镜头接着用子图那一份继续放大。
+//   hop:   ?mock=runs 的脚本场景（runs/fixtures.ts：Claude Code 和 Pi 在节点间走、跳、过桥、爬梯子、进 API 服务的子图），
+//          页面是 scripts/fidelity/setup.ts 搭的那个项目（--lang en 时用英文标签搭）。不跑任何 agent。从场景的 --from 秒开始录
+//          --seconds 秒（--enter <s>：那一秒换进 API 服务的子图）；小人、气泡、徽标留着，界面外壳照样藏起来；每张画布第一次出现时取一次景（整张图居中，宽不过 78%）。
 // 输出 <out>/<scenario>.<lang>.mp4（H.264，yuv420p，fps 帧每秒）和 <out>/<scenario>.<lang>/ 里的逐帧 JPEG。
 // Chromium 用 Playwright 自带的，或 `CHROMIUM=<path>`。
 import { chromium, type Page } from "playwright";
@@ -25,7 +28,7 @@ const args = process.argv.slice(2);
 const opt = (k: string, d: string) => (args.includes(k) ? args[args.indexOf(k) + 1] : d);
 const [url, out, which] = args;
 if (!url || !out || !which) {
-  console.error("usage: node scripts/promo-capture.ts <url> <out dir> <setup|zoom> [--lang zh|en] [--fps 60]");
+  console.error("usage: node scripts/promo-capture.ts <url> <out dir> <setup|zoom|hop> [--lang zh|en] [--fps 60]");
   process.exit(2);
 }
 const lang = opt("--lang", "zh") === "en" ? "en" : "zh";
@@ -56,6 +59,7 @@ page.on("console", (m) => (m.type() === "error" && !m.text().includes("404") ? c
 if (which !== "setup") await page.clock.install();
 const u = new URL(url);
 if (lang === "en") u.searchParams.set("lang", "en");
+if (which === "hop") for (const [k, v] of [["mock", "runs"], ["canvas", "c1"]]) u.searchParams.set(k, v);
 await page.goto(u.href);
 await page.waitForFunction(() => !!(window as unknown as { __agora?: unknown }).__agora, null, { timeout: 30_000 });
 await page.waitForTimeout(1500);
@@ -69,8 +73,8 @@ if (which === "setup") {
     const { canvases } = await imp("/src/session/ui.ts");
     const { labelOf, byId } = await imp("/src/canvas/scene.ts");
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    // 新项目旁边开着的「新会话」窗格关掉（英文界面上是 Close New session）
-    document.querySelector<HTMLButtonElement>('button.wm-tab-close[aria-label^="关闭 新会话"], button.wm-tab-close[aria-label^="Close New session" i]')?.click();
+    // 新项目旁边开着的会话窗格关掉：按种类找，不按（会翻译的）名字
+    document.querySelector<HTMLButtonElement>('.wm-tab[data-kind="session"] button.wm-tab-close')?.click();
     const w = window as unknown as { __agora: { handles: Map<string, unknown> } };
     const top = [...w.__agora.handles.keys()][0];
     const apiOf = async (id: string) => {
@@ -131,10 +135,12 @@ if (which === "setup") {
 
 /** 藏起界面外壳，只留画布（和画布上的缩放层：缩略图、遮罩）。 */
 const HIDE = [".topbar", ".wm-tab", ".wm-add", ".layer-ui__wrapper", ".layer-ui__wrapper__footer", ".whole-btn", ".nest-mark", ".dock", ".nest-crumbs", ".nest-back", ".di-trigger"];
-async function cleanFrame(p: Page) {
+/** hop 要看见子图入口的标记（小人从那里进出），只藏外壳 */
+const HIDE_HOP = [".topbar", ".wm-tab", ".wm-add", ".layer-ui__wrapper", ".layer-ui__wrapper__footer", ".whole-btn", ".dock", ".nest-crumbs", ".nest-back", ".ws-tl", ".ws-off"];
+async function cleanFrame(p: Page, hide = HIDE) {
   await p.addStyleTag({
     // 连子元素一起藏：Excalidraw 的页脚按钮自己写了 visibility: visible，只藏外层会漏出来
-    content: `${HIDE.flatMap((c) => [c, `${c} *`]).join(", ")} { visibility: hidden !important; }
+    content: `${hide.flatMap((c) => [c, `${c} *`]).join(", ")} { visibility: hidden !important; }
       * { caret-color: transparent !important; }`,
   });
 }
@@ -293,5 +299,57 @@ if (which === "zoom") {
       console.log(t.toFixed(2), await page.evaluate(() => [...document.querySelectorAll(".sz-layer")].map((l) => `${(l as HTMLElement).hidden ? "H" : "S"} pic:${(l.querySelector(".sz-pic") as HTMLElement).style.opacity} veil:${(l.querySelector(".sz-veil") as HTMLElement).style.opacity}`).join(" | ")));
   });
   await page.keyboard.up("Control");
+}
+
+if (which === "hop") {
+  await cleanFrame(page, HIDE_HOP);
+  await page.mouse.move(VIEW.width - 4, VIEW.height - 4);
+  await page.waitForFunction(() => (window as unknown as { __mockBase?: number }).__mockBase, null, { timeout: 30_000 });
+  const base = await page.evaluate(() => (window as unknown as { __mockBase: number }).__mockBase);
+  await page.clock.pauseAt(Date.now() + 200);
+  // 走到场景的 --from 秒
+  const from = Number(opt("--from", "0"));
+  const now = await page.evaluate(() => Date.now());
+  if (base + from * 1000 > now) await page.clock.runFor(base + from * 1000 - now);
+  await page.evaluate(async () => {
+    const imp = (p: string) => import(/* @vite-ignore */ p);
+    const { canvases } = await imp("/src/session/ui.ts");
+    // 跟随主 agent 的镜头关掉（⋯ 里的开关）：镜头不动，片子里的裁切和放大才对得上
+    (await imp("/src/app/prefs.ts")).prefs.set({ followCamera: false });
+    const seen = new Map<string, { zoom: { value: number }; scrollX: number; scrollY: number }>();
+    // 每张画布第一次到前面时取景：内容居中在裁切框（y 150–1050）里，宽不过 78%、高不过 70%；之后每帧都按这个取景摆（镜头不动）
+    (window as unknown as { __frame: () => void }).__frame = () => {
+      const id = new URL(location.href).searchParams.get("canvas") || [...canvases.keys()][0];
+      const api = canvases.get(id)?.api;
+      if (!api) return;
+      const had = seen.get(id);
+      if (had) {
+        const st = api.getAppState();
+        if (st.zoom.value !== had.zoom.value || st.scrollX !== had.scrollX || st.scrollY !== had.scrollY) api.updateScene({ appState: had });
+        return;
+      }
+      const els = api.getSceneElements().filter((e: { isDeleted?: boolean; type: string }) => !e.isDeleted && (e.type === "rectangle" || e.type === "arrow"));
+      if (!els.length) return;
+      const x0 = Math.min(...els.map((e: { x: number }) => e.x)), y0 = Math.min(...els.map((e: { y: number }) => e.y));
+      const x1 = Math.max(...els.map((e: { x: number; width: number }) => e.x + e.width)), y1 = Math.max(...els.map((e: { y: number; height: number }) => e.y + e.height));
+      const st = api.getAppState();
+      const k = Math.min((1440 * 0.78) / (x1 - x0), (900 * 0.7) / (y1 - y0));
+      // 屏幕点 = (场景点 + scroll) * zoom + offset
+      const sx = (720 - st.offsetLeft) / k - (x0 + x1) / 2, sy = (600 - st.offsetTop) / k - (y0 + y1) / 2;
+      const view = { zoom: { value: k }, scrollX: sx, scrollY: sy };
+      seen.set(id, view);
+      api.updateScene({ appState: view });
+    };
+  });
+  // --enter <s>：录到这一秒时把 API 服务的子图换到前面（镜头不跟随，小人进了子图画面也不会自己跟进去）
+  const enter = Number(opt("--enter", "-1"));
+  let entered = false;
+  await record("hop", Number(opt("--seconds", "20")), async (t) => {
+    if (enter >= 0 && !entered && t >= enter) {
+      entered = true;
+      await page.evaluate(async () => { const p = "/src/nested/store.ts"; (await import(/* @vite-ignore */ p)).nav.go("c1", "c-api"); });
+    }
+    await page.evaluate(() => (window as unknown as { __frame: () => unknown }).__frame());
+  });
 }
 await browser.close();
