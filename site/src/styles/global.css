@@ -222,7 +222,8 @@ pre {
 	font-size: var(--text-display);
 	font-weight: 480;
 	line-height: 1.02;
-	letter-spacing: -0.025em;
+	/* Fraunces 的光学尺寸在大字号下自动换成紧凑的展示切法，字距只需轻收 */
+	letter-spacing: -0.008em;
 }
 
 .section-title {
@@ -230,14 +231,14 @@ pre {
 	font-size: var(--text-title);
 	font-weight: 480;
 	line-height: 1.06;
-	letter-spacing: -0.02em;
+	letter-spacing: -0.006em;
 }
 
 .item-title {
 	font-size: var(--text-item);
 	font-weight: 560;
 	line-height: 1.25;
-	letter-spacing: -0.01em;
+	letter-spacing: 0;
 }
 
 /* 中文标题：宋体系没有可变字重，字重按 400/700 两档取；字距放回 0，行距加大 */
