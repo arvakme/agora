@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="黄昏的广场上，天空里画着一张手绘架构图，几个小人站在节点上干活" width="100%">
+  <img src="docs/assets/banner-ink.svg" alt="Agora" width="100%" />
 </p>
 
 <h1 align="center">Agora</h1>
@@ -244,7 +244,7 @@ skills/agora/         给各会话 agent 的 skill：SKILL.md 是入口路由，
 web/                  前端（React + Excalidraw）；web/docs/ 是各功能规格，web/eval/ 是评测
 web/libraries/        vendored 素材库（约 6k 个组件，来源与许可见其 NOTICE.md）
 tests/                Python 测试
-docs/                 开发协作与测试说明；docs/assets/ 是 README 的横幅和示意图（含生成源文件），docs/promo/ 是宣传片源文件
+docs/                 开发协作与测试说明；docs/assets/ 是 README 的横幅（banner-ink.svg 是墨迹洇开的动画版，banner.png 是静态版）和示意图，都带生成源文件，docs/promo/ 是宣传片源文件
 ```
 
 ## 限制
