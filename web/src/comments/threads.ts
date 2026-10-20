@@ -1,6 +1,7 @@
 // Our own comment layer state (not Excalidraw's). One store per canvas, so each
 // canvas has independent threads; UI, agent runner and eval share it.
 import { useSyncExternalStore } from "react";
+import { tr } from "../i18n";
 
 export type Anchor = {
   /** Stable element ids; the first one carries the pin. */
@@ -188,7 +189,7 @@ export function createThreadStore(canvasId: string, initial?: ThreadSnapshot, re
       remote.remove?.(id, msgId);
       return {
         canvasId,
-        label: "已删除一条评论",
+        label: tr("已删除一条评论", "Comment deleted"),
         run: () => {
           const back: Message = { ...m, updatedAt: Date.now() };
           commit(all.map((t) => (t.id === id ? { ...t, messages: t.messages.map((x) => (x.id === msgId ? back : x)) } : t)), wasOpen ? id : state.activeId);
@@ -205,7 +206,7 @@ export function createThreadStore(canvasId: string, initial?: ThreadSnapshot, re
       commit(all.map((x) => (x.id === id ? { id: t.id, n: t.n, createdAt: t.createdAt, ...(t.createdBy && { createdBy: t.createdBy }), anchor: t.anchor, ...(t.moment && { moment: t.moment }), agent: "idle", resolved: true, deleted: true, updatedAt: now, messages: [] } : x)));
       return {
         canvasId,
-        label: `已删除线程 #${t.n}`,
+        label: tr(`已删除线程 #${t.n}`, `Thread #${t.n} deleted`),
         run: () => commit(all.map((x) => (x.id === id ? { ...t, agent: "idle" as const, updatedAt: Date.now() } : x)), wasOpen ? id : state.activeId),
       };
     },

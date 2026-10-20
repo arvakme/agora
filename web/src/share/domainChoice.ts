@@ -1,5 +1,6 @@
 // What the share window shows for "which address": the account's zones (server/canvas/share.py `domains()`),
 // the one picked last time, the one AGORA_SHARE_DOMAIN fixes, or a temporary link that needs no domain. Pure.
+import { tr } from "../i18n";
 
 export type DomainInfo = { domains: string[]; chosen: string | null; fixed: boolean; error: string | null };
 export type ShareTarget = "domain" | "quick";
@@ -44,7 +45,7 @@ export type DomainRowView = {
 
 /** What the 域名 line shows: the domain in use, the link it makes, and a way to change it. */
 export function domainRow(view: DomainView): DomainRowView {
-  if (view.kind === "fixed" || view.kind === "single") return { current: view.domain, preview: `链接会是 xxx.${view.domain}`, change: null };
-  if (view.kind === "pick") return { current: view.selected, preview: `链接会是 xxx.${view.selected}`, change: { label: "换一个", options: view.options } };
+  if (view.kind === "fixed" || view.kind === "single") return { current: view.domain, preview: tr(`链接会是 xxx.${view.domain}`, `Links will look like xxx.${view.domain}`), change: null };
+  if (view.kind === "pick") return { current: view.selected, preview: tr(`链接会是 xxx.${view.selected}`, `Links will look like xxx.${view.selected}`), change: { label: tr("换一个", "Change"), options: view.options } };
   return { current: null, preview: null, change: null };
 }

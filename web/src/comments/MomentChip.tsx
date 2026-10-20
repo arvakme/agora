@@ -4,6 +4,7 @@
 import { buildReplay } from "../buildreplay/store";
 import { IconPlay } from "../app/icons";
 import type { Thread } from "./threads";
+import { tr } from "../i18n";
 
 export function MomentChip({ t, canvasId }: { t: Pick<Thread, "moment">; canvasId: string }) {
   if (!t.moment) return null;
@@ -16,11 +17,11 @@ export function MomentChip({ t, canvasId }: { t: Pick<Thread, "moment">; canvasI
       onClick={(e) => (e.stopPropagation(), buildReplay.open(canvasId, step))}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), e.stopPropagation(), buildReplay.open(canvasId, step))}
       onPointerDown={(e) => e.stopPropagation()}
-      title="回到搭建回放里评论时看到的那一刻"
-      aria-label={`回放里的第 ${step + 1} 步`}
+      title={tr("回到搭建回放里评论时看到的那一刻", "Go back to the moment in the build replay this comment was written at")}
+      aria-label={tr(`回放里的第 ${step + 1} 步`, `Step ${step + 1} of the replay`)}
     >
       <IconPlay size={12} />
-      回放第 {step + 1} 步
+      {tr(`回放第 ${step + 1} 步`, `Replay step ${step + 1}`)}
     </span>
   );
 }
