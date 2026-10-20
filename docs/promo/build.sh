@@ -87,17 +87,18 @@ finish() { # lang
   get() { printf '%s' "$json" | python3 -c "import json,sys; print(json.load(sys.stdin)['$1'])"; }
   ffmpeg -v error -y -i "$src" -c:v copy -af "$eq,loudnorm=I=-14:TP=-1.5:LRA=11:linear=true:measured_I=$(get input_i):measured_TP=$(get input_tp):measured_LRA=$(get input_lra):measured_thresh=$(get input_thresh):offset=$(get target_offset),afade=t=out:st=38.5:d=1.5" \
     -c:a aac -b:a 256k -ar 48000 -movflags +faststart "$full"
-  # 网页版：GitHub 免费账号内嵌视频上限 10 MB。40 s 按 1.75 Mbps 视频 + 128 kbps 音频两遍编码，约 9.3 MB
+  # 网页版：GitHub 免费账号内嵌视频上限 10 MB。40 s 按 1.65 Mbps 视频 + 128 kbps 音频两遍编码，约 9.0 MB（9.5 MB 以内留余量）
   local pass="$out/x264-$lang"
-  ffmpeg -v error -y -i "$full" -c:v libx264 -preset veryslow -tune animation -b:v 1750k -pass 1 -passlogfile "$pass" -an -f null /dev/null
-  ffmpeg -v error -y -i "$full" -c:v libx264 -preset veryslow -tune animation -b:v 1750k -maxrate 3500k -bufsize 7000k -pass 2 -passlogfile "$pass" \
+  ffmpeg -v error -y -i "$full" -c:v libx264 -preset veryslow -tune animation -b:v 1650k -pass 1 -passlogfile "$pass" -an -f null /dev/null
+  ffmpeg -v error -y -i "$full" -c:v libx264 -preset veryslow -tune animation -b:v 1650k -maxrate 3500k -bufsize 7000k -pass 2 -passlogfile "$pass" \
     -pix_fmt yuv420p -profile:v high -c:a aac -b:a 128k -ar 48000 -movflags +faststart "$out/agora-promo.$lang.web.mp4"
   rm -f "$pass"*
   # 竖屏 1080×1920：同一条片子居中，背后是它自己放大、虚化、压暗的一层
   ffmpeg -v error -y -i "$full" -filter_complex \
     "[0:v]scale=-2:1920,crop=1080:1920,boxblur=40:2,eq=brightness=-0.08:saturation=0.7[bg];[0:v]scale=1080:-2[fg];[bg][fg]overlay=0:(H-h)/2,format=yuv420p[v]" \
     -map "[v]" -map 0:a -c:v libx264 -preset slow -crf 20 -c:a copy -movflags +faststart "$out/agora-promo-vertical.$lang.mp4"
-  # README 动图：逐站画出来（4–10 s）接缩放进子图（16–20 s），无声，960 宽 15 fps
+  # README 动图：逐站画出来（4–10 s）接缩放进子图（16–20 s），无声，960 宽 15 fps，≤ 3.5 MB；
+  # demo.zh.gif → docs/assets/demo.gif，demo.en.gif → docs/assets/demo.en.gif
   ffmpeg -v error -y -i "$full" -filter_complex \
     "[0:v]trim=4:10,setpts=PTS-STARTPTS[a];[0:v]trim=16:20,setpts=PTS-STARTPTS[b];[a][b]concat=n=2:v=1[c];[c]fps=15,scale=960:-1:flags=lanczos,split[x][y];[x]palettegen=max_colors=128:stats_mode=diff[p];[y][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" \
     "$out/demo.$lang.gif"
