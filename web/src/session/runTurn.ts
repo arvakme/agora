@@ -14,6 +14,7 @@ import { byId, isArrow, isShape, libraryMeta, live, nameOf, type Scene } from ".
 import { redoBatch, redoOf, versionsAfterRedo, type Redo } from "./redo";
 import { sessions, type Origin, type Turn, type Usage } from "./store";
 import { ENTITY_ASSETS, pickEngine, type EnginePick } from "../anim/enginePick";
+import { tr } from "../i18n";
 
 export type AgentOutcome = {
   ctx: FrozenContext;
@@ -75,11 +76,11 @@ export async function runTurn(input: {
   const end = (status: Turn["status"], reply: Turn["reply"]) => sessions.patchTurn(T, (t) => ({ ...t, status, reply, endedAt: Date.now() }));
 
   // 1. Read: freeze the canvas the agent will see.
-  const read = sessions.step(T, { kind: "read", title: "读取画布" });
+  const read = sessions.step(T, { kind: "read", title: tr("读取画布", "Read canvas") });
   const ctx = freeze(all(api), input.request, Object.keys(api.getAppState().selectedElementIds));
   const chars = JSON.stringify(ctx.scene).length;
   sessions.endStep(T, read, {
-    detail: `冻结上下文 · ${ctx.scene.nodes.length} 个节点 / ${ctx.scene.arrows.length} 根箭头 · ${chars.toLocaleString()} 字符${ctx.selection.length ? ` · 选区 ${ctx.selection.length}` : ""}`,
+    detail: tr(`冻结上下文 · ${ctx.scene.nodes.length} 个节点 / ${ctx.scene.arrows.length} 根箭头 · ${chars.toLocaleString()} 字符${ctx.selection.length ? ` · 选区 ${ctx.selection.length}` : ""}`, `Context frozen · ${ctx.scene.nodes.length} nodes / ${ctx.scene.arrows.length} arrows · ${chars.toLocaleString()} chars${ctx.selection.length ? ` · selection ${ctx.selection.length}` : ""}`),
     elements: [...ctx.anchors.map((a) => a.id), ...ctx.selection],
   });
   const base = { ctx, ops: null, errors: [], stale: [], summary: [], costUsd: null, durationMs: 0, turnId: T };
@@ -92,7 +93,7 @@ export async function runTurn(input: {
   let open: string | null = null;
   const tools = new Map<string, string>();
   const close = (at: number, p = {}) => open && (sessions.endStep(T, open, { endedAt: at, ...p }), (open = null));
-  const think = (at: number) => (open = sessions.step(T, { kind: "think", title: "思考", startedAt: at }));
+  const think = (at: number) => (open = sessions.step(T, { kind: "think", title: tr("思考", "Thinking"), startedAt: at }));
   try {
     // Server-sent events: one `data: <json>` frame per PlanEvent from POST /api/canvas/turns.
     const r = await fetch("/api/canvas/turns", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(ctx) });
@@ -132,16 +133,16 @@ export async function runTurn(input: {
           } catch {
             /* "no match" text */
           }
-          if (id) sessions.endStep(T, id, { endedAt: e.at, candidates: candidates.slice(0, 5), detail: candidates.length ? `${candidates.length} 个候选` : e.text.slice(0, 120) });
+          if (id) sessions.endStep(T, id, { endedAt: e.at, candidates: candidates.slice(0, 5), detail: candidates.length ? tr(`${candidates.length} 个候选`, `${candidates.length} candidate${candidates.length === 1 ? "" : "s"}`) : e.text.slice(0, 120) });
           think(e.at);
         } else if (e.t === "output") {
           close(e.at);
-          open = sessions.step(T, { kind: "plan", title: "生成操作", startedAt: e.at });
+          open = sessions.step(T, { kind: "plan", title: tr("生成操作", "Generate operations"), startedAt: e.at });
         } else if (e.t === "result") {
           res = e;
           if (e.usage) sessions.patchTurn(T, (t) => ({ ...t, usage: [...(t.usage ?? []), e.usage as Usage] }));
           const ops = ((e.raw as { ops?: Op[] })?.ops ?? []) as Op[];
-          close(e.at, e.error ? { status: "error", detail: e.error } : { title: `生成 ${ops.length} 个操作`, ops: ops.map((o) => ({ op: o.op, target: opTarget(o) })) });
+          close(e.at, e.error ? { status: "error", detail: e.error } : { title: tr(`生成 ${ops.length} 个操作`, `Generated ${ops.length} operation${ops.length === 1 ? "" : "s"}`), ops: ops.map((o) => ({ op: o.op, target: opTarget(o) })) });
         }
       }
     }
@@ -150,17 +151,17 @@ export async function runTurn(input: {
   }
   const done = res as Res | null;
   if (!done || done.error) {
-    const msg = done?.error ?? "调用模型失败";
-    sessions.step(T, { kind: "error", title: "模型没有返回可用结果", detail: msg, status: "error", endedAt: Date.now() });
+    const msg = done?.error ?? tr("调用模型失败", "The model call failed");
+    sessions.step(T, { kind: "error", title: tr("模型没有返回可用结果", "The model returned nothing usable"), detail: msg, status: "error", endedAt: Date.now() });
     sessions.patchTurn(T, (t) => ({ ...t, costUsd: done?.costUsd ?? null }));
-    end("error", { text: `模型没有返回可用结果：${msg}`, tone: "error" });
+    end("error", { text: tr(`模型没有返回可用结果：${msg}`, `The model returned nothing usable: ${msg}`), tone: "error" });
     return { ...base, status: "error", errors: [msg], costUsd: done?.costUsd ?? null, durationMs: done?.durationMs ?? 0 };
   }
   sessions.patchTurn(T, (t) => ({ ...t, costUsd: done.costUsd }));
   const withCost = { ...base, costUsd: done.costUsd, durationMs: done.durationMs, prompt: done.prompt, usage: done.usage };
 
   // 3. Check: library items exist, schema + references, freshness.
-  const check = sessions.step(T, { kind: "check", title: "校验 + 新鲜度" });
+  const check = sessions.step(T, { kind: "check", title: tr("校验 + 新鲜度", "Validate + freshness") });
   const library = await fetchLibraryItems(done.raw);
   const now = all(api);
   const { plan, errors } = validatePlan(done.raw, { ...sceneIndex(now), libraryItem: (id) => library.has(id) });
@@ -168,27 +169,27 @@ export async function runTurn(input: {
   const note = (done.raw as { note?: string })?.note;
   if (!plan) {
     if (ops?.length === 0 && note) {
-      sessions.endStep(T, check, { detail: "没有操作" });
-      end("empty", { text: `没有修改：${note}` });
+      sessions.endStep(T, check, { detail: tr("没有操作", "No operations") });
+      end("empty", { text: tr(`没有修改：${note}`, `No changes: ${note}`) });
       return { ...withCost, ops, note, status: "empty" };
     }
-    sessions.endStep(T, check, { status: "error", detail: errors.join("；") });
-    end("invalid", { text: `操作未通过校验，未执行：\n${errors.join("\n")}`, tone: "error" });
+    sessions.endStep(T, check, { status: "error", detail: errors.join(tr("；", "; ")) });
+    end("invalid", { text: tr(`操作未通过校验，未执行：\n${errors.join("\n")}`, `Operations failed validation and were not applied:\n${errors.join("\n")}`), tone: "error" });
     return { ...withCost, ops, note, status: "invalid", errors };
   }
   const nowMap = byId(now);
   const watched = [...new Set([...referencedIds(plan), ...ctx.anchors.map((a) => a.id), ...ctx.selection])];
   const stale = staleIds(ctx, watched, now);
   if (stale.length) {
-    const names = stale.map((id) => (nowMap.get(id) ? nameOf(nowMap.get(id)!, nowMap) : id)).join("、");
-    sessions.endStep(T, check, { status: "error", detail: `${names} 在提交后被改动`, elements: stale });
-    end("stale", { text: `已拒绝执行：${names} 在提交后被改动过，计划基于旧版本。请重新交给 Agent。`, tone: "warn" });
+    const names = stale.map((id) => (nowMap.get(id) ? nameOf(nowMap.get(id)!, nowMap) : id)).join(tr("、", ", "));
+    sessions.endStep(T, check, { status: "error", detail: tr(`${names} 在提交后被改动`, `${names} changed after submitting`), elements: stale });
+    end("stale", { text: tr(`已拒绝执行：${names} 在提交后被改动过，计划基于旧版本。请重新交给 Agent。`, `Refused: ${names} changed after submitting, so the plan is based on an old version. Hand to agent again.`), tone: "warn" });
     return { ...withCost, ops, note, status: "stale", stale };
   }
-  sessions.endStep(T, check, { detail: `schema ✓ · 引用 ✓ · ${watched.length} 个元素版本未变 ✓${library.size ? ` · 素材 ${library.size} 个 ✓` : ""}` });
+  sessions.endStep(T, check, { detail: tr(`schema ✓ · 引用 ✓ · ${watched.length} 个元素版本未变 ✓${library.size ? ` · 素材 ${library.size} 个 ✓` : ""}`, `schema ✓ · refs ✓ · ${watched.length} element versions unchanged ✓${library.size ? ` · ${library.size} library items ✓` : ""}`) });
 
   // 4. Apply as one undoable batch.
-  const apply = sessions.step(T, { kind: "apply", title: "应用到画布（1 次可撤销修改）" });
+  const apply = sessions.step(T, { kind: "apply", title: tr("应用到画布（1 次可撤销修改）", "Apply to canvas (1 undoable change)") });
   const result = applyPlan(now, plan, library);
   api.updateScene({ elements: result.scene, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
   // Excalidraw re-measures bound text right after updateScene and bumps versions again;
@@ -203,8 +204,8 @@ export async function runTurn(input: {
     const e = settled.get(id);
     return live(e) && e.type !== "text" && (libraryMeta(e) || !e.groupIds.some((g) => libGroups.has(g)));
   });
-  sessions.endStep(T, apply, { detail: `${result.summary.length} 处修改 · ${touched.length} 个元素`, elements: touched });
-  end("applied", { text: `已按${input.origin.kind === "comment" ? "评论" : "要求"}修改 ${result.summary.length} 处${note ? `：${note}` : ""}`, changes: result.summary, batchId });
+  sessions.endStep(T, apply, { detail: tr(`${result.summary.length} 处修改 · ${touched.length} 个元素`, `${result.summary.length} change${result.summary.length === 1 ? "" : "s"} · ${touched.length} element${touched.length === 1 ? "" : "s"}`), elements: touched });
+  end("applied", { text: tr(`已按${input.origin.kind === "comment" ? "评论" : "要求"}修改 ${result.summary.length} 处${note ? `：${note}` : ""}`, `Made ${result.summary.length} change${result.summary.length === 1 ? "" : "s"} as the ${input.origin.kind === "comment" ? "comment" : "request"} asked${note ? `: ${note}` : ""}`), changes: result.summary, batchId });
   return { ...withCost, ops, note, status: "applied", summary: result.summary, batchId };
 }
 
@@ -221,7 +222,8 @@ export function undoTurn(api: ExcalidrawImperativeAPI, turnId: string): { ok: bo
   const r = undoBatch(now, batch);
   if (!r.scene) {
     const map = byId(now);
-    const undoError = `无法撤销：${r.stale.map((id) => (map.get(id) ? nameOf(map.get(id)!, map) : id)).join("、")} 在 Agent 修改后又被改动过。`;
+    const stale = r.stale.map((id) => (map.get(id) ? nameOf(map.get(id)!, map) : id)).join(tr("、", ", "));
+    const undoError = tr(`无法撤销：${stale} 在 Agent 修改后又被改动过。`, `Can't undo: ${stale} changed again after the agent's edit.`);
     sessions.patchTurn(turnId, (t) => ({ ...t, reply: { ...t.reply!, undoError } }));
     return { ok: false, stale: r.stale };
   }
@@ -240,7 +242,8 @@ export function redoTurn(api: ExcalidrawImperativeAPI, turnId: string): { ok: bo
   const r = redoBatch(now, redo);
   if (!r.scene) {
     const map = byId(now);
-    const undoError = `无法重做：${r.stale.map((id) => (map.get(id) ? nameOf(map.get(id)!, map) : id)).join("、")} 在撤销后又被改动过。`;
+    const stale = r.stale.map((id) => (map.get(id) ? nameOf(map.get(id)!, map) : id)).join(tr("、", ", "));
+    const undoError = tr(`无法重做：${stale} 在撤销后又被改动过。`, `Can't redo: ${stale} changed again after the undo.`);
     sessions.patchTurn(turnId, (t) => ({ ...t, reply: { ...t.reply!, undoError } }));
     return { ok: false, stale: r.stale };
   }
@@ -269,10 +272,10 @@ export async function fetchLibraryItems(raw: unknown): Promise<Map<string, Libra
  */
 async function engineStep(T: string, request: string): Promise<EnginePick> {
   if (!ENTITY_ASSETS.test(request)) return pickEngine({ request, libraryHits: 0 });
-  const id = sessions.step(T, { kind: "engine", title: "素材库" });
+  const id = sessions.step(T, { kind: "engine", title: tr("素材库", "Library") });
   const r = await fetch(`/api/canvas/library/search?q=${encodeURIComponent(request)}&limit=3`).catch(() => null);
   const libraryHits = r?.ok ? (((await r.json()) as { items?: unknown[] }).items ?? []).length : 0;
   const pick = pickEngine({ request, libraryHits });
-  sessions.endStep(T, id, { title: "素材库：可用", detail: pick.reason });
+  sessions.endStep(T, id, { title: tr("素材库：可用", "Library: available"), detail: pick.reason });
   return pick;
 }

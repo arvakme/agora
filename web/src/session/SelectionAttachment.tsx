@@ -9,11 +9,12 @@ import type { Item } from "./agents";
 import { selectionLabel, type SelEl } from "./selection";
 import { canvases, highlight, ui } from "./ui";
 import "./agentCard.css";
+import { tr } from "../i18n";
 
 export function SelectionView({ elements, thumb, onPick }: { elements: SelEl[]; thumb?: string; onPick: () => void }) {
   return (
     <div className="sel-view" data-thumb={thumb ? "" : undefined}>
-      <button className="sel-btn" onClick={onPick} aria-label={`在图上标出这 ${elements.length} 个元素（再点取消）`}>
+      <button className="sel-btn" onClick={onPick} aria-label={tr(`在图上标出这 ${elements.length} 个元素（再点取消）`, `Highlight these ${elements.length} element${elements.length === 1 ? "" : "s"} on the diagram (click again to clear)`)}>
         {thumb && <img className="sel-thumb" src={thumb} alt="" loading="lazy" />}
         <span className="sel-count">
           <IconSelect size={12} />

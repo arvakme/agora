@@ -4,6 +4,7 @@
 // tags in the text stay text (React escapes them), and links only keep http(s) and mailto
 // targets, so a reply cannot run script or load anything by itself.
 import { Fragment, memo, type ReactNode } from "react";
+import { tr } from "../i18n";
 
 export type Block =
   | { t: "p"; text: string }
@@ -216,7 +217,7 @@ function renderBlocks(blocks: Block[], key: string): ReactNode[] {
           <L key={k} start={b.ordered && b.start !== 1 ? b.start : undefined}>
             {b.items.map((it, j) => (
               <li key={j} data-task={it.task ? (it.done ? "done" : "open") : undefined}>
-                {it.task && <input type="checkbox" checked={!!it.done} readOnly disabled aria-label={it.done ? "已完成" : "未完成"} />}
+                {it.task && <input type="checkbox" checked={!!it.done} readOnly disabled aria-label={it.done ? tr("已完成", "Done") : tr("未完成", "Not done")} />}
                 {/* A tight item leads with inline text (bullets line up with it); nested lists follow. */}
                 {it.blocks[0]?.t === "p" ? [...inline(it.blocks[0].text, `${k}.${j}`), ...renderBlocks(it.blocks.slice(1), `${k}.${j}r`)] : renderBlocks(it.blocks, `${k}.${j}`)}
               </li>

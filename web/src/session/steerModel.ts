@@ -1,3 +1,4 @@
+import { tr } from "../i18n";
 // 插话 (ST1): what the page does with words said while an agent works. A CLI that can take them gets them into the
 // running turn (`steer`); one that cannot puts the person to a choice — never a silent queue. A terminal pane keeps
 // its own rules (input right, busy), so nothing here changes them.
@@ -10,15 +11,15 @@ export function planSend(o: { running: boolean; terminalAlive: boolean; steer: b
 }
 
 export const CHOICES: { mode: "interrupt" | "wait"; label: string }[] = [
-  { mode: "interrupt", label: "停下这一轮，改说这句" },
-  { mode: "wait", label: "等这一轮做完再说" },
+  { mode: "interrupt", label: tr("停下这一轮，改说这句", "Stop this turn and send this instead") },
+  { mode: "wait", label: tr("等这一轮做完再说", "Send after this turn finishes") },
 ];
 export const defaultChoice = (): "interrupt" | "wait" => CHOICES[0].mode;
 
 /** The line under the input for a choice: why this CLI cannot take words in the middle of a turn. */
-export const whyNoSteer = (name: string, reason: string): string => `${name} 不能中途插话${reason ? `：${reason}` : ""}`;
+export const whyNoSteer = (name: string, reason: string): string => tr(`${name} 不能中途插话${reason ? `：${reason}` : ""}`, `${name} can't take messages mid-turn${reason ? `: ${reason}` : ""}`);
 
-export const steerNote = (agent: string, how: "steer" | "interrupt"): string => (how === "steer" ? `已插话给 ${agent}` : `已停下 ${agent} 的这一轮，改说这句`);
+export const steerNote = (agent: string, how: "steer" | "interrupt"): string => (how === "steer" ? tr(`已插话给 ${agent}`, `Sent to ${agent} mid-turn`) : tr(`已停下 ${agent} 的这一轮，改说这句`, `Stopped ${agent}'s turn and sent this instead`));
 
 /** What words to a session can do: the CLI's ability, except that a session whose last turn fell back to the one-shot way (Codex / Pi
  * without their resident process) cannot take them, and says why (the server's ``steerWhy``). */

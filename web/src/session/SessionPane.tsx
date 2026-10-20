@@ -26,7 +26,7 @@ import { TrajectoryView } from "./TrajectoryView";
 import { LiveBar, ProcessBlock, ProcessChoice } from "./ProcessCard";
 import { activityModel } from "./activityCard";
 import { TraceTurn } from "./TraceTurn";
-import { CONTINUE_WORD, stoppedForTime } from "./turnStop";
+import { CONTINUE_WORD, stopText, stoppedForTime } from "./turnStop";
 import { buildTurns, fmtCost, fmtDuration, fmtTokens, sumUsage, type TrajTurn } from "./trajectoryModel";
 import { SPRING } from "../comments/motion";
 import { Composer } from "./Composer";
@@ -55,9 +55,10 @@ import { agentChoice, canvases, draftText, highlight, openSessions, ui } from ".
 import { JumpPill, useJumpToBottom } from "./JumpPill";
 import { FloatChoice } from "../app/FloatChoice";
 import "./session.css";
+import { tr, langTag } from "../i18n";
 
 const fmt = (ms: number) => (ms < 10000 ? `${(ms / 1000).toFixed(1)}s` : ms < 60000 ? `${Math.round(ms / 1000)}s` : `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`);
-const clock = (at: number) => new Date(at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+const clock = (at: number) => new Date(at).toLocaleTimeString(langTag(), { hour: "2-digit", minute: "2-digit" });
 
 /** `onRename`: starts renaming this session's tab (a phone has no double-click or right-click to do it by). */
 export function SessionPane({ sessionId, canvasTitles, onRename }: { sessionId: string; canvasTitles: Record<string, string>; onRename?: () => void }) {
@@ -66,7 +67,7 @@ export function SessionPane({ sessionId, canvasTitles, onRename }: { sessionId: 
   const { sessions: all } = useSessions();
   const ag = useAgents();
   const session = all[sessionId];
-  if (!session) return <div className="sp-empty">会话不存在</div>;
+  if (!session) return <div className="sp-empty">{tr("会话不存在", "Session not found")}</div>;
   const binding = ag.bindings[sessionId];
   const origin = ag.origins[sessionId];
   // A session made on another machine, or whose binding is only in this machine's registry: never
@@ -115,10 +116,10 @@ function OriginCard({ sessionId, origin, canvasTitles }: { sessionId: string; or
   const fresh = () => act(() => freshSession(canvasTitles[canvasId] ? canvasId : Object.keys(canvasTitles)[0] ?? "", agent, origin.model, origin.effort));
   const [title, text] =
     origin.state === "recoverable"
-      ? ["可以恢复", `这个 ${name} 会话在本机的注册表里有记录，但项目里的绑定不见了（.agora/sessions/ 被清掉？）。${origin.log === "found" ? "原生对话还在，恢复后照常续接。" : "原生对话在这台机器上没找到；恢复后只能查看 Agora 保存的轨迹。"}`]
+      ? [tr("可以恢复", "Can be restored"), tr(`这个 ${name} 会话在本机的注册表里有记录，但项目里的绑定不见了（.agora/sessions/ 被清掉？）。`, `This machine's registry has a record of this ${name} session, but the project's binding is gone (was .agora/sessions/ cleared?). `) + (origin.log === "found" ? tr("原生对话还在，恢复后照常续接。", "The native conversation is still here; after restoring it resumes as usual.") : tr("原生对话在这台机器上没找到；恢复后只能查看 Agora 保存的轨迹。", "The native conversation isn't on this machine; after restoring you can only view the trajectory Agora saved."))]
       : origin.state === "other-copy"
-        ? ["属于另一份副本", `这个 ${name} 会话由本机的另一份项目（${origin.root}）在用。两份项目不能续接同一个原生会话：可以在这里分叉一份继续（保留之前的对话）。`]
-        : ["来自另一台机器", `这个 ${name} 会话是在另一台机器上（或别的位置）建的，对话记录不在这台机器上。`];
+        ? [tr("属于另一份副本", "Belongs to another copy"), tr(`这个 ${name} 会话由本机的另一份项目（${origin.root}）在用。两份项目不能续接同一个原生会话：可以在这里分叉一份继续（保留之前的对话）。`, `Another copy of this project on this machine (${origin.root}) is using this ${name} session. Two copies can't resume the same native session: you can fork it here and continue (the earlier conversation is kept).`)]
+        : [tr("来自另一台机器", "From another machine"), tr(`这个 ${name} 会话是在另一台机器上（或别的位置）建的，对话记录不在这台机器上。`, `This ${name} session was created on another machine (or in another location); its conversation log isn't on this machine.`)];
   return (
     <div className="sp">
       <div className="sp-choose sp-origin" data-state={origin.state}>
@@ -127,10 +128,10 @@ function OriginCard({ sessionId, origin, canvasTitles }: { sessionId: string; or
           <div>
             <h2>{origin.topic ? `${name} · ${origin.topic}` : name}</h2>
             <p className="sp-meta">
-              <span className="sp-lock"><IconLock size={12} />{origin.model || "默认模型"}{origin.effort ? ` · ${origin.effort}` : ""}</span>
+              <span className="sp-lock"><IconLock size={12} />{origin.model || tr("默认模型", "Default model")}{origin.effort ? ` · ${origin.effort}` : ""}</span>
               <span className="sp-sep" aria-hidden>·</span>
-              <span>{canvas ? `画布「${canvas}」` : canvasId ? "画布不在这个工作区" : "未关联画布"}</span>
-              {origin.nativeId && <code className="sp-native" title="原生会话 id">{origin.nativeId.slice(0, 8)}</code>}
+              <span>{canvas ? tr(`画布「${canvas}」`, `Canvas “${canvas}”`) : canvasId ? tr("画布不在这个工作区", "Canvas not in this workspace") : tr("未关联画布", "No canvas linked")}</span>
+              {origin.nativeId && <code className="sp-native" title={tr("原生会话 id", "Native session id")}>{origin.nativeId.slice(0, 8)}</code>}
             </p>
           </div>
         </div>
@@ -140,9 +141,9 @@ function OriginCard({ sessionId, origin, canvasTitles }: { sessionId: string; or
         </p>
         {err && <p className="sp-warn">{err}</p>}
         <div className="sp-choose-go">
-          {origin.state === "recoverable" && <button className="btn primary" disabled={busy} onClick={() => void restore()}>恢复这个会话</button>}
-          {origin.state === "other-copy" && <button className="btn primary" disabled={busy} onClick={() => void fork()}>在这里分叉继续</button>}
-          <button className={origin.state === "foreign" ? "btn primary" : "btn ghost"} disabled={busy} onClick={() => void fresh()}>在这里开新会话</button>
+          {origin.state === "recoverable" && <button className="btn primary" disabled={busy} onClick={() => void restore()}>{tr("恢复这个会话", "Restore")}</button>}
+          {origin.state === "other-copy" && <button className="btn primary" disabled={busy} onClick={() => void fork()}>{tr("在这里分叉继续", "Fork here and continue")}</button>}
+          <button className={origin.state === "foreign" ? "btn primary" : "btn ghost"} disabled={busy} onClick={() => void fresh()}>{tr("在这里开新会话", "Start a new session here")}</button>
         </div>
       </div>
     </div>
@@ -158,21 +159,21 @@ function CanvasChoice({ canvasId, canvasTitles, onPick }: { canvasId: string; ca
   const choices = canvasChoices(canvasTitles, index);
   const top = topOf(canvasId, index);
   const gone = !canvasTitles[canvasId];
-  const tip = "这个会话改图、画小人、接评论时用的图";
+  const tip = tr("这个会话改图、画小人、接评论时用的图", "The diagram this session edits, shows its avatar on and takes comments from");
   if (choices.length <= 1 && !gone)
     return (
       <span className="sp-cv" title={tip}>
         <i className="sp-cv-sq" aria-hidden />
-        <span className="sp-cv-t">画在：{canvasTitles[top] ?? choices[0]?.title ?? ""}</span>
+        <span className="sp-cv-t">{tr("画在：", "Canvas: ")}{canvasTitles[top] ?? choices[0]?.title ?? ""}</span>
       </span>
     );
   return (
     <label className="sp-cv" title={tip}>
       <i className="sp-cv-sq" aria-hidden />
-      <span className="sp-cv-t">画在：</span>
-      <select value={gone ? canvasId : top} onChange={(e) => onPick(e.target.value)} aria-label="这个会话画在哪张图上">
+      <span className="sp-cv-t">{tr("画在：", "Canvas: ")}</span>
+      <select value={gone ? canvasId : top} onChange={(e) => onPick(e.target.value)} aria-label={tr("这个会话画在哪张图上", "Which diagram this session draws on")}>
         {choices.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
-        {gone && <option value={canvasId}>{canvasId ? "已删除的画布" : "未关联画布"}</option>}
+        {gone && <option value={canvasId}>{canvasId ? tr("已删除的画布", "Deleted canvas") : tr("未关联画布", "No canvas linked")}</option>}
       </select>
     </label>
   );
@@ -252,79 +253,86 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
   const scopeNote = !c
     ? null
     : c.scope?.kind === "enabledModels"
-      ? { text: `只列 Pi 设置里启用的 ${c.models.length} 个模型（enabledModels）`, title: c.scope.source ? `来自 ${c.scope.source}` : undefined }
+      ? { text: tr(`只列 Pi 设置里启用的 ${c.models.length} 个模型（enabledModels）`, `Only the ${c.models.length} models enabled in Pi's settings (enabledModels)`), title: c.scope.source ? tr(`来自 ${c.scope.source}`, `From ${c.scope.source}`) : undefined }
       : kind === "pi" && c.scope?.kind === "available"
-        ? { text: `Pi 没有设置 enabledModels：列出已配置凭据的 ${c.models.length} 个模型`, title: "在 ~/.pi/agent/settings.json 或项目 .pi/settings.json 里设置 enabledModels 可以收窄范围" }
+        ? { text: tr(`Pi 没有设置 enabledModels：列出已配置凭据的 ${c.models.length} 个模型`, `Pi has no enabledModels set: listing the ${c.models.length} models with credentials`), title: tr("在 ~/.pi/agent/settings.json 或项目 .pi/settings.json 里设置 enabledModels 可以收窄范围", "Set enabledModels in ~/.pi/agent/settings.json or the project's .pi/settings.json to narrow the list") }
         : null;
   return (
     <div className="sp">
       <div className="sp-choose sp-choose2">
         {empty && (
           <div className="sp-draw">
-            <button className="btn primary" disabled={busy || catState === "loading"} onClick={() => void draw()}>画出这个项目的架构</button>
-            <p>用 {nameOf(rec)} 看一遍这个项目，把整体架构画到这张图上，主要的子系统各做一张子图；画完用两三句话告诉你。</p>
+            <button className="btn primary" disabled={busy || catState === "loading"} onClick={() => void draw()}>{tr("画出这个项目的架构", "Draw this project's architecture")}</button>
+            <p>{tr(`用 ${nameOf(rec)} 看一遍这个项目，把整体架构画到这张图上，主要的子系统各做一张子图；画完用两三句话告诉你。`, `${nameOf(rec)} reads through the project and draws its overall architecture on this diagram, with a sub-diagram for each main subsystem, then sums it up in a few sentences.`)}</p>
           </div>
         )}
-        <h2>选一个 agent 来讨论「{canvasTitle ?? "这张图"}」</h2>
-        <p>它会一直是这个会话的 agent：先在图上和你讨论架构，再去写代码；你在图上看得到它在哪干活。选定后不能更改。</p>
+        <h2>{tr(`选一个 agent 来讨论「${canvasTitle ?? "这张图"}」`, canvasTitle ? `Pick an agent to discuss “${canvasTitle}”` : "Pick an agent to discuss this diagram")}</h2>
+        <p>{tr("它会一直是这个会话的 agent：先在图上和你讨论架构，再去写代码；你在图上看得到它在哪干活。选定后不能更改。", "It stays this session's agent: it talks the architecture through with you on the diagram, then writes the code, and the diagram shows where it's working. It can't be changed once picked.")}</p>
         {waiting && (
           <p className="notice" data-tone="caution">
-            <b>在等你</b>
-            <span>有一条画布评论在等这个会话，选好后会自动交给它。</span>
+            <b>{tr("在等你", "Waiting for you")}</b>
+            <span>{tr("有一条画布评论在等这个会话，选好后会自动交给它。", "A canvas comment is waiting for this session; it's handed over as soon as you pick.")}</span>
           </p>
         )}
         <div className="sp-cards" role="radiogroup" aria-label="Agent">
           {kinds.map((k) => {
             const e = cat?.[k];
-            const def = e ? e.default || e.featured[0] || "默认模型" : "";
+            const def = e ? e.default || e.featured[0] || tr("默认模型", "Default model") : "";
             return (
               <button key={k} role="radio" aria-checked={kind === k} data-on={kind === k} disabled={cat ? !cat[k]?.installed : false} onClick={() => setPicked(k)}>
                 <AgentAvatar kind={k} size={32} />
                 <span className="sp-card-t">
                   <div className="sp-card-h">
                     <b>{nameOf(k)}</b>
-                    {k === rec && <i className="rec-tag">推荐</i>}
+                    {k === rec && <i className="rec-tag">{tr("推荐", "Recommended")}</i>}
                   </div>
                   <span>{AGENT_BLURB[k] ?? ""}{def ? `${AGENT_BLURB[k] ? " · " : ""}${e?.names?.[def] ?? def}` : ""}</span>
                 </span>
-                {cat && !cat[k]?.installed && <em>未安装</em>}
+                {cat && !cat[k]?.installed && <em>{tr("未安装", "Not installed")}</em>}
               </button>
             );
           })}
         </div>
         <div className="sp-choose-row">
-          <Picker label="模型" value={model} onChange={setModel} groups={view.fields ? models : []} disabled={!c || !view.fields} valueLabel={view.model} placeholder="搜索模型或 provider" />
+          <Picker label={tr("模型", "Model")} value={model} onChange={setModel} groups={view.fields ? models : []} disabled={!c || !view.fields} valueLabel={view.model} placeholder={tr("搜索模型或 provider", "Search models or providers")} />
           <Picker
-            label="强度"
+            label={tr("强度", "Effort")}
             value={effort}
             onChange={setEffort}
             groups={view.fields ? efforts : []}
             disabled={!c || !view.fields || !eff.levels.length}
             compact
             valueLabel={view.effort}
-            title={eff.levels.length ? `${model || "默认模型"} 支持：${eff.levels.join(" / ")}` : view.fields ? "这个 CLI 不分强度：不传强度参数" : undefined}
+            title={eff.levels.length ? tr(`${model || "默认模型"} 支持：${eff.levels.join(" / ")}`, `${model || "Default model"} supports: ${eff.levels.join(" / ")}`) : view.fields ? tr("这个 CLI 不分强度：不传强度参数", "This CLI has no effort levels: no effort flag is passed") : undefined}
           />
         </div>
         {view.note && (
           <p className="sp-choose-note" role="status">
             {view.note}
-            {view.retry && <button className="btn sm ghost" onClick={loadCatalog}>重试</button>}
+            {view.retry && <button className="btn sm ghost" onClick={loadCatalog}>{tr("重试", "Retry")}</button>}
           </p>
         )}
         {scopeNote && <p className="sp-choose-note" title={scopeNote.title}>{scopeNote.text}</p>}
         {err && <p className="sp-warn">{err}</p>}
         <div className="sp-choose-go">
-          <button className="btn primary" disabled={busy || !view.canStart} onClick={() => void start()}>用 {nameOf(kind)} 开始</button>
-          {waiting && <button className="btn ghost" onClick={() => agentChoice.resolve(sessionId, undefined)}>先不交</button>}
+          <button className="btn primary" disabled={busy || !view.canStart} onClick={() => void start()}>{tr(`用 ${nameOf(kind)} 开始`, `Start with ${nameOf(kind)}`)}</button>
+          {waiting && <button className="btn ghost" onClick={() => agentChoice.resolve(sessionId, undefined)}>{tr("先不交", "Not now")}</button>}
         </div>
-        <p className="sp-choose-later">也可以直接在右边画，之后再开会话。</p>
+        <p className="sp-choose-later">{tr("也可以直接在右边画，之后再开会话。", "You can also just draw on the right and start a session later.")}</p>
       </div>
     </div>
   );
 }
 
 /** What each agent is good for, in one line (the picker's cards). */
-const AGENT_BLURB: Record<string, string> = { pi: "快，适合边画边聊", claude: "擅长大改动，能派子代理", codex: "适合按清单写代码和测试", grok: "xAI 出品，读写代码，能派子代理", cursor: "多种模型可选，读写代码，能派子代理", devin: "Cognition 出品，读写代码，工具默认不用批准" };
+const AGENT_BLURB: Record<string, string> = {
+  pi: tr("快，适合边画边聊", "Fast, good for drawing while you talk"),
+  claude: tr("擅长大改动，能派子代理", "Good at big changes, can dispatch sub-agents"),
+  codex: tr("适合按清单写代码和测试", "Good at code and tests from a checklist"),
+  grok: tr("xAI 出品，读写代码，能派子代理", "By xAI; reads and writes code, can dispatch sub-agents"),
+  cursor: tr("多种模型可选，读写代码，能派子代理", "Many models; reads and writes code, can dispatch sub-agents"),
+  devin: tr("Cognition 出品，读写代码，工具默认不用批准", "By Cognition; reads and writes code, tools need no approval by default"),
+};
 
 function AgentSession({ sessionId, canvasTitles, onRename }: { sessionId: string; canvasTitles: Record<string, string>; onRename?: () => void }) {
   const nameOf = useAgentName();
@@ -408,7 +416,7 @@ function AgentSession({ sessionId, canvasTitles, onRename }: { sessionId: string
   useEffect(() => {
     void agents.terminalApps().then(setApps).catch(() => setApps(null));
   }, []);
-  const termName = apps?.name ?? "终端"; // which terminal「在终端打开」uses on this machine (AGORA_TERMINAL, else Ghostty > Kitty > Terminal)
+  const termName = apps?.name ?? tr("终端", "Terminal"); // which terminal「在终端打开」uses on this machine (AGORA_TERMINAL, else Ghostty > Kitty > Terminal)
   const termIcon = apps?.chosen === "kitty" ? <TerminalAppIcon /> : <IconTerminal size={16} />;
   const openTerminal = async () => {
     setTermNote(null);
@@ -416,7 +424,7 @@ function AgentSession({ sessionId, canvasTitles, onRename }: { sessionId: string
     try {
       const r = await agents.openTerminal(sessionId, session.canvasId, true);
       // a window that opened says so by itself (the input-right note below); only what did not work needs words
-      setTermNote(r.launched ? null : "没找到可用的终端：用「复制打开命令」在任意终端里打开");
+      setTermNote(r.launched ? null : tr("没找到可用的终端：用「复制打开命令」在任意终端里打开", "No terminal app found: use “Copy open command” to open it in any terminal"));
     } catch (e) {
       setTermNote((e as Error).message);
     }
@@ -430,10 +438,10 @@ function AgentSession({ sessionId, canvasTitles, onRename }: { sessionId: string
       const cmd = `env -u TMUX ${r.attach}`;
       if (await copyText(cmd)) {
         setTermMenu(false);
-        setTermNote(narrow ? "已复制命令：粘贴到手机的终端 App 里运行（要先 SSH 到这台 Mac）" : "已复制命令：在任意终端里新开一个窗口粘贴运行");
+        setTermNote(narrow ? tr("已复制命令：粘贴到手机的终端 App 里运行（要先 SSH 到这台 Mac）", "Command copied: paste it into your phone's terminal app (SSH into this Mac first)") : tr("已复制命令：在任意终端里新开一个窗口粘贴运行", "Command copied: paste it into a new window of any terminal"));
       } else {
         setCmdText(cmd);
-        setTermNote("没能复制：长按菜单里的命令自己复制");
+        setTermNote(tr("没能复制：长按菜单里的命令自己复制", "Couldn't copy: long-press the command in the menu to copy it yourself"));
       }
     } catch (e) {
       setTermNote((e as Error).message);
@@ -446,19 +454,19 @@ function AgentSession({ sessionId, canvasTitles, onRename }: { sessionId: string
     <button
       role="menuitem"
       disabled={!status?.terminal.alive && !!status?.running}
-      title={apps && !apps.chosen ? "没找到 Ghostty、Kitty 或 macOS 终端：用「复制打开命令」" : `在 ${termName} 窗口里打开这个会话的终端`}
+      title={apps && !apps.chosen ? tr("没找到 Ghostty、Kitty 或 macOS 终端：用「复制打开命令」", "No Ghostty, Kitty or macOS Terminal found: use “Copy open command”") : tr(`在 ${termName} 窗口里打开这个会话的终端`, `Open this session's terminal in a ${termName} window`)}
       onClick={() => void openTerminal()}
     >
       <span className="menu-check" />
       {termIcon}
-      {apps && !apps.chosen ? "在终端打开" : `用 ${termName} 打开`}
+      {apps && !apps.chosen ? tr("在终端打开", "Open in terminal") : tr(`用 ${termName} 打开`, `Open in ${termName}`)}
     </button>
   );
   const copyItem = (
-    <button role="menuitem" disabled={!status?.terminal.alive && !!status?.running} onClick={() => void copyOpen()} title="在任意终端里新开窗口粘贴运行">
+    <button role="menuitem" disabled={!status?.terminal.alive && !!status?.running} onClick={() => void copyOpen()} title={tr("在任意终端里新开窗口粘贴运行", "Paste and run it in a new window of any terminal")}>
       <span className="menu-check" />
       <IconCopy size={16} />
-      {narrow ? "复制命令，到手机终端里接着跑" : "复制打开命令"}
+      {narrow ? tr("复制命令，到手机终端里接着跑", "Copy command for your phone's terminal") : tr("复制打开命令", "Copy open command")}
     </button>
   );
   useEffect(() => {
@@ -475,94 +483,95 @@ function AgentSession({ sessionId, canvasTitles, onRename }: { sessionId: string
   // The native log is gone / ambiguous: read-only, no terminal, no sending (never a silent new conversation).
   const native = status?.native ?? null;
   const stuck = (!!native?.blocking && !status?.terminal.alive && !fork) || !!copyOf;
+  const replying = tr(`${nameOf(binding.agent)} 正在回复${status?.terminal.alive ? "（终端）" : ""}`, `${nameOf(binding.agent)} is replying${status?.terminal.alive ? " (terminal)" : ""}`);
   const line = status?.held
-    ? `排队中：${status.held}`
+    ? tr(`排队中：${status.held}`, `Queued: ${status.held}`)
     : status?.running
-      ? `${nameOf(binding.agent)} 正在处理${status.activity ? ` · ${status.activity}` : ""}`
+      ? tr(`${nameOf(binding.agent)} 正在处理`, `${nameOf(binding.agent)} is working`) + (status.activity ? ` · ${status.activity}` : "")
       : status?.busy
-        ? `${nameOf(binding.agent)} 正在回复${status.terminal.alive ? "（终端）" : ""}`
+        ? replying
         : inflight
-          ? "已发送，等待开始…"
+          ? tr("已发送，等待开始…", "Sent, waiting to start…")
           : status?.error
             ? stoppedForTime(status.error)
-              ? status.error
-              : `上一轮出错：${status.error}`
+              ? stopText(status.error)
+              : tr(`上一轮出错：${status.error}`, `The last turn failed: ${status.error}`)
             : null;
 
   // the bar above the composer reads the same model as the turn's card (./activityCard.ts)
   const liveTurn = turns.at(-1)?.running ? turns.at(-1)! : null;
-  const liveText = liveTurn ? activityModel(liveTurn, { waiting: !!status?.waiting }).now : status?.busy ? `${nameOf(binding.agent)} 正在回复${status.terminal.alive ? "（终端）" : ""}` : "已发送，等待开始…";
+  const liveText = liveTurn ? activityModel(liveTurn, { waiting: !!status?.waiting }).now : status?.busy ? replying : tr("已发送，等待开始…", "Sent, waiting to start…");
   const totalMs = turns.some((t) => t.durationMs != null) ? turns.reduce((n, t) => n + (t.durationMs ?? 0), 0) : null;
   return (
     <div className="sp" data-agent={binding.agent} data-playing={playing || undefined}>
       {/* One line: the model (fixed at creation) and the canvas; the name is already on the tab. */}
       <header className="sp-head sp-head1">
-        <span className="sp-lock" title="创建会话时选定，不能更改">
+        <span className="sp-lock" title={tr("创建会话时选定，不能更改", "Chosen when the session was created; can't be changed")}>
           <IconLock size={12} />
-          {binding.model || "默认模型"}{binding.effort ? ` · ${binding.effort}` : ""}
+          {binding.model || tr("默认模型", "Default model")}{binding.effort ? ` · ${binding.effort}` : ""}
         </span>
-        {status?.waiting && <span className="sp-waited" title="它在等你回答；不会自动拒绝，回答或停止之前一直等">{waitLabel(status.waitingSince, waitNow)}</span>}
+        {status?.waiting && <span className="sp-waited" title={tr("它在等你回答；不会自动拒绝，回答或停止之前一直等", "It's waiting for your answer; it never declines on its own and waits until you answer or stop it")}>{waitLabel(status.waitingSince, waitNow)}</span>}
         {modeLabel(status?.mode) && (
-          <span className="sp-mode" data-tone={modeLabel(status?.mode)!.tone} title="Claude 这一轮实际的权限模式：auto 由它自己判断哪些要问你">
+          <span className="sp-mode" data-tone={modeLabel(status?.mode)!.tone} title={tr("Claude 这一轮实际的权限模式：auto 由它自己判断哪些要问你", "Claude's actual permission mode this turn: in auto it decides itself what to ask you")}>
             {modeLabel(status?.mode)!.text}
           </span>
         )}
         <span className="sp-sep" aria-hidden>·</span>
         <CanvasChoice canvasId={session.canvasId} canvasTitles={canvasTitles} onPick={(id) => sessions.relink(sessionId, id)} />
         <span className="grow" />
-        <button className="icon-btn sm" aria-pressed={view === "trajectory"} data-on={view === "trajectory"} onClick={() => setView((v) => panelView(v, "toggle"))} title={view === "trajectory" ? "回到对话" : "轨迹：每一步做了什么"} aria-label="轨迹">
+        <button className="icon-btn sm" aria-pressed={view === "trajectory"} data-on={view === "trajectory"} onClick={() => setView((v) => panelView(v, "toggle"))} title={view === "trajectory" ? tr("回到对话", "Back to conversation") : tr("轨迹：每一步做了什么", "Trajectory: what each step did")} aria-label={tr("轨迹", "Trajectory")}>
           <IconPath size={16} />
         </button>
         {!narrow && <button
           className="icon-btn sm"
           disabled={(!status?.terminal.alive && !!status?.running) || stuck}
           onClick={() => void openTerminal()}
-          title={status?.terminal.alive ? `再开一个 ${termName} 窗口连到同一个终端` : status?.running ? "这一轮结束后再打开" : `用 ${termName} 打开，直接在里面做 coding`}
-          aria-label="在终端打开"
+          title={status?.terminal.alive ? tr(`再开一个 ${termName} 窗口连到同一个终端`, `Open another ${termName} window on the same terminal`) : status?.running ? tr("这一轮结束后再打开", "Open it after this turn ends") : tr(`用 ${termName} 打开，直接在里面做 coding`, `Open in ${termName} and code there directly`)}
+          aria-label={tr("在终端打开", "Open in terminal")}
         >
           {termIcon}
         </button>}
         <div className="sp-term">
-          <button className="icon-btn sm" aria-haspopup="dialog" aria-expanded={termMenu} aria-label="用量与更多" title="用量、会话 id、在哪个终端打开" onClick={() => setTermMenu((v) => !v)}>
+          <button className="icon-btn sm" aria-haspopup="dialog" aria-expanded={termMenu} aria-label={tr("用量与更多", "Usage and more")} title={tr("用量、会话 id、在哪个终端打开", "Usage, session id, which terminal to open in")} onClick={() => setTermMenu((v) => !v)}>
             <IconMore size={16} />
           </button>
           <AnimatePresence>
             {termMenu && (
-              <motion.div className="menu sp-term-menu sp-stats" role="dialog" aria-label="用量与更多" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -2, transition: { duration: 0.1 } }} transition={SPRING}>
+              <motion.div className="menu sp-term-menu sp-stats" role="dialog" aria-label={tr("用量与更多", "Usage and more")} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -2, transition: { duration: 0.1 } }} transition={SPRING}>
                 <dl>
-                  <dt>轮数</dt>
-                  <dd>{turns.length} 轮</dd>
-                  <dt>耗时</dt>
+                  <dt>{tr("轮数", "Turns")}</dt>
+                  <dd>{tr(`${turns.length} 轮`, `${turns.length}`)}</dd>
+                  <dt>{tr("耗时", "Time")}</dt>
                   <dd>{totalMs != null ? fmtDuration(totalMs) : "—"}</dd>
-                  <dt>花费</dt>
+                  <dt>{tr("花费", "Cost")}</dt>
                   <dd>{fmtCost(total.cost)}</dd>
-                  <dt>tokens</dt>
-                  <dd>{fmtTokens(total.input)} 入 · {fmtTokens(total.output)} 出{total.cacheRead != null && total.input ? ` · 缓存 ${Math.round((total.cacheRead / (total.input + total.cacheRead)) * 100)}%` : ""}</dd>
-                  <dt>会话 id</dt>
-                  <dd className="mono">{binding.nativeId ? binding.nativeId.slice(0, 8) : "第一轮后生成"}</dd>
+                  <dt>{tr("tokens", "Tokens")}</dt>
+                  <dd>{fmtTokens(total.input)} {tr("入", "in")} · {fmtTokens(total.output)} {tr("出", "out")}{total.cacheRead != null && total.input ? ` · ${tr("缓存", "cached")} ${Math.round((total.cacheRead / (total.input + total.cacheRead)) * 100)}%` : ""}</dd>
+                  <dt>{tr("会话 id", "Session id")}</dt>
+                  <dd className="mono">{binding.nativeId ? binding.nativeId.slice(0, 8) : tr("第一轮后生成", "After the first turn")}</dd>
                 </dl>
                 <hr />
                 {onRename && (
-                  <button role="menuitem" onClick={() => (setTermMenu(false), onRename())} title="给这个会话起个名字，@ 它和切标签时更好认">
+                  <button role="menuitem" onClick={() => (setTermMenu(false), onRename())} title={tr("给这个会话起个名字，@ 它和切标签时更好认", "Name this session so it's easier to find when you @ it or switch tabs")}>
                     <span className="menu-check" />
                     <IconPencil size={16} />
-                    重命名
+                    {tr("重命名", "Rename")}
                   </button>
                 )}
-                <p className="menu-title">在哪里打开</p>
+                <p className="menu-title">{tr("在哪里打开", "Open in")}</p>
                 {status && <p className="sp-term-line" role="status">{windowsLine(status.terminal)}</p>}
                 {narrow ? copyItem : <>{openItem}{copyItem}</>}
                 {cmdText && <code className="sp-term-cmd">{cmdText}</code>}
                 {status?.terminal.alive && (
-                  <button role="menuitem" onClick={() => (setTermMenu(false), void agents.closeTerminal(sessionId))} title="结束终端里的 CLI；会话可随时再续接">
+                  <button role="menuitem" onClick={() => (setTermMenu(false), void agents.closeTerminal(sessionId))} title={tr("结束终端里的 CLI；会话可随时再续接", "End the CLI in the terminal; the session can be resumed any time")}>
                     <span className="menu-check" />
-                    关闭终端
+                    {tr("关闭终端", "Close terminal")}
                   </button>
                 )}
                 <hr />
-                <p className="menu-title">会话面板</p>
+                <p className="menu-title">{tr("会话面板", "Session panel")}</p>
                 <FloatChoice />
-                <p className="menu-title">过程</p>
+                <p className="menu-title">{tr("过程", "Process")}</p>
                 <ProcessChoice sessionId={sessionId} />
               </motion.div>
             )}
@@ -578,7 +587,7 @@ function AgentSession({ sessionId, canvasTitles, onRename }: { sessionId: string
       )}
       {status?.steerWhy && (
         <div className="notice sp-steer-why" data-tone="caution" role="status">
-          <span>{nameOf(binding.agent)} 的常驻进程没起来，这个会话现在用一次性跑法，中途不能插话：{status.steerWhy}</span>
+          <span>{tr(`${nameOf(binding.agent)} 的常驻进程没起来，这个会话现在用一次性跑法，中途不能插话：`, `${nameOf(binding.agent)}'s resident process didn't start, so this session runs one-shot and can't take messages mid-turn: `)}{status.steerWhy}</span>
         </div>
       )}
       {view === "trajectory" ? (
@@ -590,11 +599,11 @@ function AgentSession({ sessionId, canvasTitles, onRename }: { sessionId: string
         <div className="sp-scroll" ref={scroll}>
           {!turns.length && !changes.length && (
             <div className="sp-hello">
-              <p>怎么用「{canvasTitle ?? "画布"}」：</p>
+              <p>{canvasTitle ? tr(`怎么用「${canvasTitle}」：`, `How to use “${canvasTitle}”:`) : tr("怎么用「画布」：", "How to use the canvas:")}</p>
               <ol>
-                <li>在这里告诉 {nameOf(binding.agent)} 你要做什么；</li>
-                <li>它干活时，左边图上的小人会带你看它在改哪里；点小人可以直接对它说话；</li>
-                <li>在图上留评论，在评论框里输入 @ 选 {nameOf(binding.agent)}（或别的 agent、别的对话）让它处理。</li>
+                <li>{tr(`在这里告诉 ${nameOf(binding.agent)} 你要做什么；`, `Tell ${nameOf(binding.agent)} here what you want done.`)}</li>
+                <li>{tr("它干活时，左边图上的小人会带你看它在改哪里；点小人可以直接对它说话；", "While it works, its avatar on the diagram to the left shows you where it's making changes; click the avatar to talk to it directly.")}</li>
+                <li>{tr(`在图上留评论，在评论框里输入 @ 选 ${nameOf(binding.agent)}（或别的 agent、别的对话）让它处理。`, `Leave a comment on the diagram and type @ in the comment box to pick ${nameOf(binding.agent)} (or another agent or conversation) to handle it.`)}</li>
               </ol>
             </div>
           )}
@@ -607,7 +616,7 @@ function AgentSession({ sessionId, canvasTitles, onRename }: { sessionId: string
         <div className="notice sp-status" data-tone={status?.held ? "caution" : status?.error && !working ? "error" : undefined}>
           <i className="dot" data-tone={status?.held ? "held" : status?.error && !working ? "error" : "ok"} />
           <span>{line}</span>
-          {status?.running && <button className="btn sm ghost" onClick={() => void agents.interrupt(sessionId)}>停止</button>}
+          {status?.running && <button className="btn sm ghost" onClick={() => void agents.interrupt(sessionId)}>{tr("停止", "Stop")}</button>}
           {!working && !stuck && stoppedForTime(status?.error) && <button className="btn sm ghost" onClick={() => void send(CONTINUE_WORD, [])}>{CONTINUE_WORD}</button>}
         </div>
       )}
@@ -618,15 +627,15 @@ function AgentSession({ sessionId, canvasTitles, onRename }: { sessionId: string
       )}
       {status?.stale && !staleSeen && (
         <div className="notice sp-lost-note" role="status" data-tone="caution">
-          <b>快到 30 天了</b>
-          <span>这个会话 {status.stale.days} 天没有活动。Claude Code 默认 30 天后删除会话记录；要保留，在 ~/.claude/settings.json 里设 cleanupPeriodDays。Agora 已为它保存轨迹快照，记录删了也能看、能带着摘要接着聊。</span>
-          <button className="btn sm ghost" onClick={() => (rememberStale(sessionId), setStaleSeen(true))}>知道了</button>
+          <b>{tr("快到 30 天了", "Nearly 30 days old")}</b>
+          <span>{tr(`这个会话 ${status.stale.days} 天没有活动。Claude Code 默认 30 天后删除会话记录；要保留，在 ~/.claude/settings.json 里设 cleanupPeriodDays。Agora 已为它保存轨迹快照，记录删了也能看、能带着摘要接着聊。`, `This session has been idle for ${status.stale.days} days. Claude Code deletes session logs after 30 days by default; to keep them, set cleanupPeriodDays in ~/.claude/settings.json. Agora has saved a trajectory snapshot, so even if the log is deleted you can still view it and continue with a summary.`)}</span>
+          <button className="btn sm ghost" onClick={() => (rememberStale(sessionId), setStaleSeen(true))}>{tr("知道了", "Got it")}</button>
         </div>
       )}
       {fork && !copyOf && (
         <div className="notice sp-lost-note" role="status">
-          <b>分叉</b>
-          <span>{!forkHeadless(binding.agent) ? `${nameOf(binding.agent)} 只能在终端里分叉：点「在终端打开」，在终端里接着说；新的原生会话会自动接到这里。` : `下一条消息会从原来的会话（${fork.from.slice(0, 8)}）分出一个新的原生会话继续，之前的对话都在。`}</span>
+          <b>{tr("分叉", "Fork")}</b>
+          <span>{!forkHeadless(binding.agent) ? tr(`${nameOf(binding.agent)} 只能在终端里分叉：点「在终端打开」，在终端里接着说；新的原生会话会自动接到这里。`, `${nameOf(binding.agent)} can only fork in the terminal: click “Open in terminal” and continue there; the new native session links back here automatically.`) : tr(`下一条消息会从原来的会话（${fork.from.slice(0, 8)}）分出一个新的原生会话继续，之前的对话都在。`, `The next message forks a new native session from the original one (${fork.from.slice(0, 8)}); the earlier conversation is kept.`)}</span>
         </div>
       )}
       {copyOf ? (
@@ -673,12 +682,12 @@ function CopyCard({ sessionId, copy, agent }: { sessionId: string; copy: NonNull
   };
   return (
     <div className="sp-lost" role="status" data-state="copy">
-      <p className="sp-lost-title"><b data-tone="caution">来自 {copy.from} 的副本</b> · 只读</p>
-      <p>原来那份项目还在用这个 {nameOf(agent)} 会话。两份项目不能续接同一个原生会话：在这里分叉一份继续（新的原生会话，之前的对话都在），或者留给原来那份。</p>
+      <p className="sp-lost-title"><b data-tone="caution">{tr(`来自 ${copy.from} 的副本`, `Copy from ${copy.from}`)}</b> · {tr("只读", "Read-only")}</p>
+      <p>{tr(`原来那份项目还在用这个 ${nameOf(agent)} 会话。两份项目不能续接同一个原生会话：在这里分叉一份继续（新的原生会话，之前的对话都在），或者留给原来那份。`, `The original project is still using this ${nameOf(agent)} session. Two copies can't resume the same native session: fork it here and continue (a new native session with the earlier conversation), or leave it to the original.`)}</p>
       {err && <p className="sp-warn">{err}</p>}
       <div className="sp-lost-go">
-        <button className="btn primary sm" disabled={busy} onClick={() => void fork()}>在这里分叉继续</button>
-        <button className="btn ghost sm" disabled={busy} onClick={() => ui.trashSession(sessionId)} title="从这份副本里移到回收站；原来那份不受影响">留给原来那份</button>
+        <button className="btn primary sm" disabled={busy} onClick={() => void fork()}>{tr("在这里分叉继续", "Fork here and continue")}</button>
+        <button className="btn ghost sm" disabled={busy} onClick={() => ui.trashSession(sessionId)} title={tr("从这份副本里移到回收站；原来那份不受影响", "Move it to the trash in this copy; the original isn't affected")}>{tr("留给原来那份", "Leave to the original")}</button>
       </div>
     </div>
   );
@@ -713,11 +722,11 @@ function NativeMissing({ sessionId, canvasId, problem, agent, model, effort, sna
       await agents.restart(sessionId);
     });
   const fresh = () => act(() => freshSession(canvasId, agent, model, effort));
-  const title = problem.state === "missing" ? "原生会话缺失" : problem.state === "ambiguous" ? "找到多份原生记录" : "原生会话在别的目录";
+  const title = problem.state === "missing" ? tr("原生会话缺失", "Native session missing") : problem.state === "ambiguous" ? tr("找到多份原生记录", "Several native logs found") : tr("原生会话在别的目录", "Native session in another directory");
   const lost = problem.state === "missing";
   return (
     <div className="sp-lost" role="alert" data-state={problem.state}>
-      <p className="sp-lost-title"><b>{title}</b> · 只读</p>
+      <p className="sp-lost-title"><b>{title}</b> · {tr("只读", "Read-only")}</p>
       <p>{problem.message}</p>
       {problem.candidates.length > 0 && (
         <ul className="sp-lost-list">
@@ -725,14 +734,14 @@ function NativeMissing({ sessionId, canvasId, problem, agent, model, effort, sna
         </ul>
       )}
       <p className="sp-lost-hint">
-        {snapshot ? "上面是 Agora 保存的轨迹快照，只读。" : "Agora 这边没有这个会话的轨迹快照。"}
-        {lost ? `要接着讨论，可以带着摘要在这里开一个新的 ${nameOf(agent)} 原生会话（同一个 Agora 会话、同样的模型；发送前可以改摘要），或者另开一个会话。` : `要接着讨论，另开一个 ${nameOf(agent)} 会话（同一块画布、同样的模型）；这个会话保持原样。`}
+        {snapshot ? tr("上面是 Agora 保存的轨迹快照，只读。", "Above is the trajectory snapshot Agora saved (read-only). ") : tr("Agora 这边没有这个会话的轨迹快照。", "Agora has no trajectory snapshot of this session. ")}
+        {lost ? tr(`要接着讨论，可以带着摘要在这里开一个新的 ${nameOf(agent)} 原生会话（同一个 Agora 会话、同样的模型；发送前可以改摘要），或者另开一个会话。`, `To keep going, start a new ${nameOf(agent)} native session here with a summary (same Agora session, same model; you can edit the summary before sending), or start another session.`) : tr(`要接着讨论，另开一个 ${nameOf(agent)} 会话（同一块画布、同样的模型）；这个会话保持原样。`, `To keep going, start another ${nameOf(agent)} session (same canvas, same model); this one stays as it is.`)}
       </p>
       {err && <p className="sp-warn">{err}</p>}
       <div className="sp-lost-go">
-        {lost && <button className="btn primary sm" disabled={busy} onClick={() => void carryOn()} data-session={sessionId}>带着摘要开新会话</button>}
-        <button className={lost ? "btn ghost sm" : "btn primary sm"} disabled={busy} onClick={() => void fresh()}>另开一个会话</button>
-        <button className="btn ghost sm" disabled={busy} onClick={() => ui.trashSession(sessionId)}>移到回收站</button>
+        {lost && <button className="btn primary sm" disabled={busy} onClick={() => void carryOn()} data-session={sessionId}>{tr("带着摘要开新会话", "New session with summary")}</button>}
+        <button className={lost ? "btn ghost sm" : "btn primary sm"} disabled={busy} onClick={() => void fresh()}>{tr("另开一个会话", "Start another session")}</button>
+        <button className="btn ghost sm" disabled={busy} onClick={() => ui.trashSession(sessionId)}>{tr("移到回收站", "Move to trash")}</button>
       </div>
     </div>
   );
@@ -780,11 +789,11 @@ function Conversation({ sessionId, canvasId, waiting, turns, changes, canvasTitl
         return (
         <article key={t.n} className="ds-convo-turn">
           <header className="ds-convo-head" data-card={msg ? msg.kind : undefined}>
-            <button onClick={() => onTrajectory(t.n)} title={msg ? `在轨迹里看这一轮（第 ${t.n} 轮）` : "在轨迹里看这一轮"}>
-              {msg ? cardTurnLabel(msg) : `第 ${t.n} 轮`} · {clock(t.startedAt)}
-              {t.running ? " · 进行中" : t.durationMs != null && t.durationMs > 20_000 ? ` · 用时 ${fmtDuration(t.durationMs)}` : ""}
+            <button onClick={() => onTrajectory(t.n)} title={msg ? tr(`在轨迹里看这一轮（第 ${t.n} 轮）`, `View this turn in the trajectory (turn ${t.n})`) : tr("在轨迹里看这一轮", "View this turn in the trajectory")}>
+              {msg ? cardTurnLabel(msg) : tr(`第 ${t.n} 轮`, `Turn ${t.n}`)} · {clock(t.startedAt)}
+              {t.running ? tr(" · 进行中", " · In progress") : t.durationMs != null && t.durationMs > 20_000 ? tr(` · 用时 ${fmtDuration(t.durationMs)}`, ` · took ${fmtDuration(t.durationMs)}`) : ""}
             </button>
-            {t.source === "terminal" && <span className="ds-tag">终端</span>}
+            {t.source === "terminal" && <span className="ds-tag">{tr("终端", "Terminal")}</span>}
             <TraceTurn sessionId={sessionId} turn={t} />
           </header>
           {t.user && msg && <CardMessage item={t.user} card={msg} />}
@@ -797,7 +806,7 @@ function Conversation({ sessionId, canvasId, waiting, turns, changes, canvasTitl
           <ProcessBlock sessionId={sessionId} turn={t} waiting={waiting} />
           {(byTurn.get(t.n) ?? []).map(card)}
           {t.reply?.text && <Markdown className={msg && quietReply(t) ? "ds-say quiet" : "ds-say"} text={t.reply.text} />}
-          {t.error && !t.running && (t.error === "interrupted" ? <p className="sp-notice">这一轮已停止</p> : <p className="ds-say" data-error>{stoppedForTime(t.error) ? t.error : `这一轮出错：${t.error}`}</p>)}
+          {t.error && !t.running && (t.error === "interrupted" ? <p className="sp-notice">{tr("这一轮已停止", "This turn was stopped")}</p> : <p className="ds-say" data-error>{stoppedForTime(t.error) ? stopText(t.error) : tr(`这一轮出错：${t.error}`, `This turn failed: ${t.error}`)}</p>)}
           {(t.notices ?? []).map((n) => <p key={n.id} className="sp-notice" data-tone={n.tone}>{n.text}</p>)}
         </article>
         );
@@ -807,10 +816,10 @@ function Conversation({ sessionId, canvasId, waiting, turns, changes, canvasTitl
 }
 
 const kindLabel = (t: Turn) => {
-  const anim = t.request.startsWith("动画「");
-  if (t.status === "running") return anim ? "正在挂载动画" : "正在改画布";
-  if (t.status === "applied") return anim ? "加了动画" : "改了画布";
-  return anim ? "动画未挂载" : "改图未执行";
+  const anim = t.request.startsWith("动画「") || t.request.startsWith("Animation “");
+  if (t.status === "running") return anim ? tr("正在挂载动画", "Mounting animation") : tr("正在改画布", "Editing canvas");
+  if (t.status === "applied") return anim ? tr("加了动画", "Added animation") : tr("改了画布", "Edited canvas");
+  return anim ? tr("动画未挂载", "Animation not mounted") : tr("改图未执行", "Edit not applied");
 };
 
 /**
@@ -844,7 +853,7 @@ function TurnCard({ t, canvasTitle, flash }: { t: Turn; canvasTitle?: string; fl
         </button>
         <span className="sp-line-acts">
           {t.origin.kind === "comment" && (
-            <button className="sp-line-act" onClick={() => t.origin.kind === "comment" && ui.openThread(t.canvasId, t.origin.threadId)} title={`来自「${canvasTitle ?? "画布"}」的评论 #${t.origin.threadN}：${t.origin.anchor}`} aria-label={`来自评论 #${t.origin.threadN}，点开这条评论`}>
+            <button className="sp-line-act" onClick={() => t.origin.kind === "comment" && ui.openThread(t.canvasId, t.origin.threadId)} title={tr(`来自「${canvasTitle ?? "画布"}」的评论 #${t.origin.threadN}：${t.origin.anchor}`, `From comment #${t.origin.threadN} on “${canvasTitle ?? "canvas"}”: ${t.origin.anchor}`)} aria-label={tr(`来自评论 #${t.origin.threadN}，点开这条评论`, `From comment #${t.origin.threadN}; open the comment`)}>
               <IconCommentSolid size={12} />
             </button>
           )}

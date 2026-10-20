@@ -87,6 +87,7 @@ p.ds-say { white-space: pre-wrap; }
 /* overview strip: a canvas on a fixed-height ground (HEIGHT in timelineLayout.ts); colours come from --tl-* tokens (app/tokens.css) */
 .ds-timeline-wrap { flex: none; border-bottom: 1px solid var(--line); background: var(--code-surface); }
 .ds-timeline { position: relative; display: grid; grid-template-columns: 40px minmax(0, 1fr); user-select: none; }
+:lang(en) .ds-timeline { grid-template-columns: 56px minmax(0, 1fr); }
 .ds-empty-line { display: grid; place-items: center; grid-template-columns: 1fr; height: 52px; border-bottom: 1px solid var(--line); background: var(--code-surface); color: var(--fg-subtle); font-size: var(--text-sm); }
 .ds-timeline-labels { position: relative; border-right: 1px solid var(--line); color: var(--fg-subtle); font-size: var(--text-xs); }
 .ds-timeline-labels span { position: absolute; right: 5px; line-height: 10px; }

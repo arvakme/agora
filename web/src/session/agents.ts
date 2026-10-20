@@ -11,6 +11,7 @@ import type { SelectionPayload } from "./selection";
 import { removeRequest, upsertRequest, type Decision, type HostRequest } from "./requestModel";
 import { useSyncExternalStore } from "react";
 import type { Origin } from "../persist";
+import { tr } from "../i18n";
 
 /**
  * A CLI Agora has an adapter for (server/canvas/adapters/). Any string: the server's adapter
@@ -135,7 +136,7 @@ export function useAgentName(): (kind: AgentKind | undefined) => string {
 }
 /** The session agents (T1) to offer in the picker, in the registry's order. */
 export const sessionKinds = (): AgentKind[] => (adapterList?.length ? adapterList.filter((a) => a.tier === "T1").map((a) => a.kind) : AGENT_KINDS);
-export const logDirOf = (kind: AgentKind | undefined): string => agentInfo(kind)?.logDir || (kind && FALLBACK[kind]?.logDir) || "CLI 自己的目录";
+export const logDirOf = (kind: AgentKind | undefined): string => agentInfo(kind)?.logDir || (kind && FALLBACK[kind]?.logDir) || tr("CLI 自己的目录", "the CLI's own directory");
 export const deleteCommandOf = (kind: AgentKind | undefined): string | null => agentInfo(kind)?.deleteCommand ?? (kind ? FALLBACK[kind]?.deleteCommand : null) ?? null;
 export const steerOf = (kind: AgentKind | undefined, status?: Pick<Status, "steer" | "steerWhy">): { steer: boolean | undefined; noSteer: string } => steerAbility({ steer: agentInfo(kind)?.caps.steer, noSteer: agentInfo(kind)?.caps.noSteer }, status);
 export const forkHeadless = (kind: AgentKind | undefined): boolean => agentInfo(kind)?.caps.forkHeadless ?? (kind ? FALLBACK[kind]?.forkHeadless : undefined) ?? true;
