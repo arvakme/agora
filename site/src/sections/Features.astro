@@ -8,34 +8,35 @@ interface Props {
 }
 const { lang } = Astro.props;
 const t = copy[lang];
-// 每行配一张真实截图或录屏动图，顺序与 Features.copy.ts 的 rows 一致
-const media = [
-	{ name: "overview" },
-	{ gif: "assets/demo.gif", width: 960, height: 540 },
-	{ gif: "media/agora-demo.gif", width: 1200, height: 750 },
-	{ name: "trajectory" },
-];
+// 每行配一张真实截图或一段无声循环的录屏，顺序与 Features.copy.ts 的 rows 一致。
+// 换图只改这里的名字；英文界面的截图 / 录屏放成 <名字>.en.png / <名字>.en.mp4 就会自动用上
+const media: ({ image: string } | { clip: string })[] = [{ image: "overview" }, { clip: "reveal" }, { clip: "zoom" }, { clip: "pointer" }, { image: "trajectory" }];
 const cardShots = ["choose-agent", "terminal"];
+// sizes 写成真实渲染宽度：行内画面在 1180 宽的页面里约 665 px，卡片里约 504 px，分享那对各约 334 px
+const ROW = { sizes: "(max-width: 900px) 92vw, 665px", widths: [480, 720, 1000, 1330] };
+const CARD = { sizes: "(max-width: 900px) calc(92vw - 44px), 504px", widths: [400, 640, 1008] };
+const PAIR = { sizes: "(max-width: 560px) calc(92vw - 44px), (max-width: 900px) calc(46vw - 30px), 334px", widths: [320, 480, 668, 1000] };
+const labels = { play: t.play, pause: t.pause };
 ---
 
 <section class="section features" id="features" aria-labelledby="features-title">
 	<div class="section-inner">
-		<p class="eyebrow">{t.eyebrow}</p>
-		<h2 class="section-title" id="features-title" set:html={t.title} />
-		{t.uiNote && <p class="ui-note">{t.uiNote}</p>}
+		<p class="eyebrow" data-reveal="soft">{t.eyebrow}</p>
+		<h2 class="section-title" id="features-title" data-reveal="wipe" set:html={t.title} />
+		{t.uiNote && <p class="ui-note" data-reveal="soft">{t.uiNote}</p>}
 
 		<div class="rows">
 			{
 				t.rows.map((row, i) => (
 					<article class:list={["row", { flip: i % 2 === 1 }]}>
 						<div class="copy">
-							<p class="kicker">{row.kicker}</p>
-							<h3 class="item-title">{row.title}</h3>
+							<p class="kicker" data-reveal="soft">{row.kicker}</p>
+							<h3 class="item-title" data-reveal="wipe">{row.title}</h3>
 							{row.body.map((p) => (
-								<p class="body" set:html={p} />
+								<p class="body" data-reveal set:html={p} />
 							))}
 						</div>
-						<Shot {...media[i]} alt={row.alt} />
+						<Shot lang={lang} {...media[i]} {...ROW} alt={row.alt} from={i % 2 === 1 ? "left" : "right"} labels={labels} />
 					</article>
 				))
 			}
@@ -44,25 +45,25 @@ const cardShots = ["choose-agent", "terminal"];
 		<div class="cards">
 			{
 				t.cards.map((card, i) => (
-					<article class="card">
-						<Shot name={cardShots[i]} alt={card.alt} sizes="(max-width: 900px) 100vw, 560px" />
+					<article class="card lift" data-reveal>
+						<Shot lang={lang} image={cardShots[i]} {...CARD} alt={card.alt} from={i === 0 ? "left" : "right"} nested />
 						<h3 class="item-title">{card.title}</h3>
 						<p class="body" set:html={card.body} />
 					</article>
 				))
 			}
-			<article class="card wide">
+			<article class="card wide lift" data-reveal>
 				<div class="share-copy">
 					<h3 class="item-title">{t.share.title}</h3>
 					<p class="body" set:html={t.share.body} />
 				</div>
 				<div class="pair">
 					<figure>
-						<Shot name="share" alt={t.share.altAuthor} sizes="(max-width: 900px) 100vw, 560px" />
+						<Shot lang={lang} image="share" {...PAIR} alt={t.share.altAuthor} from="left" nested />
 						<figcaption>{t.share.author}</figcaption>
 					</figure>
 					<figure>
-						<Shot name="guest" alt={t.share.altGuest} sizes="(max-width: 900px) 100vw, 560px" />
+						<Shot lang={lang} image="guest" {...PAIR} alt={t.share.altGuest} nested />
 						<figcaption>{t.share.guest}</figcaption>
 					</figure>
 				</div>

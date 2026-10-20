@@ -14,33 +14,33 @@ const t = copy[lang];
 <section class="section start dotted" id="start" aria-labelledby="start-title">
 	<div class="section-inner">
 		<div class="head">
-			<p class="eyebrow">{t.eyebrow}</p>
-			<h2 class="section-title" id="start-title" set:html={t.title} />
-			<p class="section-lede">{t.lede}</p>
-			<Install lang={lang} class="big" />
+			<p class="eyebrow" data-reveal="soft">{t.eyebrow}</p>
+			<h2 class="section-title" id="start-title" data-reveal="wipe" set:html={t.title} />
+			<p class="section-lede" data-reveal>{t.lede}</p>
+			<div data-reveal><Install lang={lang} class="big" /></div>
 		</div>
 
-		<div class="term" role="group" aria-label="agora">
+		<div class="term" role="group" aria-label="agora" data-reveal>
 			<div class="term-bar" aria-hidden="true"><i></i><i></i><i></i><span>~/code/my-service</span></div>
 			<pre><code>{
 				t.commands.map(([cmd, note]) => (
-					<span class="cmdline"><span class="cmd">{cmd}</span>{note && <span class="note"># {note}</span>}</span>
+					<span class="cmdline" data-reveal="soft" data-stay><span class="cmd">{cmd}</span>{note && <span class="note"># {note}</span>}</span>
 				))
 			}</code></pre>
 		</div>
 
 		<div class="facts">
 			<div>
-				<h3 class="item-title">{t.needsTitle}</h3>
-				<ul>{t.needs.map((item) => <li set:html={item} />)}</ul>
+				<h3 class="item-title" data-reveal="wipe">{t.needsTitle}</h3>
+				<ul>{t.needs.map((item) => <li data-reveal="soft" set:html={item} />)}</ul>
 			</div>
 			<div>
-				<h3 class="item-title">{t.limitsTitle}</h3>
-				<ul>{t.limits.map((item) => <li set:html={item} />)}</ul>
+				<h3 class="item-title" data-reveal="wipe">{t.limitsTitle}</h3>
+				<ul>{t.limits.map((item) => <li data-reveal="soft" set:html={item} />)}</ul>
 			</div>
 		</div>
 
-		<div class="cta">
+		<div class="cta" data-reveal>
 			<a class="button primary" href={REPO}>
 				<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96L12 2.5z"></path></svg>
 				{t.github}

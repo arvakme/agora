@@ -14,9 +14,12 @@ export const copy = {
 			{ top: "native session log", bottom: "JSONL, followed every 0.4 s" },
 			{ top: "changes pushed live", bottom: "HTTP + SSE" },
 		],
-		back: "The agent edits the diagram with agora canvas read / apply / link / anim — the page validates, writes back to .agora/, and every batch can be undone.",
+		beats: [
+			{ title: "You talk, the agent works.", body: "In the panel or in the terminal. It keeps writing its own native session log, exactly as it would without Agora." },
+			{ title: "The server follows the log.", body: "Every 0.4 s, this project’s agora server picks up the turns from both sides — the panel’s and the terminal’s." },
+			{ title: "The canvas moves.", body: "Changes reach the page over HTTP + SSE. When the agent edits the diagram with <code>agora canvas apply</code>, the page checks schema, references and freshness, writes the result to <code>.agora/</code>, and every batch can be undone." },
+		],
 		points: [
-			{ title: "The page owns the canvas.", body: "Edit requests from the agent go through the server to the open page, which checks schema, references and freshness before applying them and writing the result to <code>.agora/</code>." },
 			{ title: "Nothing leaves your machine.", body: "The server only listens on <code>127.0.0.1</code>, one port per project. Only when you share does a read-only guest entrance open through Cloudflare Tunnel." },
 			{ title: "No second copy of the conversation.", body: "Sessions are the CLI’s own. Agora reads the native log; models and billing stay with the CLI you already logged into." },
 		],
@@ -38,9 +41,12 @@ export const copy = {
 			{ top: "原生会话日志", bottom: "JSONL · 每 0.4 s 跟随" },
 			{ top: "改动实时推到页面", bottom: "HTTP + SSE" },
 		],
-		back: "agent 用 agora canvas read / apply / link / anim 读图、改图：页面校验后执行，结果写回 .agora/，每批修改都能撤销。",
+		beats: [
+			{ title: "你说话，agent 干活", body: "在面板或终端里都行。它照常写自己的原生会话日志，和没有 Agora 时一模一样。" },
+			{ title: "服务跟着日志走", body: "本项目的 agora 服务每 0.4 秒跟随一次，面板和终端两边的轮次都收得到。" },
+			{ title: "画布跟着动", body: "改动经 HTTP + SSE 推到页面。agent 用 <code>agora canvas apply</code> 改图时，页面先校验 schema、引用和新鲜度再执行，结果写回 <code>.agora/</code>，每批修改都能撤销。" },
+		],
 		points: [
-			{ title: "画布由页面持有。", body: "agent 的改图请求经服务转给打开着的页面，校验 schema、引用和新鲜度之后再执行，结果写回 <code>.agora/</code>。" },
 			{ title: "全部在你自己的机器上。", body: "服务只监听 <code>127.0.0.1</code>，一个项目一个端口。只有分享时才经 Cloudflare Tunnel 开一个只读的访客入口。" },
 			{ title: "不另存一份对话。", body: "会话就是 CLI 自己的原生会话，Agora 只跟随日志；模型和费用都走你已经登录的那个 CLI。" },
 		],

@@ -215,7 +215,6 @@ pre {
 .item-title {
 	font-family: var(--font-display);
 	font-optical-sizing: auto;
-	font-variation-settings: "SOFT" 60, "WONK" 0;
 	text-wrap: balance;
 }
 
@@ -327,4 +326,85 @@ pre {
 /* 区块不在视口里时暂停其中的循环动画（Landing 维护 data-offscreen） */
 [data-offscreen] * {
 	animation-play-state: paused !important;
+}
+
+/* ───────── 动效（只在 html.motion 下生效；减少动效时元素一开始就在原位） ─────────
+   入场：motion.ts 给进入视口的 [data-reveal] 加 .in，--in 从 0 过渡到 1（@property 注册过才能过渡）。
+   离场：motion.ts 按元素下沿离导航条的距离写 --out（0–1），不过渡，跟手。
+   模糊只在真的在离场时由 motion.ts 写进 style.filter，平时不挂 filter，免得每个元素都多一层合成。
+   两者只动 opacity / translate / rotate / scale / filter，不改尺寸和位置，不会引起布局偏移 */
+@property --in {
+	syntax: "<number>";
+	inherits: false;
+	initial-value: 1;
+}
+
+@property --out {
+	syntax: "<number>";
+	inherits: false;
+	initial-value: 0;
+}
+
+html.motion [data-reveal] {
+	--in: 0;
+	--rise: 28px;
+	opacity: calc(var(--in) * (1 - var(--out)));
+	translate: 0 calc((1 - var(--in)) * var(--rise) - var(--out) * 28px);
+	transition: --in 1000ms var(--ease) var(--d, 0ms);
+}
+
+html.motion [data-reveal].in {
+	--in: 1;
+}
+
+/* 标题：一道柔边的遮罩从左往右扫过，同时升起 */
+html.motion [data-reveal="wipe"] {
+	--rise: 18px;
+	mask-image: linear-gradient(90deg, #000 calc(var(--in) * 140% - 40%), transparent calc(var(--in) * 140% - 10%));
+	-webkit-mask-image: linear-gradient(90deg, #000 calc(var(--in) * 140% - 40%), transparent calc(var(--in) * 140% - 10%));
+	transition-duration: 1300ms;
+}
+
+/* 截图、录屏的窗口：从侧面滑进来，带一点转角，落定时摆正（透视在父元素上，见 .stage） */
+html.motion [data-reveal="frame"] {
+	--from: 1;
+	translate: calc((1 - var(--in)) * var(--from) * 56px) calc(-1 * var(--out) * 28px);
+	rotate: y calc((1 - var(--in)) * var(--from) * -7deg);
+	scale: calc(0.96 + var(--in) * 0.04);
+	transition-duration: 1200ms;
+}
+
+html.motion [data-reveal="frame"][data-from="left"] {
+	--from: -1;
+}
+
+/* 小块（标签、条目）：只淡入、升得少 */
+html.motion [data-reveal="soft"] {
+	--rise: 12px;
+	transition-duration: 700ms;
+}
+
+/* 给截图滑入用的透视 */
+.stage {
+	perspective: 1600px;
+}
+
+/* 截图外框悬停：微微抬起 */
+@media (hover: hover) and (pointer: fine) {
+	.frame {
+		transition: box-shadow 300ms var(--ease);
+	}
+
+	.lift {
+		transition:
+			transform 400ms var(--ease),
+			box-shadow 400ms var(--ease);
+	}
+
+	.lift:hover {
+		transform: translateY(-4px);
+		box-shadow:
+			0 0 0 1px var(--ring),
+			0 30px 70px -30px oklch(0.25 0.04 290 / 0.45);
+	}
 }

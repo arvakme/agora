@@ -1,9 +1,7 @@
 ---
-import { getImage } from "astro:assets";
-import bannerPng from "../../../docs/assets/banner.png";
+import InkBanner from "../components/InkBanner.astro";
 import Install from "../components/Install.astro";
 import type { Lang } from "../i18n";
-import { asset } from "../media";
 import { tagline } from "../repo";
 import { copy } from "./Hero.copy";
 
@@ -12,30 +10,52 @@ interface Props {
 }
 const { lang } = Astro.props;
 const t = copy[lang];
-// 横幅：允许动效时用墨迹洇开的 SVG 动画（README 同款），减少动效时换成静态版
-const inkSvg = asset("assets/banner-ink.svg");
-const still = await getImage({ src: bannerPng, format: "webp", width: 2400, quality: 82 });
 ---
 
 <section class="hero" aria-labelledby="hero-title">
-	<div class="inner">
+	<div class="inner" data-hero-copy>
 		<p class="eyebrow rise">{t.eyebrow}</p>
 		<h1 class="display" id="hero-title">
-			{t.title.map((line, i) => <span class="line rise" style={`--i: ${i + 1}`} set:html={line} />)}
+			{
+				t.title.map((line, i) => (
+					<span class="line">
+						<span class="line-in" style={`--i: ${i}`} set:html={line} />
+					</span>
+				))
+			}
 		</h1>
 		<p class="lede rise" style="--i: 3">{tagline(lang)}</p>
 		<div class="actions rise" style="--i: 4">
-			<Install lang={lang} />
+			<Install lang={lang} type />
 			<p class="run">{t.run} <code>cd my-service && agora</code></p>
 		</div>
 	</div>
-	<figure class="banner rise" style="--i: 5">
-		<picture>
-			<source media="(prefers-reduced-motion: reduce)" srcset={still.src} type="image/webp" />
-			<img src={inkSvg} alt={t.banner} width="2400" height="800" fetchpriority="high" />
-		</picture>
-	</figure>
+	<div class="banner-wrap rise" style="--i: 5" data-hero-banner>
+		<InkBanner alt={t.banner} />
+	</div>
 </section>
+
+<script>
+	import { clamp, scene } from "../motion";
+
+	// 往下滚出首屏：文字先走（滚过首屏高度的 0–35% 时淡出并轻微模糊、上移），横幅以 0.25 倍速落后，像远处的景。
+	// 学的是 firecode 首屏的离场；往回滚原路回来。减少动效时 scene() 不登记，什么都不动
+	const hero = document.querySelector<HTMLElement>(".hero")!;
+	const words = hero.querySelector<HTMLElement>("[data-hero-copy]")!;
+	const banner = hero.querySelector<HTMLElement>("[data-hero-banner]")!;
+	let last = -1;
+	scene(hero, (rect) => {
+		const progress = clamp(-rect.top / rect.height);
+		const p = Math.round(progress * 1000) / 1000;
+		if (p === last) return;
+		last = p;
+		const fade = clamp(p / 0.35);
+		words.style.opacity = String(1 - fade);
+		words.style.transform = fade ? `translateY(${(-fade * 40).toFixed(1)}px)` : "";
+		words.style.filter = fade ? `blur(${(fade * 8).toFixed(1)}px)` : "";
+		banner.style.transform = p ? `translateY(${(rect.height * p * 0.25).toFixed(1)}px)` : "";
+	});
+</script>
 
 <style>
 	.hero {
@@ -69,7 +89,15 @@ const still = await getImage({ src: bannerPng, format: "webp", width: 2400, qual
 		margin-top: 22px;
 	}
 
+	/* 每行一个裁切窗口，入场时字从窗口下沿升起；留出升部和降部的余量 */
 	.line {
+		display: block;
+		overflow: clip;
+		padding-block: 0.06em 0.12em;
+		margin-block: -0.06em -0.12em;
+	}
+
+	.line-in {
 		display: block;
 	}
 
@@ -96,46 +124,42 @@ const still = await getImage({ src: bannerPng, format: "webp", width: 2400, qual
 		font-size: 14.5px;
 	}
 
-	.banner {
-		position: relative;
+	.banner-wrap {
 		max-width: 1320px;
 		margin: clamp(48px, 7vw, 88px) auto 0;
-		overflow: hidden;
+	}
+
+	.banner-wrap :global(.ink-banner) {
 		border-radius: clamp(14px, 2vw, 24px);
-		background: #1a1730;
 		box-shadow:
 			0 0 0 1px var(--ring),
 			0 40px 100px -40px oklch(0.3 0.08 290 / 0.55);
 	}
 
-	.banner img {
-		width: 100%;
-		aspect-ratio: 3 / 1;
-		object-fit: cover;
-	}
-
-	/* 手机上 3:1 太扁：裁成 4:3，只留中间的星图和小人 */
 	@media (max-width: 640px) {
-		.banner img {
-			aspect-ratio: 4 / 3;
-			object-position: 50% 40%;
-		}
-
 		.run {
 			font-size: 13.5px;
 		}
 	}
 
-	@media (prefers-reduced-motion: no-preference) {
-		.rise {
-			animation: rise 900ms calc(var(--i, 0) * 90ms) var(--ease) both;
-		}
+	:global(html.motion) .rise {
+		animation: rise 900ms calc(var(--i, 0) * 90ms + 200ms) var(--ease) both;
+	}
 
-		@keyframes rise {
-			from {
-				opacity: 0;
-				translate: 0 14px;
-			}
+	:global(html.motion) .line-in {
+		animation: line-up 1100ms calc(var(--i, 0) * 90ms + 120ms) cubic-bezier(0.19, 1, 0.22, 1) both;
+	}
+
+	@keyframes rise {
+		from {
+			opacity: 0;
+			translate: 0 14px;
+		}
+	}
+
+	@keyframes line-up {
+		from {
+			translate: 0 110%;
 		}
 	}
 </style>

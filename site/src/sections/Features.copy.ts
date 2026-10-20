@@ -17,28 +17,36 @@ export const copy = {
 				alt: "Agora with the architecture canvas and comment pins on the left and a Claude Code session on the right",
 			},
 			{
-				// web/docs/workstation.md「分站揭示」；web/docs/nested-canvas.md
-				kicker: "02 · Drawing & zoom",
-				title: "It draws station by station. Nodes open into sub-diagrams.",
+				// web/docs/workstation.md「分站揭示」
+				kicker: "02 · Station by station",
+				title: "Watch it draw, one station at a time.",
 				body: [
-					"When an agent changes the diagram, its little figure walks to each spot and the new elements fade in as it arrives — no whole diagram popping into existence at once.",
+					"When an agent changes the diagram, its little figure walks to each spot and the new elements fade in as it arrives — the diagram doesn’t pop into existence all at once, and you can follow what it is building.",
+				],
+				alt: "Pi draws an architecture diagram: its figure walks from node to node and each new box and arrow appears as it arrives",
+			},
+			{
+				// web/docs/nested-canvas.md
+				kicker: "03 · Sub-diagrams",
+				title: "Zoom into a node. Step inside.",
+				body: [
 					"Any node can hold a sub-diagram: overview › backend › order service. ⌘/Ctrl + scroll into a node and you land inside it; zoom out to climb back. Breadcrumbs and ⌘↑ work too.",
 				],
-				alt: "An agent drawing an architecture diagram station by station, then scrolling into a node to enter its sub-diagram",
+				alt: "Scrolling into a node opens its sub-diagram, with breadcrumbs back to the parent",
 			},
 			{
 				// README §4；web/docs/progress-pointer.md、multi-agent.md
-				kicker: "03 · Progress pointers",
+				kicker: "04 · Progress pointers",
 				title: "See which part of the architecture the AI is changing.",
 				body: [
 					"Attach code paths (globs) to nodes — by hand, or let the agent map them from the directory layout. When the agent edits a file, its figure walks to the node that file belongs to: gliding along an arrow when the two nodes are connected, hopping across when they aren’t. Edits made in the terminal move it too.",
 					"Several sessions get one pointer each, and Agora flags a possible conflict when two agents touch the same file.",
 				],
-				alt: "Claude Code edits code and the diagram; the pointer moves across the canvas with each change, and a tool call is expanded in the trajectory",
+				alt: "Claude Code and Pi each have a pointer; as they edit files, their figures move to the matching nodes, gliding along arrows or hopping across",
 			},
 			{
 				// README §5；web/docs/share-build-replay.md
-				kicker: "04 · Trajectory & replay",
+				kicker: "05 · Trajectory & replay",
 				title: "Every turn, every tool call — step by step.",
 				body: [
 					"Switch a session between Conversation and Trajectory. Each turn shows model, effort, input / output / cache tokens, time and cost on a timeline; every tool call expands to its full input, output, the files it touched and when it ran.",
@@ -70,7 +78,9 @@ export const copy = {
 			altAuthor: "Share popover: choose a canvas and an expiry",
 			altGuest: "Guest page: read-only canvas with comments",
 		},
-		uiNote: "Screenshots show Agora’s interface in Chinese.",
+		uiNote: "Screenshots and recordings show Agora’s interface in Chinese.",
+		play: "Play recording",
+		pause: "Pause recording",
 	},
 	zh: {
 		eyebrow: "核心能力",
@@ -86,25 +96,28 @@ export const copy = {
 				alt: "画布与会话并排：左边是项目的架构图和评论钉，右边是 Claude Code 会话",
 			},
 			{
-				kicker: "02 · 逐站画图与缩放",
-				title: "一站一站画出来，节点里还有子图",
-				body: [
-					"agent 改图时，它的小人走到每一站，新加的元素等它走到才淡入，不是整张图一下冒出来。",
-					"任何节点都能装一张子图：总架构 › 后端 › 订单服务。⌘ / Ctrl + 滚轮放大节点就进到子图，缩小就回到上一层；面包屑和 ⌘↑ 也行。",
-				],
-				alt: "agent 一站一站画出架构图；滚轮放大节点，进到子图",
+				kicker: "02 · 逐站画图",
+				title: "一站一站画出来",
+				body: ["agent 改图时，它的小人走到每一站，新加的元素等它走到才淡入，不是整张图一下冒出来；你看得清它在搭什么。"],
+				alt: "Pi 画出架构图：小人从一个节点走到下一个，每个新方框和箭头在它走到时出现",
 			},
 			{
-				kicker: "03 · 进度指针",
+				kicker: "03 · 子图",
+				title: "放大节点，走进子图",
+				body: ["任何节点都能装一张子图：总架构 › 后端 › 订单服务。⌘ / Ctrl + 滚轮放大节点就进到子图，缩小就回到上一层；面包屑和 ⌘↑ 也行。"],
+				alt: "滚轮放大节点进到子图，面包屑可以回到上一层",
+			},
+			{
+				kicker: "04 · 进度指针",
 				title: "看得见 AI 正在改架构图的哪一块",
 				body: [
 					"给节点关联代码路径（glob），可以手动设，也可以让 agent 按目录结构批量关联。agent 改哪个文件，它的小人就走到这个文件所属的节点：两个节点有箭头相连就沿箭头滑过去，否则跳过去。终端里的改动同样驱动它。",
 					"几个会话各有一个指针；两个 agent 改到同一个文件时，Agora 会提示可能冲突。",
 				],
-				alt: "让 Claude Code 改代码和架构图，指针跟着改动在图上移动，轨迹里展开一次工具调用",
+				alt: "Claude Code 和 Pi 各有一个指针：改到哪个文件，小人就沿箭头滑过去或跳到对应的节点",
 			},
 			{
-				kicker: "04 · 轨迹与回放",
+				kicker: "05 · 轨迹与回放",
 				title: "每一轮、每一次工具调用，逐步可查",
 				body: [
 					"会话有「对话 / 轨迹」两种视图：每轮的模型、强度、输入 / 输出 / 缓存 tokens、耗时、花费排在时间轴上；每次工具调用都能展开看完整输入、输出、改到的文件和起止时间。",
@@ -134,5 +147,7 @@ export const copy = {
 			altGuest: "访客页：只读画布，可评论",
 		},
 		uiNote: "",
+		play: "播放录屏",
+		pause: "暂停录屏",
 	},
 } as const satisfies Record<Lang, unknown>;
