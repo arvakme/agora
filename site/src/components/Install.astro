@@ -6,16 +6,18 @@ import { INSTALL, site, type Lang } from "../i18n";
 interface Props {
 	lang: Lang;
 	class?: string;
+	/** 首屏用：命令像被敲出来一样逐字出现（只在宽屏、允许动效时） */
+	type?: boolean;
 }
-const { lang, class: className } = Astro.props;
+const { lang, class: className, type = false } = Astro.props;
 const t = site[lang];
 ---
 
-<div class:list={["install", className]}>
-	<code>{
+<div class:list={["install", className, { type }]}>
+	<code><span class="typed" style={`--n: ${INSTALL.length}`}>{
 		// 手机上在 install 后换行，网址整段放第二行；复制的永远是 INSTALL 本身
 		INSTALL.split(" git+").map((part, i) => (i === 0 ? <span>{part} </span> : <span class="url">git+{part}</span>))
-	}</code>
+	}</span></code>
 	<button type="button" class="copy" aria-label={t.copy} title={t.copy} data-copy-install data-copied={t.copied} data-failed={t.copyFailed}>
 		<svg class="icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
 		<svg class="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
@@ -127,6 +129,62 @@ const t = site[lang];
 	@media (hover: hover) and (pointer: fine) {
 		.copy:hover {
 			background: oklch(1 0 0 / 0.16);
+		}
+	}
+
+	/* 打字效果：等宽字体下每个字 1ch，按字数分步把裁切窗口拉开，光标跟在后面，打完闪两下消失。
+	   只改 clip-path 和 translate，不改尺寸，复制按钮不会被挤动 */
+	.typed {
+		position: relative;
+	}
+
+	@media (min-width: 481px) {
+		:global(html.motion) .type .typed {
+			display: inline-block;
+			animation: type calc(var(--n) * 28ms) steps(var(--n), end) 900ms both;
+		}
+
+		:global(html.motion) .type .typed::after {
+			content: "";
+			position: absolute;
+			top: 0.1em;
+			left: 0;
+			width: 0.55ch;
+			height: 1.15em;
+			background: var(--code-prompt);
+			animation:
+				caret calc(var(--n) * 28ms) steps(var(--n), end) 900ms both,
+				blink 1s steps(1) calc(var(--n) * 28ms + 900ms) 2 forwards;
+		}
+	}
+
+	@keyframes type {
+		from {
+			clip-path: inset(0 100% 0 0);
+		}
+		to {
+			clip-path: inset(0 -1ch 0 0);
+		}
+	}
+
+	@keyframes caret {
+		from {
+			translate: 0 0;
+		}
+		to {
+			translate: calc(var(--n) * 1ch) 0;
+		}
+	}
+
+	@keyframes blink {
+		0% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0;
+		}
+		100% {
+			opacity: 0;
 		}
 	}
 

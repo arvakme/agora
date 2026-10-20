@@ -27,9 +27,16 @@ const to = site[other(lang)];
 </header>
 
 <script>
-	// 离开页顶后垫一层半透明底，免得链接压在内容上
+	// 离开页顶后垫一层半透明底，免得链接压在内容上；往下读时让出视野，往回滚立即回来（减少动效时不藏）
 	const nav = document.querySelector<HTMLElement>(".nav")!;
-	const sync = () => nav.toggleAttribute("data-scrolled", scrollY > 8);
+	const hides = document.documentElement.classList.contains("motion");
+	let last = scrollY;
+	const sync = () => {
+		const y = scrollY;
+		nav.toggleAttribute("data-scrolled", y > 8);
+		if (hides && Math.abs(y - last) > 4) nav.toggleAttribute("data-away", y > last && y > innerHeight * 0.8);
+		last = y;
+	};
 	addEventListener("scroll", sync, { passive: true });
 	sync();
 </script>
@@ -63,6 +70,14 @@ const to = site[other(lang)];
 		opacity: 1;
 	}
 
+	.nav {
+		transition: translate 320ms var(--ease);
+	}
+
+	.nav[data-away]:not(:focus-within) {
+		translate: 0 calc(-100% - 2px);
+	}
+
 	.brand {
 		display: inline-flex;
 		align-items: center;
@@ -74,7 +89,6 @@ const to = site[other(lang)];
 		font-family: var(--font-display);
 		font-size: 1.35rem;
 		font-weight: 560;
-		font-variation-settings: "SOFT" 80;
 		letter-spacing: -0.01em;
 	}
 

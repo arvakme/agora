@@ -1,6 +1,7 @@
 ---
 import { getImage } from "astro:assets";
-import posterSrc from "../assets/film-poster.jpg";
+import posterEn from "../assets/film-poster.en.jpg";
+import posterZh from "../assets/film-poster.zh.jpg";
 import { blob, type Lang } from "../i18n";
 import { film } from "../media";
 import { copy } from "./Film.copy";
@@ -12,21 +13,22 @@ const { lang } = Astro.props;
 const t = copy[lang];
 // 英文页放英文版、中文页放中文版；分语言版本还没进仓库时退回总版本，连总版本都没有就只放海报和链接
 const reel = film(lang);
-const poster = await getImage({ src: posterSrc, format: "webp", width: 1600, quality: 80 });
+// 海报是各自语言版本第 12 秒那一帧（三个 agent 同时在图上干活），宣传片按 preload="none" 不预取，只先下海报
+const poster = await getImage({ src: lang === "zh" ? posterZh : posterEn, format: "webp", width: 1600, quality: 72 });
 ---
 
 <section class="section film" id="film" aria-labelledby="film-title">
 	<div class="section-inner">
 		<div class="head">
-			<p class="eyebrow">{t.eyebrow}</p>
-			<h2 class="section-title" id="film-title">{t.title}</h2>
-			<p class="section-lede">{t.lede}</p>
+			<p class="eyebrow" data-reveal="soft">{t.eyebrow}</p>
+			<h2 class="section-title" id="film-title" data-reveal="wipe">{t.title}</h2>
+			<p class="section-lede" data-reveal>{t.lede}</p>
 		</div>
-		<figure class="reel frame">
+		<figure class="reel frame" data-reel>
 			{
 				reel ? (
 					<>
-						<video src={reel.url} poster={poster.src} preload="none" muted loop playsinline width="1920" height="1080" aria-label={t.videoLabel} />
+						<video src={reel} data-poster={poster.src} preload="none" muted loop playsinline width="1920" height="1080" aria-label={t.videoLabel} />
 						<button type="button" class="play" data-play aria-label={t.play}>
 							<span class="disc" aria-hidden="true">
 								<svg viewBox="0 0 24 24" fill="currentColor">
@@ -50,12 +52,36 @@ const poster = await getImage({ src: posterSrc, format: "webp", width: 1600, qua
 </section>
 
 <script>
+	import { clamp, scene } from "../motion";
 	import { filmControl } from "../video";
 
 	const root = document.querySelector<HTMLElement>("#film")!;
 	const video = root.querySelector("video");
 	const play = root.querySelector<HTMLButtonElement>("[data-play]");
-	if (video && play) filmControl(video, play);
+	if (video && play) {
+		// 海报离视口还有一屏时才设上，不占首屏流量
+		new IntersectionObserver(
+			([entry], observer) => {
+				if (!entry.isIntersecting) return;
+				video.poster = video.dataset.poster!;
+				observer.disconnect();
+			},
+			{ rootMargin: "100% 0px" },
+		).observe(video);
+		filmControl(video, play);
+	}
+
+	// 片子随滚动从 0.86 倍放大到满幅，推到视口中间时刚好落定；往回滚又缩回去
+	const reel = root.querySelector<HTMLElement>("[data-reel]")!;
+	let last = -1;
+	scene(reel, (rect, viewport) => {
+		const enter = clamp((viewport - rect.top) / (viewport * 0.75));
+		const eased = Math.round((1 - (1 - enter) ** 3) * 1000) / 1000;
+		if (eased === last) return;
+		last = eased;
+		reel.style.scale = String(0.86 + eased * 0.14);
+		reel.style.opacity = String(0.35 + eased * 0.65);
+	});
 </script>
 
 <style>
