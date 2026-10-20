@@ -34,3 +34,17 @@ it("opens against an older server that sends no build", async () => {
 
   expect((await connect()).project.build).toBeUndefined();
 });
+
+it("describes a broken file in the interface language", async () => {
+  const { describeFileError } = await import("./persist");
+  const { setLangForTest } = await import("./i18n");
+  const e = { file: "workspace.json", error: "merge-conflict" as const, line: 12 };
+  expect(describeFileError(e)).toBe(".agora/workspace.json 有合并冲突（第 12 行）");
+  setLangForTest("en");
+  try {
+    expect(describeFileError(e)).toBe(".agora/workspace.json has a merge conflict (line 12)");
+    expect(describeFileError({ file: "canvases/c1.excalidraw", error: "invalid-json" })).toBe(".agora/canvases/c1.excalidraw isn't valid JSON");
+  } finally {
+    setLangForTest("zh");
+  }
+});
