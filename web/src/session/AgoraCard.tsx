@@ -7,6 +7,7 @@ import { useAgents, type Dispatch, type Item } from "./agents";
 import { cardHeading, cardPreview, type MsgCard } from "./agentMessage";
 import { Markdown } from "./markdown";
 import { ui } from "./ui";
+import { speakerLabel } from "../comments/handoff";
 import "./agentCard.css";
 import { tr } from "../i18n";
 
@@ -45,7 +46,7 @@ export function AgoraCard({ card, open, summary, onOpenSession, onOpenComment }:
             <ul>
               {card.messages.map((m, i) => (
                 <li key={i}>
-                  <b>{m.who}</b>
+                  <b>{speakerLabel(m.who)}</b>
                   {m.text}
                 </li>
               ))}

@@ -338,12 +338,12 @@ export function GuestApp({ initial }: { initial: State }) {
           <span className="guest-project">{initial.project.name}</span>
           <span className="guest-gap" />
           {replayOn && (
-            <button className="btn quiet" onClick={() => void openReplay()} title={tr("看这张图从空白到现在是怎么一步步搭起来的", "See how this diagram was built, step by step from a blank canvas")}>
+            <button className="btn quiet" onClick={() => void openReplay()} aria-label={tr("看搭建过程", "Watch the build")} title={tr("看这张图从空白到现在是怎么一步步搭起来的", "See how this diagram was built, step by step from a blank canvas")}>
               <IconPlay size={16} /><span>{tr("看搭建过程", "Watch the build")}</span>
             </button>
           )}
           <span className="guest-note"><IconEye size={16} />{tr("只能查看和评论", "View and comment only")}{expires != null && <> · <Remaining at={expires} /></>}</span>
-          <button className="btn quiet" onClick={() => setImporting(true)} title={tr("把这块画布和评论下载成文件，导入到你自己的 Agora", "Download this canvas and its comments as a file to import into your own Agora")}>
+          <button className="btn quiet" onClick={() => setImporting(true)} aria-label={tr("导入到我的 Agora", "Import to my Agora")} title={tr("把这块画布和评论下载成文件，导入到你自己的 Agora", "Download this canvas and its comments as a file to import into your own Agora")}>
             <IconFile size={16} /><span>{tr("导入到我的 Agora", "Import to my Agora")}</span>
           </button>
           <ThemeButton />

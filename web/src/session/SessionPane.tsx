@@ -318,7 +318,7 @@ function Chooser({ sessionId, canvasTitle }: { sessionId: string; canvasTitle?: 
           <button className="btn primary" disabled={busy || !view.canStart} onClick={() => void start()}>{tr(`用 ${nameOf(kind)} 开始`, `Start with ${nameOf(kind)}`)}</button>
           {waiting && <button className="btn ghost" onClick={() => agentChoice.resolve(sessionId, undefined)}>{tr("先不交", "Not now")}</button>}
         </div>
-        <p className="sp-choose-later">{tr("也可以直接在右边画，之后再开会话。", "You can also just draw on the right and start a session later.")}</p>
+        <p className="sp-choose-later">{tr("也可以直接在画布上画，之后再开会话。", "You can also just draw on the canvas and start a session later.")}</p>
       </div>
     </div>
   );

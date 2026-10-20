@@ -208,10 +208,10 @@ function Player({ tl, start, onMode, onClose }: { tl: BuildTimeline; start: Star
           <button className="btn sm primary" onClick={toggle} aria-label={playing ? tr("暂停", "Pause") : tr("播放", "Play")}>
             {playing ? tr("暂停", "Pause") : t >= plan.length ? tr("重看", "Replay") : tr("播放", "Play")}
           </button>
-          <div className="seg br-mode" role="radiogroup" aria-label={tr("演法", "Mode")} title={tr("精简：小人在一片区域只走一次，够得着的就站着画，太远的直接换位置；逐步：每一件事都走到那里再画", "Brief: the avatar visits each area once, draws what it can reach from where it stands, and jumps when it's far; Step by step: it walks to every single thing before drawing it")}>
+          <div className="seg br-mode" role="radiogroup" aria-label={tr("演法", "Mode")} title={tr("精简：小人在一片区域只走一次，够得着的就站着画，太远的直接换位置；逐步：每一件事都走到那里再画", "Quick: the avatar visits each area once, draws what it can reach from where it stands, and jumps when it's far; Step by step: it walks to every single thing before drawing it")}>
             {(["brief", "steps"] as const).map((m) => (
               <button key={m} role="radio" aria-checked={start.mode === m} data-on={start.mode === m} onClick={() => start.mode !== m && onMode(m, beat?.step ?? 0, playing)}>
-                {m === "brief" ? tr("精简", "Brief") : tr("逐步", "Step by step")}
+                {m === "brief" ? tr("精简", "Quick") : tr("逐步", "Step by step")}
               </button>
             ))}
           </div>

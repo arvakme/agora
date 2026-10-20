@@ -55,7 +55,7 @@ from server.canvas.adapters.pi import PiStream, pi_usage
 from server.canvas.adapters.pi import dir_name as pi_dir_name
 from server.canvas.adapters.pi import migrate_log as _migrate_pi_log
 from server.canvas.adapters.pi import sessions_dir as _pi_sessions  # noqa: F401
-from server.i18n import tr
+from server.i18n import lang, tr
 from server.paths import BIN, SKILLS
 
 
@@ -96,9 +96,11 @@ def leaked(name: str) -> bool:
 
 
 def child_env(extra: dict[str, str] | None = None) -> dict[str, str]:
-    """The environment for an agent CLI: ours minus nesting markers and other apps' variables, ``bin/agora`` on PATH."""
+    """The environment for an agent CLI: ours minus nesting markers and other apps' variables, ``bin/agora`` on PATH,
+    and ``AGORA_LANG`` set to the page's language so the ``agora …`` commands it runs answer in it (server/i18n.py)."""
     env = {k: v for k, v in os.environ.items() if k not in _NESTED and not leaked(k) and not k.startswith("CODEX_SANDBOX")}
     env["PATH"] = os.pathsep.join([str(AGENT_BIN), env.get("PATH", "")])
+    env["AGORA_LANG"] = lang()
     env.update({k: v for k, v in (extra or {}).items() if not leaked(k)})
     return env
 

@@ -355,7 +355,7 @@ function bubbleBody(f: FlatRun, st: RunState, t: number, geom: Geometry, conflic
   const icon = Ic ? <Ic size={14} /> : null;
   let body: ReactNode;
   if (kind === "walk" && back) body = <>{icon}<span className="v">{tr("走回", "Back to")}</span><span>{par!.name}</span><span className="el">{tr("交结果", "with the result")}</span></>;
-  else if (kind === "walk") body = <>{icon}<span className="v">{tr("走去", "Going to")}</span><span>{place(st.at)}</span>{g?.say ? <span className="el">{tr(`要${g.say}`, `to ${g.say}`)}</span> : g?.path && <span className="el">{tr(`要${g.kind === "write" ? "写" : g.kind === "exec" ? "跑" : "读"} ${base(g.path)}`, `to ${g.kind === "write" ? "write" : g.kind === "exec" ? "run" : "read"} ${base(g.path)}`)}</span>}</>;
+  else if (kind === "walk") body = <>{icon}<span className="v">{tr("走去", "Going to")}</span><span>{place(st.at)}</span>{g?.say ? <span className="el">{tr(`要${g.say}`, g.say)}</span> : g?.path && <span className="el">{tr(`要${g.kind === "write" ? "写" : g.kind === "exec" ? "跑" : "读"} ${base(g.path)}`, `to ${g.kind === "write" ? "write" : g.kind === "exec" ? "run" : "read"} ${base(g.path)}`)}</span>}</>;
   else if (kind === "handoff") body = <>{icon}<span className="v">{tr(`交给 ${par?.name}`, `Handing to ${par?.name}`)}</span><span className="el">{tr("结果回到父会话", "result goes to the parent session")}</span></>;
   else if (kind === "unknown") body = <span className="el">{tr("只有回执，看不到它在做什么", "Receipts only — can't see what it's doing")}</span>;
   else if (kind === "idle" && par && st.receipt && st.receipt !== "returned" && st.receipt !== "accepted") body = <span className="v">{receiptText(run, st.receipt)}</span>; // stopped without handing back, cut off, failed: no tick, it did not finish well
