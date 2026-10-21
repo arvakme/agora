@@ -26,7 +26,7 @@ export const copy = {
 		agentsTitle: "Six session agents",
 		agentsNote: "Each one gets the figure, the progress pointer, station-by-station drawing, panel messages and the same session in the terminal. Two differences come from the CLIs themselves: in <code>-p</code> mode Grok, Cursor and Devin take no input once a turn has started, and Pi and Devin have no native sub-agents.",
 		panelAlt: "Terminal-style live panel: Claude Code, Codex and Pi sessions connected to the project's agora server and on to the canvas in the browser, with the session log scrolling underneath",
-		panelCaption: "Three agents running turn after turn. Turn ids and timings are illustrative; pending → in_flight → accepted → completed are the real states Agora records for each turn.",
+		panelCaption: "Three agents running turn after turn. Turn counts and turn ids are illustrative; pending → in_flight → accepted → completed are the real states Agora records for each turn.",
 	},
 	zh: {
 		eyebrow: "怎么工作",
@@ -53,6 +53,6 @@ export const copy = {
 		agentsTitle: "六个会话 agent",
 		agentsNote: "都能在画布上看到小人、进度指针和逐站画图，都能在面板发消息、在终端接着同一个会话。两处差别来自 CLI 本身：Grok、Cursor、Devin 的 <code>-p</code> 模式一轮开始后不接收输入；Pi 和 Devin 没有原生子代理。",
 		panelAlt: "终端风格的动态面板：Claude Code、Codex、Pi 三个会话连到本项目的 agora 服务，再连到浏览器里的画布；底下的会话日志在滚动",
-		panelCaption: "三个 agent 各自一轮一轮地跑。轮次、turn id 和时间是示意，状态 pending → in_flight → accepted → completed 是 Agora 记录每一轮的真实状态。",
+		panelCaption: "三个 agent 各自一轮一轮地跑。轮次和 turn id 是示意，状态 pending → in_flight → accepted → completed 是 Agora 记录每一轮的真实状态。",
 	},
 } as const satisfies Record<Lang, unknown>;

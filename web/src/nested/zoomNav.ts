@@ -20,7 +20,11 @@ import { nested } from "./store";
 import { camOf, childSim, clampSim, easeInOut, fillOf, fitCam, flightMs, flyAt, nestOf, parentSim, simOf, VEIL_FROM, type Cam, type Nest, type Pt, type Sim } from "./zoom";
 
 /** The shell's switch (App.tsx `go`): `arrive` is where the canvas gone to is to show its scene on the page. False: it could not be done in place (the canvas is open in another group). */
-export type ZoomShell = { go: (from: string, to: string, history: "push" | "replace", arrive?: Sim) => boolean };
+export type ZoomShell = {
+  go: (from: string, to: string, history: "push" | "replace", arrive?: Sim) => boolean;
+  /** `to` is open in a group other than `from`'s: it is shown there, so nothing can fly into it in `from`'s pane. */
+  elsewhere: (from: string, to: string) => boolean;
+};
 let shell: ZoomShell | null = null;
 export const installZoomShell = (s: ZoomShell) => void (shell = s);
 
@@ -188,10 +192,13 @@ const atMost = <T>(p: Promise<T>, ms: number) => Promise.race([p, new Promise<un
 export function enterByZoom(from: string, to: string, nodeId: string): boolean {
   const api = canvases.get(from)?.api;
   const n = nestFor(from, to, nodeId);
-  if (!api || !n || flight || isOpenElsewhere(to)) return false;
+  if (!api || !n || flight) return false;
+  if (isOpenElsewhere(from, to)) return showElsewhere(api, from, to);
   const sim = childSim(simOf(camNow(api), originOf(api)), n.m);
   if (!switchTo(from, to, clampSim(sim, centreOf(api)), { self: true }, "push")) return false;
   through.set(to, { parent: from, node: n.node.id });
+  // the sub-diagram was a tab of this group: this canvas stays open behind it, and must not be left deep in the node
+  if (canvases.get(from)?.api === api) requestAnimationFrame(() => backOut(api, from));
   return true;
 }
 
@@ -199,7 +206,8 @@ export function enterByZoom(from: string, to: string, nodeId: string): boolean {
 export function leaveByZoom(from: string, to: string): boolean {
   const api = canvases.get(from)?.api;
   const n = nestFor(to, from);
-  if (!api || !n || flight || isOpenElsewhere(to)) return false;
+  if (!api || !n || flight) return false;
+  if (isOpenElsewhere(from, to)) return showElsewhere(api, from, to);
   const sim = parentSim(simOf(camNow(api), originOf(api)), n.m);
   return switchTo(from, to, clampSim(sim, centreOf(api)), { node: n.node.id, child: from }, "push");
 }
@@ -217,7 +225,7 @@ export async function flyInto(from: string, to: string, nodeId?: string): Promis
   const api = canvases.get(from)?.api;
   const n = nestFor(from, to, nodeId);
   const content = contentOf(to);
-  if (!api || !n || !content || blockedNow() || flight || isOpenElsewhere(to)) return void shell?.go(from, to, "push");
+  if (!api || !n || !content || blockedNow() || flight || isOpenElsewhere(from, to)) return void shell?.go(from, to, "push");
   const a = api.getAppState();
   const o = originOf(api);
   // the sub-diagram's pane: the same, under a breadcrumb strip when this canvas has none
@@ -244,7 +252,7 @@ export async function flyInto(from: string, to: string, nodeId?: string): Promis
 export async function flyUp(from: string, to: string): Promise<void> {
   const chain = ancestry(from, nested.get().index);
   const at = chain.indexOf(to);
-  if (at < 0 || at >= chain.length - 1 || blockedNow() || flight || isOpenElsewhere(to)) return void shell?.go(from, to, "push");
+  if (at < 0 || at >= chain.length - 1 || blockedNow() || flight || isOpenElsewhere(from, to)) return void shell?.go(from, to, "push");
   const steps = chain.slice(at).reverse(); // from, …, to
   for (let i = 0; i + 1 < steps.length; i++) {
     const last = i + 2 === steps.length;
@@ -288,4 +296,24 @@ async function upOne(child: string, parent: string, history: "push" | "replace",
   return fly(parent, papi, dest, ms, { node: n.node.id, child, dir: "out" });
 }
 
-const isOpenElsewhere = (to: string) => !!canvases.get(to);
+const isOpenElsewhere = (from: string, to: string) => shell?.elsewhere(from, to) ?? false;
+
+/**
+ * A zoom through to a canvas open in another group: that pane is brought forward as it is, and this canvas goes back to where it
+ * was before the zoom began (left deep in the node, it would only zoom through again).
+ */
+function showElsewhere(api: ExcalidrawImperativeAPI, from: string, to: string): boolean {
+  lastSwitch = performance.now();
+  backOut(api, from);
+  shell?.go(from, to, "push");
+  return true;
+}
+
+/** Put a canvas zoomed through a node back where it was before (else the whole drawing): left there, it would zoom through again. */
+function backOut(api: ExcalidrawImperativeAPI, canvasId: string) {
+  const back = before.get(canvasId);
+  if (back) return setCam(api, back);
+  const c = contentOf(canvasId);
+  const a = api.getAppState();
+  if (c) setCam(api, fitCam(c.box, { w: a.width, h: a.height }));
+}

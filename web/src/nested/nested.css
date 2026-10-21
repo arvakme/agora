@@ -36,11 +36,14 @@
 .nest-crumbs li button { padding: 2px var(--space-2); border-radius: var(--r-xs); color: var(--fg-muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis; text-decoration: underline transparent; text-underline-offset: 3px; transition: color var(--dur-tap) var(--ease-out), text-decoration-color var(--dur-tap) var(--ease-out); }
 .nest-crumbs li button:hover { color: var(--accent); text-decoration-color: currentColor; }
 .nest-crumbs b { color: var(--fg); font-weight: var(--weight-strong); padding: 2px var(--space-2); max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+/* In the strip itself, after the trail: hanging below it, it covered the canvas's menu button at the top left. */
 .nest-hint {
-  position: absolute; left: 0; top: calc(100% + 8px); z-index: 30;
-  display: inline-flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  min-width: 0; flex: 0 1 auto;
+  display: inline-flex; align-items: center; gap: var(--space-3); height: 30px; padding: 0 var(--space-2) 0 var(--space-4);
   border-radius: var(--r-md); background: var(--surface); box-shadow: var(--frame); color: var(--fg); font-size: var(--text-sm); white-space: nowrap;
 }
+.nest-hint > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.nest-hint .nest-act { flex-shrink: 0; }
 .nest-sep { color: var(--fg-faint); }
 .nest-stale { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-3); min-width: 0; flex: 0 1 auto; color: var(--caution); font-size: var(--text-xs); white-space: nowrap; }
 .nest-stale > span:not(.nest-dot) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }

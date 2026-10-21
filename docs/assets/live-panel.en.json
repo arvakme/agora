@@ -2,7 +2,7 @@
  "meta": {
   "title": "AGORA · ONE PER PROJECT",
   "lang": "en",
-  "source": "English version of the README's 'Agora in action' animation (Chinese: live-panel.json; same layout, only the labels differ). Rendered with live-panel (MIT, https://github.com/ythx-101/live-panel-skill; motion idea from @thedelost https://x.com/thedelost/status/2105398038026195279): python3 scripts/render.py --config <this file> --out live-panel.en.mp4, then ffmpeg to a 12 fps, 720 px wide animated WebP. Its Smiley Sans font and Lucide icons are not used. Turn counts, turn ids and times are illustrative; the state names pending / in_flight / accepted / completed come from native_protocol.py::TurnState."
+  "source": "English version of the README's 'Agora in action' animation (Chinese: live-panel.json; same layout, only the labels differ). Rendered with live-panel (MIT, https://github.com/ythx-101/live-panel-skill; motion idea from @thedelost https://x.com/thedelost/status/2105398038026195279): python3 scripts/render.py --config <this file> --out live-panel.en.mp4, then ffmpeg to a 12 fps, 720 px wide animated WebP. Its Smiley Sans font and Lucide icons are not used. Turn counts, turn ids and times are illustrative; the state names pending / in_flight / accepted / completed come from native_protocol.py::TurnState. Every period divides the 30 s loop (lanes 5 / 10 / 10 s, on-demand 5 s, packets 1.875 / 2 / 2.5 / 3 s), nothing counts up and the log shows no clock, so the loop is seamless."
  },
  "canvas": {
   "preset": "1:1",
@@ -23,13 +23,13 @@
   "turns": {
    "type": "counter",
    "start": 128,
-   "rate": 0.4,
+   "rate": 0,
    "format": "comma"
   },
   "claudecode_l": {
    "type": "lane",
-   "period": 7.0,
-   "run": 4.8,
+   "period": 5.0,
+   "run": 3.4,
    "off": 0.0,
    "busy": "turn running",
    "done": [
@@ -57,8 +57,8 @@
   },
   "codex_l": {
    "type": "lane",
-   "period": 8.0,
-   "run": 5.4,
+   "period": 10.0,
+   "run": 6.8,
    "off": 0.7,
    "busy": "turn running",
    "done": [
@@ -86,9 +86,9 @@
   },
   "pi_l": {
    "type": "lane",
-   "period": 9.0,
+   "period": 10.0,
    "run": 6.1,
-   "off": 1.4,
+   "off": 5.7,
    "busy": "turn running",
    "done": [
     "completed"
@@ -116,7 +116,7 @@
   "rail": {
    "type": "triggers",
    "color": "pu",
-   "period": 4.5,
+   "period": 5.0,
    "on": 3.0,
    "t0": -1.6,
    "callsStart": 1,
@@ -226,7 +226,7 @@
        "w": 175,
        "runs": [
         {
-         "t": "count (demo)",
+         "t": "state",
          "c": "dim"
         }
        ]
@@ -236,9 +236,7 @@
        "align": "right",
        "runs": [
         {
-         "v": "rail.calls",
-         "c": "pu",
-         "b": 1
+         "v": "rail.status"
         }
        ]
       }
@@ -296,34 +294,7 @@
    "align": "center",
    "size": 13,
    "c": "dim",
-   "t": "turn counts, turn ids and times are illustrative"
-  },
-  {
-   "type": "text",
-   "x": 34,
-   "w": 1012,
-   "y": 1004,
-   "runs": [
-    {
-     "t": "turns ",
-     "c": "dim"
-    },
-    {
-     "t": "[",
-     "c": "gr",
-     "b": 1
-    },
-    {
-     "v": "turns",
-     "c": "gr",
-     "b": 1
-    },
-    {
-     "t": "]",
-     "c": "gr",
-     "b": 1
-    }
-   ]
+   "t": "turn counts and turn ids are illustrative"
   },
   {
    "type": "path",
@@ -349,7 +320,7 @@
    "r": 0,
    "width": 2,
    "flow": {
-    "period": 1.8,
+    "period": 1.875,
     "offsets": [
      0,
      0.9
@@ -381,7 +352,7 @@
    "r": 0,
    "width": 2,
    "flow": {
-    "period": 2.1,
+    "period": 2.0,
     "offsets": [
      0,
      0.9
@@ -413,7 +384,7 @@
    "r": 0,
    "width": 2,
    "flow": {
-    "period": 2.4,
+    "period": 2.5,
     "offsets": [
      0,
      0.9
@@ -437,7 +408,7 @@
    "r": 0,
    "width": 2,
    "flow": {
-    "period": 2.7,
+    "period": 3.0,
     "offsets": [
      0,
      0.9
@@ -646,20 +617,16 @@
    "titleW": 170,
    "cols": [
     {
-     "key": "time",
+     "key": "who",
      "x": 0
     },
     {
-     "key": "who",
-     "x": 112
-    },
-    {
      "key": "m",
-     "x": 261
+     "x": 149
     },
     {
      "key": "g",
-     "x": 700
+     "x": 588
     }
    ]
   }

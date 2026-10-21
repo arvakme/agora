@@ -125,7 +125,6 @@ export function Breadcrumb({ path, current, onGo, extra, keyLabel, hint, mark }:
             <IconBack size={14} />
             <span>{tr(`返回 ${name(up.title)}`, `Back to ${name(up.title)}`)}</span>
           </button>
-          {hint}
         </span>
       )}
       <ol>
@@ -142,6 +141,7 @@ export function Breadcrumb({ path, current, onGo, extra, keyLabel, hint, mark }:
           </li>
         ))}
       </ol>
+      {up && hint}
       {mark}
       {extra}
     </nav>
@@ -164,7 +164,7 @@ function BackHint({ keyLabel }: { keyLabel: string }) {
   if (!visible) return null;
   return (
     <span className="nest-hint" role="status">
-      {tr(`在子图里。点左上角返回，或按 ${keyLabel}`, `In a sub-diagram — go back top left, or press ${keyLabel}`)}
+      <span>{tr(`在子图里。点左上角返回，或按 ${keyLabel}`, `In a sub-diagram — go back top left, or press ${keyLabel}`)}</span>
       <button className="nest-act quiet" onClick={() => markBackHintSeen()}>
         {tr("知道了", "Got it")}
       </button>
