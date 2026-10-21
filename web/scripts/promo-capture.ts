@@ -175,7 +175,6 @@ if (which === "zoom") {
     const imp = (p: string) => import(/* @vite-ignore */ p);
     const { canvases } = await imp("/src/session/ui.ts");
     const { nested } = await imp("/src/nested/store.ts");
-    const { childOf } = await imp("/src/nested/graph.ts");
     const { simOf, camOf } = await imp("/src/nested/zoom.ts");
     const { arrivalOf, noteZoomGesture, contentOf } = await imp("/src/nested/zoomNav.ts");
     const { labelOf, byId } = await imp("/src/canvas/scene.ts");
@@ -190,10 +189,6 @@ if (which === "zoom") {
     const api0 = apiOf(canvas)!;
     const a0 = api0.getAppState();
     let sim = simOf({ scrollX: a0.scrollX, scrollY: a0.scrollY, zoom: a0.zoom.value }, { x: a0.offsetLeft, y: a0.offsetTop });
-    const nodeOn = (api: Api, label: string) => {
-      const els = api.getSceneElements().filter((e) => !e.isDeleted);
-      return els.find((e) => e.type === "rectangle" && labelOf(e, byId(els)) === label)!;
-    };
     // 对数缩放速度（每秒 ln k）：起步 0.5 s 加速，之后匀速；进到第三层后不再按速度走，而是指数地落到第三层整张图的取景上，
     // 时间常数取得让落地的起始速度正好等于匀速（速度连续，只是慢慢刹住）
     const smooth = (a: number, b: number, v: number) => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -246,20 +241,15 @@ if (which === "zoom") {
         }
         return switched;
       }
-      const api = apiOf(canvas);
-      const st = api ? api.getAppState() : null;
-      const pane = st ? { x: st.offsetLeft, y: st.offsetTop, w: st.width, h: st.height } : { x: 0, y: 135, w: 1440, h: 945 };
       // 画面中心：裁切框（y 150–1050）的中心
       const C = { x: 720, y: 600 };
       const label = focusLabel[level];
       let F = C;
-      let box: { x: number; y: number; w: number; h: number } | null = null;
       if (label) {
         const els = (nested.get().scenes.get(canvas) ?? []) as { id: string; type: string; x: number; y: number; width: number; height: number; isDeleted?: boolean }[];
         const live = els.filter((e) => !e.isDeleted);
         const n = live.find((e) => e.type === "rectangle" && labelOf(e, byId(live)) === label);
         if (n) {
-          box = { x: n.x, y: n.y, w: n.width, h: n.height };
           F = { x: (n.x + n.width / 2) * sim.k + sim.x, y: (n.y + n.height / 2) * sim.k + sim.y };
         }
       }

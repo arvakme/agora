@@ -2,7 +2,7 @@
 // into the full thread (layout animation), with replies, agent results and actions.
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import { handOff, undoAgent } from "../ops/agent";
 import type { AnchorState } from "../canvas/anchors";
 import { IconCheck, IconClose, IconHint, IconPencil, IconRetry, IconSend, IconTarget, IconTrash } from "../app/icons";

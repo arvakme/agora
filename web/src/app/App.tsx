@@ -23,12 +23,12 @@ import { byId, type El } from "../canvas/scene";
 import { SessionPane } from "../session/SessionPane";
 import { useSessionFloat } from "./useSessionFloat";
 import { prefs, usePrefs } from "./prefs";
-import { sessions, type Session, type Turn } from "../session/store";
+import { sessions } from "../session/store";
 import { agentChoice, canvases, ui } from "../session/ui";
-import { agents, useAgentName, type Binding } from "../session/agents";
+import { agents, useAgentName } from "../session/agents";
 import { SessionMark } from "../session/AgentAvatar";
 import { pointerFollow } from "../pointer/follow";
-import { createThreadStore, threadStores, useThreads, type ThreadSnapshot, type ThreadStore } from "../comments/threads";
+import { createThreadStore, threadStores, useThreads, type ThreadStore } from "../comments/threads";
 import { AllDocs } from "../workspace/AllDocs";
 import { ancestry, childOf, descendants, openThreads, parentIndex } from "../nested/graph";
 import { enterOnKey } from "../nested/enter";
@@ -51,7 +51,7 @@ import { ShareButton } from "../share/SharePanel";
 import { Workspace } from "../workspace/Workspace";
 import { createQuietTabs } from "../workspace/quietTabs";
 import { userNav } from "../workstation/navOrigin";
-import { activate, groupOf, groups, moveTab, preset, type Node, type Preset } from "../workspace/layout";
+import { groupOf, groups, preset, type Node, type Preset } from "../workspace/layout";
 import { defaultLayout } from "../workspace/twoColumns";
 import {
   canvasTree,

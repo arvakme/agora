@@ -2,7 +2,7 @@
 // gateway's three guest endpoints (web/docs/sharing.md); there is no workspace, session, agent or
 // progress pointer here, and the owner's email / local paths never reach this page.
 import { MotionConfig, motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CanvasView, type CanvasHandle } from "../canvas/CanvasView";
 import { createThreadStore, setIdentity, useThreads, type Message, type Thread, type ThreadStore } from "../comments/threads";
 import { threadsFromFile, type ThreadsFile } from "../project/format";

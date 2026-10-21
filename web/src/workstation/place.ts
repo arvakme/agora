@@ -24,7 +24,6 @@
 import { REF_K } from "./docks";
 import { DOOR_MS, planTrip, SUB_SCALE, tripAt, type Foot, type Move, type Pose, type Pt, type Trip } from "./rig";
 import type { Leg, Route } from "./route";
-import { isNodePath } from "./runs/nodePath";
 import { receiptAt, type WorkRun, type ReceiptState, type RunSeg } from "./runs/types";
 
 export const OUTSIDE = "\u0000outside";

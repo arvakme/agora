@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from server.canvas import agents
 from server.canvas.project import Locked, ProjectStore
 from server.canvas.project_router import create_project_app
-from server.canvas.sessions import AgentHub, NoPage, agora_prompt, resolve_canvas
+from server.canvas.sessions import AgentHub, agora_prompt, resolve_canvas
 from server.canvas.transcript import MARKER
 
 REPO = Path(__file__).resolve().parents[1]

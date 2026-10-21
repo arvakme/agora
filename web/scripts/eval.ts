@@ -9,7 +9,7 @@
 // answers there, the script starts the standalone canvas app from the repo root
 // (`uv run uvicorn server.canvas.router:app`); set AGORA_API_ORIGIN to reuse one.
 import { spawn, type ChildProcess } from "node:child_process";
-import { appendFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright";
 

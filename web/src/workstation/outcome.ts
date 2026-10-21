@@ -11,6 +11,7 @@ import type { RunSeg, WorkRun } from "./runs/types";
 export type ExecResult = { ok: boolean; passed?: number; failed?: number };
 
 const COUNT = /(\d+) (passed|passing|failed|failing|errors?)\b/g;
+// oxlint-disable-next-line no-control-regex -- the escape character is what starts an ANSI colour code
 const ANSI = /\u001b\[[0-9;]*m/g;
 
 /** A finished call's result; null while it runs, or when its log does not say. */

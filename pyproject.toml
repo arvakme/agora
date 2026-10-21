@@ -39,6 +39,7 @@ exclude = ["web/evidence", "web/eval", "web/docs", "web/node_modules"]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
+    "ruff>=0.17.1",
 ]
 
 [tool.pytest.ini_options]
@@ -46,3 +47,17 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 200
+extend-exclude = ["web/node_modules", "site/node_modules", "tests/legacy"]  # tests/legacy: frozen implementations the adapters are checked against
+
+[tool.ruff.lint]
+# pyflakes and syntax-level errors only: the code has its own layout (one-line lambdas, short names in geometry)
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E731", "E741"]
+
+[tool.ruff.lint.per-file-ignores]
+# pytest fixtures are imported and then named as test arguments
+"tests/**" = ["F811"]

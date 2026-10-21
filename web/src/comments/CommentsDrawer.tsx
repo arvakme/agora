@@ -45,7 +45,7 @@ export function CommentsDrawer({ title, api, store, view, open, onOpen, onClose,
   const { showResolved } = usePrefs();
   // the canvas pane the panel floats over: its size decides the panel's, and where a dragged panel may go
   const [el, setEl] = useState<HTMLElement | null>(null);
-  const [host, setHost] = useState<HTMLElement | null>(null);
+  const [, setHost] = useState<HTMLElement | null>(null);
   const [pane, setPane] = useState({ w: view.appState.width, h: view.appState.height });
   useLayoutEffect(() => {
     const h = el?.parentElement;
