@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { IconCopy, IconLock, IconShare } from "../app/icons";
 import { SPRING } from "../comments/motion";
-import { fmtLeft } from "../guest/GuestApp";
+import { fmtLeft } from "./fmtLeft";
 import { replayText } from "./replayText";
 import { buildSwitch, dnsWait } from "./shareLive";
 import { DomainRow } from "./DomainRow";
