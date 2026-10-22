@@ -65,7 +65,7 @@ Requirements:
 You don't need to keep the repository around:
 
 ```bash
-uv tool install git+https://github.com/arvakme/agora     # builds the front end at install time; needs Node and npm
+uv tool install agora-canvas          # from PyPI, front end included; no Node needed
 
 cd ~/code/my-service                  # your project (.agora/ is created in the current directory)
 agora                                 # same as agora open: initialise .agora/, start this project's service, open the browser
@@ -76,8 +76,9 @@ agora doctor [--fix]                  # check local data; --fix restores missing
 ```
 
 - If `agora` isn't found after installing, run `uv tool update-shell` once and reopen the terminal. `which agora` shows which copy runs (if you once added `~/code/agora/bin` to `PATH`, remove it).
-- Upgrade: `uv tool upgrade agora-canvas` (or reinstall with `uv tool install --force git+https://github.com/arvakme/agora`). Uninstall: `uv tool uninstall agora-canvas`.
-- The distribution is called `agora-canvas` (`agora` and `agora-cli` are taken on PyPI); the command is still `agora`. Pushing a `v*` tag attaches a wheel with the front end prebuilt to the GitHub Release, which installs without Node. **No version has been released yet, and nothing is on PyPI.** Once it is, `uv tool install agora-canvas` will work, or `uvx --from agora-canvas agora open` without installing.
+- Upgrade: `uv tool upgrade agora-canvas`. Uninstall: `uv tool uninstall agora-canvas`.
+- The latest `main` instead of a release: `uv tool install --force git+https://github.com/arvakme/agora` (builds the front end at install time; needs Node and npm).
+- The distribution is called `agora-canvas` (`agora` and `agora-cli` are taken on PyPI); the command is still `agora`. Releases go to [PyPI](https://pypi.org/project/agora-canvas/) and to [GitHub Releases](https://github.com/arvakme/agora/releases), with the front end prebuilt. To try it without installing: `uvx --from agora-canvas agora open`.
 
 The first open creates an empty canvas named after the project and one session. The session's "Draw this project's architecture" button lets the recommended agent look through the project and draw its architecture (you can also pick the agent and write the first message yourself); "See an example" opens the example diagram as a separate canvas.
 
@@ -218,7 +219,7 @@ No, editing is single-user for now. Conflicts are caught by a version check, and
 Only tested on macOS. Without Ghostty, Kitty or Terminal.app, the panel gives you a `tmux attach` command that works in any terminal.
 
 **Why is the package called `agora-canvas`?**
-`agora` and `agora-cli` are taken on PyPI. The command is still `agora`. The package isn't on PyPI yet; use `uv tool install git+https://github.com/arvakme/agora` above for now.
+`agora` and `agora-cli` are taken on PyPI. The command is still `agora`. Install it with `uv tool install agora-canvas`.
 
 ## Evaluation
 
@@ -282,7 +283,7 @@ uv run pytest tests/test_project_store.py tests/test_agent_sessions.py tests/tes
 cd web && npx tsc -p . && npx vitest run && npm run build && npm run eval:replay
 ```
 
-Packaging: `uv build` writes an sdist and a wheel to `dist/` (run `npm ci && npm run build` in `web/` first if there's no `web/dist`; `AGORA_SKIP_WEB_BUILD=1` skips the front end). Pushing a `v*` tag makes `.github/workflows/release.yml` build and attach them to a GitHub Release; nothing is published to PyPI.
+Packaging: `uv build` writes an sdist and a wheel to `dist/` (run `npm ci && npm run build` in `web/` first if there's no `web/dist`; `AGORA_SKIP_WEB_BUILD=1` skips the front end). Releasing: bump `version` in `pyproject.toml`, merge, then push the tag `v<version>`. `.github/workflows/release.yml` builds both, attaches them to a GitHub Release and publishes them to PyPI (trusted publishing, environment `pypi`). A PyPI version can't be uploaded twice, so every release needs a new version.
 
 CI isn't running on the repository right now, so run the checks above locally before committing; `.github/workflows/test.yml` is still there (all Python tests plus front-end type check, unit tests, build, offline eval replay and library validation) and can be re-enabled in GitHub Actions when needed. Development conventions: [docs/development.md](docs/development.md); testing: [docs/testing.md](docs/testing.md); back-end orchestration (agent lifecycle, dispatch and recovery): [docs/orchestration.md](docs/orchestration.md). These docs are in Chinese.
 

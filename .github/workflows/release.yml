@@ -1,8 +1,9 @@
 name: release
 
-# Builds the wheel and sdist with the page (web/dist) inside, so installing them needs no Node:
-#   uv tool install https://github.com/arvakme/agora/releases/download/<tag>/agora_canvas-<version>-py3-none-any.whl
-# A tag v* attaches them to a GitHub release; a manual run only keeps them as a workflow artifact. Nothing goes to PyPI.
+# Builds the wheel and sdist with the page (web/dist) inside, so installing them needs no Node.
+# A tag v<version> attaches them to a GitHub release and publishes them to PyPI (agora-canvas) through trusted
+# publishing: PyPI trusts this workflow in the environment `pypi`, no token is stored. A manual run only keeps them
+# as a workflow artifact. The tag must match `version` in pyproject.toml (PyPI never takes a version twice).
 
 on:
   push:
@@ -25,6 +26,10 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
+      - if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          v=$(sed -n 's/^version = "\([^"]*\)".*/\1/p' pyproject.toml)
+          [ "$GITHUB_REF_NAME" = "v$v" ] || { echo "tag $GITHUB_REF_NAME does not match version $v in pyproject.toml"; exit 1; }
       # hatch_build.py runs `npm ci` and `npm run build` in web/ when web/dist is missing
       - run: uv build
       - uses: actions/upload-artifact@v4
@@ -35,3 +40,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+
+  pypi:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/agora-canvas/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
