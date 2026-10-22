@@ -28,33 +28,31 @@ import os
 import secrets
 import threading
 import time
-from collections import OrderedDict
-from dataclasses import dataclass, field
 from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
-from server.canvas import adapters, agents, executors as executors_mod, fallback as fallback_mod, graph_hub, nested, page_help, pane_state, proctree, schemas
+from server.canvas import adapters, agents, executors as executors_mod, page_help, pane_state, proctree
 from server.canvas.adapters import drift
 from server.canvas.local import Local
-from server.canvas.model_view import model_view, versions
 from server.canvas.project import ProjectStore
 from server.canvas.resident import ResidentPool
 from server.canvas.adapters.claude import answer_response, approve_response, deny_response, interrupt_request
 from server.canvas.runner import KILL_GRACE_S, Control, ExecOptions, RunRequest, make_backend
 from server.canvas.terminal import PasteSubmitFailed, TerminalError, Terminals, gate_hold
-from server.canvas.transcript import MARKER, State, Tail, project, split_agora
-from server.i18n import lang, tr
+from server.canvas.transcript import MARKER, Tail, project, split_agora
+from server.i18n import tr
+
+from server.canvas.session_bridge import CanvasBridge
+from server.canvas.session_live import (  # noqa: F401 (re-exported: callers import these from here)
+    BRIDGE_TIMEOUT_S, PREVIEW, READS_KEPT, SIGNAL_WAIT_S, Busy, Copied, Live, NoPage, PageTookIt, Pending, Subscriber, agora_prompt, canvas_names, cli_hold, file_read, load_read, public_item, resolve_canvas, save_read, summary_head,
+)
 
 TICK_S = 0.4
 RELOCATE_S = 5.0  # how often a followed log is looked up again (it may have moved: Pi migration, a fork)
 PANE_BOOT_S = 6.0  # a freshly opened pane gets this long to start its CLI before the first paste (a CLI that does not report its state, pane_state.py)
-SIGNAL_WAIT_S = 45.0  # a CLI that reports its state has said nothing this long after its pane opened: it is most likely waiting for the person (a trust prompt)
 DELIVERY_CONFIRM_S = 30.0
-BRIDGE_TIMEOUT_S = 25.0
 MAX_ITEMS = 1500
-PREVIEW = 4000  # tool args / output characters pushed to the page; the rest on request
-READS_KEPT = 64
 SNAPSHOT_MAX = 20 * 1024 * 1024  # per session: past this the trajectory snapshot stops growing
 SUMMARY_MAX = 6000  # characters of the "carry on with a summary" message
 STALE_DAYS = 20  # a Claude Code session idle this long is warned about Claude's 30-day cleanup
@@ -64,229 +62,7 @@ SEND_MODES = ("auto", "steer", "interrupt", "wait")
 ASKED_MODE = "auto"  # the permission mode Agora asks a two-way CLI for (adapters/claude.py headless_args)
 
 
-class NoPage(RuntimeError):
-    """A write needs an open Agora page (it owns the live scene) and none is connected."""
-
-
-class PageTookIt(NoPage):
-    """A page took the request and did not report back: the edit may already be on its canvas, so nothing else may run it."""
-
-
-class Busy(RuntimeError):
-    pass
-
-
-class Copied(RuntimeError):
-    """The session came along with a copy of the project (``cp -r``): the original copy still uses
-    its native session, so this one is read-only until the person forks it here."""
-
-    def __init__(self, sid: str, info: dict[str, Any]) -> None:
-        self.info = {**info, "sessionId": sid}
-        super().__init__(tr(f"这个会话是从 {info.get('from')} 复制过来的，原来那份项目还在用它的原生会话；要在这里接着用，先「在这里分叉继续」。", f"This session was copied from {info.get('from')}, and that copy of the project still uses its native session. To keep going here, first choose “Fork here and continue”."))
-
-
-def agora_prompt(body: str, *, canvas_id: str | None, canvas_name: str | None, extra: str = "", session_id: str | None = None, project_id: str | None = None) -> str:
-    """What Agora sends: the person's words, then a context footer (hidden in the transcript).
-
-    The footer's ``(canvas=… session=… project=…)`` names the canvas, the Agora session and the
-    project (first 8 characters of its id), so a native log can later be matched back to the
-    Agora session it belongs to even when ``.agora/sessions/`` is gone."""
-    ids = " ".join(f"{k}={v}" for k, v in (("canvas", canvas_id), ("session", session_id), ("project", (project_id or "").replace("-", "")[:8] or None)) if v)
-    if lang() == "en":
-        where = f"canvas “{canvas_name or canvas_id}”" if canvas_id else "this project's canvas"
-        footer = f"{MARKER} From Agora · {where}{f'({ids})' if ids else ''}. Use the agora skill (`agora canvas …`) to read, edit or animate the diagram. {extra}".rstrip()
-    else:
-        where = f"画布「{canvas_name or canvas_id}」" if canvas_id else "这个项目的画布"
-        footer = f"{MARKER} 来自 Agora · {where}{f'({ids})' if ids else ''}。读图、改图、做动画用 agora skill（`agora canvas …`）。{extra}".rstrip()
-    return f"{body.rstrip()}\n\n{footer}"
-
-
-def canvas_names(store: ProjectStore) -> dict[str, str]:
-    ws = store.read("workspace")
-    docs = (ws[0].get("docs") if ws else None) or []
-    names = {d["id"]: d.get("title") or d["id"] for d in docs if isinstance(d, dict) and d.get("kind") == "canvas" and d.get("id")}
-    for p in sorted((store.dir / "canvases").glob("*.excalidraw")):
-        names.setdefault(p.name.removesuffix(".excalidraw"), p.name.removesuffix(".excalidraw"))
-    return names
-
-
-def resolve_canvas(store: ProjectStore, canvas: str | None = None, session: str | None = None) -> str:
-    """``--canvas`` → the session's canvas → the focused/only canvas."""
-    names = canvas_names(store)
-    if canvas:
-        if canvas not in names:
-            by_name = [i for i, n in names.items() if n == canvas]
-            if len(by_name) == 1:
-                return by_name[0]
-            raise ValueError(f"unknown canvas {canvas!r}; known: {', '.join(f'{i} ({n})' for i, n in names.items())}")
-        return canvas
-    if session:
-        s = store.read_session(session)
-        cid = ((s or ({}, ""))[0].get("session") or {}).get("canvasId")
-        if cid and cid in names:
-            return cid
-    ws = store.read("workspace")
-    focused = (ws[0].get("focused") if ws else None) or ""
-    if focused in names:
-        return focused
-    if len(names) == 1:
-        return next(iter(names))
-    if not names:
-        raise ValueError("this project has no canvas yet")
-    raise ValueError(f"several canvases; pass --canvas: {', '.join(f'{i} ({n})' for i, n in names.items())}")
-
-
-def file_read(store: ProjectStore, canvas_id: str) -> dict[str, Any]:
-    got = store.read("canvas", canvas_id)
-    if got is None:
-        raise ValueError(f"canvas {canvas_id} has no file")
-    elements = got[0].get("elements") or []
-    names = canvas_names(store)
-    return {"canvasId": canvas_id, "name": names.get(canvas_id, canvas_id), "scene": nested.annotate(store, canvas_id, model_view(elements), names), "versions": versions(elements), "source": "file"}
-
-
-def save_read(store: ProjectStore, canvas_id: str, vers: dict[str, str]) -> str:
-    """Remember the element versions a read saw; the token becomes ``apply --base``."""
-    store.check_alive()
-    d = store.run_dir / "reads"
-    d.mkdir(parents=True, exist_ok=True)
-    token = f"r-{int(time.time())}-{secrets.token_hex(3)}"
-    (d / f"{token}.json").write_text(json.dumps({"canvasId": canvas_id, "versions": vers, "at": int(time.time() * 1000)}))
-    for old in sorted(d.glob("r-*.json"), key=lambda p: p.stat().st_mtime)[:-READS_KEPT]:
-        old.unlink(missing_ok=True)
-    return token
-
-
-def load_read(store: ProjectStore, token: str) -> dict[str, Any]:
-    if not token.startswith("r-") or "/" in token:
-        raise ValueError(f"bad base token {token!r}")
-    p = store.run_dir / "reads" / f"{token}.json"
-    if not p.exists():
-        raise ValueError(f"unknown base {token!r}: run `agora canvas read` again")
-    return json.loads(p.read_text())
-
-
-@dataclass
-class Pending:
-    send_id: str
-    prompt: str
-    at: float
-    delivered_at: float | None = None
-    force: bool = False  # the person said "send it now": this one message goes past the input-right gate
-    images: tuple[str, ...] = ()  # picture files that go with the words (a headless turn of a CLI that takes them)
-
-
-def public_item(it: dict[str, Any]) -> dict[str, Any]:
-    """What the page gets: tool args / output cut to a preview, with their full length."""
-    tool = it.get("tool")
-    if not isinstance(tool, dict):
-        return it
-    short = dict(tool)
-    for k in ("args", "output"):
-        v = tool.get(k)
-        if isinstance(v, str) and len(v) > PREVIEW:
-            short[k] = v[:PREVIEW]
-            short[f"{k}Len"] = len(v)
-    return {**it, "tool": short}
-
-
-@dataclass
-class Live:
-    """Runtime state of one bound session."""
-
-    id: str
-    tail: Tail | None = None
-    state: State = field(default_factory=State)
-    runs_loaded: bool = False
-    items: OrderedDict[str, dict[str, Any]] = field(default_factory=OrderedDict)
-    run: asyncio.Task | None = None
-    headless: list[Pending] = field(default_factory=list)
-    pane: list[Pending] = field(default_factory=list)
-    awaiting: list[Pending] = field(default_factory=list)  # delivered into the pane, turn not seen yet
-    current: Pending | None = None  # the Agora message whose turn is open in the log
-    held: str | None = None
-    running: bool = False  # a headless turn is in progress
-    pane_alive: bool = False
-    pane_since: float | None = None
-    reports: bool = False  # the CLI in the pane was started so that it reports its state (pane_state.py)
-    cli_state: str | None = None  # what it last reported: idle / running / waiting / exited; None before it has said anything
-    pane_id: str = ""  # which opening of the pane this is: what a CLI's report must carry (``AGORA_PANE``), so the late word of a closed pane is not taken for the new one's
-    activity: str | None = None
-    last_error: str | None = None
-    native: dict[str, Any] | None = None  # the native log is missing / ambiguous / elsewhere (agents.NativeMissing.public)
-    located_at: float = 0.0  # when the followed log was last looked up
-    snap: dict[str, str] = field(default_factory=dict)  # item id → what the trajectory snapshot holds for it
-    snap_size: int = 0
-    # Two-way headless turn (Claude): what the CLI has open with the person is runtime fact, never saved
-    # and never replayed: a restart ends it together with the process.
-    requests: OrderedDict[str, dict[str, Any]] = field(default_factory=OrderedDict)  # request id → the CLI's request (adapter event)
-    control: Control | None = None  # where answers and the interrupt are written while the turn runs
-    mode: str | None = None  # the permission mode the CLI reported in its init (``auto``, or ``default`` when the model has no auto)
-    interrupting: bool = False
-    last_tool: str | None = None  # the tool call the running headless turn made last (where a steer lands)
-    # Whether what the running headless turn reads (steer, a soft interrupt) is live: a two-way CLI (Claude) from the start; Codex
-    # and Pi once their resident process says so (``resident`` event), None until then, False when the turn fell back to the one-shot
-    # way. ``steer_why`` (says why the last turn fell back) stays until a turn is resident again.
-    live_control: bool | None = None
-    steer_why: str | None = None
-    asked: set[str] = field(default_factory=set)  # tool calls put to the person this turn (the CLI lists a denied or interrupted one in permission_denials too: not auto's doing)
-    seen_window: bool = False  # a terminal window has been attached to this pane (an unattended pane is not closed)
-    detached_at: float | None = None  # since when no window is attached (only while the pane is otherwise idle)
-    window_seen: tuple[int, int, bool] | None = None  # (windows attached, writable ones, takeover) as last pushed to the page
-    notes: list[dict[str, Any]] = field(default_factory=list)  # notices to show once the transcript is loaded (a turn a restart ended)
-
-    def forget_pane(self) -> None:
-        """Everything that belongs to one opening of the pane. When the pane is gone, so is all of it: the next pane
-        starts from nothing, not from what the last one had seen or been told."""
-        self.pane_alive, self.pane_since = False, None
-        self.reports, self.cli_state, self.pane_id = False, None, ""
-        self.seen_window, self.detached_at = False, None
-
-
-class Subscriber:
-    def __init__(self) -> None:
-        self.q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=2000)
-        self.at = time.time()
-        self.id = secrets.token_hex(6)
-        # 0: not an executor; 1: an old page (runs what it is given, no claim); 2: claims a request before it runs it
-        self.executor = 0
-        # What an executor page reports about itself (executors.py ranks by it)
-        self.visible: bool | None = None
-        self.focused_at = 0.0
-        self.answered_at: float | None = None
-        self.failed_at: float | None = None
-
-    def put(self, ev: dict[str, Any]) -> None:
-        try:
-            self.q.put_nowait(ev)
-        except asyncio.QueueFull:
-            pass
-
-
-def summary_head(found: bool) -> str:
-    """The first line of a session's summary: it says the native record is lost only when it is (an imported or a live session has its log; its summary is just a summary)."""
-    if found:
-        return tr("（下面是这个会话此前的对话摘要。）", "(Below is a summary of this session's conversation so far.)")
-    return tr("（接着之前的讨论：原来的原生会话记录已经丢失，下面是 Agora 保存的轨迹摘要。）", "(Continuing the earlier discussion: the original native session record is lost; below is the trajectory summary Agora kept.)")
-
-
-def cli_hold(state: str | None, since: float | None, now: float, *, force: bool = False) -> str | None:
-    """Why a message is not pasted into a pane whose CLI reports its state (pane_state.py): None when the CLI said it is
-    idle. Silence is not "ready": until the CLI speaks nothing is pasted; after ``SIGNAL_WAIT_S`` the person may say go."""
-    if state == "idle":
-        return None
-    if state == "waiting":
-        return tr("CLI 在等你在终端里确认权限，确认后再投递", "The CLI is waiting for you to approve a permission in the terminal; delivering after that")
-    if state == "running":
-        return tr("CLI 正在忙，空闲后再投递", "The CLI is busy; delivering when it is idle")
-    if state == "exited":
-        return tr("终端里的 CLI 已退出", "The CLI in the terminal has exited")
-    if since is not None and now - since >= SIGNAL_WAIT_S:
-        return None if force else tr("CLI 一直没有就绪：可能在等你在终端里确认（信任目录、审批提示等），确认后会自动投递；已经确认过的话点「现在送出」", "The CLI never became ready: it may be waiting for you to confirm something in the terminal (trusting the folder, an approval prompt…). It delivers on its own once you do; if you already did, click “Send now”")
-    return tr("终端刚打开，等 CLI 就绪再投递", "The terminal just opened; delivering once the CLI is ready")
-
-
-class AgentHub:
+class AgentHub(CanvasBridge):
     def __init__(self, store: ProjectStore, *, terminals: Terminals | None = None, backend_factory=make_backend, local: Local | None = None, url: str | None = None) -> None:
         self.store = store
         self.url = url  # where a CLI in a pane reaches this server (``AGORA_URL``): without it nothing reports its state
@@ -1497,178 +1273,6 @@ class AgentHub:
         self._follow(sid, lv)
         self.broadcast({"t": "transcript", "sessionId": sid, "reset": True, "items": [public_item(i) for i in list(lv.items.values())[-MAX_ITEMS:]]})
         self._status(sid)
-
-    # ——— canvas bridge ———
-    def executors(self) -> list[Subscriber]:
-        """The open pages that can execute an edit, in the order requests are offered to them (executors.py)."""
-        return list(executors_mod.order(s for s in self.subs if s.executor))
-
-    def executor(self) -> Subscriber | None:
-        ex = self.executors()
-        return ex[0] if ex else None
-
-    def page_state(self, sub_id: str, *, visible: bool, focused_at: float) -> bool:
-        """A page says whether it is visible and when it was last focused (ms since the epoch or seconds: only the order counts)."""
-        sub = next((s for s in self.subs if s.id == sub_id), None)
-        if sub is None:
-            return False
-        sub.visible = bool(visible)
-        sub.focused_at = float(focused_at or 0)
-        return True
-
-    def claim_bridge(self, rid: str, sub_id: str) -> bool:
-        """A page asks to run request ``rid``. Granted to the page it is being offered to, once: a page that was
-        skipped (frozen in a background tab) and wakes up later is refused, so an edit is never run twice."""
-        offer = self.bridge_offers.get(rid)
-        sub = next((s for s in self.subs if s.id == sub_id), None)
-        if offer is None or offer["to"] != sub_id or (offer["claimed"] and offer["claimed"] != sub_id):
-            return False
-        if not offer["claimed"]:
-            offer["claimed"] = sub_id
-            offer["claim"].set()
-        if sub is not None:
-            sub.answered_at = time.time()
-        return True
-
-    async def bridge(self, kind: str, payload: dict[str, Any], timeout: float = BRIDGE_TIMEOUT_S, reply_s: float = executors_mod.PAGE_REPLY_S) -> dict[str, Any]:
-        """Have a page execute ``kind``. The request goes to the first page in the order; if it does not take it within
-        ``reply_s`` it is offered to the next, and so on, all inside ``timeout``. A page that took it is waited for —
-        never replaced: its edit may already be on its canvas."""
-        pages = self.executors()
-        if not pages:
-            raise NoPage(tr("没有打开的 Agora 页面：改图要在页面里执行（它持有画布、做校验、记撤销）。先 `agora open`。", "No Agora page is open: edits run in the page (it holds the canvas, validates, and records undo). Run `agora open` first."))
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + timeout
-        rid = f"b-{secrets.token_hex(5)}"
-        fut: asyncio.Future = loop.create_future()
-        offer: dict[str, Any] = {"to": None, "claimed": None, "claim": asyncio.Event()}
-        self.bridge_waits[rid] = fut
-        self.bridge_offers[rid] = offer
-        try:
-            for i, sub in enumerate(pages):
-                left = deadline - loop.time()
-                if left <= 0:
-                    break
-                offer["to"] = sub.id
-                sub.put({"t": "bridge", "rid": rid, "kind": kind, **payload})
-                if sub.executor < 2:  # an old page does not claim: it runs what it is given, as before
-                    offer["claimed"] = sub.id
-                    offer["claim"].set()
-                waiter = asyncio.ensure_future(offer["claim"].wait())
-                try:
-                    await asyncio.wait({waiter, fut}, timeout=left if i == len(pages) - 1 else min(reply_s, left), return_when=asyncio.FIRST_COMPLETED)
-                finally:
-                    waiter.cancel()
-                if fut.done():
-                    return fut.result()
-                if offer["claimed"]:
-                    try:
-                        return await asyncio.wait_for(fut, max(deadline - loop.time(), 0.01))
-                    except TimeoutError:
-                        raise PageTookIt(tr("页面已接手这次改图但没有回报：图上可能已经改了，先看一眼图，再决定要不要重试。", "A page took this edit but never reported back: the diagram may already have changed. Look at it before deciding whether to retry.")) from None
-                sub.failed_at = time.time()  # did not take it: behind the others until it does
-                offer["to"] = None
-            raise NoPage(tr("开着的 Agora 页面都没有回应：把 Agora 的标签页切到前台再试一次。", "None of the open Agora pages answered: bring the Agora tab to the front and try again."))
-        finally:
-            self.bridge_waits.pop(rid, None)
-            self.bridge_offers.pop(rid, None)
-
-    def bridge_result(self, rid: str, result: dict[str, Any]) -> bool:
-        fut = self.bridge_waits.get(rid)
-        if fut is None or fut.done():
-            return False  # late: the request was given to another page, or is over
-        fut.set_result(result)
-        return True
-
-    def auto_open_enabled(self) -> bool:
-        return page_help.auto_open_enabled(self)
-
-    def set_auto_open(self, on: bool) -> None:
-        page_help.set_auto_open(self, on)
-
-    async def edit(self, kind: str, payload: dict[str, Any], fallback: Callable[[], Any] | None = None) -> dict[str, Any]:
-        """Have an edit done: an open page, else a page Agora opens, else the server (page_help.py)."""
-        return await page_help.edit(self, kind, payload, fallback)
-
-    async def canvas_read(self, canvas: str | None, session: str | None) -> dict[str, Any]:
-        cid = resolve_canvas(self.store, canvas, session)
-        got: dict[str, Any] | None = None
-        if self.executor() is not None:
-            try:
-                got = await self.bridge("read", {"canvasId": cid}, timeout=10)
-                got["source"] = "page"
-            except NoPage:
-                got = None
-        if not got or got.get("error"):
-            got = file_read(self.store, cid)
-        else:
-            got["scene"] = nested.annotate(self.store, cid, got["scene"], canvas_names(self.store))
-        base = save_read(self.store, cid, got.pop("versions", {}))
-        scene = got["scene"]
-        out = {"canvas": {"id": cid, "name": got.get("name")}, "base": base, "source": got.get("source"), "scene": scene}
-        # Nesting sits next to the canvas, not inside the node / arrow lists the ops refer to.
-        for k in ("path", "parent"):
-            if k in scene:
-                out["canvas"][k] = scene.pop(k)
-        return out
-
-    async def canvas_apply(self, canvas: str | None, session: str | None, base: str, ops: list[Any], note: str | None) -> dict[str, Any]:
-        read = load_read(self.store, base)
-        cid = resolve_canvas(self.store, canvas or read["canvasId"], session)
-        if cid != read["canvasId"]:
-            raise ValueError(f"base {base} was read from canvas {read['canvasId']}, not {cid}")
-        ops, layout = await graph_hub.expand(self, cid, session, ops)  # a trailing {"op": "layout"} becomes plain ops (graph_ops.py)
-        plan = {"ops": ops, **({"note": note} if note else {})}
-
-        async def by_server() -> dict[str, Any]:  # the few ops that need no page (fallback.py)
-            return await asyncio.to_thread(fallback_mod.apply, self.store, cid, session, plan, read["versions"])
-
-        done = await self.edit("apply", {"canvasId": cid, "sessionId": session, "plan": plan, "versions": read["versions"]}, by_server)
-        return await graph_hub.annotate(self, cid, session, done, layout)  # …and the answer says how the diagram measures now
-
-    async def canvas_link(self, canvas: str | None, session: str | None, links: dict[str, list[str]], clear: bool = False) -> dict[str, Any]:
-        """Associate diagram elements with code paths (globs) — stored in the element's customData."""
-        cid = resolve_canvas(self.store, canvas, session)
-        if not isinstance(links, dict) or not links:
-            raise ValueError("nothing to link: give an element and one or more globs")
-        clean: dict[str, list[str]] = {}
-        for el, globs in links.items():
-            gs = [str(g).strip() for g in (globs or []) if str(g).strip()]
-            if not gs and not clear:
-                raise ValueError(f"no globs for {el!r} (use --clear to remove its paths)")
-            clean[str(el)] = gs
-        return await self.edit("link", {"canvasId": cid, "sessionId": session, "links": clean, "clear": clear})
-
-    async def canvas_child(self, op: str, canvas: str | None, session: str | None, node: str | None, child: str | None, title: str | None) -> dict[str, Any]:
-        """Nested canvases: ``create`` a child canvas for a node (or return the one it has),
-        ``link`` an existing canvas to a node, ``unlink`` it, or ``list`` a canvas's children.
-        Writes go through the page (it owns the workspace and the scenes, and records the change
-        as one undoable step in the session)."""
-        cid = resolve_canvas(self.store, canvas, session)
-        names = canvas_names(self.store)
-        if op == "list":
-            return {"canvas": {"id": cid, "name": names.get(cid, cid)}, "children": nested.list_children(self.store, cid, names)}
-        if op not in ("create", "link", "unlink"):
-            raise ValueError(f"unknown child op {op!r}: create | link | unlink | list")
-        if not node:
-            raise ValueError("--node is required: the id or exact label of the node on the parent canvas")
-        payload: dict[str, Any] = {"op": op, "canvasId": cid, "sessionId": session, "node": node}
-        if op == "link":
-            if not child:
-                raise ValueError("--child is required for link: an existing canvas id or name")
-            payload["child"] = resolve_canvas(self.store, child, None)
-            if nested.descendants(payload["child"], nested.scenes(self.store)) & {cid} or payload["child"] == cid:
-                raise ValueError(f"linking {payload['child']} under {cid} would make a loop")
-        if op == "create" and title:
-            payload["title"] = title.strip()[:80]
-        return await self.edit("child", payload)
-
-    async def canvas_anim(self, canvas: str | None, session: str | None, script: Any) -> dict[str, Any]:
-        cid = resolve_canvas(self.store, canvas, session)
-        errors = schemas.validate(schemas.load("anim.schema.json"), script)
-        if errors:
-            return {"status": "invalid", "errors": errors[:12]}
-        return await self.edit("anim", {"canvasId": cid, "sessionId": session, "script": script})
 
 
 def _summarize(inp: dict[str, Any]) -> str:
