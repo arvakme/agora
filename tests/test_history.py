@@ -5,7 +5,6 @@ session on with a summary, local file versions and daily backups outside the pro
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import shutil
@@ -102,7 +101,7 @@ def test_history_lists_every_kind_of_session_and_finds_lost_ones(store, home, tm
     # a Pi session from before the project moved (history root from the registry)
     old_root = tmp_path / "old-place"
     loc.registry.append("root", projectId=pid, instanceId=loc.instance_id(), root=str(store.root), **{"from": str(old_root)})
-    pi = home / ".pi" / "agent" / "sessions" / agents.pi_dir_name(old_root) / f"2026-09-20T00-00-00-000Z_pi-9.jsonl"
+    pi = home / ".pi" / "agent" / "sessions" / agents.pi_dir_name(old_root) / "2026-09-20T00-00-00-000Z_pi-9.jsonl"
     pi.parent.mkdir(parents=True)
     pi.write_text(json.dumps({"type": "session", "id": "pi-9", "cwd": str(old_root)}) + "\n")
     # known only to the registry

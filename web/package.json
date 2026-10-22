@@ -12,7 +12,8 @@
     "eval": "node scripts/eval.ts",
     "eval:replay": "node scripts/eval-replay.ts",
     "eval:report": "node scripts/eval-report.ts",
-    "libraries:fetch": "node scripts/libraries/fetch.ts"
+    "libraries:fetch": "node scripts/libraries/fetch.ts",
+    "lint": "oxlint src scripts"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.1",
@@ -27,6 +28,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "oxlint": "^1.89.0",
     "playwright": "^1.55.0",
     "svg-path-properties": "^2.1.0",
     "typescript": "^7.0.2",

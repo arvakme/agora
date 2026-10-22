@@ -478,7 +478,7 @@ async def test_a_dispatch_that_ended_but_was_never_told_is_told_once_after_a_res
     rig.dp.files.write(d)
     hub2 = AgentHub(store, terminals=FakeTerms("s-a", "s-b"))
     dp2 = Dispatches(hub2)
-    lv = hub2._get("s-a")
+    hub2._get("s-a")
     dp2.recover()
     await asyncio.sleep(0.8)
     told2 = [t for sid, t in hub2.terms.pastes if sid == "s-a"]
@@ -555,7 +555,7 @@ async def test_a_paste_whose_enter_failed_is_not_run_again_by_the_headless_path(
     try:
         s = await dp.dispatch(source=SRC, task="加一行", to="s-b")
         rid = s["id"]
-        sub = hub.subscribe(executor=False)
+        hub.subscribe(executor=False)
         for _ in range(100):
             d = dp.get(rid)
             if d.delivery.turn_state == "uncertain":

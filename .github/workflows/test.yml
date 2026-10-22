@@ -20,10 +20,11 @@ jobs:
           python-version: "3.12"
           enable-cache: true
       - run: uv sync --locked
+      - run: uv run ruff check .
       - run: uv run pytest -q
 
   web:
-    # Excalidraw workbench frontend: typecheck, unit tests, build, vendored-asset check, eval replay.
+    # Excalidraw workbench frontend: typecheck, lint, unit tests, build, vendored-asset check, eval replay.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -38,6 +39,8 @@ jobs:
       - working-directory: web
         run: npm run typecheck
       - working-directory: web
+        run: npm run lint
+      - working-directory: web
         run: npx vitest run
       - working-directory: web
         run: npm run build
@@ -49,3 +52,19 @@ jobs:
         run: npx playwright install --with-deps chromium
       - working-directory: web
         run: npm run eval:replay
+
+  site:
+    # The homepage in site/: a PR that breaks its build fails here, not after merge in pages.yml.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - working-directory: site
+        run: npm ci
+      - working-directory: site
+        run: npm run build

@@ -3,7 +3,6 @@ server editing the canvas file. Every step says what it did; only when all fail 
 
 import asyncio
 import json
-import time
 
 import pytest
 

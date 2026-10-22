@@ -47,7 +47,6 @@ def client(s):
 
 def test_routes_dispatch_status_reply_interrupt(env, monkeypatch):
     with client(env) as c:
-        hub = c.app.state.hub if hasattr(c.app.state, "hub") else None
         r = c.post("/api/agent/dispatches", json={"source": {"kind": "session", "sessionId": "s-a"}, "to": "s-b", "task": "加一行", "scope": ["notes.md"]})
         assert r.status_code == 200, r.text
         rid = r.json()["id"]

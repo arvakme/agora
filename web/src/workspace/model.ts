@@ -253,7 +253,7 @@ export function topicOf(text: string | undefined, maxCols = 18): string {
   if (!lines.length) return "";
   let line = lines[0];
   if (/^画布评论 #\d+/.test(line)) line = (lines.find((l) => /^- [^：]+：/.test(l)) ?? "").replace(/^- [^：]+：/, "");
-  line = line.replace(/^([#>*\-]+|\d+[.)、])\s*/, "");
+  line = line.replace(/^([#>*-]+|\d+[.)、])\s*/, "");
   for (let prev = ""; prev !== line; ) {
     prev = line;
     line = line.replace(/^(请你?|麻烦你?|帮我|帮忙|能不能|能否|可以|可不可以|我想|我们|please|can you|could you)[\s,，]*/iu, "");

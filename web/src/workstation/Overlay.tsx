@@ -29,7 +29,7 @@
 // handed back. The structure comes with the snapshot; the frame job only grows the lines and fills
 // the circles. Figures' own motion runs on animation time: the wall clock × clock.motionScale().
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { IconCheck, IconCode, IconCpu, IconEye, IconHistory, IconMessage, IconPath, IconSend, IconTerminal } from "../app/icons";
+import { IconCheck, IconCode, IconCpu, IconEye, IconMessage, IconPath, IconSend, IconTerminal } from "../app/icons";
 import type { CanvasViewState } from "../canvas/CanvasView";
 import { clipPath } from "../canvas/chrome";
 import type { Box } from "../canvas/clearance";
@@ -443,7 +443,7 @@ function withDoorTiming(sp: Pick<Ctx, "anchor" | "door">, canvasId: string, inde
 export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const runs = useRuns();
   const nst = useNested();
-  const replay = useReplay();
+  useReplay(); // re-render as a replay starts and stops
   const playState = usePlay();
   const playing = !!playState.play;
   const camFollow = useLiveFollow();

@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from server.canvas import adapters
-from server.canvas.adapters.codex import CODEX_FALLBACK, index_rows
+from server.canvas.adapters.codex import index_rows
 from server.canvas.transcript import MARKER, State, project, split_agora
 
 SCAN_MAX = 50 * 1024 * 1024  # bytes read per log (full-text search and stats)

@@ -145,7 +145,6 @@ export function layoutTimeline(model: TimelineModel, width: number, wanted: Read
   if (segs.length) segs[segs.length - 1].x1 = width;
 
   const cells: Cell[] = [];
-  const bands: Band[] = [];
   const bars: Bar[] = [];
   const thin = new Map<number, { cell: Cell; raw: number }[]>(); // per lane, in x order
   for (const seg of segs) {

@@ -39,7 +39,6 @@ def seed(store: ProjectStore) -> None:
     store.write("canvas", "orders", {"elements": [box("repo", paths=["server/orders/repo.py"])]}, base=None, force=True)
     store.write("canvas", "secret", {"elements": [box("x")]}, base=None, force=True)
     docs = [{"id": i, "kind": "canvas", "title": t} for i, t in (("c1", "架构图"), ("be", "后端"), ("orders", "订单模块"), ("secret", "私密"))]
-    ws = store.read("workspace")
     store.write("workspace", None, {"v": 2, "docs": docs, "root": {}, "focused": "c1"}, base=None, force=True)
 
 

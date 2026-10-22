@@ -200,7 +200,7 @@ describe("(b) no snap in the speed except across a cut", () => {
 
 describe("(c) far away is a cut: one, decided once, and no going back and forth", () => {
   it("a goal over CUT_DISTANCE away cuts at once: the view is at the goal on that frame, and it says so", () => {
-    const fr = film(3, { x: 0, y: 0 }, (t) => goalAt(2000, 300));
+    const fr = film(3, { x: 0, y: 0 }, () => goalAt(2000, 300));
     const cuts = fr.filter((f) => f.out.cut);
     expect(cuts).toHaveLength(1);
     expect(cuts[0].out.mode).toBe("cut");
