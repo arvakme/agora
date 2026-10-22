@@ -5,6 +5,7 @@ goes through a recording stand-in for ``subprocess.run``."""
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -18,8 +19,8 @@ GHOSTTY = "/Applications/Ghostty.app"
 KITTY_APP = "/Applications/kitty.app"
 
 
-def machine(tmp_path: Path, *, dirs: tuple[str, ...] = (), commands: dict[str, str] | None = None) -> Probe:
-    return Probe(which=lambda c: (commands or {}).get(c), is_dir=lambda p: p in dirs, home=tmp_path)
+def machine(tmp_path: Path, *, dirs: tuple[str, ...] = (), commands: dict[str, str] | None = None, display: bool = False) -> Probe:
+    return Probe(which=lambda c: (commands or {}).get(c), is_dir=lambda p: p in dirs, home=tmp_path, display=lambda: display)
 
 
 def keys(env: dict[str, str], probe: Probe) -> list[str]:
@@ -46,6 +47,19 @@ def test_each_terminal_is_found_only_where_it_is_installed(tmp_path):
 def test_ghostty_in_the_users_own_applications_folder_counts(tmp_path):
     p = machine(tmp_path, dirs=(str(tmp_path / "Applications" / "Ghostty.app"),))
     assert candidates({}, p) == [(APPS["ghostty"], str(tmp_path / "Applications" / "Ghostty.app"))]
+
+
+LINUX = {c: f"/usr/bin/{c}" for c in ("ghostty", "kitty", "gnome-terminal", "konsole", "wezterm", "alacritty", "xterm")}
+
+
+def test_on_a_linux_desktop_every_installed_terminal_is_found_in_order(tmp_path):
+    assert keys({}, machine(tmp_path, commands=LINUX, display=True)) == ["ghostty", "kitty", "gnome-terminal", "konsole", "wezterm", "alacritty", "xterm"]
+    assert keys({ENV_VAR: "xterm"}, machine(tmp_path, commands=LINUX, display=True))[0] == "xterm"
+
+
+def test_without_a_display_the_linux_terminals_are_not_offered(tmp_path):
+    # no window could open: the panel offers the `tmux attach` command instead (kitty says so itself, by failing)
+    assert keys({}, machine(tmp_path, commands=LINUX)) == ["kitty"]
 
 
 # ——— the explicit choice ———
@@ -79,6 +93,37 @@ def test_ghostty_opens_its_own_instance_and_runs_the_attach_command_as_given():
     assert "--confirm-close-surface=false" in argv
     # `-e` takes everything after it, so it is last: the command, unexpanded
     assert argv[-4:] == ["-e", "sh", "-c", ODD_ATTACH]
+
+
+def test_ghostty_on_linux_is_its_own_program_started_in_the_background():
+    argv = APPS["ghostty"].argv("/usr/bin/ghostty", "Agora · Pi", ODD_CWD, ODD_ATTACH)
+    assert argv[:5] == ["sh", "-c", '"$@" </dev/null >/dev/null 2>&1 &', "sh", "/usr/bin/ghostty"]
+    assert f"--working-directory={ODD_CWD}" in argv and argv[-4:] == ["-e", "sh", "-c", ODD_ATTACH]
+
+
+@pytest.mark.parametrize("key", ["gnome-terminal", "konsole", "wezterm", "alacritty", "xterm"])
+def test_linux_terminals_run_the_attach_command_in_the_project_directory(key):
+    argv = APPS[key].argv(f"/usr/bin/{key}", "Agora · Pi", ODD_CWD, ODD_ATTACH)
+    assert f"/usr/bin/{key}" in argv
+    assert any(ODD_CWD in a or shlex.quote(ODD_CWD) in a for a in argv)  # an option, or the `cd` before the command (xterm has no directory option)
+    assert argv[-3:-1] == ["sh", "-c"] and ODD_ATTACH in argv[-1]
+    # all but gnome-terminal (which hands the window to its server) keep running with the window: started in the background
+    assert (argv[0] == "sh") == (key != "gnome-terminal")
+
+
+def test_a_backgrounded_terminal_returns_at_once_and_still_runs(tmp_path):
+    out = tmp_path / "ran"
+    argv = APPS["xterm"].argv(str(tmp_path / "fake-xterm"), "t", str(tmp_path), f"echo ok > {out}")
+    fake = tmp_path / "fake-xterm"
+    fake.write_text('#!/bin/sh\nsleep 0.3\nshift 2; shift; exec "$@"\n')  # -T <title> -e <command…>
+    fake.chmod(0o755)
+    r = subprocess.run(argv, timeout=2)
+    assert r.returncode == 0 and not out.exists()  # back before the window's program got going
+    for _ in range(50):
+        if out.exists():
+            break
+        subprocess.run(["sleep", "0.1"])
+    assert out.read_text() == "ok\n"
 
 
 def test_kitty_gets_its_own_process_that_quits_with_its_window():
