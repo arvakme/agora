@@ -216,7 +216,7 @@ No. Diagram edits, code links and animations are carried out by the page; with o
 No, editing is single-user for now. Conflicts are caught by a version check, and you choose whether to load the disk version or overwrite. Others can view and comment through a share address.
 
 **Linux / Windows?**
-Only tested on macOS. Without Ghostty, Kitty or Terminal.app, the panel gives you a `tmux attach` command that works in any terminal.
+Day-to-day use has been on macOS; Linux desktops are supported too (the test suite runs on Linux). Without a terminal Agora knows how to open (Ghostty, Kitty, Terminal.app; on Linux also GNOME Terminal, Konsole, WezTerm, Alacritty, xterm), the panel gives you a `tmux attach` command that works in any terminal.
 
 **Why is the package called `agora-canvas`?**
 `agora` and `agora-cli` are taken on PyPI. The command is still `agora`. Install it with `uv tool install agora-canvas`.
@@ -272,7 +272,7 @@ site/                 the website (Astro), English at / and Chinese at /zh
 - **Codex started from the terminal is claimed.** A Codex session without a native id that starts a new session in the terminal claims the first rollout appearing in the same directory after the terminal opens; starting another Codex in the same directory at the same moment may claim the wrong one.
 - **Usage is incomplete.** Claude Code turns from the terminal have no cost (the native log doesn't record it), and Codex records no cost.
 - **The pointer only sees writes by edit tools.** Shell writes such as `sed -i` or `cat > x` aren't recognised; reading files or running tests doesn't move the pointer; a file belongs only to the most specific node.
-- **Only tested on macOS.** Terminal windows open in Ghostty, Kitty or Terminal.app (first installed one in that order, or set `AGORA_TERMINAL=ghostty|kitty|terminal|auto`); with none, the panel gives a `tmux attach` command; "Copy open command" in the menu gives a command that runs in any terminal.
+- **Used day to day on macOS; Linux desktops are supported.** Terminal windows open in Ghostty, Kitty or Terminal.app, and on a Linux desktop (`DISPLAY` or `WAYLAND_DISPLAY` set) also GNOME Terminal, Konsole, WezTerm, Alacritty or xterm (first installed one in that order, or set `AGORA_TERMINAL` to one of `ghostty|kitty|terminal|gnome-terminal|konsole|wezterm|alacritty|xterm|auto`); with none, the panel gives a `tmux attach` command; "Copy open command" in the menu gives a command that runs in any terminal.
 
 Possible directions (unscheduled): real-time multi-user editing, terminal windows on Linux, more UI languages, and more kinds of writes recognised by the progress pointer.
 

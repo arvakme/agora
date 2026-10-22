@@ -216,7 +216,7 @@ flowchart LR
 不能，目前是单人编辑，冲突靠版本校验发现，由你选择载入磁盘版本或覆盖。别人可以通过分享地址看图和评论。
 
 **支持 Linux / Windows 吗？**
-只在 macOS 上实测过。没有 Ghostty、Kitty 或 Terminal.app 时，面板会给出 `tmux attach` 命令，在任意终端里都能接上。
+日常在 macOS 上用，也支持 Linux 桌面（测试套件在 Linux 上跑）。找不到 Agora 会打开的终端（Ghostty、Kitty、Terminal.app；Linux 上还有 GNOME Terminal、Konsole、WezTerm、Alacritty、xterm）时，面板会给出 `tmux attach` 命令，在任意终端里都能接上。
 
 **为什么包名叫 `agora-canvas`？**
 PyPI 上 `agora` 和 `agora-cli` 都已被占用。命令名仍是 `agora`。安装用 `uv tool install agora-canvas`。
@@ -272,7 +272,7 @@ site/                 官网（Astro），英文在 /，中文在 /zh
 - **Codex 终端先行时靠认领。** 还没有原生 id 的 Codex 会话在终端里开新会话，Agora 认领打开终端之后同目录下出现的第一个 rollout；同一时间在同一目录另起 Codex 可能认错。
 - **用量不全。** Claude Code 终端里的轮次没有花费（原生日志不记），Codex 不记花费。
 - **指针只看编辑工具的写入。** `sed -i`、`cat > x` 这类 shell 写入不会被识别；读文件、跑测试不移动指针；一个文件只属于最具体的那个节点。
-- **只在 macOS 上实测过。** 终端窗口用 Ghostty、Kitty 或 Terminal.app 打开（按这个顺序找已安装的，环境变量 `AGORA_TERMINAL=ghostty|kitty|terminal|auto` 可指定）；都没有时面板给出 `tmux attach` 命令；下拉里的「复制打开命令」给出可在任意终端里运行的命令。
+- **日常在 macOS 上用，也支持 Linux 桌面。** 终端窗口用 Ghostty、Kitty 或 Terminal.app 打开，Linux 桌面上（设了 `DISPLAY` 或 `WAYLAND_DISPLAY`）还有 GNOME Terminal、Konsole、WezTerm、Alacritty、xterm（按这个顺序找已安装的，环境变量 `AGORA_TERMINAL` 可指定其中一个，或 `auto`）；都没有时面板给出 `tmux attach` 命令；下拉里的「复制打开命令」给出可在任意终端里运行的命令。
 
 可能的方向（未排期）：多人实时协同编辑、Linux 上的终端窗口、更多界面语言、进度指针识别更多写入方式。
 
