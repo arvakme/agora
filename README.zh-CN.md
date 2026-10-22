@@ -65,7 +65,7 @@
 不需要留着仓库：
 
 ```bash
-uv tool install git+https://github.com/arvakme/agora     # 安装时构建前端，需要 Node 和 npm
+uv tool install agora-canvas          # 从 PyPI 安装，前端已打包好，不需要 Node
 
 cd ~/code/my-service                  # 你的项目（.agora/ 建在当前目录）
 agora                                 # 不带子命令等于 agora open：初始化 .agora/，起本项目服务并打开浏览器
@@ -76,8 +76,9 @@ agora doctor [--fix]                  # 检查本机数据；--fix 从备份和�
 ```
 
 - 装好后提示找不到 `agora`：运行一次 `uv tool update-shell` 再重开终端。`which agora` 能看到跑的是哪一份（以前把 `~/code/agora/bin` 加进过 `PATH` 的话，记得删掉）。
-- 升级：`uv tool upgrade agora-canvas`（或重新 `uv tool install --force git+https://github.com/arvakme/agora`）。卸载：`uv tool uninstall agora-canvas`。
-- 发行包名是 `agora-canvas`（PyPI 上 `agora`、`agora-cli` 都已被占用），命令名仍是 `agora`。推 `v*` 标签后，GitHub Release 里会有带好前端的 wheel，装它不需要 Node。**目前还没有发布过版本，也没有发布到 PyPI**；发布后可以 `uv tool install agora-canvas`，或不安装直接 `uvx --from agora-canvas agora open`。
+- 升级：`uv tool upgrade agora-canvas`。卸载：`uv tool uninstall agora-canvas`。
+- 想用最新的 `main` 而不是发布版：`uv tool install --force git+https://github.com/arvakme/agora`（安装时构建前端，需要 Node 和 npm）。
+- 发行包名是 `agora-canvas`（PyPI 上 `agora`、`agora-cli` 都已被占用），命令名仍是 `agora`。每个版本都发布到 [PyPI](https://pypi.org/project/agora-canvas/) 和 [GitHub Releases](https://github.com/arvakme/agora/releases)，前端已打包好。不安装直接试用：`uvx --from agora-canvas agora open`。
 
 首次打开会建一块以项目命名的空画布和一个会话。会话里的「画出这个项目的架构」按钮让推荐的 agent 看一遍项目、把架构画上去（也可以自己选 agent、自己写第一句话）；「看一个示例」会把示例图作为另一张画布打开。
 
@@ -218,7 +219,7 @@ flowchart LR
 日常在 macOS 上用，也支持 Linux 桌面（测试套件在 Linux 上跑）。找不到 Agora 会打开的终端（Ghostty、Kitty、Terminal.app；Linux 上还有 GNOME Terminal、Konsole、WezTerm、Alacritty、xterm）时，面板会给出 `tmux attach` 命令，在任意终端里都能接上。
 
 **为什么包名叫 `agora-canvas`？**
-PyPI 上 `agora` 和 `agora-cli` 都已被占用。命令名仍是 `agora`。包目前还没有发布到 PyPI，先用上面的 `uv tool install git+https://github.com/arvakme/agora`。
+PyPI 上 `agora` 和 `agora-cli` 都已被占用。命令名仍是 `agora`。安装用 `uv tool install agora-canvas`。
 
 ## 评测
 
@@ -273,7 +274,7 @@ site/                 官网（Astro），英文在 /，中文在 /zh
 - **指针只看编辑工具的写入。** `sed -i`、`cat > x` 这类 shell 写入不会被识别；读文件、跑测试不移动指针；一个文件只属于最具体的那个节点。
 - **日常在 macOS 上用，也支持 Linux 桌面。** 终端窗口用 Ghostty、Kitty 或 Terminal.app 打开，Linux 桌面上（设了 `DISPLAY` 或 `WAYLAND_DISPLAY`）还有 GNOME Terminal、Konsole、WezTerm、Alacritty、xterm（按这个顺序找已安装的，环境变量 `AGORA_TERMINAL` 可指定其中一个，或 `auto`）；都没有时面板给出 `tmux attach` 命令；下拉里的「复制打开命令」给出可在任意终端里运行的命令。
 
-可能的方向（未排期）：多人实时协同编辑、Linux 上的终端窗口、更多界面语言、进度指针识别更多写入方式。
+可能的方向（未排期）：多人实时协同编辑、更多界面语言、进度指针识别更多写入方式。
 
 ## 开发
 
@@ -282,7 +283,7 @@ uv run pytest tests/test_project_store.py tests/test_agent_sessions.py tests/tes
 cd web && npx tsc -p . && npx vitest run && npm run build && npm run eval:replay
 ```
 
-打包：`uv build` 在 `dist/` 生成 sdist 和 wheel（没有 `web/dist` 时先在 `web/` 里 `npm ci && npm run build`；`AGORA_SKIP_WEB_BUILD=1` 跳过前端）。推 `v*` 标签时 `.github/workflows/release.yml` 构建并附到 GitHub Release，不发布到 PyPI。
+打包：`uv build` 在 `dist/` 生成 sdist 和 wheel（没有 `web/dist` 时先在 `web/` 里 `npm ci && npm run build`；`AGORA_SKIP_WEB_BUILD=1` 跳过前端）。发布：改 `pyproject.toml` 里的 `version`，合并后推标签 `v<version>`。`.github/workflows/release.yml` 会构建、附到 GitHub Release，并发布到 PyPI（trusted publishing，环境 `pypi`）。PyPI 上同一个版本号不能重复上传，所以每次发布都要换新版本号。
 
 仓库目前不跑 CI，提交前在本地跑上面的检查；`.github/workflows/test.yml` 还在（全部 Python 测试，以及前端的类型检查、单测、构建、离线评测回放和素材库校验），需要时在 GitHub 上重新启用 Actions 即可。开发约定见 [docs/development.md](docs/development.md)，测试说明见 [docs/testing.md](docs/testing.md)，后端编排（Agent 生命周期、派发与恢复）见 [docs/orchestration.md](docs/orchestration.md)，一页面试讲法见 [docs/orchestration-interview.md](docs/orchestration-interview.md)。
 
