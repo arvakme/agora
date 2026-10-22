@@ -274,7 +274,7 @@ site/                 the website (Astro), English at / and Chinese at /zh
 - **The pointer only sees writes by edit tools.** Shell writes such as `sed -i` or `cat > x` aren't recognised; reading files or running tests doesn't move the pointer; a file belongs only to the most specific node.
 - **Used day to day on macOS; Linux desktops are supported.** Terminal windows open in Ghostty, Kitty or Terminal.app, and on a Linux desktop (`DISPLAY` or `WAYLAND_DISPLAY` set) also GNOME Terminal, Konsole, WezTerm, Alacritty or xterm (first installed one in that order, or set `AGORA_TERMINAL` to one of `ghostty|kitty|terminal|gnome-terminal|konsole|wezterm|alacritty|xterm|auto`); with none, the panel gives a `tmux attach` command; "Copy open command" in the menu gives a command that runs in any terminal.
 
-Possible directions (unscheduled): real-time multi-user editing, terminal windows on Linux, more UI languages, and more kinds of writes recognised by the progress pointer.
+Possible directions (unscheduled): real-time multi-user editing, Windows support, more UI languages, and more kinds of writes recognised by the progress pointer.
 
 ## Development
 

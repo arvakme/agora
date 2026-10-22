@@ -274,7 +274,7 @@ site/                 官网（Astro），英文在 /，中文在 /zh
 - **指针只看编辑工具的写入。** `sed -i`、`cat > x` 这类 shell 写入不会被识别；读文件、跑测试不移动指针；一个文件只属于最具体的那个节点。
 - **日常在 macOS 上用，也支持 Linux 桌面。** 终端窗口用 Ghostty、Kitty 或 Terminal.app 打开，Linux 桌面上（设了 `DISPLAY` 或 `WAYLAND_DISPLAY`）还有 GNOME Terminal、Konsole、WezTerm、Alacritty、xterm（按这个顺序找已安装的，环境变量 `AGORA_TERMINAL` 可指定其中一个，或 `auto`）；都没有时面板给出 `tmux attach` 命令；下拉里的「复制打开命令」给出可在任意终端里运行的命令。
 
-可能的方向（未排期）：多人实时协同编辑、Linux 上的终端窗口、更多界面语言、进度指针识别更多写入方式。
+可能的方向（未排期）：多人实时协同编辑、Windows 支持、更多界面语言、进度指针识别更多写入方式。
 
 ## 开发
 
