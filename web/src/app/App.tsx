@@ -62,6 +62,7 @@ import {
   placeQuiet,
   replaceTab,
   isOpen,
+  openElsewhere,
   nextTitle,
   openIds,
   openTab,
@@ -622,8 +623,8 @@ export function App({ boot }: { boot: Boot }) {
     userNav.note(); // the camera's own switches say so themselves (workstation/navOrigin.ts `byCamera`): every other way here is the person's
     if (!docsRef.current.some((d) => d.id === to && d.kind === "canvas")) return false;
     // a zoom's switch (nested/zoomNav.ts): the canvas gone to mounts showing its scene where the one left showed it — unless it is
-    // open in another group already (then it is simply shown there)
-    const inPlace = !!arrive && !isOpen(rootRef.current, to);
+    // open in another group already (then it is simply shown there). A tab of the same group takes the same pane: in place too
+    const inPlace = !!arrive && !openElsewhere(rootRef.current, from, to);
     if (inPlace) firstView.set(to, (api) => applySim(api, arrive));
     // Keep what the leaving canvas holds right now. Its view reports scene changes one frame
     // late (CanvasView onChange → onScene), and it unmounts below: a link just written into a
@@ -652,7 +653,10 @@ export function App({ boot }: { boot: Boot }) {
   useEffect(() => {
     nav.go = (from, to) => void goRef.current(from, to);
     // the person's ways in and up fly (nested/zoomNav.ts); the camera of a played turn and back / forward still switch at once
-    installZoomShell({ go: (from, to, h, arrive) => goRef.current(from, to, h === "replace" ? "replace" : true, arrive) });
+    installZoomShell({
+      go: (from, to, h, arrive) => goRef.current(from, to, h === "replace" ? "replace" : true, arrive),
+      elsewhere: (from, to) => openElsewhere(rootRef.current, from, to),
+    });
     nav.fly = (from, to, node) => {
       const st = nested.get();
       if (st.index.get(to)?.canvasId === from) void flyInto(from, to, node);

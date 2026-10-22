@@ -17,7 +17,6 @@ import { frame } from "../workstation/frame";
 import { plays } from "../workstation/replayMode";
 import { childOf } from "./graph";
 import { useNested } from "./store";
-import { canvases } from "../session/ui";
 import { fillOf, IDLE_MS, innerBox, nestBox, nestOf, onPage, parentSim, simOf, THUMB_FROM, thumbAlpha, veilAlpha, ZOOM_MIN, zoomStep, type Nest, type Sim } from "./zoom";
 import { arrivalOf, contentOf, enterByZoom, flightOn, gesture, leaveByZoom, nestFor, noteZoomGesture, onZoomWake, pictureKey, rememberBefore, sinceSwitch } from "./zoomNav";
 import "./zoom.css";
@@ -98,7 +97,7 @@ export function ZoomLayer({ api, canvasId }: { api: ExcalidrawImperativeAPI | nu
       const a = api.getAppState();
       const p = { x: (x - a.offsetLeft) / v.zoom - v.scrollX, y: (y - a.offsetTop) / v.zoom - v.scrollY };
       let best: Door | null = null;
-      for (const d of doors.values()) if (!canvases.get(d.child) && p.x >= d.box.x && p.x <= d.box.x + d.box.w && p.y >= d.box.y && p.y <= d.box.y + d.box.h && (!best || d.box.w * d.box.h < best.box.w * best.box.h)) best = d;
+      for (const d of doors.values()) if (p.x >= d.box.x && p.x <= d.box.x + d.box.w && p.y >= d.box.y && p.y <= d.box.y + d.box.h && (!best || d.box.w * d.box.h < best.box.w * best.box.h)) best = d;
       return best;
     };
     const zoomed = (dir: 1 | -1, x: number, y: number) => {
