@@ -11,7 +11,7 @@ import { elementFor } from "../pointer/codeLinks";
 import type { Pt } from "./rig";
 import { OUTSIDE, type Located, type Spot } from "./place";
 import { parseNodePath } from "./runs/nodePath";
-import { anyTouched, touchedNodes } from "./runs/touched";
+import { touchedNodes } from "./runs/touched";
 import { dockSpots, inside, REF_K, trayBox } from "./docks";
 import { route as routeOn, walkMap, type Connector, type Route } from "./route";
 export { dockSpots, FIG_BOX, REF_K, SLOT, trayBox } from "./docks";

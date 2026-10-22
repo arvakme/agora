@@ -10,7 +10,7 @@ import { REF_K } from "./docks";
 import { gesture, type Gesture, type GestureIn } from "./gestures";
 import { ladderShape } from "./hatch";
 import { route, walkMap, type Leg, type Route, type WalkMap } from "./route";
-import { CLIMB_SPEED, DOOR_H, DOOR_MS, makeSprings, planDoor, planTrip, poseTargets, RIG, rungGrid, solve, tripAt, type Foot, type Joints, type Pose, type Springs, type Trip } from "./rig";
+import { CLIMB_SPEED, DOOR_H, DOOR_MS, makeSprings, planDoor, planTrip, poseTargets, RIG, rungGrid, solve, tripAt, type Foot, type Joints, type Pose, type Trip } from "./rig";
 import type { Box } from "../canvas/clearance";
 
 export type Issue = { rule: string; detail: string };

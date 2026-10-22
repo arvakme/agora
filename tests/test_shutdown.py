@@ -5,7 +5,6 @@ first signal ends the streams from the server's side, and every step of shutting
 
 import asyncio
 import http.client
-import json
 import os
 import signal
 import socket

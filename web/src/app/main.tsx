@@ -5,7 +5,7 @@ import "./theme";
 import "./viewport";
 import "@excalidraw/excalidraw/index.css";
 import "./styles.css";
-import { App, prepareBoot, type Boot, type WorkspaceState } from "./App";
+import type { Boot, WorkspaceState } from "./App";
 import { IconTerminal } from "./icons";
 import { tr } from "../i18n";
 import { connect, PERSIST } from "../persist";
@@ -15,7 +15,6 @@ import { agents, connectAgents } from "../session/agents";
 import { installBridge } from "../session/agentBridge";
 import { followProject } from "../persist";
 import { GUEST } from "../guest/mode";
-import { Ended, GuestApp, GuestEnded, loadGuest } from "../guest/GuestApp";
 
 const root = createRoot(document.getElementById("root")!);
 
@@ -64,13 +63,16 @@ function Offline({ error }: { error: unknown }) {
   );
 }
 
+// The owner's workbench and the guest page are separate chunks: each page loads only its own.
 if (GUEST)
-  loadGuest().then(
-    (s) => root.render(<GuestApp initial={s} />),
-    (e) => root.render(e instanceof Ended ? <GuestEnded /> : <Offline error={e} />),
+  import("../guest/GuestApp").then(({ Ended, GuestApp, GuestEnded, loadGuest }) =>
+    loadGuest().then(
+      (s) => root.render(<GuestApp initial={s} />),
+      (e) => root.render(e instanceof Ended ? <GuestEnded /> : <Offline error={e} />),
+    ),
   );
 else
-  boot().then(
-    (b) => root.render(<App boot={prepareBoot(b)} />),
+  Promise.all([boot(), import("./App")]).then(
+    ([b, { App, prepareBoot }]) => root.render(<App boot={prepareBoot(b)} />),
     (e) => root.render(<Offline error={e} />),
   );

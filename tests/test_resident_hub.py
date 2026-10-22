@@ -3,16 +3,13 @@ the pool closed with the hub and what a dead server left stopped by the next one
 
 import asyncio
 import json
-import os
 import subprocess
-import sys
 import time
 
 import pytest
 
 from server.canvas import agents
 from server.canvas.project import ProjectStore
-from server.canvas.resident import ResidentPool
 from server.canvas.sessions import AgentHub
 from tests.test_steer import Slow, until  # noqa: F401  (the running-turn double)
 

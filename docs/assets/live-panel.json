@@ -2,7 +2,7 @@
  "meta": {
   "title": "AGORA · 一个项目一个",
   "lang": "zh",
-  "source": "README 的「运行中的 Agora」动图。用 live-panel（MIT，https://github.com/ythx-101/live-panel-skill，动法学自 @thedelost https://x.com/thedelost/status/2105398038026195279）渲染：python3 scripts/render.py --config <本文件> --out live-panel.mp4，再用 ffmpeg 转成 12 fps、720 宽的动画 WebP。没用它的 Smiley Sans 字体和 Lucide 图标。轮次、turn id 和时间都是示意；状态名 pending / in_flight / accepted / completed 取自 native_protocol.py::TurnState。"
+  "source": "README 的「运行中的 Agora」动图。用 live-panel（MIT，https://github.com/ythx-101/live-panel-skill，动法学自 @thedelost https://x.com/thedelost/status/2105398038026195279）渲染：python3 scripts/render.py --config <本文件> --out live-panel.mp4，再用 ffmpeg 转成 12 fps、720 宽的动画 WebP。没用它的 Smiley Sans 字体和 Lucide 图标。轮次、turn id 和时间都是示意；状态名 pending / in_flight / accepted / completed 取自 native_protocol.py::TurnState。所有周期都整除 30 秒（三条泳道 5 / 10 / 10 s，按需 5 s，连线上的数据包 1.875 / 2 / 2.5 / 3 s），计数不随时间累加、日志不显示时刻，所以动图首尾相接、循环时没有跳变。"
  },
  "canvas": {
   "preset": "1:1",
@@ -23,13 +23,13 @@
   "turns": {
    "type": "counter",
    "start": 128,
-   "rate": 0.4,
+   "rate": 0,
    "format": "comma"
   },
   "claudecode_l": {
    "type": "lane",
-   "period": 7.0,
-   "run": 4.8,
+   "period": 5.0,
+   "run": 3.4,
    "off": 0.0,
    "busy": "一轮在跑",
    "done": [
@@ -57,8 +57,8 @@
   },
   "codex_l": {
    "type": "lane",
-   "period": 8.0,
-   "run": 5.4,
+   "period": 10.0,
+   "run": 6.8,
    "off": 0.7,
    "busy": "一轮在跑",
    "done": [
@@ -86,9 +86,9 @@
   },
   "pi_l": {
    "type": "lane",
-   "period": 9.0,
+   "period": 10.0,
    "run": 6.1,
-   "off": 1.4,
+   "off": 5.7,
    "busy": "一轮在跑",
    "done": [
     "completed"
@@ -116,7 +116,7 @@
   "rail": {
    "type": "triggers",
    "color": "pu",
-   "period": 4.5,
+   "period": 5.0,
    "on": 3.0,
    "t0": -1.6,
    "callsStart": 1,
@@ -226,7 +226,7 @@
        "w": 175,
        "runs": [
         {
-         "t": "次数（示意）",
+         "t": "状态",
          "c": "dim"
         }
        ]
@@ -236,9 +236,7 @@
        "align": "right",
        "runs": [
         {
-         "v": "rail.calls",
-         "c": "pu",
-         "b": 1
+         "v": "rail.status"
         }
        ]
       }
@@ -296,34 +294,7 @@
    "align": "center",
    "size": 13,
    "c": "dim",
-   "t": "轮次、turn id 和时间都是示意"
-  },
-  {
-   "type": "text",
-   "x": 34,
-   "w": 1012,
-   "y": 1004,
-   "runs": [
-    {
-     "t": "轮次 ",
-     "c": "dim"
-    },
-    {
-     "t": "[",
-     "c": "gr",
-     "b": 1
-    },
-    {
-     "v": "turns",
-     "c": "gr",
-     "b": 1
-    },
-    {
-     "t": "]",
-     "c": "gr",
-     "b": 1
-    }
-   ]
+   "t": "轮次和 turn id 都是示意"
   },
   {
    "type": "path",
@@ -349,7 +320,7 @@
    "r": 0,
    "width": 2,
    "flow": {
-    "period": 1.8,
+    "period": 1.875,
     "offsets": [
      0,
      0.9
@@ -381,7 +352,7 @@
    "r": 0,
    "width": 2,
    "flow": {
-    "period": 2.1,
+    "period": 2.0,
     "offsets": [
      0,
      0.9
@@ -413,7 +384,7 @@
    "r": 0,
    "width": 2,
    "flow": {
-    "period": 2.4,
+    "period": 2.5,
     "offsets": [
      0,
      0.9
@@ -437,7 +408,7 @@
    "r": 0,
    "width": 2,
    "flow": {
-    "period": 2.7,
+    "period": 3.0,
     "offsets": [
      0,
      0.9
@@ -646,20 +617,16 @@
    "titleW": 131,
    "cols": [
     {
-     "key": "time",
+     "key": "who",
      "x": 0
     },
     {
-     "key": "who",
-     "x": 112
-    },
-    {
      "key": "m",
-     "x": 261
+     "x": 149
     },
     {
      "key": "g",
-     "x": 700
+     "x": 588
     }
    ]
   }

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { El } from "../canvas/scene";
 import type { Scenes } from "../nested/graph";
 import type { RunSeg, WorkRun } from "./runs/types.ts";
-import { levelsOf, presenceAt, subviewCtx, type Level, type Presence } from "./subview.ts";
+import { levelsOf, presenceAt, subviewCtx, type Level } from "./subview.ts";
 
 const el = (x: Record<string, unknown>): El => ({ angle: 0, isDeleted: false, groupIds: [], boundElements: [], x: 0, y: 0, width: 120, height: 60, ...x }) as unknown as El;
 /** A linked node with its label; `child` = the canvas it opens. */

@@ -1,7 +1,7 @@
 // Workspace model rules: naming without gaps, close vs. open, group kinds and placement.
 import { describe, expect, it } from "vitest";
-import { group, groups, moveTab, type Node } from "./layout.ts";
-import { canvasTree, closeTab, groupKind, homeGroup, replaceTab, isNamed, listGroups, migrateDocs, nextTitle, openIds, openTab, placement, placeRestored, relinkChild, savedWorkspace, sessionTitles, topicOf, UNTITLED_CANVAS, type Doc, type SessionDoc } from "./model.ts";
+import { columns, group, groups, moveTab, type Node } from "./layout.ts";
+import { canvasTree, closeTab, groupKind, homeGroup, openElsewhere, replaceTab, isNamed, listGroups, migrateDocs, nextTitle, openIds, openTab, placement, placeRestored, relinkChild, savedWorkspace, sessionTitles, topicOf, UNTITLED_CANVAS, type Doc, type SessionDoc } from "./model.ts";
 
 const kinds: Record<string, "canvas" | "session"> = { c1: "canvas", c2: "canvas", c3: "canvas", p1: "session", p2: "session" };
 const kindOf = (id: string) => kinds[id];
@@ -178,6 +178,12 @@ describe("nested canvases in the workspace", () => {
     expect(again.closed).toBe(false);
     expect(groups(again.root)[0].tabs).toEqual(["a", "b1", "c"]);
     expect(groups(again.root)[0].active).toBe("c");
+  });
+  it("openElsewhere: only a tab of another group is shown elsewhere; a tab of the same group takes the same pane", () => {
+    const root = columns(group(["top", "child"], "top"), group(["other"]), [0.5, 0.5]);
+    expect(openElsewhere(root, "top", "child")).toBe(false);
+    expect(openElsewhere(root, "top", "other")).toBe(true);
+    expect(openElsewhere(root, "top", "closed")).toBe(false);
   });
   it("canvasTree puts children under their parent and survives loops", () => {
     const parent: Record<string, string> = { be: "root", orders: "be", x: "y", y: "x" };

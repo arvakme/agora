@@ -34,7 +34,7 @@
 
 会话 agent 有六个：**Pi、Claude Code、Codex、Grok、Cursor、Devin**。都能在画布上看到小人、进度指针和逐站画图，都能在面板发消息、在终端接着同一个会话。图下半部分的两处差别来自 CLI 本身：Grok、Cursor、Devin 的 `-p` 模式一轮开始后不接收输入，所以没法在一轮还在跑时插话；Pi 和 Devin 没有原生子代理。
 
-跑起来大概是这样：三个 agent 各自一轮一轮地跑，服务跟随它们的原生日志，改动推到画布；右边是你点了才会发生的事。轮次、turn id 和时间是示意，状态名 `pending → in_flight → accepted → completed` 是 Agora 记录每一轮的真实状态。
+跑起来大概是这样：三个 agent 各自一轮一轮地跑，服务跟随它们的原生日志，改动推到画布；右边是你点了才会发生的事。轮次和 turn id 是示意，状态名 `pending → in_flight → accepted → completed` 是 Agora 记录每一轮的真实状态。
 
 <p align="center">
   <img src="docs/assets/live-panel.webp" alt="终端风格的动态面板：Claude Code、Codex、Pi 三个会话连到本项目的 agora 服务，再连到浏览器里的画布；底下的会话日志在滚动" width="560">

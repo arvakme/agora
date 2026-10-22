@@ -199,7 +199,7 @@ describe("FX5 · #7: the talk box (「对 Claude Code 说…」) is something bu
       const talk: Box = { x: 100 + rnd() * (width - 400), y: 100 + rnd() * (height - 300), w: 220, h: 80 };
       // the talk box sits beside its figure, not on the other figures' heads
       const near = (x: number, y: number) => x > talk.x - 130 && x < talk.x + talk.w + 130 && y > talk.y - 40 && y < talk.y + talk.h + 90;
-      const head = (i: number): [number, number] => {
+      const head = (_i: number): [number, number] => {
         for (let k = 0; k < 50; k++) {
           const x = 60 + rnd() * (width - 120);
           const y = 120 + rnd() * (height - 160);

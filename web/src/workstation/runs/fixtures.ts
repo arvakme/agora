@@ -202,7 +202,7 @@ export function longWindow(now: number, days = 5, subs = 100): WorkRun[] {
   const DAY = 86_400;
   const at = now - days * DAY * 1000;
   const files = ["server/app.py", "server/users.py", "server/db/models.py", "server/cache/session.py", "web/App.tsx", "server/payments/pay.py"];
-  const tops: WorkRun[] = ["pi", "claude"].map((agent, k) => ({ id: `long-${agent}`, agent, name: agent === "pi" ? "Pi" : "Claude Code", sessionId: `long-${agent}`, segs: [], receipts: [], running: false, lastAt: now, children: [] }));
+  const tops: WorkRun[] = ["pi", "claude"].map((agent) => ({ id: `long-${agent}`, agent, name: agent === "pi" ? "Pi" : "Claude Code", sessionId: `long-${agent}`, segs: [], receipts: [], running: false, lastAt: now, children: [] }));
   for (let i = 0; i < subs; i++) {
     const top = tops[i % 2];
     const day = Math.floor((i / subs) * days);

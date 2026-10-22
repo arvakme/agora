@@ -5,7 +5,6 @@ with a headless turn, a turn typed in the terminal and one delivered from Agora;
 Codex session driven headless from Agora."""
 
 import json
-from pathlib import Path
 
 from server.canvas.transcript import MARKER, State, Tail, project, split_agora
 

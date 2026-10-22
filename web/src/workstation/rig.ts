@@ -14,7 +14,7 @@
 // Times are milliseconds; lengths are figure units (1 unit = 1 CSS px at scale 1), ground y = 0, up −y.
 
 import { REF_K } from "./docks";
-import { isStand, layerStep, STAND, standMotion, type Layer } from "./poses";
+import { layerStep, STAND, standMotion, type Layer } from "./poses";
 import type { Gesture } from "./gestures";
 import { arcAt, hopAir, HOP_CROUCH_MS, HOP_G, HOP_LAND_MS, type Arc, type Leg, type Route } from "./route";
 
