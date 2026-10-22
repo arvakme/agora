@@ -34,7 +34,7 @@ Type `agora` in a project directory and your browser opens an architecture diagr
 
 There are six session agents: **Pi, Claude Code, Codex, Grok, Cursor and Devin**. All of them get the figure on the canvas, progress pointers and station-by-station drawing, and all can be messaged from the panel and continued in the terminal. The two differences at the bottom of the figure come from the CLIs themselves: the `-p` modes of Grok, Cursor and Devin take no input once a turn has started, so you can't interject mid-turn; Pi and Devin have no native sub-agents.
 
-Running, it looks roughly like this: three agents each run turn after turn, the service follows their native logs and pushes changes to the canvas; on the right is what happens only when you click. Turns, turn ids and times are illustrative; the states `pending → in_flight → accepted → completed` are the real states Agora records for each turn.
+Running, it looks roughly like this: three agents each run turn after turn, the service follows their native logs and pushes changes to the canvas; on the right is what happens only when you click. Turn counts and turn ids are illustrative; the states `pending → in_flight → accepted → completed` are the real states Agora records for each turn.
 
 <p align="center">
   <img src="docs/assets/live-panel.en.webp" alt="A terminal-style live panel: Claude Code, Codex and Pi sessions connect to this project's agora service and on to the canvas in the browser; the session log scrolls below" width="560">

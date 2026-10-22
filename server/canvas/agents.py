@@ -28,7 +28,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import signal
 import subprocess
 import time
 from collections.abc import AsyncIterator, Callable
@@ -41,18 +40,18 @@ from server.canvas.runner import KILL_GRACE_S, STDOUT_LIMIT, RunRequest, now_ms
 # Moved to server/canvas/adapters/ and re-exported here: these names stay the public entry points.
 from server.canvas import adapters
 from server.canvas.adapters.claude import ClaudeStream
-from server.canvas.adapters.claude import dir_name as claude_dir_name
-from server.canvas.adapters.codex import CodexStream, codex_home as _codex_home, codex_usage
-from server.canvas.adapters.codex import rollouts_since as codex_rollouts_since
-from server.canvas.adapters.codex import state_rollout as codex_state_rollout
+from server.canvas.adapters.claude import dir_name as claude_dir_name  # noqa: F401
+from server.canvas.adapters.codex import CodexStream, codex_usage  # noqa: F401
+from server.canvas.adapters.codex import rollouts_since as codex_rollouts_since  # noqa: F401
+from server.canvas.adapters.codex import state_rollout as codex_state_rollout  # noqa: F401
 from server.canvas import pane_state, proctree
 from server.canvas.turn_clock import TurnClock
 from server.canvas.adapters.common import LogLookup, StreamMapper, _hinted, add_usage, text_of  # noqa: F401
 from server.canvas.adapters.cursor import CursorStream
 from server.canvas.adapters.devin import DevinStream
 from server.canvas.adapters.grok import GrokStream
-from server.canvas.adapters.pi import PiStream, pi_usage
-from server.canvas.adapters.pi import dir_name as pi_dir_name
+from server.canvas.adapters.pi import PiStream, pi_usage  # noqa: F401
+from server.canvas.adapters.pi import dir_name as pi_dir_name  # noqa: F401
 from server.canvas.adapters.pi import migrate_log as _migrate_pi_log
 from server.canvas.adapters.pi import sessions_dir as _pi_sessions  # noqa: F401
 from server.i18n import lang, tr

@@ -60,7 +60,6 @@ export function CommentLayer({ api, store, view, mode, draft, setDraft, onCreate
   const layer = useRef<HTMLDivElement>(null);
   const a = view.appState;
   const W = a.width, H = a.height;
-  const toScreen = (p: { x: number; y: number }) => ({ x: (p.x + a.scrollX) * a.zoom.value, y: (p.y + a.scrollY) * a.zoom.value });
   const screenBox = (b: Box): Box => ({ x: (b.x + a.scrollX) * a.zoom.value, y: (b.y + a.scrollY) * a.zoom.value, w: b.w * a.zoom.value, h: b.h * a.zoom.value });
   // Cards open beside the pin, never over the element the comment is about (./cardPlace.ts).
   const cardPos = (p: { x: number; y: number }, anchor: Anchor | null | undefined): CardPos => {

@@ -5,14 +5,13 @@ tests/fixtures/agents/{codex-appserver,pi-rpc}/); the processes here are stubs (
 import asyncio
 import json
 import os
-import signal
 import sys
 import time
 from pathlib import Path
 
 import pytest
 
-from server.canvas import adapters, agents, resident
+from server.canvas import adapters, agents
 from server.canvas.adapters.claude import interrupt_request
 from server.canvas.resident import CodexResidentBackend, PiResidentBackend, ResidentPool
 from server.canvas.runner import Control, ExecOptions, RunRequest

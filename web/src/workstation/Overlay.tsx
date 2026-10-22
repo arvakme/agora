@@ -105,7 +105,7 @@ function withDoorTiming(sp: Pick<Ctx, "anchor" | "door">, canvasId: string, inde
 export function WorkstationOverlay({ view, chrome, figuresOn, only }: Props) {
   const runs = useRuns();
   const nst = useNested();
-  const replay = useReplay();
+  useReplay(); // re-render as a replay starts and stops
   const playState = usePlay();
   const playing = !!playState.play;
   const camFollow = useLiveFollow();

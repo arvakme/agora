@@ -4,6 +4,7 @@
 
 ```bash
 uv sync --frozen
+uv run ruff check .
 uv run pytest -q tests
 ```
 
@@ -22,7 +23,7 @@ uv run pytest tests/test_project_store.py tests/test_agent_sessions.py tests/tes
 ## 前端
 
 ```bash
-cd web && npx tsc -p . && npx vitest run && npm run build && npm run eval:replay
+cd web && npx tsc -p . && npm run lint && npx vitest run && npm run build && npm run eval:replay
 ```
 
 各功能的规格在 `web/docs/`。
@@ -42,7 +43,7 @@ $T/bin/agora status && $T/bin/agora down
 
 ## CI
 
-`.github/workflows/test.yml`：`test` 作业跑全部 Python 测试；`web` 作业跑前端类型检查、单测、构建、素材库校验与离线评测回放。
+`.github/workflows/test.yml`：`test` 作业跑 `ruff check` 和全部 Python 测试；`web` 作业跑前端类型检查、`npm run lint`（oxlint，规则在 `web/.oxlintrc.json`）、单测、构建、素材库校验与离线评测回放；`site` 作业构建官网（合并到 main 后由 `pages.yml` 部署）。
 
 ## 早期房间调度
 

@@ -18,5 +18,5 @@ export function topOf(id: string, index: ReadonlyMap<string, ParentRef>): string
 /** The workspace's canvases that are not opened from another one, in the workspace's order. */
 export const canvasChoices = (titles: Readonly<Record<string, string>>, index: ReadonlyMap<string, ParentRef>): CanvasChoice[] =>
   Object.entries(titles)
-    .filter(([id]) => !(index.get(id)?.canvasId! in titles))
+    .filter(([id]) => { const parent = index.get(id)?.canvasId; return !(parent !== undefined && parent in titles); })
     .map(([id, title]) => ({ id, title }));

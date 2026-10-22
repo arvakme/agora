@@ -207,7 +207,7 @@ def draw(lang: str) -> str:
     ox, oy = 740, 222
     shadow(ox, oy, 110, 110)
     for k in range(3):
-        tt = box(ox, oy - k * 34, 110, 110, 26, top="#fbfaf7")
+        box(ox, oy - k * 34, 110, 110, 26, top="#fbfaf7")
         a, b = iso(ox, oy - k * 34, 110, 20, 10), iso(ox, oy - k * 34, 110, 60, 10)
         line(*a, *b, stroke=MUTE, sw=1.2)
         for j in range(3):
@@ -318,7 +318,8 @@ def draw(lang: str) -> str:
         if kind == 0:  # 画布
             pts = [iso(x, y - 16, 0, 0), iso(x, y - 16, 34, 0), iso(x, y - 16, 34, 26), iso(x, y - 16, 0, 26)]
             poly(pts, fill="#ffffff", sw=1.2)
-            a = iso(x, y - 16, 6, 6); b = iso(x, y - 16, 18, 6); c = iso(x, y - 16, 18, 14); d = iso(x, y - 16, 6, 14)
+            a, b = iso(x, y - 16, 6, 6), iso(x, y - 16, 18, 6)
+            c, d = iso(x, y - 16, 18, 14), iso(x, y - 16, 6, 14)
             poly([a, b, c, d], fill=ACC_SOFT, stroke=ACC, sw=1.4)
         elif kind == 1:  # 终端
             add(f'<rect x="{x-18}" y="{y-16}" width="40" height="30" rx="4" fill="#ffffff" stroke="{LINE}" stroke-width="1.2"/>')

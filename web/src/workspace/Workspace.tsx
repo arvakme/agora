@@ -322,7 +322,6 @@ export function Workspace({ root: savedRoot, setRoot: setSavedRoot, titles, subt
   );
 }
 
-const noop = () => {};
 const within = (r: Rect, x: number, y: number) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 const box = (r: Rect) => ({ left: r.x, top: r.y, width: Math.max(0, r.w), height: Math.max(0, r.h) });
 

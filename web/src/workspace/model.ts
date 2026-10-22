@@ -48,6 +48,11 @@ export const sessionDocId = (sessionId: string) => `p-${sessionId}`;
 export const emptyGroup = (): Group => group([], "");
 export const openIds = (root: Node) => groups(root).flatMap((g) => g.tabs);
 export const isOpen = (root: Node, id: string) => !!groupOf(root, id);
+/** `to` is a tab of a group other than the one `from` is in: switching to it shows it there, not in `from`'s pane. */
+export function openElsewhere(root: Node, from: string, to: string): boolean {
+  const there = groupOf(root, to);
+  return !!there && there.id !== groupOf(root, from)?.id;
+}
 
 /** A group's kind comes from its tabs: all canvases, all sessions, or mixed (also when empty). */
 export function groupKind(tabs: string[], kindOf: (id: string) => DocKind | undefined): GroupKind {
@@ -248,7 +253,7 @@ export function topicOf(text: string | undefined, maxCols = 18): string {
   if (!lines.length) return "";
   let line = lines[0];
   if (/^画布评论 #\d+/.test(line)) line = (lines.find((l) => /^- [^：]+：/.test(l)) ?? "").replace(/^- [^：]+：/, "");
-  line = line.replace(/^([#>*\-]+|\d+[.)、])\s*/, "");
+  line = line.replace(/^([#>*-]+|\d+[.)、])\s*/, "");
   for (let prev = ""; prev !== line; ) {
     prev = line;
     line = line.replace(/^(请你?|麻烦你?|帮我|帮忙|能不能|能否|可以|可不可以|我想|我们|please|can you|could you)[\s,，]*/iu, "");

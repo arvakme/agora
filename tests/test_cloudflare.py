@@ -375,7 +375,6 @@ def test_the_command_line_lists_the_zones_and_names_the_flag(monkeypatch, capsys
     import argparse
 
     import agora_cli.share as cli
-    from agora_cli.main import Project
 
     monkeypatch.setattr(cli, "server_url", lambda p: "http://x")
     sent = []

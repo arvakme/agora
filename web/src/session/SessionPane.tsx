@@ -11,7 +11,7 @@
 import { chooserView, type CatalogState } from "./chooserModel";
 import { ConflictNotice } from "../multi/ConflictNotice";
 import { AnimatePresence, motion } from "motion/react";
-import { startTransition, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { IconChevron, IconCommentSolid, IconCopy, IconLayers, IconLock, IconMore, IconPath, IconPencil, IconTerminal } from "../app/icons";
 import { panelView, replayTime, useReplay, useTick, type PanelView } from "../workstation/clock";
 import { usePlay } from "../workstation/replayMode";
